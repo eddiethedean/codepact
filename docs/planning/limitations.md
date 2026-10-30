@@ -1,0 +1,39 @@
+# Static analysis and ownership limitations
+
+## Assurance model
+
+Typepact proposes checks over a documented subset of Python with declared and inferred contracts. A finding can establish a modeled violation. Absence of findings establishes only that configured checks found no violations within analyzed paths and assumptions.
+
+Python execution retains its normal object model. Ownership annotations do not change reference counting, garbage collection, aliasing, memory layout or interpreter behavior. Rust's compiler ownership system governs a different execution model; Typepact must not advertise an equivalent memory-safety guarantee.
+
+## Boundaries that must be visible
+
+| Boundary | Consequence | Required behavior |
+| --- | --- | --- |
+| Any or missing stubs | Call and alias effects may be unknown | Propagate unknown facts and report coverage |
+| Dynamic imports, eval, exec | Behavior cannot be resolved statically | Never execute; mark affected scope unsupported |
+| Monkey patching and dynamic attributes | Resolved method identities can change | State closed-world assumptions or weaken results |
+| Reflection, descriptors and metaclasses | Attribute access can execute arbitrary behavior | Use explicit models or conservative effects |
+| Native extensions | Memory and lifetime behavior is external | Trust reviewed summaries only; no memory-safety claim |
+| Containers, globals and closures | Hidden aliases can escape | Reject within strict ownership subset or mark unknown |
+| Threads and async tasks | Interleaving can invalidate local facts | No data-race guarantee; invalidate at modeled boundaries |
+| Exceptions and cancellation | Cleanup or transfer can be interrupted | Model exceptional edges and suspension explicitly |
+| User contract assertions | Declarations may be false | Verify supported bodies; label trusted contracts |
+
+## Ownership scope
+
+Owned is an intended transfer and access contract. It is not proof that no Python reference exists elsewhere. Copying a reference does not duplicate a unique resource. Deep copy, serialization and custom cloning require separate models; they cannot be inferred as safe duplication.
+
+Shared borrowing does not make the underlying object deeply immutable. Properties and methods can mutate internal state. Exclusive borrowing applies only to a modeled region and known alias relationships. The initial engine must reject or downgrade claims when access leaves that scope.
+
+Lifetime checks concern permitted access to modeled resources, not raw pointer validity. A Python reference can remain alive after the underlying resource closes. A moved handle may still exist at runtime while its static contract forbids reuse.
+
+## Reporting policy
+
+Distinguish definite violation, possible violation, unknown boundary and trusted assumption. Show incomplete analysis in both human and machine-readable output. Strict mode may reject unknown boundaries, but that still does not prove arbitrary Python safe.
+
+Optional runtime checks can enforce selected transitions on observed operations. They may miss bypasses and impose overhead. Runtime checking must have its own documented coverage and cannot retroactively justify stronger static claims.
+
+## Risk reduction
+
+Keep the first release intraprocedural with explicit summaries and bounded alias tracking. Expand scope with counterexample-driven fixtures, pilot feedback and documented assumptions. Treat unsound acceptance as a correctness bug; treat unsupported analysis as a visible product limitation.
