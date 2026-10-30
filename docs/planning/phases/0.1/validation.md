@@ -56,7 +56,7 @@ The current release workflow depends on quality checks covering part of this lis
 
 ## F05 prerequisite evidence
 
-Record the selected license and dependency notice review, registry namespace control, and publisher identity settings. Match PyPI's repository/workflow/environment tuple to eddiethedean/typepact, release.yml and pypi. Confirm CARGO_REGISTRY_TOKEN is configured with the needed publishing authority without exposing its value.
+Record the selected license and dependency notice review, registry namespace control, and publisher identity settings. Confirm the initial PYPI_API_TOKEN secret can publish both Python projects without exposing its value. After both projects exist, qualify each trusted publisher against eddiethedean/typepact, release.yml and the pypi environment, and switch both jobs back to OIDC. Confirm CARGO_REGISTRY_TOKEN is configured with the needed publishing authority without exposing its value.
 
 Before first publication, inspect configuration and use non-publishing checks where available. Actual successful upload verification belongs to G8 after an authorized release tag; do not make a pre-tag gate depend on an upload that has not happened.
 
