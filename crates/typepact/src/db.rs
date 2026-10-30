@@ -462,7 +462,16 @@ impl AnalysisSession {
         for path in stale_paths {
             self.remove_file(&path);
         }
-        for file in files {
+
+        // Apply shrinks and same-size replacements before growth. This keeps
+        // every intermediate session state under the aggregate byte limit,
+        // even when a valid batch moves bytes between files in opposite order.
+        let (non_growing, growing): (Vec<_>, Vec<_>) = files.iter().partition(|file| {
+            self.files
+                .get(&file.path)
+                .is_none_or(|existing| existing.source(&self.db).len() >= file.source.len())
+        });
+        for file in non_growing.into_iter().chain(growing) {
             self.set_file(file.path.clone(), file.module.clone(), file.source.clone())
                 .expect("validated inspection inputs fit session limits");
         }
@@ -776,6 +785,31 @@ mod tests {
             .iter()
             .any(|reason| reason.contains("50,000 statement request limit")));
         assert_eq!(result.coverage.declarations, 0);
+    }
+
+    #[test]
+    fn inspection_applies_file_size_swaps_without_exceeding_intermediate_limit() {
+        fn comment_file(path: &str, module: &str, bytes: usize) -> SourceFile {
+            let body = "x".repeat(bytes - 2);
+            SourceFile::new(path, module, format!("#{body}\n"))
+        }
+
+        let mut session = AnalysisSession::default();
+        let first = [
+            comment_file("a.py", "a", 100_002),
+            comment_file("b.py", "b", 800_002),
+        ];
+        let before = session.inspect(&first, "3.11");
+        assert_eq!(before.coverage.source_bytes, 900_004);
+
+        let swapped = [
+            comment_file("a.py", "a", 800_002),
+            comment_file("b.py", "b", 100_002),
+        ];
+        let after = session.inspect(&swapped, "3.11");
+        assert_eq!(after.coverage.source_bytes, 900_004);
+        assert_eq!(after.coverage.status, "complete-for-supported-subset");
+        assert_eq!(session.revision, 5);
     }
 
     #[test]

@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct ClassDecl {
     closed_by: Option<String>,
+    closed_by_span: Option<Span>,
 }
 
 #[derive(Clone, Debug)]
@@ -19,6 +20,8 @@ struct ParsedAnnotation {
     origin: &'static str,
     has_resource: bool,
     closed_by: Option<String>,
+    access_span: Option<Span>,
+    closed_by_span: Option<Span>,
     conflict: Option<&'static str>,
     conflict_spans: Vec<Span>,
     unsupported_reason: Option<&'static str>,
@@ -32,6 +35,8 @@ impl ParsedAnnotation {
             origin: "python-annotation",
             has_resource: false,
             closed_by: None,
+            access_span: None,
+            closed_by_span: None,
             conflict: None,
             conflict_spans: Vec::new(),
             unsupported_reason: None,
@@ -240,7 +245,6 @@ fn inspect_inner(
                     name, value, range, ..
                 } => {
                     if let Some(name) = name {
-                        state.clear_name(name, &file.module, &mut bindings);
                         lower_assignment(
                             &mut result,
                             file,
@@ -248,7 +252,7 @@ fn inspect_inner(
                             value.as_ref(),
                             &mut state,
                             &symbols,
-                            &bindings,
+                            &mut bindings,
                         );
                     } else {
                         unsupported(
@@ -369,6 +373,8 @@ struct ExportedView {
     symbol: String,
     access: Access,
     closed_by: Option<String>,
+    access_span: Option<Span>,
+    closed_by_span: Option<Span>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -448,14 +454,20 @@ pub(crate) fn context_for_module(
     computed_exports: &BTreeMap<String, SemanticExports>,
 ) -> ModuleContext {
     let mut context = ModuleContext::default();
+    let retain_origins = summary_uses_contract_wrapper(summary);
     for module in &summary.absolute_imports {
         match plan.module_counts.get(module).copied() {
             Some(1) => {
                 context.supplied_modules.insert(module.clone());
                 if let Some(exports) = computed_exports.get(module) {
-                    context
-                        .dependency_exports
-                        .insert(module.clone(), exports.clone());
+                    let mut exports = exports.clone();
+                    if !retain_origins {
+                        for view in exports.names.values_mut() {
+                            view.access_span = None;
+                            view.closed_by_span = None;
+                        }
+                    }
+                    context.dependency_exports.insert(module.clone(), exports);
                 }
             }
             Some(_) => {
@@ -474,6 +486,91 @@ pub(crate) fn context_for_module(
         None => {}
     }
     context
+}
+
+fn summary_uses_contract_wrapper(summary: &ParseSummary) -> bool {
+    fn expression_uses_wrapper(expression: &AstExpr, imports: &BTreeMap<String, String>) -> bool {
+        match &expression.kind {
+            AstExprKind::Subscript(container, arguments) => {
+                canonical(container, imports).is_some_and(|identity| {
+                    matches!(
+                        identity.as_str(),
+                        "typing::Annotated"
+                            | "typepact::Borrowed"
+                            | "typepact::Owned"
+                            | "typepact::BorrowedMut"
+                    )
+                }) || expression_uses_wrapper(container, imports)
+                    || arguments
+                        .iter()
+                        .any(|argument| expression_uses_wrapper(argument, imports))
+            }
+            AstExprKind::Attribute(value, _) => expression_uses_wrapper(value, imports),
+            AstExprKind::Call {
+                function,
+                arguments,
+                keywords,
+            } => {
+                expression_uses_wrapper(function, imports)
+                    || arguments
+                        .iter()
+                        .any(|argument| expression_uses_wrapper(argument, imports))
+                    || keywords
+                        .iter()
+                        .any(|(_, value)| expression_uses_wrapper(value, imports))
+            }
+            AstExprKind::Tuple(values) => values
+                .iter()
+                .any(|value| expression_uses_wrapper(value, imports)),
+            _ => false,
+        }
+    }
+
+    let Some(declarations) = summary.declarations.as_ref() else {
+        return false;
+    };
+    let mut state = FileState::default();
+    for declaration in declarations {
+        if let Declaration::ImportFrom {
+            module,
+            level: 0,
+            names,
+            ..
+        } = declaration
+        {
+            for name in names {
+                let local = name.alias.as_deref().unwrap_or(&name.name);
+                register_import(&name.name, local, module, &mut state);
+            }
+        }
+    }
+    declarations.iter().any(|declaration| match declaration {
+        Declaration::Class { decorators, .. } | Declaration::Function { decorators, .. } => {
+            decorators
+                .iter()
+                .any(|expr| expression_uses_wrapper(expr, &state.imports))
+                || match declaration {
+                    Declaration::Function {
+                        parameters,
+                        returns,
+                        ..
+                    } => {
+                        parameters.iter().any(|parameter| {
+                            parameter.annotation.as_ref().is_some_and(|annotation| {
+                                expression_uses_wrapper(annotation, &state.imports)
+                            })
+                        }) || returns.as_ref().is_some_and(|annotation| {
+                            expression_uses_wrapper(annotation, &state.imports)
+                        })
+                    }
+                    _ => false,
+                }
+        }
+        Declaration::Assignment { value, .. } => value
+            .as_ref()
+            .is_some_and(|expr| expression_uses_wrapper(expr, &state.imports)),
+        _ => false,
+    })
 }
 
 pub(crate) fn inspect_module(
@@ -499,10 +596,17 @@ pub(crate) fn inspect_module(
     let classes = names
         .values()
         .filter_map(|view| {
-            project
-                .symbols
-                .get(&view.symbol)
-                .map(|class| (view.symbol.clone(), class.clone()))
+            project.symbols.get(&view.symbol).map(|class| {
+                (
+                    view.symbol.clone(),
+                    ClassDecl {
+                        closed_by: class.closed_by.clone(),
+                        // Source locations are local diagnostics, not part
+                        // of the semantic export queried by dependents.
+                        closed_by_span: None,
+                    },
+                )
+            })
         })
         .collect();
     ModuleAnalysis {
@@ -577,10 +681,17 @@ pub(crate) fn combine_project(
 #[derive(Default)]
 struct FileState {
     imports: BTreeMap<String, String>,
+    unresolved_imports: BTreeMap<String, UnresolvedImport>,
     aliases: BTreeMap<String, String>,
-    alias_lifecycle: BTreeMap<String, String>,
-    alias_access: BTreeMap<String, Access>,
+    alias_lifecycle: BTreeMap<String, (String, Span)>,
+    alias_access: BTreeMap<String, (Access, Span)>,
     exports: BTreeMap<String, ExportedView>,
+}
+
+#[derive(Clone)]
+struct UnresolvedImport {
+    module: String,
+    span: Span,
 }
 
 impl FileState {
@@ -590,6 +701,7 @@ impl FileState {
 
     fn clear_name(&mut self, name: &str, module: &str, bindings: &mut BTreeMap<String, String>) {
         self.imports.remove(name);
+        self.unresolved_imports.remove(name);
         self.aliases.remove(name);
         self.alias_lifecycle.remove(name);
         self.alias_access.remove(name);
@@ -601,6 +713,7 @@ impl FileState {
         let prefix = format!("{module}.");
         bindings.retain(|name, _| !name.starts_with(&prefix));
         self.imports.clear();
+        self.unresolved_imports.clear();
         self.aliases.clear();
         self.alias_lifecycle.clear();
         self.alias_access.clear();
@@ -681,13 +794,13 @@ fn register_import(original: &str, local: &str, module: &str, state: &mut FileSt
     let canonical = match format!("{module}.{original}").as_str() {
         "typing.Annotated" => "typing::Annotated",
         "typepact.resource" => "typepact::resource",
-        "typepact.contracts.Resource" => "typepact::contracts::Resource",
+        "typepact.Resource" | "typepact.contracts.Resource" => "typepact::contracts::Resource",
         "typepact.contracts.SharedBorrow" => "typepact::contracts::SharedBorrow",
         "typepact.contracts.OwnedAccess" => "typepact::contracts::OwnedAccess",
         "typepact.contracts.ExclusiveBorrow" => "typepact::contracts::ExclusiveBorrow",
-        "typepact.rust.Borrowed" => "typepact::Borrowed",
-        "typepact.rust.Owned" => "typepact::Owned",
-        "typepact.rust.BorrowedMut" => "typepact::BorrowedMut",
+        "typepact.contracts.Borrowed" | "typepact.rust.Borrowed" => "typepact::Borrowed",
+        "typepact.contracts.Owned" | "typepact.rust.Owned" => "typepact::Owned",
+        "typepact.contracts.BorrowedMut" | "typepact.rust.BorrowedMut" => "typepact::BorrowedMut",
         _ => "",
     };
     state.imports.insert(local.to_owned(), canonical.to_owned());
@@ -721,6 +834,15 @@ fn register_supplied_module_import(
         return;
     }
     if !supplied_modules.contains(module) {
+        if !is_known_external_module(module) {
+            state.unresolved_imports.insert(
+                local.to_owned(),
+                UnresolvedImport {
+                    module: module.to_owned(),
+                    span: crate::source_span(&file.path, &file.source, range),
+                },
+            );
+        }
         return;
     }
     let Some(view) = module_exports
@@ -738,13 +860,44 @@ fn register_supplied_module_import(
         return;
     };
     state.aliases.insert(local.to_owned(), view.symbol.clone());
+    let import_span = crate::source_span(&file.path, &file.source, range);
     if view.access != Access::Unspecified {
-        state.alias_access.insert(local.to_owned(), view.access);
+        state.alias_access.insert(
+            local.to_owned(),
+            (
+                view.access,
+                view.access_span
+                    .clone()
+                    .unwrap_or_else(|| import_span.clone()),
+            ),
+        );
     }
     if let Some(closed_by) = view.closed_by {
-        state.alias_lifecycle.insert(local.to_owned(), closed_by);
+        state.alias_lifecycle.insert(
+            local.to_owned(),
+            (closed_by, view.closed_by_span.unwrap_or(import_span)),
+        );
     }
     bindings.insert(format!("{}.{local}", file.module), view.symbol);
+}
+
+fn is_known_external_module(module: &str) -> bool {
+    matches!(
+        module,
+        "typing"
+            | "typing_extensions"
+            | "builtins"
+            | "collections"
+            | "collections.abc"
+            | "dataclasses"
+            | "datetime"
+            | "decimal"
+            | "enum"
+            | "fractions"
+            | "pathlib"
+            | "types"
+            | "uuid"
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -760,41 +913,43 @@ fn lower_class(
     let mut closed: Option<(String, Span)> = None;
     let mut conflict = false;
     for decorator in decorators {
-        let AstExprKind::Call {
-            function,
-            arguments,
-            keywords,
-        } = &decorator.kind
-        else {
-            continue;
+        let (function, arguments, keywords) = match &decorator.kind {
+            AstExprKind::Call {
+                function,
+                arguments,
+                keywords,
+            } => (function.as_ref(), arguments.as_slice(), keywords.as_slice()),
+            _ => {
+                if canonical(decorator, &state.imports).as_deref() == Some("typepact::resource") {
+                    unsupported(
+                        result,
+                        file,
+                        decorator.range,
+                        "resource decorator requires a literal closed_by keyword",
+                    );
+                }
+                continue;
+            }
         };
         if canonical(function, &state.imports).as_deref() != Some("typepact::resource") {
             continue;
         }
-        let closed_by = keywords
-            .iter()
-            .find(|(key, _)| key.as_deref() == Some("closed_by"))
-            .map(|(_, value)| value);
-        let method = closed_by.and_then(|value| match &value.kind {
-            AstExprKind::String(value) => Some(value.clone()),
-            _ => None,
-        });
-        let Some(method) = method else {
+        let Some(method) = parse_resource_decorator_call(arguments, keywords) else {
             unsupported(
                 result,
                 file,
                 decorator.range,
-                "resource decorator requires a literal closed_by method",
+                "resource decorator supports only one literal closed_by keyword",
             );
             continue;
         };
-        if !is_identifier(&method) || !arguments.is_empty() {
+        if !is_identifier(&method) {
             declaration_error(
                 result,
                 file,
                 decorator.range,
                 "TP4002",
-                "closed_by must be a literal method name",
+                "closed_by must be a valid method identifier",
                 Vec::new(),
             );
             conflict = true;
@@ -835,6 +990,7 @@ fn lower_class(
         symbol.clone(),
         ClassDecl {
             closed_by: closed.as_ref().map(|(method, _)| method.clone()),
+            closed_by_span: closed.as_ref().map(|(_, span)| span.clone()),
         },
     );
     bindings.insert(base.clone(), symbol.clone());
@@ -844,6 +1000,8 @@ fn lower_class(
             symbol: symbol.clone(),
             access: Access::Unspecified,
             closed_by: closed.as_ref().map(|(method, _)| method.clone()),
+            access_span: None,
+            closed_by_span: closed.as_ref().map(|(_, span)| span.clone()),
         },
     );
     if let Some((method, origin)) = closed {
@@ -865,6 +1023,23 @@ fn lower_class(
     }
 }
 
+fn parse_resource_decorator_call(
+    arguments: &[AstExpr],
+    keywords: &[(Option<String>, AstExpr)],
+) -> Option<String> {
+    if !arguments.is_empty() || keywords.len() != 1 {
+        return None;
+    }
+    let (name, value) = keywords.first()?;
+    if name.as_deref() != Some("closed_by") {
+        return None;
+    }
+    match &value.kind {
+        AstExprKind::String(method) => Some(method.clone()),
+        _ => None,
+    }
+}
+
 fn lower_assignment(
     result: &mut Inspection,
     file: &SourceFile,
@@ -872,26 +1047,19 @@ fn lower_assignment(
     expression: Option<&AstExpr>,
     state: &mut FileState,
     symbols: &BTreeMap<String, ClassDecl>,
-    bindings: &BTreeMap<String, String>,
+    bindings: &mut BTreeMap<String, String>,
 ) {
     let Some(expression) = expression else {
         return;
     };
     if !is_alias_candidate(expression, &state.imports) {
+        state.clear_name(name, &file.module, bindings);
         return;
     }
-    let mut parsed = parse_annotation(expression, &state.imports, file);
+    let parsed = parse_annotation(expression, &state.imports, file);
     if report_annotation_problem(result, file, expression.range, &parsed) {
+        state.clear_name(name, &file.module, bindings);
         return;
-    }
-    if parsed.access == Access::Unspecified {
-        if let Some(access) = parsed
-            .base
-            .as_deref()
-            .and_then(|base| state.alias_access.get(base))
-        {
-            parsed.access = *access;
-        }
     }
     let Some(base) = parsed.base.as_deref() else {
         if parsed.has_resource {
@@ -902,10 +1070,22 @@ fn lower_assignment(
                 "Resource metadata requires a resolvable class type",
             );
         }
+        state.clear_name(name, &file.module, bindings);
         return;
     };
     let Some(symbol) = resolve_symbol(base, &file.module, symbols, &state.aliases, bindings) else {
-        if parsed.has_resource || parsed.access != Access::Unspecified {
+        if let Some(import) = state.unresolved_imports.get(base) {
+            unsupported_related_import(
+                result,
+                file,
+                expression.range,
+                &format!(
+                    "annotation type {base} comes from unresolved module {}",
+                    import.module
+                ),
+                import.span.clone(),
+            );
+        } else if parsed.has_resource || parsed.access != Access::Unspecified {
             unsupported(
                 result,
                 file,
@@ -913,59 +1093,69 @@ fn lower_assignment(
                 &format!("unresolved base type in contract alias: {base}"),
             );
         }
+        state.clear_name(name, &file.module, bindings);
         return;
     };
+
+    let inherited_access = state.alias_access.get(base).cloned();
+    let inherited_lifecycle = state.alias_lifecycle.get(base).cloned().or_else(|| {
+        symbols.get(&symbol).and_then(|declaration| {
+            declaration
+                .closed_by
+                .as_ref()
+                .zip(declaration.closed_by_span.as_ref())
+                .map(|(closed_by, span)| (closed_by.clone(), span.clone()))
+        })
+    });
+    let Some(metadata) = merge_annotation_metadata(
+        result,
+        file,
+        expression.range,
+        &parsed,
+        inherited_access,
+        inherited_lifecycle,
+    ) else {
+        state.clear_name(name, &file.module, bindings);
+        return;
+    };
+
+    // Assignment evaluates its right-hand side in the old namespace, then
+    // replaces the target binding. Resolve above before clearing this name.
+    state.clear_name(name, &file.module, bindings);
     state.aliases.insert(name.to_owned(), symbol.clone());
-    if parsed.access != Access::Unspecified {
-        state.alias_access.insert(name.to_owned(), parsed.access);
+    if metadata.access != Access::Unspecified {
+        let access_span = metadata
+            .access_span
+            .clone()
+            .unwrap_or_else(|| crate::source_span(&file.path, &file.source, expression.range));
+        state
+            .alias_access
+            .insert(name.to_owned(), (metadata.access, access_span));
     }
-    if let Some(closed_by) = parsed.closed_by.clone() {
+    if let Some(closed_by) = metadata.closed_by.clone() {
+        let lifecycle_span = metadata
+            .closed_by_span
+            .clone()
+            .unwrap_or_else(|| crate::source_span(&file.path, &file.source, expression.range));
         state
             .alias_lifecycle
-            .insert(name.to_owned(), closed_by.clone());
-    } else if let Some(previous_lifecycle) = state.alias_lifecycle.get(base).cloned() {
-        state
-            .alias_lifecycle
-            .insert(name.to_owned(), previous_lifecycle);
+            .insert(name.to_owned(), (closed_by, lifecycle_span));
     }
-    let inherited_lifecycle = parsed
-        .closed_by
-        .clone()
-        .or_else(|| state.alias_lifecycle.get(base).cloned())
-        .or_else(|| {
-            symbols
-                .get(&symbol)
-                .and_then(|declaration| declaration.closed_by.clone())
-        });
     state.exports.insert(
         name.to_owned(),
         ExportedView {
             symbol: symbol.clone(),
-            access: parsed.access,
-            closed_by: inherited_lifecycle,
+            access: metadata.access,
+            closed_by: metadata.closed_by.clone(),
+            access_span: metadata.access_span.clone(),
+            closed_by_span: metadata.closed_by_span.clone(),
         },
     );
     if parsed.has_resource {
-        let Some(closed_by) = parsed.closed_by else {
-            unsupported(
-                result,
-                file,
-                expression.range,
-                "Resource metadata requires a literal closed_by method",
-            );
-            return;
-        };
-        if !is_identifier(&closed_by) {
-            declaration_error(
-                result,
-                file,
-                expression.range,
-                "TP4002",
-                "closed_by must be a literal method name",
-                Vec::new(),
-            );
-            return;
-        }
+        let closed_by = metadata
+            .closed_by
+            .clone()
+            .expect("validated resource metadata has a lifecycle method");
         add_contract(
             result,
             Contract {
@@ -973,7 +1163,7 @@ fn lower_assignment(
                 base_symbol: symbol,
                 display_name: name.to_owned(),
                 lifecycle: Some(Lifecycle { closed_by }),
-                access: parsed.access.as_str().into(),
+                access: metadata.access.as_str().into(),
                 source: crate::source_span(&file.path, &file.source, expression.range),
                 provenance: vec![Provenance {
                     origin: "annotated-resource-metadata".into(),
@@ -982,6 +1172,112 @@ fn lower_assignment(
             },
         );
     }
+}
+
+#[derive(Clone)]
+struct ResolvedMetadata {
+    access: Access,
+    access_span: Option<Span>,
+    closed_by: Option<String>,
+    closed_by_span: Option<Span>,
+}
+
+fn merge_annotation_metadata(
+    result: &mut Inspection,
+    file: &SourceFile,
+    range: SourceRange,
+    parsed: &ParsedAnnotation,
+    inherited_access: Option<(Access, Span)>,
+    inherited_lifecycle: Option<(String, Span)>,
+) -> Option<ResolvedMetadata> {
+    if parsed.has_resource && parsed.closed_by.is_none() {
+        unsupported(
+            result,
+            file,
+            range,
+            "Resource metadata requires a literal closed_by method",
+        );
+        return None;
+    }
+    if parsed
+        .closed_by
+        .as_ref()
+        .is_some_and(|closed_by| !is_identifier(closed_by))
+    {
+        declaration_error(
+            result,
+            file,
+            range,
+            "TP4002",
+            "closed_by must be a valid method identifier",
+            Vec::new(),
+        );
+        return None;
+    }
+    if let Some((inherited, inherited_span)) = &inherited_access {
+        if parsed.access != Access::Unspecified && parsed.access != *inherited {
+            metadata_conflict(
+                result,
+                parsed
+                    .access_span
+                    .clone()
+                    .unwrap_or_else(|| crate::source_span(&file.path, &file.source, range)),
+                inherited_span.clone(),
+                "conflicting inherited and explicit access qualifiers",
+            );
+            return None;
+        }
+    }
+    if let (Some(closed_by), Some((inherited, inherited_span))) =
+        (&parsed.closed_by, &inherited_lifecycle)
+    {
+        if closed_by != inherited {
+            metadata_conflict(
+                result,
+                parsed
+                    .closed_by_span
+                    .clone()
+                    .unwrap_or_else(|| crate::source_span(&file.path, &file.source, range)),
+                inherited_span.clone(),
+                "conflicting inherited and explicit lifecycle declarations",
+            );
+            return None;
+        }
+    }
+
+    let (access, access_span) = if parsed.access != Access::Unspecified {
+        (parsed.access, parsed.access_span.clone())
+    } else {
+        match inherited_access {
+            Some((access, span)) => (access, Some(span)),
+            None => (Access::Unspecified, None),
+        }
+    };
+    let (closed_by, closed_by_span) = if let Some(closed_by) = &parsed.closed_by {
+        (Some(closed_by.clone()), parsed.closed_by_span.clone())
+    } else {
+        inherited_lifecycle
+            .map(|(closed_by, span)| (Some(closed_by), Some(span)))
+            .unwrap_or((None, None))
+    };
+    Some(ResolvedMetadata {
+        access,
+        access_span,
+        closed_by,
+        closed_by_span,
+    })
+}
+
+fn metadata_conflict(result: &mut Inspection, primary: Span, related: Span, message: &str) {
+    result.coverage.status = "incomplete".into();
+    result.diagnostics.push(Diagnostic {
+        code: "TP4002".into(),
+        severity: "error".into(),
+        message: message.into(),
+        primary,
+        related: vec![related],
+        certainty: "definite".into(),
+    });
 }
 
 fn is_alias_candidate(expression: &AstExpr, imports: &BTreeMap<String, String>) -> bool {
@@ -1044,18 +1340,9 @@ fn lower_function_annotation(
     symbols: &BTreeMap<String, ClassDecl>,
     bindings: &BTreeMap<String, String>,
 ) {
-    let mut parsed = parse_annotation(expression, &state.imports, file);
+    let parsed = parse_annotation(expression, &state.imports, file);
     if report_annotation_problem(result, file, expression.range, &parsed) {
         return;
-    }
-    if parsed.access == Access::Unspecified {
-        if let Some(access) = parsed
-            .base
-            .as_deref()
-            .and_then(|base| state.alias_access.get(base))
-        {
-            parsed.access = *access;
-        }
     }
     let Some(base) = parsed.base.as_deref() else {
         if matches!(expression.kind, AstExprKind::String(_)) {
@@ -1075,44 +1362,72 @@ fn lower_function_annotation(
         }
         return;
     };
-    if let Some(symbol) = resolve_symbol(base, &file.module, symbols, &state.aliases, bindings) {
-        let declaration = symbols.get(&symbol);
-        let lifecycle = state
-            .alias_lifecycle
-            .get(base)
-            .cloned()
-            .or_else(|| declaration.and_then(|decl| decl.closed_by.clone()))
-            .map(|closed_by| Lifecycle { closed_by });
-        let mut provenance = vec![Provenance {
-            origin: parsed.origin.into(),
-            trust: "declared-unverified".into(),
-        }];
-        if lifecycle.is_some() {
-            provenance.push(Provenance {
-                origin: "python-resource-decorator".into(),
-                trust: "declared-unverified".into(),
-            });
+    let Some(symbol) = resolve_symbol(base, &file.module, symbols, &state.aliases, bindings) else {
+        if let Some(import) = state.unresolved_imports.get(base) {
+            unsupported_related_import(
+                result,
+                file,
+                expression.range,
+                &format!(
+                    "annotation type {base} comes from unresolved module {}",
+                    import.module
+                ),
+                import.span.clone(),
+            );
+        } else if parsed.access != Access::Unspecified || parsed.has_resource {
+            unsupported(
+                result,
+                file,
+                expression.range,
+                &format!("unresolved annotation base type {base}"),
+            );
         }
-        add_contract(
-            result,
-            Contract {
-                schema_version: 0,
-                base_symbol: symbol,
-                display_name: display_name.to_owned(),
-                lifecycle,
-                access: parsed.access.as_str().into(),
-                source: crate::source_span(&file.path, &file.source, expression.range),
-                provenance,
-            },
-        );
-    } else if parsed.access != Access::Unspecified || parsed.has_resource {
-        unsupported(
-            result,
-            file,
-            expression.range,
-            &format!("unresolved annotation base type {base}"),
-        );
+        return;
+    };
+    let inherited_access = state.alias_access.get(base).cloned();
+    let inherited_lifecycle = state.alias_lifecycle.get(base).cloned().or_else(|| {
+        symbols.get(&symbol).and_then(|declaration| {
+            declaration
+                .closed_by
+                .as_ref()
+                .zip(declaration.closed_by_span.as_ref())
+                .map(|(closed_by, span)| (closed_by.clone(), span.clone()))
+        })
+    });
+    let Some(metadata) = merge_annotation_metadata(
+        result,
+        file,
+        expression.range,
+        &parsed,
+        inherited_access,
+        inherited_lifecycle,
+    ) else {
+        return;
+    };
+    let declaration = symbols.get(&symbol);
+    let lifecycle = metadata.closed_by.map(|closed_by| Lifecycle { closed_by });
+    let mut provenance = vec![Provenance {
+        origin: parsed.origin.into(),
+        trust: "declared-unverified".into(),
+    }];
+    if declaration.is_some_and(|declaration| declaration.closed_by.is_some()) {
+        provenance.push(Provenance {
+            origin: "python-resource-decorator".into(),
+            trust: "declared-unverified".into(),
+        });
     }
+    add_contract(
+        result,
+        Contract {
+            schema_version: 0,
+            base_symbol: symbol,
+            display_name: display_name.to_owned(),
+            lifecycle,
+            access: metadata.access.as_str().into(),
+            source: crate::source_span(&file.path, &file.source, expression.range),
+            provenance,
+        },
+    );
 }
 
 fn parse_annotation(
@@ -1136,6 +1451,12 @@ fn parse_annotation(
                         origin: "explicit-access-alias",
                         has_resource: false,
                         closed_by: None,
+                        access_span: Some(crate::source_span(
+                            &file.path,
+                            &file.source,
+                            expression.range,
+                        )),
+                        closed_by_span: None,
                         conflict: None,
                         conflict_spans: Vec::new(),
                         unsupported_reason: None,
@@ -1150,6 +1471,8 @@ fn parse_annotation(
             origin: "python-annotation",
             has_resource: false,
             closed_by: None,
+            access_span: None,
+            closed_by_span: None,
             conflict: None,
             conflict_spans: Vec::new(),
             unsupported_reason: match expression.kind {
@@ -1174,18 +1497,22 @@ fn parse_annotation(
         _ => Access::Unspecified,
     };
     if access != Access::Unspecified {
+        let access_span = crate::source_span(&file.path, &file.source, expression.range);
+        let has_resolvable_base = base.is_some();
         return ParsedAnnotation {
             base,
             access,
             origin: "explicit-access-alias",
             has_resource: false,
             closed_by: None,
+            access_span: Some(access_span),
+            closed_by_span: None,
             conflict: None,
             conflict_spans: Vec::new(),
-            unsupported_reason: if arguments.len() == 1 && arguments[0].kind != AstExprKind::Other {
+            unsupported_reason: if arguments.len() == 1 && has_resolvable_base {
                 None
             } else {
-                Some("computed base type in access annotation is unsupported")
+                Some("access annotations require one resolvable base type")
             },
         };
     }
@@ -1210,16 +1537,10 @@ fn parse_annotation(
         };
         match identity.as_str() {
             "typepact::contracts::Resource" => {
-                let closed_by = keywords
-                    .iter()
-                    .find(|(key, _)| key.as_deref() == Some("closed_by"))
-                    .and_then(|(_, value)| match &value.kind {
-                        AstExprKind::String(method) => Some(method.clone()),
-                        _ => None,
-                    });
-                if closed_by.is_none() || !call_arguments.is_empty() {
+                let closed_by = parse_resource_metadata_call(call_arguments, keywords);
+                if closed_by.is_none() {
                     unsupported_reason =
-                        Some("Resource metadata requires a literal closed_by method");
+                        Some("Resource metadata supports one literal closed_by value");
                 }
                 resources.push((
                     closed_by,
@@ -1245,6 +1566,10 @@ fn parse_annotation(
             _ => {}
         }
     }
+    let base_is_missing = base.is_none();
+    if base_is_missing {
+        unsupported_reason = Some("Annotated requires a resolvable base type");
+    }
     let access = access_values
         .first()
         .map(|(access, _)| *access)
@@ -1266,6 +1591,8 @@ fn parse_annotation(
         None
     };
     let closed_by = resources.first().and_then(|resource| resource.0.clone());
+    let access_span = access_values.first().map(|(_, span)| span.clone());
+    let closed_by_span = resources.first().map(|(_, span)| span.clone());
     ParsedAnnotation {
         base,
         access,
@@ -1278,9 +1605,37 @@ fn parse_annotation(
         },
         has_resource: !resources.is_empty(),
         closed_by,
+        access_span,
+        closed_by_span,
         conflict,
         conflict_spans,
         unsupported_reason,
+    }
+}
+
+fn parse_resource_metadata_call(
+    arguments: &[AstExpr],
+    keywords: &[(Option<String>, AstExpr)],
+) -> Option<String> {
+    match (arguments, keywords) {
+        (
+            [AstExpr {
+                kind: AstExprKind::String(method),
+                ..
+            }],
+            [],
+        ) => Some(method.clone()),
+        (
+            [],
+            [(
+                Some(name),
+                AstExpr {
+                    kind: AstExprKind::String(method),
+                    ..
+                },
+            )],
+        ) if name == "closed_by" => Some(method.clone()),
+        _ => None,
     }
 }
 
@@ -1438,6 +1793,29 @@ fn unsupported(result: &mut Inspection, file: &SourceFile, range: SourceRange, m
         message: message.into(),
         primary,
         related: Vec::new(),
+        certainty: "unknown".into(),
+    });
+}
+
+fn unsupported_related_import(
+    result: &mut Inspection,
+    file: &SourceFile,
+    range: SourceRange,
+    message: &str,
+    import_span: Span,
+) {
+    let primary = crate::source_span(&file.path, &file.source, range);
+    result.coverage.status = "incomplete".into();
+    result
+        .coverage
+        .reasons
+        .push(format!("{}:{}: {message}", file.path, primary.line));
+    result.diagnostics.push(Diagnostic {
+        code: "TP9001".into(),
+        severity: "warning".into(),
+        message: message.into(),
+        primary,
+        related: vec![import_span],
         certainty: "unknown".into(),
     });
 }

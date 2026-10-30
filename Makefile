@@ -51,17 +51,23 @@ check-msrv:
 
 check-rust-package:
 	@set -eu; \
+	package_metadata="$$($(CARGO) metadata --format-version 1 --no-deps | $(UV) run --locked python -c 'import json, sys; metadata = json.load(sys.stdin); package = next(item for item in metadata["packages"] if item["name"] == "typepact"); print(metadata["target_directory"]); print(package["version"])')"; \
+	target_directory="$$(printf '%s\n' "$$package_metadata" | sed -n '1p')"; \
+	package_version="$$(printf '%s\n' "$$package_metadata" | sed -n '2p')"; \
 	$(CARGO) package -p typepact --locked --allow-dirty; \
 	tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
-	crate="$$(find target/package -maxdepth 1 -name 'typepact-*.crate' -print -quit)"; \
-	test -n "$$crate"; \
+	crate="$$target_directory/package/typepact-$$package_version.crate"; \
+	test -f "$$crate"; \
 	mkdir -p "$$tmp/archive"; \
 	tar -xzf "$$crate" -C "$$tmp/archive"; \
-	package_dir="$$(find "$$tmp/archive" -mindepth 1 -maxdepth 1 -type d -print -quit)"; \
+	package_dir="$$tmp/archive/typepact-$$package_version"; \
+	test -f "$$package_dir/Cargo.toml"; \
 	$(CARGO) test --manifest-path "$$package_dir/Cargo.toml" --locked; \
 	$(CARGO) install --path "$$package_dir" --root "$$tmp/install" --locked --force; \
-	"$$tmp/install/bin/typepact" --version; \
+	version_output="$$($$tmp/install/bin/typepact --version)"; \
+	test "$$version_output" = "typepact $$package_version"; \
+	printf '%s\n' "$$version_output"; \
 	(cd "$$package_dir" && "$$tmp/install/bin/typepact" inspect-contracts tests/contracts.py)
 
 check-inspector:

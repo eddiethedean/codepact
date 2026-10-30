@@ -405,6 +405,200 @@ fn annotated_import_alias_is_resolved_by_canonical_identity() {
 }
 
 #[test]
+fn root_and_contracts_reexports_share_canonical_metadata_identities() {
+    let source = "from typing import Annotated\nfrom typepact import Resource as RootResource\nfrom typepact.contracts import Borrowed, BorrowedMut, Owned, Resource\nclass C: pass\nRootView = Annotated[C, RootResource(closed_by='close')]\nContractView = Annotated[C, Resource(closed_by='close')]\ndef root(value: RootView): pass\ndef borrowed(value: Borrowed[C]): pass\ndef owned(value: Owned[C]): pass\ndef mutable(value: BorrowedMut[C]): pass\n";
+    let result = inspect(&[SourceFile::new("aliases.py", "aliases", source)], "3.11");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    assert!(result
+        .contracts
+        .iter()
+        .any(|contract| contract.display_name == "RootView"
+            && contract
+                .lifecycle
+                .as_ref()
+                .is_some_and(|value| value.closed_by == "close")));
+    assert!(result
+        .contracts
+        .iter()
+        .any(|contract| contract.display_name == "root.value"
+            && contract
+                .lifecycle
+                .as_ref()
+                .is_some_and(|value| value.closed_by == "close")));
+    assert!(result
+        .contracts
+        .iter()
+        .any(|contract| contract.display_name == "borrowed.value" && contract.access == "shared"));
+    assert!(result
+        .contracts
+        .iter()
+        .any(|contract| contract.display_name == "owned.value" && contract.access == "owned"));
+    assert!(result.contracts.iter().any(|contract| {
+        contract.display_name == "mutable.value" && contract.access == "exclusive"
+    }));
+}
+
+#[test]
+fn inline_resource_metadata_is_lowered_on_function_annotations() {
+    let source = "from typing import Annotated\nfrom typepact.contracts import Resource\nclass C: pass\ndef keyword(value: Annotated[C, Resource(closed_by='close')]): pass\ndef positional(value: Annotated[C, Resource('release')]): pass\n";
+    let result = inspect(&[SourceFile::new("inline.py", "inline", source)], "3.11");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    assert!(result.contracts.iter().any(|contract| {
+        contract.display_name == "keyword.value"
+            && contract
+                .lifecycle
+                .as_ref()
+                .is_some_and(|value| value.closed_by == "close")
+    }));
+    assert!(result.contracts.iter().any(|contract| {
+        contract.display_name == "positional.value"
+            && contract
+                .lifecycle
+                .as_ref()
+                .is_some_and(|value| value.closed_by == "release")
+    }));
+}
+
+#[test]
+fn inherited_lifecycle_and_access_conflicts_report_both_origins() {
+    let lifecycle_source = "from typing import Annotated\nfrom typepact import resource\nfrom typepact.contracts import Resource\n@resource(closed_by='close')\nclass C: pass\nView = Annotated[C, Resource(closed_by='release')]\n";
+    let lifecycle = inspect(
+        &[SourceFile::new(
+            "lifecycle.py",
+            "lifecycle",
+            lifecycle_source,
+        )],
+        "3.11",
+    );
+    let lifecycle_diagnostic = lifecycle
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP4002")
+        .expect("inherited lifecycle conflict is diagnosed");
+    assert_eq!(lifecycle_diagnostic.related.len(), 1);
+    assert_eq!(lifecycle_diagnostic.primary.line, 6);
+    assert_eq!(lifecycle_diagnostic.related[0].line, 4);
+
+    let access_source = "from typepact.rust import Borrowed, Owned\nclass C: pass\nView = Borrowed[C]\ndef use(value: Owned[View]): pass\n";
+    let access = inspect(
+        &[SourceFile::new("access.py", "access", access_source)],
+        "3.11",
+    );
+    let access_diagnostic = access
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP4002")
+        .expect("inherited access conflict is diagnosed");
+    assert_eq!(access_diagnostic.related.len(), 1);
+    assert_eq!(access_diagnostic.primary.line, 4);
+    assert_eq!(access_diagnostic.related[0].line, 3);
+}
+
+#[test]
+fn imported_metadata_conflict_points_to_the_dependency_declaration() {
+    let provider = SourceFile::new(
+        "provider.py",
+        "provider",
+        "from typepact import resource\n@resource(closed_by='close')\nclass C: pass\n",
+    );
+    let consumer = SourceFile::new(
+        "consumer.py",
+        "consumer",
+        "from provider import C\nfrom typing import Annotated\nfrom typepact.contracts import Resource\ndef use(value: Annotated[C, Resource(closed_by='release')]): pass\n",
+    );
+    let result = inspect(&[consumer, provider], "3.11");
+    let diagnostic = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP4002")
+        .expect("the imported lifecycle conflict is diagnosed");
+    assert_eq!(diagnostic.primary.file, "consumer.py");
+    assert_eq!(diagnostic.primary.line, 4);
+    assert_eq!(diagnostic.related.len(), 1);
+    assert_eq!(diagnostic.related[0].file, "provider.py");
+    assert_eq!(diagnostic.related[0].line, 2);
+}
+
+#[test]
+fn assignments_resolve_the_old_binding_and_annotation_only_does_not_rebind() {
+    let reassignment = "from typepact.rust import Borrowed\nclass C: pass\nC = Borrowed[C]\ndef use(value: C): pass\n";
+    let result = inspect(
+        &[SourceFile::new("rebind.py", "rebind", reassignment)],
+        "3.11",
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    assert!(result.contracts.iter().any(|contract| {
+        contract.display_name == "use.value"
+            && contract.base_symbol == "rebind.C"
+            && contract.access == "shared"
+    }));
+
+    let annotated = "from typepact.rust import Borrowed\nclass C: pass\nC: type\ndef use(value: Borrowed[C]): pass\n";
+    let result = inspect(
+        &[SourceFile::new("annotated.py", "annotated", annotated)],
+        "3.11",
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    assert!(result.contracts.iter().any(|contract| {
+        contract.display_name == "use.value" && contract.base_symbol == "annotated.C"
+    }));
+}
+
+#[test]
+fn unresolved_imported_annotation_makes_coverage_incomplete() {
+    let source = "from nonexistent_module import C\ndef use(value: C): pass\n";
+    let result = inspect(&[SourceFile::new("missing.py", "missing", source)], "3.11");
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
+        .message
+        .contains("unresolved module nonexistent_module")
+        && diagnostic.related.len() == 1));
+}
+
+#[test]
+fn unexpected_resource_arguments_are_not_accepted_as_contracts() {
+    for source in [
+        "from typepact import resource\n@resource(closed_by='close', surprise=True)\nclass C: pass\n",
+        "from typing import Annotated\nfrom typepact.contracts import Resource\nclass C: pass\nView = Annotated[C, Resource(closed_by='close', surprise=True)]\n",
+    ] {
+        let result = inspect(&[SourceFile::new("malformed.py", "malformed", source)], "3.11");
+        assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+        assert!(!result
+            .contracts
+            .iter()
+            .any(|contract| contract.display_name == "View" || contract.display_name == "C"));
+    }
+}
+
+#[test]
+fn syntax_error_ranges_cover_multibyte_characters_without_panicking() {
+    let result = inspect(
+        &[SourceFile::new("unicode.py", "unicode", "x = 💥\n")],
+        "3.11",
+    );
+    assert_eq!(result.coverage.status, "incomplete");
+    let diagnostic = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP4001")
+        .expect("the syntax error is retained");
+    assert_eq!(diagnostic.primary.column, 5);
+    assert_eq!(diagnostic.primary.end_column, 9);
+}
+
+#[test]
 fn reusable_session_matches_fresh_inspection_after_file_updates() {
     let mut session = typepact::AnalysisSession::default();
     let first = SourceFile::new(
