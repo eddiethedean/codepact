@@ -10,17 +10,27 @@
 | D004 | Gradual, opt-in adoption | Existing Python applications must remain usable |
 | D005 | Explicit runtime conversions | Nullable values, Option, exceptions and Result differ in behavior |
 | D006 | Mixed-interface resource slice first | Demonstrates the project's defining interoperability early |
+| D007 | MIT license retained; RustPython 0.4 and line scanning were the prototype frontend, superseded by D009 | Permissive source and dependency terms; parser preserves source-only inspection without embedding Python |
+| D008 | Prototype analyzer target 3.11–3.13; helper runtime target 3.11–3.14; Ruff migration range requires fresh qualification | RustPython 0.4 has a fixed grammar; defer 3.14 analysis until parser compatibility is verified |
+| D009 | Ruff parser/AST adapter and TypePact declaration/binding index replace line scanning | Correct source structure and captured identities; evaluate ruff_python_semantic reuse rather than assuming ty semantics |
+| D010 | Salsa inputs and tracked queries are 0.1 foundations | Reusable sessions with explicit dependencies; incremental correctness tested from the start |
+| D011 | Follow ty query architecture while owning contract semantics | Avoid requiring a general type checker or coupling public APIs to upstream internals |
+| D012 | In-memory incrementality in 0.1; persistent caches/editor hardening in 0.8 | Establish correctness early and defer storage/editor complexity |
+| D013 | Pin Ruff parser/AST 0.0.12 and Salsa 0.26.2; raise Rust MSRV to 1.96 | crates.io packages and published metadata report these versions; exact lockfile and archive build are required |
+| D014 | Do not depend on `ruff_python_semantic` in 0.1; keep a TypePact-owned binding index for the supported declaration subset | Ruff labels the component API unstable and frequently breaking; its semantic model adds Ruff-specific scope and reference behavior that does not define TypePact's eager captured-contract semantics |
+
+D009–D012 establish direction, not implementation completion. [AM01–AM06](analyzer-migration.md) define the evidence and rollout; D007's MIT choice remains in force.
 
 ## Proposed decisions requiring evidence
 
 | Question | Starting proposal | Evidence needed |
 | --- | --- | --- |
 | Metadata representation | Annotated aliases with compatible stubs | Interpreter and checker matrix |
-| Analyzer implementation | Rust engine and standalone CLI | Parser feasibility and distribution spike |
+| Analyzer dependencies | Pinned Ruff parser/AST and Salsa, TypePact-owned adapter/index per D014 | AM01 API, license, MSRV, registry-package and target-version evidence |
 | Ownership scope | Explicit moves and lexical borrows | Alias/escape counterexamples and diagnostics |
 | Trait support | Protocol bridge before novel trait machinery | Concrete unsupported use cases |
 | Python support | 3.11–3.14 initial target | Packaging and annotation behavior on each version |
-| License and registries | Maintainer decision before release | License selection and registry ownership |
+| Dependency notices and registries | Retain MIT; review upstream licenses and verify registry ownership | Dependency notice review and publisher prerequisites |
 
 ## Risk register
 
@@ -44,3 +54,14 @@ These sources ground existing language behavior; TypePact's designs and support 
 - [Rust ownership](https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html): background for the ownership model inspiring the explicit API.
 
 The prior project discussion supplies product direction, not implementation evidence. Registry availability mentioned in that discussion must be checked again before release.
+
+## Additional analyzer risks
+
+| Risk | Mitigation / release trigger |
+| --- | --- |
+| Internal upstream APIs and unpublished dependencies | Pin compatible revisions/versions; adapter boundary; extracted archive and registry delivery gate |
+| Salsa dependency omissions | Explicit source/settings/discovery inputs; fresh-session parity and query event checks |
+| Name rebinding corrupts earlier aliases | Declaration identities distinct from current bindings; captured immutable contract views |
+| Memoized unknowns become stale | Track missing-module existence and model/configuration inputs; invalidate coverage as well as facts |
+| Cyclic queries or unbounded graph work | Explicit cycle policy and budgets; no reliance on caching for semantic convergence |
+| External IDs reflect allocation order | Stable logical public identities and deterministic ordering; no serialized Salsa IDs |

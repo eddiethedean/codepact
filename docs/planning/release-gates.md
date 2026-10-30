@@ -9,7 +9,7 @@ These gates apply to every phase and patch release. Phase-specific gates add req
 | G1 | Scope and semantics | Accepted scope and API/IR decisions; every advertised feature has defined valid, invalid and unknown-boundary behavior. |
 | G2 | Correctness and interoperability | Applicable regression suites pass; equivalent contracts normalize equally; mixed-interface producer/consumer combinations agree. No unresolved blocker in claimed scope. |
 | G3 | Compatibility and runtime behavior | Pinned Python/checker/platform matrix passes for advertised combinations; runtime identity, introspection and optional enforcement behavior are documented and checked. |
-| G4 | Operational quality | No target-code execution; bounded analysis terminates with visible incompleteness; deterministic output. Record baseline time/memory, investigate regressions and verify cache parity when caching exists. |
+| G4 | Operational quality | No target-code execution; bounded analysis terminates with visible incompleteness; deterministic output. Record baseline time/memory, investigate regressions and verify Salsa fresh/updated parity and tracked-query reuse from 0.1; verify persistent-cache parity when introduced. |
 | G5 | Distribution | Matching tag/package versions; clean builds, Python metadata validation, Cargo dry run, clean install/import/CLI checks for each advertised artifact, licensing and provenance. |
 | G6 | User readiness | Examples and reference reflect shipped behavior; limitations, new diagnostics, configuration changes and migration steps are reviewed. Pilot requirements apply from 0.4 onward. |
 | G7 | Release decision | Exact candidate revision, gate report, issue triage and accountable maintainer approval recorded. Missing evidence or a required failed gate blocks tagging. |
@@ -33,15 +33,15 @@ Release blockers include incorrect acceptance within a claimed contract, data lo
 
 | Phase | Minimum new automation to add |
 | --- | --- |
-| 0.1 | Build/import, typing-alias compatibility, normalization fixtures and artifact validation |
+| 0.1 | Build/import, Ruff AST/binding/captured-alias corpus, Salsa parity/reuse/invalidation, compatibility and archive validation |
 | 0.2–0.3 | Golden diagnostics, flow/alias/exception/cleanup corpus |
 | 0.4 | JSON/schema, modes, baselines and configuration checks |
 | 0.5–0.6 | Transfer, borrowing, escape, typestate and effect regressions |
 | 0.7 | Runtime variants, adapters and finite-match cases |
-| 0.8 | Cache equivalence, editor parity, platform and integration matrix |
+| 0.8 | Persistent-cache equivalence/recovery, editor revisions/cancellation, platform and integration matrix |
 | 0.9 | Full candidate qualification and documented recovery rehearsal |
 
-The current release.yml performs tag/layout validation, Python build/metadata checks, version matching, Cargo dry run and publishing. It must be extended to depend on the applicable quality suites as those suites are implemented. Manual reports are appropriate for pilot triage and scope review; record them explicitly.
+The current release.yml includes validation, artifact checks and quality-workflow dependencies. Extend the quality suites to cover the new migration gates and retain their required dependency relationship for publication. Manual reports are appropriate for pilot triage and scope review; record them explicitly.
 
 ## Partial publication and recovery
 

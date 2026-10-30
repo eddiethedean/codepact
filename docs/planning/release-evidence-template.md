@@ -57,3 +57,16 @@ Copy every gate ID from the applicable phase plan into this table.
 - Final status: Pending / Held / Complete
 
 Mark Complete only after G8 and every required gate pass. Hold the release while evidence or blockers remain unresolved.
+
+## Analyzer architecture evidence
+
+- AM01–AM06 status and links (0.1 and affected changes):
+- Ruff parser/AST/semantic components, exact versions or revisions, notices and Salsa version:
+- Declared Rust MSRV and clean registry/archive installation evidence:
+- Supported target-version grammar and annotation evaluation policies:
+- Declaration identity, rebinding and captured-alias fixtures:
+- Fresh/updated session parity and query execution event reports:
+- No-op, local-edit and exported-dependency edit benchmarks:
+- Missing-file, configuration, model and target-version invalidation:
+- Cycle/work budgets, cancellation recovery and revision publication:
+- Persistent-cache format/recovery and editor parity (from 0.8):

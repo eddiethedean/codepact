@@ -13,8 +13,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  quality:
+    name: Run release quality gates
+    uses: ./.github/workflows/quality.yml
+
   build:
     name: Validate and build release
+    needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -24,9 +29,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v7.1.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: '3.11'
+          enable-cache: true
+
+      - name: Install the locked Python environment
+        run: uv sync --locked --python 3.11
 
       - name: Validate tag and package layout
         env:
@@ -48,22 +57,19 @@ jobs:
       - name: Set up Rust
         run: rustup toolchain install stable --profile minimal
 
-      - name: Install Python build tools
-        run: python -m pip install --upgrade build twine packaging
-
       # Uses the build backend configured in the root pyproject.toml.
       # Native wheels require a PyPI-compatible backend/build configuration.
       - name: Build Python distributions
-        run: python -m build
+        run: uv run --locked --python 3.11 python -m build
 
       - name: Check Python distribution metadata
-        run: python -m twine check --strict dist/*
+        run: uv run --locked --python 3.11 python -m twine check --strict dist/*
 
       - name: Check package names and versions against tag
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python - <<'PY'
+          uv run --locked --python 3.11 python - <<'PY'
           import json
           import os
           import pathlib
@@ -109,7 +115,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: build
+    needs: [quality, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -129,7 +135,7 @@ jobs:
 
   publish-crates:
     name: Publish to crates.io
-    needs: build
+    needs: [quality, build]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

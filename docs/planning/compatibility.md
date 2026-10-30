@@ -13,11 +13,11 @@ Ship inline typing with a py.typed marker or valid stubs as required by the dist
 | Surface | Initial target | Gate |
 | --- | --- | --- |
 | Python runtime helpers | CPython 3.11 through 3.14 | CI on each minor; reassess at release |
-| Analyzed source | Explicit configured target version | Parser and semantic fixtures for each claimed version |
+| Analyzed source | Current implementation target: 3.11–3.13 using Ruff target-version parsing | Syntax rejection/acceptance, ranges and semantic fixtures per version; 3.14 remains unclaimed until qualification |
 | PyPy and free-threaded Python | Experimental | Separate runtime and packaging evidence |
-| mypy / Pyright | Pinned versions selected in Phase 0 | Compatibility corpus passes |
+| mypy / Pyright | mypy 1.19.1 / Pyright 1.1.411 | Compatibility corpus passes |
 | Platforms | Linux, macOS and Windows | Install and CLI smoke checks on shipped wheels |
-| Rust toolchain | Stable; MSRV chosen in Phase 0 | Build on pinned minimum and current stable |
+| Rust toolchain | Analyzer MSRV 1.96 selected by Ruff 0.0.12; requalify on dependency updates | Build on pinned minimum and current stable |
 
 This is a proposed support range, not a current release matrix. Interpreter support for the helper package, syntax support in the analyzer, and binary availability must be published separately.
 
@@ -44,3 +44,7 @@ Define deterministic precedence: CLI overrides project configuration, which over
 ## Migration
 
 Adopt lifecycle checks first, baseline existing findings, annotate public boundaries, then increase strictness by module. Preserve ordinary checker usage throughout. Publish changed diagnostics, default severities and migration examples with every release that affects CI behavior.
+
+## Analyzer dependency qualification
+
+The [migration plan](analyzer-migration.md) requires a jointly compatible Ruff parser/AST component set and Salsa version, pinned with Cargo.lock. Evaluate Ruff semantic reuse against actual integration APIs. Record Rust edition/MSRV changes, license notices, target-version parsing and registry availability before adopting dependencies. Update manifests, CI and public source-build instructions together when the qualified toolchain changes. Keep parser acceptance separate from supported contract semantics, especially deferred annotations and lazy type aliases.

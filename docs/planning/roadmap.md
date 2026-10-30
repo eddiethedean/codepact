@@ -4,7 +4,7 @@ Milestones are completion gates, not calendar promises. Estimates should follow 
 
 | Milestone | Deliverables | Dependencies / exit gate |
 | --- | --- | --- |
-| M0 — feasibility | Alias prototype, parser choice, IR v0, model policy | Both APIs normalize one resource contract; compatibility evidence recorded |
+| M0 — feasibility | Ruff AST adapter, declaration identities, Salsa session, IR v0, model policy | Both APIs normalize contracts; rebinding and incremental parity/reuse fixtures pass; AM01–AM06 qualified |
 | M1 — vertical slice | CLI, resource lowering, call summaries, use-after-close | Mixed-interface example and alias/branch counterexamples pass |
 | M2 — useful preview | Cleanup edges, must-use, configuration, JSON output, baseline | Pilot triage and packaging gates met |
 | M3 — ownership experiment | Explicit move, owned handles, lexical shared borrow | Escape handling and known-alias conflicts documented and tested |
@@ -23,7 +23,7 @@ The first preview must name the exact supported resource patterns, parser versio
 
 ## Deferred decisions
 
-Choose parser, native packaging approach, Rust MSRV, alias implementation, Result variance, exact transition syntax and license in M0 or the relevant RFC. Do not reserve roadmap versions as promises of delivery dates.
+Ruff AST and Salsa are the accepted analyzer direction. Qualify exact component versions, semantic primitive reuse, Rust MSRV and Cargo packaging in AM01. MIT and separate Python/Cargo delivery are selected; bundled binaries, Result variance and exact transition syntax need their relevant RFC/evidence. Do not reserve roadmap versions as promises of delivery dates.
 
 ## Versioned release sequence
 

@@ -42,3 +42,7 @@ Examples and onboarding should lead with a real resource bug, its diagnostic, an
 Before a public preview, recruit at least three representative pilot projects and record confirmed bugs, false positives, unsupported cases, first useful result time and triage effort. Proposed preview gate: at least 90% of reviewed definite-violation diagnostics are actionable on the pilot corpus; publish sample size and disagreements.
 
 Track runtime import cost, cold analysis time, incremental latency, memory and interoperability parity. These are goals to measure, not current performance claims. Avoid adoption forecasts based on branding alone.
+
+## Analyzer foundation
+
+The implementation direction is a Ruff AST frontend, TypePact-owned declaration and contract semantics, and Salsa incremental queries following ty's architectural separation. The [migration plan](analyzer-migration.md) makes correctness and observable reuse foundation requirements. This direction improves the basis for contract analysis without promising general Python type-checker coverage or Rust safety guarantees.

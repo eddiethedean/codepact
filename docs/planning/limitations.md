@@ -36,4 +36,8 @@ Optional runtime checks can enforce selected transitions on observed operations.
 
 ## Risk reduction
 
-Keep the first release intraprocedural with explicit summaries and bounded alias tracking. Expand scope with counterexample-driven fixtures, pilot feedback and documented assumptions. Treat unsound acceptance as a correctness bug; treat unsupported analysis as a visible product limitation.
+Keep 0.1 limited to contract inspection with bounded declaration resolution; introduce intraprocedural flow checks and explicit summaries in 0.2. Expand scope with counterexample-driven fixtures, pilot feedback and documented assumptions. Treat unsound acceptance as a correctness bug; treat unsupported analysis as a visible product limitation.
+
+## Frontend and query assurance
+
+Parsing with Ruff does not imply support for every Python construct. Salsa reuse does not imply semantic correctness or convergence. Mark unsupported binding/evaluation forms, dynamic imports and exhausted budgets as incomplete. Preserve unknowns and provenance across cached results. Declaration identities captured by aliases and runtime resource instances are distinct. The [migration plan](analyzer-migration.md) defines the supported boundaries and their qualification requirements.

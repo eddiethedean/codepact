@@ -1,6 +1,6 @@
 # TypePact 0.x release roadmap
 
-Planning baseline: 2026-10-30. **All phases are planned; no release gate has been passed.** The repository currently contains planning documents and a tag-triggered release workflow. Implementation, package manifests and release artifacts remain to be built.
+Planning baseline: 2026-10-30. **The 0.1 analyzer implementation is complete; release qualification remains pending.** The analyzer uses structured Ruff AST declarations and ranges, target-version checks, captured local and exported alias views, and direct absolute imports between supplied modules. A reusable Salsa session tracks per-file parsing, per-module semantic results and semantic-only exports, with cancellation, revisions and bounded work/cache policies. The [Ruff/Salsa migration](docs/planning/analyzer-migration.md) tracks the remaining V01–V24 and release qualification evidence; later phases remain planned.
 
 This document is the authoritative release sequence. The original [feature milestones](docs/planning/roadmap.md) and [implementation phases](docs/planning/implementation.md) remain technical work groupings; they are mapped below rather than treated as version numbers.
 
@@ -15,7 +15,7 @@ This document is the authoritative release sequence. The original [feature miles
 | 0.5.x | Explicit ownership and lexical borrowing | [0.5 plan](docs/planning/phases/0.5-ownership.md) | M3 |
 | 0.6.x | Exclusive access, typestate and effects | [0.6 plan](docs/planning/phases/0.6-advanced-contracts.md) | M4 |
 | 0.7.x | Typed outcomes and finite exhaustiveness | [0.7 plan](docs/planning/phases/0.7-typed-outcomes.md) | M5 runtime portion |
-| 0.8.x | Ecosystem integration and incremental analysis | [0.8 plan](docs/planning/phases/0.8-ecosystem.md) | M5 integration portion |
+| 0.8.x | Ecosystem integration, editor services and persistent caching | [0.8 plan](docs/planning/phases/0.8-ecosystem.md) | M5 integration portion |
 | 0.9.x | Stabilization and 1.0 readiness | [0.9 plan](docs/planning/phases/0.9-stabilization.md) | M5 stability portion |
 
 ## Sequence and dependencies
@@ -33,7 +33,7 @@ flowchart LR
   I --> J["1.0 readiness decision"]
 ~~~
 
-Release acceptance is sequential by default. Independent prototypes may run earlier: Result/Option work can begin after 0.2, and packaging/incrementality spikes should start in 0.1. Early work does not waive dependencies or required gates. Update this roadmap if the sequence or supported scope changes.
+Release acceptance is sequential by default. Independent prototypes may run earlier: Result/Option work can begin after 0.2, and Ruff AST resolution, declaration identities and in-memory Salsa queries are required in 0.1. Early work does not waive dependencies or required gates. Update this roadmap if the sequence or supported scope changes.
 
 ## Version policy
 
@@ -51,9 +51,9 @@ Each phase owner is assigned before work starts; maintainers record the release 
 
 ## First executable release
 
-The refined [0.1 plan](docs/planning/phases/0.1-foundations.md) targets a usable contract-inspection API and CLI, lightweight Python helpers, seven ordered work packages and F01–F08 acceptance gates. Its [prototype specification](docs/planning/phases/0.1/prototype.md) defines normalization and inspection outcomes; its [validation matrix](docs/planning/phases/0.1/validation.md) defines fixtures and candidate evidence. Initial delivery proposes a pure helper wheel plus a separately Cargo-installed inspector, subject to the packaging decision. Lifecycle enforcement remains in 0.2.
+The refined [0.1 plan](docs/planning/phases/0.1-foundations.md) targets a usable contract-inspection API and CLI, lightweight Python helpers, seven ordered work packages and F01–F08 acceptance gates. Its [prototype specification](docs/planning/phases/0.1/prototype.md) defines normalization and inspection outcomes; its [validation matrix](docs/planning/phases/0.1/validation.md) defines fixtures and candidate evidence. Selected initial delivery is a pure helper wheel plus a separately Cargo-installed inspector, subject to clean-artifact qualification. Lifecycle enforcement remains in 0.2.
 
-0.1 must produce a useful foundational preview with matching Python and Rust artifacts. Before tagging it, implement the package manifests and lockfile, select a license, prove the packaging approach and configure registry credentials. The current workflow provides build/publish plumbing; it does not yet implement the full gate suite.
+0.1 must produce a useful foundational preview with matching Python and Rust artifacts. Before tagging it, complete the analyzer migration, qualify the updated dependencies/MSRV and clean artifacts, and verify registry configuration. Existing workflow and fixture results do not establish the expanded gates.
 
 ## 1.0 boundary
 

@@ -1,6 +1,6 @@
 # 0.1 prototype: canonical contract inspection
 
-Status: proposed acceptance specification. Names and command syntax below are targets for implementation, not available functionality.
+Status: proposed acceptance specification. The current prototype implements portions of this interface; Ruff/Salsa migration and the expanded semantics remain requirements, not completed functionality.
 
 ## Developer walkthrough
 
@@ -82,7 +82,7 @@ For equivalence tests, compare base-symbol identities after an explicit fixture 
 
 Support direct imports and imported-name aliases from known TypePact modules, typing.Annotated, module-level class declarations, class decorators, simple type aliases and parameter/return annotations in the chosen syntax versions. Resolve local shadowing before recognizing API symbols.
 
-A small multi-file fixture may resolve direct imports from explicitly provided local modules without executing them. Bound traversal to supplied fixture/project roots; report unresolved modules. Star imports, arbitrary runtime factories, metaclass-generated types, dynamic decorator arguments and computed annotation expressions are unsupported in 0.1.
+Direct imports among explicitly provided local modules are required for the 0.1 query/dependency fixtures. Resolve them without executing modules. Bound traversal to supplied fixture/project roots; report unresolved modules. Star imports, arbitrary runtime factories, metaclass-generated types, dynamic decorator arguments and computed annotation expressions are unsupported in 0.1.
 
 Do not resolve contracts by identifier spelling alone. A local function named resource or a class named Borrowed must remain ordinary Python.
 
@@ -105,3 +105,9 @@ Order contracts by file/span and diagnostics by file/span/code. Output must be i
 Read Python as text. Never import it, evaluate annotation strings or invoke decorators/build hooks during inspection. Limit source bytes, import traversal depth and declaration count with documented defaults selected in WP05. Exceeding a budget must terminate with an explicit incomplete result, not a success claim.
 
 Build hooks used to build TypePact itself are separate from inspection of user programs. Keep fixture files with side effects outside any import-driven test discovery.
+
+## Frontend and session contract
+
+Use the [migration plan](../../analyzer-migration.md) for Ruff AST traversal, binding-event semantics, captured declaration identities and Salsa queries. Multiline declarations, ordinary/triple-quoted strings, comments and calls in function bodies must not change which supported annotations are inspected. Resolve eager alias right-hand sides before rebinding their left-hand names. Earlier views retain their original class and metadata after class/import/function rebinding. Deferred/lazy annotations require explicit supported semantics or incomplete coverage.
+
+A reusable session accepts file and settings updates and returns revision-associated inspection results. The one-shot API wraps it. Updated and fresh sessions must agree on facts, diagnostics and coverage. No-op requests reuse tracked work; unrelated edits do not rerun unrelated semantic queries. Do not expose database-local IDs as persistent public identity.

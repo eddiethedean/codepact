@@ -20,8 +20,8 @@ Effects include state transition, consumption, mutation, escape and possible exc
 
 ## Pipeline
 
-1. Parse source and stubs with spans.
-2. Resolve scopes, symbols, imports, aliases and supported decorators.
+1. Parse source and stubs with the pinned Ruff AST adapter through a Salsa query, preserving spans and target-version diagnostics.
+2. Index scopes, declarations and ordered binding events; resolve imports, captured aliases and supported decorators through tracked queries.
 3. Lower both API surfaces into canonical contracts.
 4. Reject incompatible declarations before flow checking.
 5. Build CFGs including exception and cleanup edges.
@@ -63,3 +63,11 @@ A diagnostic includes primary span, related origin/transition spans, rule code, 
 Default mode reports definite violations and summarizes unsupported boundaries. Strict mode also fails on possible violations and relevant unknown boundaries. Suppressions require rule codes and support reasons; they suppress reporting rather than creating proof.
 
 Proposed CLI exit codes: 0 means no findings above the configured threshold; 1 means such findings exist; 2 means configuration or analysis failure. A zero exit code is not a universal safety guarantee.
+
+## Declaration semantics and incremental queries
+
+The [migration specification](analyzer-migration.md) defines the semantic index and Salsa query graph. Ruff supplies parsed structure through an adapter; TypePact owns declaration, binding and contract identities. Aliases capture resolved declarations and metadata at the appropriate evaluation point. Rebinding a name cannot rewrite earlier captured views. Deferred annotations and unsupported scope forms produce explicit unknowns until specified.
+
+Tracked parsing/index/export/contract queries begin in 0.1. From 0.2 add CFG, summary and body-check queries, with callers depending on relevant callee summaries. Exceptions, effects, ownership and typestate extend those summaries in later phases. Query caching must preserve diagnostics, certainty, provenance and coverage. Separate source-location changes from semantic export changes and test both invalidation paths.
+
+Use explicit cycle recovery: unresolved import cycles are bounded incomplete boundaries in 0.1; recursive summary inference requires a designed fixed point and widening later. Salsa tracks dependencies but does not define Python evaluation, aliasing, termination or soundness.

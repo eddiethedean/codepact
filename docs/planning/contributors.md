@@ -25,3 +25,7 @@ Initially, repository maintainers decide scope and releases, recording disputed 
 ## Maintenance expectations
 
 Every shipped external model needs a responsible owner, upstream version bounds and fixtures. Every public feature needs a reference page, stability status and deprecation policy. Keep open research separate from supported guarantees.
+
+## Analyzer change review
+
+Use the [migration plan](analyzer-migration.md) as the architecture baseline. A query change must identify its tracked inputs, invalidation boundary, cycle/budget behavior and revision lifetime, with fresh/updated-session parity evidence. A binding change must account for previously captured aliases and all supported rebinding forms. Review Ruff/Salsa API upgrades behind the adapter and include MSRV, licensing and registry-build evidence; do not leak upstream or database IDs into public schemas.

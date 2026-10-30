@@ -2,9 +2,9 @@
 
 ## Phase 0: establish executable contracts
 
-Create workspace manifests and lightweight Python package only after the design choices are reviewed. Select a compatible open-source license before distributing implementation. Prototype Annotated aliases and parser support; record results in decisions. Define IR types, source spans, diagnostic schema and fixture format.
+Complete [AM01–AM06](analyzer-migration.md) by qualifying pinned Ruff/Salsa dependencies and packaging, extending AST lowering and declaration/binding coverage, adding per-module query boundaries and cancellation, and collecting candidate evidence. The analyzer implementation is in place; candidate qualification remains. Retain lightweight Python helpers and the canonical contract/diagnostic interface.
 
-Completion: one equivalent pair lowers to the same canonical contract; ordinary checkers retain underlying types; package import does not initialize the analyzer.
+Completion: F01–F08 and V01–V24 pass, including captured-identity regressions, AST parsing cases, fresh/updated query parity and execution-count evidence. Ordinary checkers retain underlying types; package import does not initialize the analyzer.
 
 ## Phase 1: deliver the mixed-interface slice
 
@@ -32,7 +32,7 @@ Completion: feature-specific gates in features.md pass; both frontends produce t
 
 ## Phase 5: prepare stable distribution
 
-Finish platform artifacts, version compatibility, cache invalidation, documentation, editor protocol and release automation. Run the release candidate against the pilot corpus and published benchmark suite.
+Finish platform artifacts, version compatibility, persistent cache qualification, documentation, editor protocol and release automation. Extend the Salsa infrastructure and invalidation tests established in 0.1. Run the release candidate against the pilot corpus and published benchmark suite.
 
 Completion: release checklist is satisfied, remaining limitations are published, and API/diagnostic stability commitments have maintainers.
 

@@ -77,3 +77,7 @@ Result-to-exception conversion requires an explicit error mapping. No automatic 
 Metadata decorators must preserve object identity, signatures, inheritance behavior and descriptors where possible, without wrapping every method. Runtime enforcement is a separate opt-in capability with its own overhead and limitations. Metadata use must not load the native analyzer.
 
 Conflicting metadata is a declaration error; frontend order must not silently choose a winner. Imported aliases and re-exports resolve by symbol identity, not spelling alone. A user-defined function named resource must not receive TypePact semantics.
+
+## Analyzer identity boundary
+
+Public Python spellings lower through the Ruff adapter and TypePact declaration/binding index described in the [migration plan](analyzer-migration.md). Supported eager aliases capture the class and metadata present at assignment; subsequent name rebinding cannot rewrite them. Internal Salsa identities are not public Rust/JSON identities. Preserve the one-shot inspector API while introducing a reusable analysis session; schema changes require an explicit compatibility decision.

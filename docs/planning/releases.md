@@ -2,7 +2,7 @@
 
 ## Artifacts
 
-Target one Python distribution named typepact containing lightweight public APIs and a documented way to run the Rust analyzer. Prefer platform wheels with the CLI if the packaging spike validates this; provide source builds with explicit Rust prerequisites. Publish the reusable Rust engine separately only when its public API is useful and maintainable.
+Deliver a pure Python typepact helper wheel/source archive and a separate reusable typepact Rust crate/CLI installed through Cargo. Bundled CLI wheels remain an optional later packaging decision. The Ruff/Salsa migration must retain reproducible registry-compatible dependencies and documented Rust prerequisites; qualify these before selecting dependency versions.
 
 Confirm ownership and availability of PyPI and crates.io names before publication. Repository access does not imply registry access. Select and add a license before the first distributable release.
 
@@ -53,3 +53,7 @@ Before tagging a release:
 Push the version tag to trigger publication. PyPI uses OIDC with job-scoped `id-token: write`; no PyPI token is required. The Cargo token is exposed only to the crates.io publishing step. Both publishers depend on validation, but publication across registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
 
 This workflow does not create package implementations or publish anything until a matching tag is pushed. Full future quality gates from the planning documents must be wired in as implementation lands.
+
+## Analyzer dependency updates
+
+A Ruff or Salsa update requires a pinned dependency record, license/notice review, MSRV and target-version checks, AST/resolution regressions, incremental parity/reuse evidence and clean Cargo packaging. Never infer a published crate can build from a successful workspace build with Git/path dependencies. Serialize only TypePact-owned public data; database-local IDs and cache schemas carry no public stability guarantee. Changes to external declaration identity require explicit schema and migration review.

@@ -1,0 +1,135 @@
+{
+  "schema_version": 0,
+  "assurance": "contract-inspection-only",
+  "contracts": [
+    {
+      "schema_version": 0,
+      "base_symbol": "examples.contracts.Connection",
+      "display_name": "Connection",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "unspecified",
+      "source": {
+        "file": "examples/contracts.py",
+        "line": 9,
+        "column": 1,
+        "end_line": 9,
+        "end_column": 29
+      },
+      "provenance": [
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "base_symbol": "examples.contracts.Connection",
+      "display_name": "ConnectionResource",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "unspecified",
+      "source": {
+        "file": "examples/contracts.py",
+        "line": 15,
+        "column": 22,
+        "end_line": 15,
+        "end_column": 72
+      },
+      "provenance": [
+        {
+          "origin": "annotated-resource-metadata",
+          "trust": "declared-unverified"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "base_symbol": "examples.contracts.Connection",
+      "display_name": "inspect_pythonic.conn",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "shared",
+      "source": {
+        "file": "examples/contracts.py",
+        "line": 18,
+        "column": 28,
+        "end_line": 18,
+        "end_column": 48
+      },
+      "provenance": [
+        {
+          "origin": "explicit-access-alias",
+          "trust": "declared-unverified"
+        },
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "base_symbol": "examples.contracts.Connection",
+      "display_name": "inspect_explicit.conn",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "shared",
+      "source": {
+        "file": "examples/contracts.py",
+        "line": 22,
+        "column": 28,
+        "end_line": 22,
+        "end_column": 65
+      },
+      "provenance": [
+        {
+          "origin": "annotated-access-metadata",
+          "trust": "declared-unverified"
+        },
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "base_symbol": "examples.contracts.Connection",
+      "display_name": "inspect_resource_view.conn",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "unspecified",
+      "source": {
+        "file": "examples/contracts.py",
+        "line": 26,
+        "column": 33,
+        "end_line": 26,
+        "end_column": 51
+      },
+      "provenance": [
+        {
+          "origin": "python-annotation",
+          "trust": "declared-unverified"
+        },
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "coverage": {
+    "status": "complete-for-supported-subset",
+    "reasons": [],
+    "source_bytes": 630,
+    "declarations": 5
+  }
+}

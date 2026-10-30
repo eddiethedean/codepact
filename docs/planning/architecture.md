@@ -1,54 +1,56 @@
 # Architecture
 
+Status: analyzer implementation complete; qualification pending. The inspector lowers structured Ruff AST declarations through a TypePact-owned binding and contract-view resolver. Salsa tracks per-file frontend results, per-module semantic analysis and semantic-only export summaries. Session cancellation, revisions and work/cache limits are implemented. Full validation and candidate qualification remain open in the [migration plan](analyzer-migration.md).
+
 ## Dependency direction
 
 ~~~mermaid
 flowchart TD
-    S[Python source and stubs] --> P[Parser and name resolution]
-    P --> A[Pythonic contract lowering]
-    P --> B[Explicit contract lowering]
-    A --> I[Canonical semantic IR]
-    B --> I
-    I --> C[CFG and function summaries]
-    C --> E[Shared flow engine]
-    E --> D[Diagnostics and coverage]
-    D --> CLI[CLI]
-    D --> LSP[Future language server]
+    H[Host file and settings inputs] --> DB[Salsa database]
+    DB --> P[Ruff parser and AST adapter]
+    P --> I[Scopes and declaration identities]
+    I --> R[Bindings and imported contract views]
+    R --> A[Pythonic contract lowering]
+    R --> B[Explicit contract lowering]
+    A --> C[Canonical contracts]
+    B --> C
+    C --> F[CFGs and function summaries from 0.2]
+    F --> E[Shared flow engine]
+    C --> D[Diagnostics and coverage]
+    E --> D
+    D --> CLI[CLI and library session]
+    D --> LSP[Editor service from 0.8]
 ~~~
 
-Frontends translate declarations; they do not independently enforce ownership or lifecycle rules. The engine operates on canonical contracts and source provenance.
+Salsa tracks the inputs read by each query in this pipeline. Frontends translate declarations; one shared engine defines lifecycle and ownership semantics. AST nodes, binding events, declaration identities and runtime resource abstractions remain separate concepts.
 
-## Proposed repository layout
+## Component ownership
 
-| Path | Responsibility |
+| Component | Responsibility |
 | --- | --- |
-| python/typepact/ | Lightweight public API, metadata and runtime variants |
-| crates/typepact/ | Canonical model and reusable analysis engine |
-| crates/typepact-cli/ | Filesystem discovery, configuration and command output |
-| crates/typepact-python/ | Optional native bindings if justified |
-| tests/fixtures/ | Input programs, summaries and expected diagnostics |
-| tests/interop/ | Equivalent and mixed-interface cases |
-| benchmarks/ | Versioned corpus definitions and measurement harness |
-| docs/ | Specifications, tutorials, reference and decisions |
+| python/typepact/ | Lightweight runtime declarations and typing metadata |
+| crates/typepact/ frontend adapter | Pinned Ruff parser/AST APIs, ranges, target-version options and syntax diagnostics |
+| Semantic index | TypePact declaration identities, scope/binding rules and captured aliases; evaluate Ruff semantic primitives through AM01 |
+| Salsa database | Explicit file/settings inputs, tracked parsing/index/resolution/inspection queries and revision management |
+| Contract and flow engine | Canonical metadata, provenance and diagnostics; CFGs/summaries from 0.2 |
+| CLI host | File input, configuration, invocation errors and deterministic presentation; current binary remains in the same crate |
+| Future editor host | Reuse the database and semantic APIs with revision-aware updates and cancellation |
+| tests and benchmarks | Semantic counterexamples, incremental parity and execution-count evidence, packaging and performance |
 
-Keep runtime imports independent of native bindings. A standalone Rust CLI packaged with the Python distribution is the initial packaging candidate; prototype wheel delivery before selecting it over extension bindings. Avoid a mandatory Python-to-Rust call for every analyzed node.
+Use internal module boundaries first; additional crates require a demonstrated build or API benefit. Keep Ruff and Salsa internals behind TypePact-owned interfaces. The Python helper package never initializes the analyzer. Delivery is a pure Python wheel plus a separately Cargo-installed Rust inspector; bundled binaries remain a later packaging decision.
 
-## Components and contracts
+## Incremental computation
 
-The parser must preserve source spans, recover from incomplete files, support target-version syntax, and have a compatible license. Evaluate maintained parser libraries before choosing one; record upstream stability and update costs.
+In-memory Salsa queries are required in 0.1. Expose a reusable analysis session and retain the one-shot inspection wrapper. Module exports are small semantic summaries; importers should not depend on irrelevant foreign AST details. Source text, target Python, resolver search paths, configuration and model versions are tracked inputs. Disk reads and module discovery happen in the host and enter the database explicitly.
 
-Name resolution creates module and symbol identities, handles import cycles, and resolves stubs without importing code. Type resolution needs enough ordinary typing information to locate contracts and calls; unsupported types become explicit unknowns.
+Correctness requires identical semantic facts, diagnostics and coverage for fresh and updated sessions. Test unchanged query reuse and dependency isolation separately from output parity. Preserve deterministic output despite internal IDs or execution order. Queries return structured unknown/error/budget outcomes and never execute Python.
 
-Lowering creates versioned semantic IR. Flow analysis consumes CFG edges for normal, exceptional, return and suspension paths. Diagnostics contain stable codes, related locations, certainty, assumptions and suggestions. Presentation layers cannot change semantics.
-
-## Incrementality and caching
-
-Cache parsed modules by content and parser version. Key semantic results by dependency summaries, target Python version, configuration, model database version and analyzer version. Invalidate transitive dependents when public summaries change. A cache miss changes performance only, never diagnostics.
-
-Recursive call components require bounded fixed points and widening. Exceeding a budget yields an incomplete-analysis diagnostic with location and reason. Persisted caches are disposable and must reject incompatible schemas.
+Salsa does not supply Python resolution or solve semantic cycles automatically. Use the bounded cycle policy in the migration plan; introduce recursive summary fixed points only with flow analysis. Persistent storage starts in 0.8 and must reject incompatible/corrupt caches. Do not persist Salsa allocation IDs as external identifiers.
 
 ## Operational constraints
 
-Analyze source and stubs as data. Never evaluate annotation strings, import target modules, execute decorators or run project hooks. Limit source size, recursion, state explosion and cache growth. Honor exclusions and project roots; detect symlink cycles.
+Bound source bytes, graph traversal, declarations, work and retained memory. Attribute results to revisions, support cancellation without publishing stale diagnostics, and keep sessions usable after incomplete work. Analyze source/stubs as data; never evaluate annotations, execute decorators, import target modules or run project hooks. Honor roots/exclusions and detect path cycles when discovery is added in 0.2.
 
-CLI and future editor service share the same engine and configuration resolver. Parallel execution must retain deterministic diagnostic order. Optional telemetry requires explicit opt-in and must exclude source text by default.
+## Dependency qualification
+
+AM01 records exact Ruff/Salsa versions or reviewed revisions, licenses, notices, Rust MSRV and build/archive evidence. Ruff semantic and ty internal crates are not assumed to be stable public integration APIs. Verify Cargo registry delivery before adopting Git-only dependencies. Target Python support follows parser and semantic fixtures, not helper-runtime support or a dependency version alone.

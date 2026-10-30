@@ -2,18 +2,20 @@
 
 **Stronger types. Safer Python.**
 
-TypePact is a planned Python typing and contract analysis project with two first-class interfaces: a Pythonic API and an explicit Rust-inspired API. Both feed one shared semantic analyzer implemented in Rust.
+TypePact provides Pythonic and explicit Rust-inspired contract declarations with a shared Rust inspector.
 
-**Status: design and planning.** No package, analyzer, or CLI is implemented in this repository yet. All APIs and commands below are proposals.
+**Status: 0.1 analyzer implementation complete; candidate qualification remains open.** The inspector uses Ruff AST declarations with source ranges, target-version checks, captured contract views, and direct class or alias imports from explicitly supplied modules. Salsa tracks per-file parsing and per-module semantic summaries, with cancellation, revision-tagged session results, and bounded input/work/cache budgets. The inspector reports declarations only; it does not check resource flow or runtime safety.
 
 Start with the [planning index](docs/planning/README.md), [product vision](docs/planning/vision.md), and [implementation phases](docs/planning/implementation.md).
 
-The first milestone will define a resource with `@resource`, pass it to a function using `Borrowed[T]`, and diagnose use after close across both interfaces. Stronger ownership and lifetime checks follow only when their analysis boundaries are demonstrated.
+The Python package supports Python 3.11 and newer. Install the lightweight helpers with `python -m pip install .`. Build and run the inspector with `cargo run -p typepact -- inspect-contracts --root . examples/contracts.py`. The parser reads source as text and never imports the inspected program.
 
 The product name is **TypePact**; the Python package name remains `typepact`.
 
-Proposed identities: Python distribution `typepact`, explicit namespace `typepact.rust`, Rust engine crate `typepact`, and command `typepact check`. Registry availability and publishing ownership must be confirmed before release.
+Implemented identities: Python distribution `typepact`, explicit namespace `typepact.rust`, Rust crate and command `typepact`. The inspector command is `typepact inspect-contracts`.
 
 See [contributing](CONTRIBUTING.md) for the development plan and [limitations](docs/planning/limitations.md) for what the analyzer can and cannot establish.
+
+The supported syntax and current boundaries are documented in the [0.1 inspector guide](docs/inspector.md). Flow-sensitive use-after-close checking is planned for phase 0.2.
 
 Follow the [0.x release roadmap](ROADMAP.md) for versioned phases and required release gates.

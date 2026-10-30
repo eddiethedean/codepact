@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "typepact"
+version = "0.1.0"
+description = "Lightweight Python contract annotations for TypePact"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "TypePact contributors" }]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Typing :: Typed",
+]
+
+[dependency-groups]
+dev = [
+  "basedpyright==1.40.1",
+  "build==1.2.2.post1",
+  "hatchling==1.27.0",
+  "mypy==1.19.1",
+  "pyright==1.1.411",
+  "ruff==0.17.3",
+  "twine==6.1.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/typepact"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/python/typepact", "/README.md", "/LICENSE", "/pyproject.toml"]
+
+[tool.basedpyright]
+include = ["python/typepact"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+deprecateTypingAliases = true
+enableTypeIgnoreComments = false
+failOnWarnings = true
+reportDeprecated = "error"
+reportAny = "error"
+reportExplicitAny = "error"
+reportUnknownArgumentType = "error"
+reportUnknownMemberType = "error"
+reportUnknownParameterType = "error"
+reportUnknownVariableType = "error"
+reportIgnoreCommentWithoutRule = true
+reportUnnecessaryTypeIgnoreComment = "error"
+
+[tool.ruff]
+target-version = "py311"
+src = ["python"]
+
+[tool.ruff.lint]
+select = ["E", "F", "ANN", "PYI"]
+
+[tool.ruff.format]
+quote-style = "double"

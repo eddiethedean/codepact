@@ -36,3 +36,7 @@ Do not infer “no exceptions” or “pure” from an empty observed effect set
 ## Research boundary
 
 Rust-style trait coherence, associated types, general higher-ranked lifetimes, Send/Sync analogues, lock proofs and whole-program ownership remain research. Each needs an RFC, counterexamples, compatibility evidence and an explicit analysis scope before entering a release milestone.
+
+## Shared analyzer prerequisites
+
+Every analyzer feature uses the [Ruff AST and Salsa architecture](analyzer-migration.md). Before expanding lifecycle or ownership claims, qualify declaration identities, captured aliases, uniform annotation conflict checks and explicit unknown boundaries in 0.1. Each later feature extends tracked semantic summaries and adds fresh/updated parity and dependency-invalidation cases. Parser support, query caching and ordinary typing compatibility do not by themselves establish contract enforcement.

@@ -9,6 +9,8 @@ Planning baseline: 2026-10-30. These documents record the direction from the “
 | [Vision](vision.md) | Audiences, goals, adoption, and success measures |
 | [API design](apis.md) | Pythonic and explicit APIs, interoperability, examples |
 | [Architecture](architecture.md) | Components, dependencies, execution and packaging |
+| [Analyzer migration](analyzer-migration.md) | Ruff AST, declaration identities, Salsa query graph and AM01–AM06 acceptance |
+| [0.1 implementation repair](phases/0.1/remediation.md) | Current-code gap map and file-level R01–R08 execution plan |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
 | [Limitations](limitations.md) | Ownership, aliasing, dynamic code and assurance boundaries |
@@ -30,7 +32,7 @@ Documents use “must” for a proposed acceptance requirement, not a claim of p
 
 ## Repository baseline
 
-The GitHub repository and the existing local project folder were inspected before authoring and were empty. This planning set initializes documentation without replacing existing source or policies. No implementation or dependency manifests are included.
+A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The implementation includes local declaration identities, captured aliases, explicitly supplied direct class and alias imports, typed AST lowering, target-version-aware parsing, per-module Salsa semantic queries, cancellation recovery, revision-tagged session results and bounded work/cache budgets. The complete V01–V24 and F01–F08 qualification matrix remains open; 0.1 candidate qualification remains pending.
 
 ## Versioned release planning
 
