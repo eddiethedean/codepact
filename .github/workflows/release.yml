@@ -141,8 +141,9 @@ jobs:
         env:
           MATURIN_PEP517_ARGS: --locked
         run: |
-          uv run --locked --no-install-workspace python -m build --no-isolation
-          uv run --locked --no-install-workspace python -m build --sdist --no-isolation cli --outdir dist
+          uv sync --locked --no-install-workspace
+          uv run --locked --no-sync python -m build --no-isolation
+          uv run --locked --no-sync python -m build --sdist --no-isolation cli --outdir dist
           cargo publish --package typepact --registry crates-io --locked --dry-run
       - uses: actions/upload-artifact@v7.0.2
         with:
@@ -167,8 +168,9 @@ jobs:
           path: dist
       - name: Require eight CLI wheels, a pure helper wheel and both source archives
         run: |
-          uv run --locked --no-install-workspace python scripts/verify_release_distributions.py dist --version '${{ needs.metadata.outputs.version }}'
-          uv run --locked --no-install-workspace python -m twine check --strict dist/*
+          uv sync --locked --no-install-workspace
+          uv run --locked --no-sync python scripts/verify_release_distributions.py dist --version '${{ needs.metadata.outputs.version }}'
+          uv run --locked --no-sync python -m twine check --strict dist/*
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: verified-typepact-distributions
