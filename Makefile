@@ -51,7 +51,7 @@ check-msrv:
 
 check-rust-package:
 	@set -eu; \
-	package_metadata="$$($(CARGO) metadata --format-version 1 --no-deps | $(UV) run --locked python -c 'import json, sys; metadata = json.load(sys.stdin); package = next(item for item in metadata["packages"] if item["name"] == "typepact"); print(metadata["target_directory"]); print(package["version"])')"; \
+	package_metadata="$$($(CARGO) metadata --format-version 1 --no-deps | python3 -c 'import json, sys; metadata = json.load(sys.stdin); package = next(item for item in metadata["packages"] if item["name"] == "typepact"); print(metadata["target_directory"]); print(package["version"])')"; \
 	target_directory="$$(printf '%s\n' "$$package_metadata" | sed -n '1p')"; \
 	package_version="$$(printf '%s\n' "$$package_metadata" | sed -n '2p')"; \
 	$(CARGO) package -p typepact --locked --allow-dirty; \
