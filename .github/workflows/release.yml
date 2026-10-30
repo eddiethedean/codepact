@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and build release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.11'
+
+      - name: Validate tag and package layout
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          tag = os.environ["RELEASE_TAG"]
+          if not re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag):
+              raise SystemExit("Release tags must have the form v1.2.3 (no prerelease suffix).")
+          for manifest in ("pyproject.toml", "Cargo.toml", "Cargo.lock"):
+              if not pathlib.Path(manifest).is_file():
+                  raise SystemExit(f"Missing {manifest}: implement package manifests and commit Cargo.lock before releasing.")
+          PY
+
+      - name: Set up Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Install Python build tools
+        run: python -m pip install --upgrade build twine packaging
+
+      # Uses the build backend configured in the root pyproject.toml.
+      # Native wheels require a PyPI-compatible backend/build configuration.
+      - name: Build Python distributions
+        run: python -m build
+
+      - name: Check Python distribution metadata
+        run: python -m twine check --strict dist/*
+
+      - name: Check package names and versions against tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+          from packaging.utils import parse_sdist_filename, parse_wheel_filename
+          from packaging.version import Version
+
+          expected = os.environ["RELEASE_TAG"][1:]
+          distributions = list(pathlib.Path("dist").iterdir())
+          if not any(p.suffix == ".whl" for p in distributions):
+              raise SystemExit("No wheel was built.")
+          if not any(p.name.endswith(".tar.gz") for p in distributions):
+              raise SystemExit("No source distribution was built.")
+          for path in distributions:
+              if path.suffix == ".whl":
+                  name, version, _, _ = parse_wheel_filename(path.name)
+              else:
+                  name, version = parse_sdist_filename(path.name)
+              if name != "typepact" or version != Version(expected):
+                  raise SystemExit(f"{path.name} does not match typepact {expected}.")
+
+          metadata = json.loads(subprocess.check_output(
+              ["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"],
+              text=True,
+          ))
+          packages = [
+              p for p in metadata["packages"]
+              if p["id"] in metadata["workspace_members"] and p["name"] == "typepact"
+          ]
+          if len(packages) != 1 or packages[0]["version"] != expected:
+              raise SystemExit(f"The workspace must contain exactly one typepact crate at version {expected}.")
+          PY
+
+      - name: Verify crate can be packaged and built
+        run: cargo publish --package typepact --registry crates-io --locked --dry-run
+
+      - name: Store Python distributions
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/typepact
+    permissions:
+      id-token: write
+    steps:
+      - name: Download Python distributions
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: python-distributions
+          path: dist/
+
+      - name: Publish using PyPI trusted publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Publish typepact crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::Set the CARGO_REGISTRY_TOKEN repository secret before releasing."
+            exit 1
+          fi
+          cargo publish --package typepact --registry crates-io --locked

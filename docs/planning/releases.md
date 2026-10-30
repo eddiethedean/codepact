@@ -37,3 +37,19 @@ Treat analyzer crashes, unsound acceptance in supported scope, and destructive s
 ## Release communication
 
 Every release note states added rules, behavior changes, support versions, known limitations, performance evidence and migration steps. Separate experimental features from stable ones in both CLI help and reference documentation.
+
+## Tag-triggered GitHub workflow
+
+The workflow `.github/workflows/release.yml` runs on candidate version tags and validates the exact stable form `v1.2.3`. It builds the Python package, checks distribution metadata and matching versions, and runs `cargo publish --dry-run` before enabling either publisher.
+
+Before tagging a release:
+
+- Add a buildable root `pyproject.toml` with a configured build backend, a root `Cargo.toml` (package or workspace) containing the `typepact` crate, and a committed `Cargo.lock`.
+- Set both package versions to the tag version without the leading `v`.
+- Configure the GitHub `pypi` environment to match the PyPI trusted publisher for `eddiethedean/typepact`, workflow `release.yml`, environment `pypi`.
+- Add the repository Actions secret `CARGO_REGISTRY_TOKEN` with permission to publish the `typepact` crate.
+- Ensure the backend produces a PyPI-compatible wheel and source distribution. The initial workflow builds on Ubuntu; a native extension or bundled native CLI will need portable wheel builds for the supported platform matrix before release.
+
+Push the version tag to trigger publication. PyPI uses OIDC with job-scoped `id-token: write`; no PyPI token is required. The Cargo token is exposed only to the crates.io publishing step. Both publishers depend on validation, but publication across registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
+
+This workflow does not create package implementations or publish anything until a matching tag is pushed. Full future quality gates from the planning documents must be wired in as implementation lands.
