@@ -1,4 +1,4 @@
-# Typepact 0.x release roadmap
+# TypePact 0.x release roadmap
 
 Planning baseline: 2026-10-30. **All phases are planned; no release gate has been passed.** The repository currently contains planning documents and a tag-triggered release workflow. Implementation, package manifests and release artifacts remain to be built.
 

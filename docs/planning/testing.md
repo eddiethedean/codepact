@@ -25,7 +25,7 @@ Every reported bug should add the smallest relevant fixture and, where meaningfu
 
 Test that equivalent syntax lowers to equivalent semantic facts, renaming locals preserves results, diagnostic order is deterministic, and cached versus fresh analysis agrees. Adding an unknown path must not strengthen certainty. Use generated small CFGs to test joins and termination.
 
-Ordinary checkers validate base typing compatibility, not Typepact ownership semantics. Differential results are evidence to investigate, not a substitute oracle for new rules.
+Ordinary checkers validate base typing compatibility, not TypePact ownership semantics. Differential results are evidence to investigate, not a substitute oracle for new rules.
 
 ## Performance
 

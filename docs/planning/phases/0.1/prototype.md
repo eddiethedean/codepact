@@ -56,7 +56,7 @@ Borrowed[Connection] and Annotated[Connection, SharedBorrow()] are the proposed 
 
 A borrowed parameter can combine the class's default resource contract with a shared-access dimension. Resource metadata on an alias can also be composed with access metadata for that alias. Lower each source independently, then merge compatible dimensions in one engine.
 
-Contradictory lifecycle metadata or multiple incompatible access qualifiers must yield a declaration error with both declaration locations. Do not select metadata based on import/decorator order. Unrecognized metadata remains opaque and does not acquire Typepact meaning.
+Contradictory lifecycle metadata or multiple incompatible access qualifiers must yield a declaration error with both declaration locations. Do not select metadata based on import/decorator order. Unrecognized metadata remains opaque and does not acquire TypePact meaning.
 
 ## Canonical fields
 
@@ -80,7 +80,7 @@ For equivalence tests, compare base-symbol identities after an explicit fixture 
 
 ## Supported resolution subset
 
-Support direct imports and imported-name aliases from known Typepact modules, typing.Annotated, module-level class declarations, class decorators, simple type aliases and parameter/return annotations in the chosen syntax versions. Resolve local shadowing before recognizing API symbols.
+Support direct imports and imported-name aliases from known TypePact modules, typing.Annotated, module-level class declarations, class decorators, simple type aliases and parameter/return annotations in the chosen syntax versions. Resolve local shadowing before recognizing API symbols.
 
 A small multi-file fixture may resolve direct imports from explicitly provided local modules without executing them. Bound traversal to supplied fixture/project roots; report unresolved modules. Star imports, arbitrary runtime factories, metaclass-generated types, dynamic decorator arguments and computed annotation expressions are unsupported in 0.1.
 
@@ -104,4 +104,4 @@ Order contracts by file/span and diagnostics by file/span/code. Output must be i
 
 Read Python as text. Never import it, evaluate annotation strings or invoke decorators/build hooks during inspection. Limit source bytes, import traversal depth and declaration count with documented defaults selected in WP05. Exceeding a budget must terminate with an explicit incomplete result, not a success claim.
 
-Build hooks used to build Typepact itself are separate from inspection of user programs. Keep fixture files with side effects outside any import-driven test discovery.
+Build hooks used to build TypePact itself are separate from inspection of user programs. Keep fixture files with side effects outside any import-driven test discovery.

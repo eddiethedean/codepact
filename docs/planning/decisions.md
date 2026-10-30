@@ -4,7 +4,7 @@
 
 | ID | Decision | Rationale |
 | --- | --- | --- |
-| D001 | Typepact identity, typepact.rust explicit namespace | One project usable by Python and Rust-oriented developers |
+| D001 | TypePact product name, `typepact` Python package, `typepact.rust` explicit namespace | One project usable by Python and Rust-oriented developers |
 | D002 | One canonical semantic engine | Equivalent declarations need consistent behavior |
 | D003 | Pythonic and explicit APIs are first-class | Teams can mix styles across boundaries |
 | D004 | Gradual, opt-in adoption | Existing Python applications must remain usable |
@@ -37,7 +37,7 @@
 
 ## Technical references
 
-These sources ground existing language behavior; Typepact's designs and support commitments remain proposals. Consult current specifications during implementation and pin tool versions in compatibility reports.
+These sources ground existing language behavior; TypePact's designs and support commitments remain proposals. Consult current specifications during implementation and pin tool versions in compatibility reports.
 
 - [Python typing qualifiers and Annotated](https://typing.python.org/en/latest/spec/qualifiers.html): metadata interpretation and underlying typing behavior.
 - [Distributing Python type information](https://typing.python.org/en/latest/spec/distributing.html): stubs, typing markers and compatibility constraints.

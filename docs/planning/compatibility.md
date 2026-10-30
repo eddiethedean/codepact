@@ -2,7 +2,7 @@
 
 ## Python typing
 
-Use standard types, Protocol, unions, generics and Annotated metadata where possible. The Python typing specification permits tools to interpret Annotated metadata while consumers that do not understand it use the underlying type. Typepact-specific enforcement still requires Typepact.
+Use standard types, Protocol, unions, generics and Annotated metadata where possible. The Python typing specification permits tools to interpret Annotated metadata while consumers that do not understand it use the underlying type. TypePact-specific enforcement still requires TypePact.
 
 Prototype public aliases against pinned mypy and Pyright versions before freezing syntax. Include imported aliases, re-exports, nested generics, forward references, overloads and annotation evaluation behavior. Do not promise support because an annotation happens to import successfully.
 

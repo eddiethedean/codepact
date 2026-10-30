@@ -1,6 +1,6 @@
-# Contributing to Typepact
+# Contributing to TypePact
 
-Typepact is currently a planning project. Start with the [planning index](docs/planning/README.md), [implementation phases](docs/planning/implementation.md) and [contributor plan](docs/planning/contributors.md).
+TypePact is currently a planning project. Start with the [planning index](docs/planning/README.md), [implementation phases](docs/planning/implementation.md) and [contributor plan](docs/planning/contributors.md).
 
 Small improvements to specifications, examples and counterexamples are welcome. Before changing public semantics, describe the use case, canonical contract, compatibility impact and both interface expressions.
 

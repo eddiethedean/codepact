@@ -1,4 +1,4 @@
-# Typepact planning index
+# TypePact planning index
 
 Planning baseline: 2026-10-30. These documents record the direction from the “Design Rust Typing Python” discussion and concrete proposals for implementation. They do not assert that features exist.
 
@@ -22,7 +22,7 @@ Planning baseline: 2026-10-30. These documents record the direction from the “
 
 ## Status vocabulary
 
-**Direction** is established by the project discussion: Typepact branding; one semantic engine; two interoperable interfaces; gradual adoption; compatibility with ordinary Python typing.
+**Direction** is established by the project discussion: TypePact branding and `typepact` Python package name; one semantic engine; two interoperable interfaces; gradual adoption; compatibility with ordinary Python typing.
 
 **Proposal** is an implementable starting point awaiting prototype evidence. Public API spellings, package layout, support versions and milestone targets are proposals. **Research** covers capabilities whose feasibility is unresolved. A feature becomes **implemented** only when code, tests, documentation and release notes establish its supported scope.
 
@@ -30,7 +30,7 @@ Documents use “must” for a proposed acceptance requirement, not a claim of p
 
 ## Repository baseline
 
-The GitHub repository and the existing local Typepact folder were inspected before authoring and were empty. This planning set initializes documentation without replacing existing source or policies. No implementation or dependency manifests are included.
+The GitHub repository and the existing local project folder were inspected before authoring and were empty. This planning set initializes documentation without replacing existing source or policies. No implementation or dependency manifests are included.
 
 ## Versioned release planning
 
