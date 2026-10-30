@@ -150,7 +150,7 @@ fn inspect_inner(
             );
             continue;
         };
-        let mut state = FileState::new(&file.module);
+        let mut state = FileState::new(python_version);
         state.future_annotations = declarations.iter().any(|declaration| {
             matches!(
                 declaration,
@@ -767,6 +767,7 @@ pub(crate) fn combine_project(
 
 #[derive(Default)]
 struct FileState {
+    python_version: String,
     future_annotations: bool,
     imports: BTreeMap<String, String>,
     unresolved_imports: BTreeMap<String, UnresolvedImport>,
@@ -783,8 +784,11 @@ struct UnresolvedImport {
 }
 
 impl FileState {
-    fn new(_module: &str) -> Self {
-        Self::default()
+    fn new(python_version: &str) -> Self {
+        Self {
+            python_version: python_version.into(),
+            ..Self::default()
+        }
     }
 
     fn clear_name(&mut self, name: &str, module: &str, bindings: &mut BTreeMap<String, String>) {
@@ -1037,7 +1041,7 @@ fn lower_class(
             unsupported_decorator.get_or_insert(decorator.range);
             continue;
         };
-        if !is_identifier(&method) {
+        if !crate::is_python_identifier(&method, &state.python_version) {
             declaration_error(
                 result,
                 file,
@@ -1218,6 +1222,7 @@ fn lower_assignment(
         &parsed,
         inherited_access,
         inherited_lifecycle,
+        &state.python_version,
     ) else {
         state.clear_name(name, &file.module, bindings);
         return;
@@ -1293,6 +1298,7 @@ fn merge_annotation_metadata(
     parsed: &ParsedAnnotation,
     inherited_access: Option<(Access, Span)>,
     inherited_lifecycle: Option<(String, Span)>,
+    python_version: &str,
 ) -> Option<ResolvedMetadata> {
     if parsed.has_resource && parsed.closed_by.is_none() {
         unsupported(
@@ -1306,7 +1312,7 @@ fn merge_annotation_metadata(
     if parsed
         .closed_by
         .as_ref()
-        .is_some_and(|closed_by| !is_identifier(closed_by))
+        .is_some_and(|closed_by| !crate::is_python_identifier(closed_by, python_version))
     {
         declaration_error(
             result,
@@ -1505,6 +1511,7 @@ fn lower_function_annotation(
         &parsed,
         inherited_access,
         inherited_lifecycle,
+        &state.python_version,
     ) else {
         return;
     };
@@ -1892,12 +1899,6 @@ fn add_contract(result: &mut Inspection, contract: Contract) {
     }
     result.contracts.push(contract);
     result.coverage.declarations += 1;
-}
-
-fn is_identifier(value: &str) -> bool {
-    let mut chars = value.chars();
-    matches!(chars.next(), Some(character) if character == '_' || unicode_ident::is_xid_start(character))
-        && chars.all(|character| character == '_' || unicode_ident::is_xid_continue(character))
 }
 
 fn unsupported(result: &mut Inspection, file: &SourceFile, range: SourceRange, message: &str) {

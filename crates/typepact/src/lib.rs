@@ -4,6 +4,8 @@ pub use db::{
     AnalysisCancelled, AnalysisSession, CancellationToken, SessionInputError, SessionInspection,
 };
 mod frontend;
+mod identifiers;
+pub use identifiers::is_python_identifier;
 mod model;
 mod semantic;
 mod source;

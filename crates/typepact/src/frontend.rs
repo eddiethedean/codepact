@@ -160,7 +160,15 @@ impl<'a> Visitor<'a> for NamedExpressionVisitor {
             return;
         }
         self.depth += 1;
-        walk_expr(self, expression);
+        if let Expr::Lambda(lambda) = expression {
+            // Creating a lambda evaluates its defaults, but its body has its own
+            // scope and runs only when called.
+            if let Some(parameters) = &lambda.parameters {
+                self.visit_parameters(parameters);
+            }
+        } else {
+            walk_expr(self, expression);
+        }
         self.depth -= 1;
     }
 }

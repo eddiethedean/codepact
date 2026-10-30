@@ -15,6 +15,7 @@ check-rust:
 	$(CARGO) test --workspace --locked
 
 check-python:
+	$(PYTHON) scripts/generate_identifier_tables.py --check
 	PYTHONPATH=python $(PYTHON) -m unittest discover -s tests/python -v
 	basedpyright
 	ruff check python/typepact scripts

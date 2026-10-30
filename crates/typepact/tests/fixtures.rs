@@ -98,6 +98,7 @@ fn module_level_walrus_expressions_invalidate_stale_bindings() {
     let sources = [
         "from typepact.rust import Borrowed\nclass C: pass\nvalue = (C := int)\ndef use(value: Borrowed[C]): pass\n",
         "from typepact.rust import Borrowed\nclass C: pass\ndef initialize(value: Borrowed[C] = (C := int)): pass\ndef use(value: Borrowed[C]): pass\n",
+        "from typepact.rust import Borrowed\nclass C: pass\ndef initialize(factory=lambda value=(C := int): value): pass\ndef use(value: Borrowed[C]): pass\n",
     ];
     for (index, source) in sources.iter().enumerate() {
         let module = format!("walrus_{index}");
@@ -112,6 +113,61 @@ fn module_level_walrus_expressions_invalidate_stale_bindings() {
             .contracts
             .iter()
             .any(|contract| contract.display_name == "use.value"));
+    }
+}
+
+#[test]
+fn walrus_in_a_lambda_body_does_not_invalidate_module_bindings() {
+    let source = "from typepact.rust import Borrowed\nclass C: pass\ndef use(value: Borrowed[C], factory=lambda: (C := int)): pass\ndef later(value: Borrowed[C]): pass\n";
+    let result = inspect(&[SourceFile::new("lambda.py", "lambda", source)], "3.11");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    for name in ["use.value", "later.value"] {
+        assert!(
+            result.contracts.iter().any(|contract| {
+                contract.display_name == name && contract.base_symbol == "lambda.C"
+            }),
+            "{result:#?}"
+        );
+    }
+}
+
+#[test]
+fn lifecycle_identifiers_follow_the_selected_python_unicode_version() {
+    // Unicode 15.0 Kawi, Unicode 15.1 CJK Extension I, and Unicode 16.0 Cyrillic.
+    for (method, valid_versions) in [
+        ("\u{11f02}", &["3.12", "3.13"][..]),
+        ("a\u{11f00}", &["3.12", "3.13"][..]),
+        ("\u{2ebf0}", &["3.13"][..]),
+        ("\u{1c89}", &[][..]),
+    ] {
+        let sources = [
+            format!("from typepact import resource\n@resource(closed_by='{method}')\nclass C: pass\n"),
+            format!("from typing import Annotated\nfrom typepact import Resource\nclass C: pass\nView = Annotated[C, Resource(closed_by='{method}')]\n"),
+            format!("from typing import Annotated\nfrom typepact import Resource\nclass C: pass\ndef use(value: Annotated[C, Resource(closed_by='{method}')]): pass\n"),
+        ];
+        for version in ["3.11", "3.12", "3.13"] {
+            let valid = valid_versions.contains(&version);
+            for source in &sources {
+                let result = inspect(&[SourceFile::new("unicode.py", "unicode", source)], version);
+                assert_eq!(
+                    result.coverage.status == "complete-for-supported-subset",
+                    valid,
+                    "target {version}, method {method:?}: {result:#?}"
+                );
+                assert_eq!(!result.contracts.is_empty(), valid, "{result:#?}");
+                assert_eq!(
+                    result
+                        .diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.code == "TP4002"),
+                    !valid,
+                    "{result:#?}"
+                );
+            }
+        }
     }
 }
 

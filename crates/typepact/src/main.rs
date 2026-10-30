@@ -5,13 +5,13 @@ use std::{
     path::{Component, Path, PathBuf},
     process::ExitCode,
 };
-use typepact::{inspect, SourceFile, DEFAULT_MAX_SOURCE_BYTES};
+use typepact::{inspect, is_python_identifier, SourceFile, DEFAULT_MAX_SOURCE_BYTES};
 
 fn usage() {
     eprintln!("Usage: typepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] [--json] FILE...\n       typepact --version\n\nInspect declarations without importing or executing Python source.\nWithout --root, each file's stem is its logical module name; use --root for packages and multi-file imports.");
 }
 
-fn module_from_relative_path(path: &Path) -> Result<String, String> {
+fn module_from_relative_path(path: &Path, python_version: &str) -> Result<String, String> {
     let mut components: Vec<String> = path
         .components()
         .filter_map(|component| match component {
@@ -38,19 +38,16 @@ fn module_from_relative_path(path: &Path) -> Result<String, String> {
     } else {
         return Err(format!("expected a .py file: {}", path.display()));
     }
-    if components.iter().any(|part| !is_identifier(part)) {
+    if components
+        .iter()
+        .any(|part| !is_python_identifier(part, python_version))
+    {
         return Err(format!(
             "path does not map to valid Python module components: {}",
             path.display()
         ));
     }
     Ok(components.join("."))
-}
-
-fn is_identifier(value: &str) -> bool {
-    let mut chars = value.chars();
-    matches!(chars.next(), Some(c) if c == '_' || unicode_ident::is_xid_start(c))
-        && chars.all(|c| c == '_' || unicode_ident::is_xid_continue(c))
 }
 
 fn main() -> ExitCode {
@@ -177,19 +174,19 @@ fn main() -> ExitCode {
             },
         };
         let module = match if root.is_some() {
-            module_from_relative_path(&logical_path)
+            module_from_relative_path(&logical_path, &python_version)
         } else if logical_path == Path::new("__init__.py") {
             canonical_path
                 .parent()
                 .and_then(Path::file_name)
                 .map(|name| name.to_string_lossy().into_owned())
-                .filter(|name| is_identifier(name))
+                .filter(|name| is_python_identifier(name, &python_version))
                 .ok_or_else(|| "cannot derive package module name".to_string())
         } else {
             logical_path
                 .file_stem()
                 .map(|stem| stem.to_string_lossy().into_owned())
-                .filter(|stem| is_identifier(stem))
+                .filter(|stem| is_python_identifier(stem, &python_version))
                 .ok_or_else(|| format!("cannot derive module name from {}", logical_path.display()))
         } {
             Ok(module) => module,

@@ -9,9 +9,15 @@ fn fixture_root() -> PathBuf {
 }
 
 fn run(root: &PathBuf, paths: &[&str]) -> Output {
+    run_for_version(root, paths, "3.11")
+}
+
+fn run_for_version(root: &PathBuf, paths: &[&str], version: &str) -> Output {
     Command::new(env!("CARGO_BIN_EXE_typepact"))
         .current_dir(root)
         .arg("inspect-contracts")
+        .arg("--python-version")
+        .arg(version)
         .arg("--root")
         .arg(root)
         .args(paths)
@@ -81,5 +87,25 @@ fn unicode_module_file_names_are_valid_python_identifiers() {
         String::from_utf8_lossy(&output.stderr)
     );
 
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unicode_module_names_follow_the_selected_python_target() {
+    let root = fixture_root().with_extension("unicode-version");
+    fs::create_dir_all(&root).unwrap();
+    let kawi = "\u{11f02}.py";
+    let cyrillic = "\u{1c89}.py";
+    fs::write(root.join(kawi), "class C: pass\n").unwrap();
+    fs::write(root.join(cyrillic), "class C: pass\n").unwrap();
+    for version in ["3.11", "3.12", "3.13"] {
+        let output = run_for_version(&root, &[kawi], version);
+        assert_eq!(
+            output.status.code(),
+            Some(if version == "3.11" { 2 } else { 0 })
+        );
+        let output = run_for_version(&root, &[cyrillic], version);
+        assert_eq!(output.status.code(), Some(2));
+    }
     fs::remove_dir_all(root).unwrap();
 }

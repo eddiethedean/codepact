@@ -21,6 +21,8 @@ Ship inline typing with a py.typed marker or valid stubs as required by the dist
 
 This is a proposed support range, not a current release matrix. Interpreter support for the helper package, syntax support in the analyzer, and binary availability must be published separately.
 
+Identifier validation follows the analyzed source target: CPython 3.11 uses Unicode 14.0, 3.12 uses 15.0, and 3.13 uses 15.1. The Rust crate includes tables generated from each qualified CPython runtime by `scripts/generate_identifier_tables.py`. The Python checks compare the corresponding table with the running interpreter on supported analysis versions. Lifecycle method strings and CLI module names use the same version-specific rules; inspection does not start Python to validate them.
+
 ## Ecosystem integration
 
 Pydantic and FastAPI compatibility begins with ordinary annotation handling, introspection and schema generation fixtures. Metadata must not silently become runtime validation. Result and Option are runtime wrappers and need explicit serialization adapters; no universal framework integration is implied.
