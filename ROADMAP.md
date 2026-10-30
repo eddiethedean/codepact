@@ -51,6 +51,8 @@ Each phase owner is assigned before work starts; maintainers record the release 
 
 ## First executable release
 
+The refined [0.1 plan](docs/planning/phases/0.1-foundations.md) targets a usable contract-inspection API and CLI, lightweight Python helpers, seven ordered work packages and F01–F08 acceptance gates. Its [prototype specification](docs/planning/phases/0.1/prototype.md) defines normalization and inspection outcomes; its [validation matrix](docs/planning/phases/0.1/validation.md) defines fixtures and candidate evidence. Initial delivery proposes a pure helper wheel plus a separately Cargo-installed inspector, subject to the packaging decision. Lifecycle enforcement remains in 0.2.
+
 0.1 must produce a useful foundational preview with matching Python and Rust artifacts. Before tagging it, implement the package manifests and lockfile, select a license, prove the packaging approach and configure registry credentials. The current workflow provides build/publish plumbing; it does not yet implement the full gate suite.
 
 ## 1.0 boundary
