@@ -24,3 +24,7 @@ The first preview must name the exact supported resource patterns, parser versio
 ## Deferred decisions
 
 Choose parser, native packaging approach, Rust MSRV, alias implementation, Result variance, exact transition syntax and license in M0 or the relevant RFC. Do not reserve roadmap versions as promises of delivery dates.
+
+## Versioned release sequence
+
+The [root ROADMAP](../../ROADMAP.md) is authoritative for 0.x release order and acceptance. M0–M5 above remain feature groupings; the root roadmap maps them to 0.1–0.9 with dedicated phase plans and required gates.

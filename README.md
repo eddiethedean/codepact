@@ -13,3 +13,5 @@ The first milestone will define a resource with `@resource`, pass it to a functi
 Proposed identities: Python distribution `typepact`, explicit namespace `typepact.rust`, Rust engine crate `typepact`, and command `typepact check`. Registry availability and publishing ownership must be confirmed before release.
 
 See [contributing](CONTRIBUTING.md) for the development plan and [limitations](docs/planning/limitations.md) for what the analyzer can and cannot establish.
+
+Follow the [0.x release roadmap](ROADMAP.md) for versioned phases and required release gates.

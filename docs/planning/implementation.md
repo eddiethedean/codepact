@@ -41,3 +41,7 @@ Completion: release checklist is satisfied, remaining limitations are published,
 Each implementation issue should name the user problem, proposed contract, affected IR fields, supported scope, negative examples, diagnostic behavior, compatibility impact, fixtures, documentation and completion evidence.
 
 Do not convert every future idea into a mandatory dependency. Keep each change small enough to review one semantic extension at a time.
+
+## Release mapping
+
+These engineering phases group work by subsystem. The [root ROADMAP](../../ROADMAP.md) maps them to versioned 0.x releases and defines the dependency order. Use the linked phase plans and [common gates](release-gates.md) for release acceptance.

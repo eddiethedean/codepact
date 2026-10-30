@@ -31,3 +31,7 @@ Documents use “must” for a proposed acceptance requirement, not a claim of p
 ## Repository baseline
 
 The GitHub repository and the existing local Typepact folder were inspected before authoring and were empty. This planning set initializes documentation without replacing existing source or policies. No implementation or dependency manifests are included.
+
+## Versioned release planning
+
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. Each linked phase has its own work packages and numbered gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate. All phase gates currently remain pending.
