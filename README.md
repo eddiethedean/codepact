@@ -8,7 +8,7 @@ TypePact provides Pythonic and explicit Rust-inspired contract declarations with
 
 Start with the [planning index](docs/planning/README.md), [product vision](docs/planning/vision.md), and [implementation phases](docs/planning/implementation.md).
 
-The Python package supports Python 3.11 and newer. Install the lightweight helpers with `python -m pip install .`. Build and run the inspector with `cargo run -p typepact -- inspect-contracts --root . examples/contracts.py`. The parser reads source as text and never imports the inspected program.
+The Python package supports Python 3.11 and newer. Install the pure Python helpers and their native CLI dependency together with `uv pip install typepact`, then run `typepact inspect-contracts --root . examples/contracts.py`. The typepact wheel remains universal pure Python; typepact-cli provides the platform executable. Only CLI source builds require Rust 1.96+. For development, use `uv sync --locked` and `uv run typepact inspect-contracts --root . examples/contracts.py`. The parser reads source as text and never imports the inspected program.
 
 The product name is **TypePact**; the Python package name remains `typepact`.
 

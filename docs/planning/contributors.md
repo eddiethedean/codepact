@@ -29,3 +29,7 @@ Every shipped external model needs a responsible owner, upstream version bounds 
 ## Analyzer change review
 
 Use the [migration plan](analyzer-migration.md) as the architecture baseline. A query change must identify its tracked inputs, invalidation boundary, cycle/budget behavior and revision lifetime, with fresh/updated-session parity evidence. A binding change must account for previously captured aliases and all supported rebinding forms. Review Ruff/Salsa API upgrades behind the adapter and include MSRV, licensing and registry-build evidence; do not leak upstream or database IDs into public schemas.
+
+## Python helper and CLI distributions
+
+Use uv sync --locked and uv run --locked make check. The uv workspace builds typepact with Hatchling and typepact-cli with maturin. Contributors need Rust 1.96+ for CLI source/development builds; the helper package remains pure Python. The release workflow cross-builds platform wheels; changes to distribution must preserve helpers, typing metadata and installed native command.

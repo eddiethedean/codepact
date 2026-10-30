@@ -17,8 +17,8 @@ check-rust:
 check-python:
 	PYTHONPATH=python $(PYTHON) -m unittest discover -s tests/python -v
 	basedpyright
-	ruff check python/typepact
-	ruff format --check python/typepact
+	ruff check python/typepact scripts
+	ruff format --check python/typepact scripts
 	MYPYPATH=python mypy --strict tests/checkers/valid.py
 	@diagnostics="$$(mktemp)"; \
 	if MYPYPATH=python mypy --strict tests/checkers/invalid.py >"$$diagnostics" 2>&1; then \
@@ -39,17 +39,7 @@ check-python:
 	rm -f "$$diagnostics"
 
 check-python-package:
-	@set -eu; \
-	tmp="$$(mktemp -d)"; \
-	trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
-	mkdir -p "$$tmp/dist"; \
-	$(PYTHON) -m build --no-isolation --outdir "$$tmp/dist"; \
-	$(PYTHON) -m twine check --strict "$$tmp"/dist/*; \
-	mkdir -p "$$tmp/wheel" "$$tmp/sdist"; \
-	$(UV) pip install --python "$$($(PYTHON) -c 'import sys; print(sys.executable)')" --no-deps --no-build-isolation --target "$$tmp/wheel" "$$tmp"/dist/*.whl; \
-	PYTHONPATH="$$tmp/wheel" $(PYTHON) -c 'import importlib.metadata as metadata, sys, typepact; assert metadata.metadata("typepact")["Requires-Python"] == ">=3.11"; assert "typepact._native" not in sys.modules; print(typepact.__file__)'; \
-	$(UV) pip install --python "$$($(PYTHON) -c 'import sys; print(sys.executable)')" --no-deps --no-build-isolation --target "$$tmp/sdist" "$$tmp"/dist/*.tar.gz; \
-	PYTHONPATH="$$tmp/sdist" $(PYTHON) -c 'import sys, typepact; assert "typepact._native" not in sys.modules; print(typepact.__file__)'
+	$(PYTHON) scripts/check_python_package.py
 
 check-dependencies:
 	cargo audit

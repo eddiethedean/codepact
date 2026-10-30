@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Lightweight Python contract annotations for TypePact"
 readme = "README.md"
 requires-python = ">=3.11"
+dependencies = ["typepact-cli==0.1.0"]
 license = "MIT"
 authors = [{ name = "TypePact contributors" }]
 classifiers = [
@@ -25,8 +26,10 @@ classifiers = [
 dev = [
   "basedpyright==1.40.1",
   "build==1.2.2.post1",
+  "maturin==1.9.6",
   "hatchling==1.27.0",
   "mypy==1.19.1",
+  "packaging==26.3",
   "pyright==1.1.411",
   "ruff==0.17.3",
   "twine==6.1.0",
@@ -38,8 +41,14 @@ packages = ["python/typepact"]
 [tool.hatch.build.targets.sdist]
 include = ["/python/typepact", "/README.md", "/LICENSE", "/pyproject.toml"]
 
+[tool.uv.workspace]
+members = ["cli"]
+
+[tool.uv.sources]
+typepact-cli = { workspace = true }
+
 [tool.basedpyright]
-include = ["python/typepact"]
+include = ["python/typepact", "scripts"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 deprecateTypingAliases = true

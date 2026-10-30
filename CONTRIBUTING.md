@@ -32,7 +32,7 @@ tests, MSRV validation, packaged-crate smoke checks, dependency audits, and the
 inspector side-effect guard. CI runs the Python targets on Python 3.11 through
 3.14 and runs the Rust and dependency checks once per workflow.
 
-The Python package and Rust CLI have separate build paths. Cargo archive checks should run from the extracted `typepact` crate, outside the checkout. Analyzer changes should add fixtures for supported behavior and explicit incomplete-coverage boundaries. Never execute inspected Python files as part of analysis.
+The uv workspace has a pure Python typepact package built by Hatchling and a typepact-cli package built by maturin. typepact pins typepact-cli to the same version. Package installation checks must prove that installing typepact resolves its CLI dependency and that standalone typepact-cli works, in clean environments outside the checkout. CLI source builds require Rust 1.96+; helper source builds remain pure Python. Cargo archive checks should run from the extracted `typepact` crate, outside the checkout. Analyzer changes should add fixtures for supported behavior and explicit incomplete-coverage boundaries. Never execute inspected Python files as part of analysis.
 
 Before changing public semantics, document the use case, canonical contract, compatibility impact and both interface expressions. Keep unsupported constructs visible rather than silently treating them as resolved.
 

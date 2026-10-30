@@ -23,7 +23,7 @@ The first preview must name the exact supported resource patterns, parser versio
 
 ## Deferred decisions
 
-Ruff AST and Salsa are the accepted analyzer direction. Qualify exact component versions, semantic primitive reuse, Rust MSRV and Cargo packaging in AM01. MIT and separate Python/Cargo delivery are selected; bundled binaries, Result variance and exact transition syntax need their relevant RFC/evidence. Do not reserve roadmap versions as promises of delivery dates.
+Ruff AST and Salsa are the accepted analyzer direction. Qualify exact component versions, semantic primitive reuse, Rust MSRV and Cargo packaging in AM01. MIT and a pure Python typepact package depending on matching native typepact-cli wheels is selected under D015, with the Cargo crate retained. Result variance and exact transition syntax need their relevant RFC/evidence. Do not reserve roadmap versions as promises of delivery dates.
 
 ## Versioned release sequence
 

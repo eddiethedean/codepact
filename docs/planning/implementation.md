@@ -45,3 +45,7 @@ Do not convert every future idea into a mandatory dependency. Keep each change s
 ## Release mapping
 
 These engineering phases group work by subsystem. The [root ROADMAP](../../ROADMAP.md) maps them to versioned 0.x releases and defines the dependency order. Use the linked phase plans and [common gates](release-gates.md) for release acceptance.
+
+## Python helper and CLI distributions
+
+D015 makes the pure typepact to native typepact-cli dependency part of WP02/WP06 in 0.1. Use Hatchling/maturin, two complete sdists, eight CLI release targets and installed-artifact checks before publication; later phases retain this contract.

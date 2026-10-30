@@ -37,7 +37,7 @@ V01 compares equivalent contract views. It must not test Resource metadata again
 
 Pin exact mypy, Pyright, build tooling and Rust toolchain versions in the test setup and evidence. Run the helper/checker fixtures across each claimed Python minor. Test the declared Rust MSRV and selected stable toolchain.
 
-For the initial distribution proposal, validate the helper wheel on Linux, macOS and Windows if all three are advertised. Validate the Cargo-installed CLI on every separately advertised inspector platform. Do not infer native CLI support from a pure Python import result.
+D015 requires a universal pure Python typepact wheel plus eight typepact-cli native wheels: Linux glibc and musl, macOS and Windows, each on x86-64 and ARM64. The helper wheel contains the helpers and typing marker and declares its exact CLI dependency. Each CLI wheel contains the Rust executable. Release builds require the complete inventory and matching metadata. Local qualification installs the exact helper/CLI wheels and source archives into clean environments, verifies dependency resolution, and invokes version/help, contract inspection and the no-execution guard. CLI source installs require Rust 1.96+; helper sources remain pure Python. The Cargo crate remains independently buildable. See the shared release matrix for minimum OS/libc versions.
 
 Record each combination as Pass, Fail or Unsupported. A narrower final matrix requires a decision and updates to compatibility documentation.
 

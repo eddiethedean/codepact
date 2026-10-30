@@ -51,3 +51,7 @@ Compare fresh and incrementally updated sessions after each edit, including an u
 Record cold-session, warm no-op, local-edit and dependency-edit measurements separately. Disk-cache and editor cancellation stress tests expand this corpus in 0.8; basic in-memory query correctness is required from 0.1.
 
 The local implementation suite currently passes 17 Rust unit tests, 1 CLI integration test and 35 semantic fixtures, plus 3 Python helper tests. Dedicated query tests cover body-only provider edits, changed exports, moved provider spans, no-op reuse, session revisions and cancellation recovery. The locked MSRV check, strict Clippy gate, extracted Cargo package test/install/smoke, Python wheel/sdist clean installs, Twine check, and pinned mypy/Pyright fixtures passed locally on Python 3.11. This is partial implementation evidence; it does not replace the V01–V24 matrix, cross-platform compatibility runs or candidate release record.
+
+## Python helper and CLI distributions
+
+Packaging checks require a pure helper wheel declaring the exact native typepact-cli dependency, eight CLI platform wheels and separate helper/CLI source archives. The local make check gate builds both packages through their sdists and installs all four local artifacts into fresh uv environments outside the checkout, then verifies CLI version/help, inspection and source non-execution. Release CI builds all eight targets and validates inventory/metadata; it does not import sparkless's release test suite. Full candidate platform qualification still requires recorded evidence.

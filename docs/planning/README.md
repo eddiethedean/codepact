@@ -37,3 +37,7 @@ A Ruff AST-based inspector, Python helpers, package manifests and CI workflows n
 ## Versioned release planning
 
 The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. Each linked phase has its own work packages and numbered gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate. All phase gates currently remain pending.
+
+## Python helper and CLI distributions
+
+D015 keeps typepact pure Python and pins the matching typepact-cli package from 0.1, with eight CLI platform builds, one pure helper wheel and two source archives. Cargo distribution remains available. The release plan is authoritative for the target matrix; later phases inherit it.

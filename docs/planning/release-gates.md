@@ -48,3 +48,7 @@ The current release.yml includes validation, artifact checks and quality-workflo
 PyPI and crates.io publication is not atomic. If one job succeeds, preserve that version and rerun only the failed publication job after resolving the cause. Verify whether an upload completed before retrying a timeout. Do not move a published tag or overwrite an artifact. If the released contents are wrong, document the issue, yank where appropriate and create a corrective patch release.
 
 These operational policies extend the [release plan](releases.md).
+
+## Python helper and CLI distributions
+
+G5 includes D015: eight native typepact-cli wheels, a pure typepact wheel with exact CLI dependency, and two complete source archives, matching versions and required quality/build/inventory checks. Importing helpers alone does not establish executable compatibility.

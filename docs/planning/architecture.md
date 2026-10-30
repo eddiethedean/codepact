@@ -37,7 +37,7 @@ Salsa tracks the inputs read by each query in this pipeline. Frontends translate
 | Future editor host | Reuse the database and semantic APIs with revision-aware updates and cancellation |
 | tests and benchmarks | Semantic counterexamples, incremental parity and execution-count evidence, packaging and performance |
 
-Use internal module boundaries first; additional crates require a demonstrated build or API benefit. Keep Ruff and Salsa internals behind TypePact-owned interfaces. The Python helper package never initializes the analyzer. Delivery is a pure Python wheel plus a separately Cargo-installed Rust inspector; bundled binaries remain a later packaging decision.
+Use internal module boundaries first; additional crates require a demonstrated build or API benefit. Keep Ruff and Salsa internals behind TypePact-owned interfaces. The Python helper package never initializes the analyzer. Delivery uses two Python distributions: typepact is a pure Python helper wheel built by Hatchling, with an exact dependency on typepact-cli at the same version. Maturin bin bindings package the compiled Rust inspector as the typepact command in typepact-cli. CLI wheels have py3-none platform tags because the executable does not depend on the Python ABI. Importing helpers does not launch the CLI. Separate source archives provide helper code and the CLI Rust workspace/manifests/Cargo.lock; Cargo remains an additional delivery route. D015 and the release matrix govern all phases.
 
 ## Incremental computation
 

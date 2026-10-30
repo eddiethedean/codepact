@@ -70,3 +70,7 @@ Mark Complete only after G8 and every required gate pass. Hold the release while
 - Missing-file, configuration, model and target-version invalidation:
 - Cycle/work budgets, cancellation recovery and revision publication:
 - Persistent-cache format/recovery and editor parity (from 0.8):
+
+## Python helper and CLI distributions
+
+Record the D015 eight-platform CLI build inventory plus the pure helper wheel, wheel tags and hashes, exact CLI/helper dependency versions, both sdist contents, and local installed-wheel/sdist CLI results. Mark unexecuted target runtime qualification explicitly pending.

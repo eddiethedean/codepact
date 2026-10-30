@@ -48,3 +48,7 @@ Adopt lifecycle checks first, baseline existing findings, annotate public bounda
 ## Analyzer dependency qualification
 
 The [migration plan](analyzer-migration.md) requires a jointly compatible Ruff parser/AST component set and Salsa version, pinned with Cargo.lock. Evaluate Ruff semantic reuse against actual integration APIs. Record Rust edition/MSRV changes, license notices, target-version parsing and registry availability before adopting dependencies. Update manifests, CI and public source-build instructions together when the qualified toolchain changes. Keep parser acceptance separate from supported contract semantics, especially deferred annotations and lazy type aliases.
+
+## Python helper and CLI distributions
+
+The typepact distribution remains pure Python and pins its typepact-cli dependency, which supplies native platform wheels containing the Rust CLI (D015). Installation supports Python 3.11+; qualify helper behavior on 3.11–3.14 independently of the analyzer grammar target. See the eight-target release matrix and Rust prerequisites for source installs in [releases](releases.md).

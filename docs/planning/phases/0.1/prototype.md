@@ -4,11 +4,11 @@ Status: proposed acceptance specification. The current prototype implements port
 
 ## Developer walkthrough
 
-After installing the helper package, the developer creates an ordinary Python module containing a resource declaration and access-annotated parameter. Separately install the Rust inspector with Cargo, then inspect the module:
+Installing typepact installs its pure Python helpers and resolves the exactly matching typepact-cli dependency. The developer creates an ordinary Python module containing a resource declaration and access-annotated parameter, then inspects it:
 
 ~~~console
 python -m pip install typepact==0.1.0
-cargo install typepact --version 0.1.0 --locked
+# The wheel already installs the native typepact command.
 typepact inspect-contracts examples/contracts.py
 ~~~
 

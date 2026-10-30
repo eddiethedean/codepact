@@ -175,3 +175,7 @@ R05 scaffolding can proceed after R03 while R04 resolves modules, but query acce
 - [ ] Dependency/MSRV qualification, docs and candidate gates reflect actual implementation rather than planned capabilities.
 
 The AST frontend, typed declaration lowering, captured local/exported alias views, exact source ranges, per-module Salsa summaries, cancellation recovery and bounded work/cache policies are implemented. Finish candidate qualification by recording the full V01–V24/F01–F08 matrix, platform results and extracted-package installation evidence; do not mark publication gates complete without their separate evidence.
+
+## Python helper and CLI distributions
+
+D015 amends R01/R07/R08 and F04/F08: maturin native typepact-cli wheels carry the Rust CLI; typepact remains pure Python and depends on the same CLI version. Require clean installations that verify automatic dependency resolution and standalone CLI behavior. Release builds require the eight-target inventory defined in the release plan; Cargo packaging remains independently required.
