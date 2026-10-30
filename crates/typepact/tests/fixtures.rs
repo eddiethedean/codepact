@@ -1,4 +1,4 @@
-use typepact::{inspect, SourceFile};
+use typepact::{inspect, AnalysisSession, SourceFile};
 
 #[test]
 fn pythonic_and_explicit_access_lower_to_same_fact() {
@@ -52,6 +52,116 @@ fn lookalike_resource_decorator_is_not_trusted() {
     let source = "def resource(**kwargs): pass\n@resource(closed_by='close')\nclass C: pass\n";
     let result = inspect(&[SourceFile::new("local.py", "local", source)], "3.11");
     assert!(result.contracts.is_empty());
+}
+
+#[test]
+fn unsupported_decorators_do_not_leave_class_or_function_contracts() {
+    let class_source = "from typepact import resource\nfrom typepact.rust import Borrowed\ndef replace(cls): return int\n@replace\n@resource(closed_by='close')\nclass C: pass\ndef use(value: Borrowed[C]): pass\n";
+    let class_result = inspect(
+        &[SourceFile::new(
+            "class_decorator.py",
+            "class_decorator",
+            class_source,
+        )],
+        "3.11",
+    );
+    assert_eq!(
+        class_result.coverage.status, "incomplete",
+        "{class_result:#?}"
+    );
+    assert!(!class_result
+        .contracts
+        .iter()
+        .any(|contract| contract.display_name == "C" || contract.display_name == "use.value"));
+
+    let function_source = "from typepact.rust import Borrowed\nclass C: pass\ndef replace(function): return None\n@replace\ndef use(value: Borrowed[C]): pass\n";
+    let function_result = inspect(
+        &[SourceFile::new(
+            "function_decorator.py",
+            "function_decorator",
+            function_source,
+        )],
+        "3.11",
+    );
+    assert_eq!(
+        function_result.coverage.status, "incomplete",
+        "{function_result:#?}"
+    );
+    assert!(!function_result
+        .contracts
+        .iter()
+        .any(|contract| contract.display_name == "use.value"));
+}
+
+#[test]
+fn module_level_walrus_expressions_invalidate_stale_bindings() {
+    let sources = [
+        "from typepact.rust import Borrowed\nclass C: pass\nvalue = (C := int)\ndef use(value: Borrowed[C]): pass\n",
+        "from typepact.rust import Borrowed\nclass C: pass\ndef initialize(value: Borrowed[C] = (C := int)): pass\ndef use(value: Borrowed[C]): pass\n",
+    ];
+    for (index, source) in sources.iter().enumerate() {
+        let module = format!("walrus_{index}");
+        let path = format!("{module}.py");
+        let result = inspect(&[SourceFile::new(path, module, *source)], "3.11");
+        assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("named expressions")));
+        assert!(!result
+            .contracts
+            .iter()
+            .any(|contract| contract.display_name == "use.value"));
+    }
+}
+
+#[test]
+fn future_annotations_are_reported_and_not_lowered_eagerly() {
+    let source = "from __future__ import annotations\nfrom typepact.rust import Borrowed\nclass C: pass\ndef use(value: Borrowed[C]): pass\n";
+    let result = inspect(&[SourceFile::new("future.py", "future", source)], "3.11");
+
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
+        .message
+        .contains("future annotations are not resolved")));
+    assert!(!result
+        .contracts
+        .iter()
+        .any(|contract| contract.display_name == "use.value"));
+}
+
+#[test]
+fn unicode_resource_method_names_match_python_identifiers() {
+    let source = "from typepact import resource\n@resource(closed_by='关闭')\nclass C: pass\n";
+    let result = inspect(&[SourceFile::new("unicode.py", "unicode", source)], "3.11");
+
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    assert!(result.contracts.iter().any(|contract| {
+        contract.display_name == "C"
+            && contract
+                .lifecycle
+                .as_ref()
+                .is_some_and(|lifecycle| lifecycle.closed_by == "关闭")
+    }));
+}
+
+#[test]
+fn annotated_requires_a_base_type_and_metadata() {
+    let source =
+        "from typing import Annotated\nclass C: pass\ndef use(value: Annotated[C]): pass\n";
+    let result = inspect(&[SourceFile::new("arity.py", "arity", source)], "3.11");
+
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
+        .message
+        .contains("Annotated requires a base type and at least one metadata item")));
+    assert!(!result
+        .contracts
+        .iter()
+        .any(|contract| contract.display_name == "use.value"));
 }
 
 #[test]
@@ -518,6 +628,33 @@ fn imported_metadata_conflict_points_to_the_dependency_declaration() {
         .iter()
         .find(|diagnostic| diagnostic.code == "TP4002")
         .expect("the imported lifecycle conflict is diagnosed");
+    assert_eq!(diagnostic.primary.file, "consumer.py");
+    assert_eq!(diagnostic.primary.line, 4);
+    assert_eq!(diagnostic.related.len(), 1);
+    assert_eq!(diagnostic.related[0].file, "provider.py");
+    assert_eq!(diagnostic.related[0].line, 2);
+}
+
+#[test]
+fn later_import_shadowing_preserves_earlier_dependency_provenance() {
+    let provider = SourceFile::new(
+        "provider.py",
+        "provider",
+        "from typepact import resource\n@resource(closed_by='close')\nclass C: pass\n",
+    );
+    let consumer = SourceFile::new(
+        "consumer.py",
+        "consumer",
+        "from provider import C\nfrom typing import Annotated as A\nfrom typepact.contracts import Resource\ndef use(value: A[C, Resource(closed_by='release')]): pass\nfrom somewhere import A\n",
+    );
+    let mut session = AnalysisSession::default();
+    let result = session.inspect(&[consumer, provider], "3.11");
+
+    let diagnostic = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP4002")
+        .expect("the lifecycle conflict is diagnosed");
     assert_eq!(diagnostic.primary.file, "consumer.py");
     assert_eq!(diagnostic.primary.line, 4);
     assert_eq!(diagnostic.related.len(), 1);

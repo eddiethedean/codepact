@@ -82,7 +82,7 @@ For equivalence tests, compare base-symbol identities after an explicit fixture 
 
 Support direct imports and imported-name aliases from known TypePact modules, typing.Annotated, module-level class declarations, class decorators, simple type aliases and parameter/return annotations in the chosen syntax versions. Resolve local shadowing before recognizing API symbols.
 
-Direct imports among explicitly provided local modules are required for the 0.1 query/dependency fixtures. Resolve them without executing modules. Bound traversal to supplied fixture/project roots; report unresolved modules. Star imports, arbitrary runtime factories, metaclass-generated types, dynamic decorator arguments and computed annotation expressions are unsupported in 0.1.
+Direct imports among explicitly provided local modules are required for the 0.1 query/dependency fixtures. Resolve them without executing modules. Bound traversal to supplied fixture/project roots; report unresolved modules. Only the TypePact `resource` class decorator with a literal `closed_by` value is supported; other class or function decorators, dynamic decorator arguments, star imports, arbitrary runtime factories, metaclass-generated types and computed annotation expressions are unsupported. Eager named expressions in declaration headers and `from __future__ import annotations` also produce incomplete coverage. When unsupported constructs could rebind module names, discard the affected module binding view so later declarations cannot reuse stale symbols.
 
 Do not resolve contracts by identifier spelling alone. A local function named resource or a class named Borrowed must remain ordinary Python.
 

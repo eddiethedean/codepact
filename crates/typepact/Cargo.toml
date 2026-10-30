@@ -17,6 +17,7 @@ ruff_python_parser = "=0.0.12"
 ruff_python_ast = "=0.0.12"
 ruff_text_size = "=0.0.12"
 salsa = "=0.28.5"
+unicode-ident = "=1.0.24"
 
 [[bin]]
 name = "typepact"

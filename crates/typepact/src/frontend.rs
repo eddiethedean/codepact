@@ -1,4 +1,7 @@
-use ruff_python_ast::{AnyParameterRef, Expr, PythonVersion, Stmt};
+use ruff_python_ast::{
+    visitor::{walk_expr, Visitor},
+    AnyParameterRef, Expr, PythonVersion, Stmt,
+};
 use ruff_python_parser::{Mode, ParseOptions};
 use ruff_text_size::Ranged;
 
@@ -112,6 +115,86 @@ struct ExpressionBudget {
 impl ExpressionBudget {
     const MAX_DEPTH: usize = 128;
     const MAX_NODES: usize = 50_000;
+}
+
+struct NamedExpressionVisitor {
+    depth: usize,
+    nodes: usize,
+    found: bool,
+    exceeded: bool,
+}
+
+impl NamedExpressionVisitor {
+    fn new() -> Self {
+        Self {
+            depth: 0,
+            nodes: 0,
+            found: false,
+            exceeded: false,
+        }
+    }
+
+    fn unsupported_reason(&self) -> Option<&'static str> {
+        if self.found {
+            Some("module-level named expressions in declaration headers are unsupported")
+        } else if self.exceeded {
+            Some("AST expression exceeds the 128-level or 50,000-node work limit")
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> Visitor<'a> for NamedExpressionVisitor {
+    fn visit_expr(&mut self, expression: &'a Expr) {
+        if self.found || self.exceeded {
+            return;
+        }
+        if self.depth >= ExpressionBudget::MAX_DEPTH || self.nodes >= ExpressionBudget::MAX_NODES {
+            self.exceeded = true;
+            return;
+        }
+        self.nodes += 1;
+        if matches!(expression, Expr::Named(_)) {
+            self.found = true;
+            return;
+        }
+        self.depth += 1;
+        walk_expr(self, expression);
+        self.depth -= 1;
+    }
+}
+
+fn eager_named_expression_issue(statement: &Stmt) -> Option<&'static str> {
+    let mut visitor = NamedExpressionVisitor::new();
+    match statement {
+        Stmt::ClassDef(class) => {
+            for decorator in &class.decorator_list {
+                visitor.visit_decorator(decorator);
+            }
+            if let Some(arguments) = &class.arguments {
+                visitor.visit_arguments(arguments);
+            }
+        }
+        Stmt::FunctionDef(function) => {
+            for decorator in &function.decorator_list {
+                visitor.visit_decorator(decorator);
+            }
+            visitor.visit_parameters(&function.parameters);
+            if let Some(returns) = &function.returns {
+                visitor.visit_expr(returns);
+            }
+        }
+        Stmt::Assign(assign) => visitor.visit_expr(&assign.value),
+        Stmt::AnnAssign(assign) => {
+            visitor.visit_expr(&assign.annotation);
+            if let Some(value) = &assign.value {
+                visitor.visit_expr(value);
+            }
+        }
+        _ => {}
+    }
+    visitor.unsupported_reason()
 }
 
 fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usize) -> AstExpr {
@@ -244,6 +327,13 @@ pub(crate) fn parse_frontend(
                 range: source_range(statement),
             });
             break;
+        }
+        if let Some(message) = eager_named_expression_issue(statement) {
+            declarations.push(Declaration::Unsupported {
+                message,
+                range: source_range(statement),
+            });
+            continue;
         }
         let mut expression_budget = ExpressionBudget {
             nodes: 0,

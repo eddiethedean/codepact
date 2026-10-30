@@ -66,3 +66,20 @@ fn logical_module_identity_is_stable_for_relative_and_absolute_paths() {
 
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn unicode_module_file_names_are_valid_python_identifiers() {
+    let root = fixture_root().with_extension("unicode");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("模型.py"), "class C: pass\n").unwrap();
+
+    let output = run(&root, &["模型.py"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}

@@ -151,6 +151,17 @@ fn inspect_inner(
             continue;
         };
         let mut state = FileState::new(&file.module);
+        state.future_annotations = declarations.iter().any(|declaration| {
+            matches!(
+                declaration,
+                Declaration::ImportFrom {
+                    module,
+                    level: 0,
+                    names,
+                    ..
+                } if module == "__future__" && names.iter().any(|name| name.name == "annotations")
+            )
+        });
         let mut stop = false;
         for (index, declaration) in declarations.iter().enumerate() {
             if index % 64 == 0 {
@@ -173,20 +184,32 @@ fn inspect_inner(
                     names,
                     range,
                 } => {
-                    process_import_from(
-                        &mut result,
-                        file,
-                        module,
-                        *level,
-                        names,
-                        *range,
-                        &supplied_modules,
-                        &ambiguous_modules,
-                        &symbols,
-                        &module_exports,
-                        &mut bindings,
-                        &mut state,
-                    );
+                    if *level == 0
+                        && module == "__future__"
+                        && names.iter().any(|name| name.name == "annotations")
+                    {
+                        unsupported(
+                            &mut result,
+                            file,
+                            *range,
+                            "future annotations are not resolved in 0.1",
+                        );
+                    } else {
+                        process_import_from(
+                            &mut result,
+                            file,
+                            module,
+                            *level,
+                            names,
+                            *range,
+                            &supplied_modules,
+                            &ambiguous_modules,
+                            &symbols,
+                            &module_exports,
+                            &mut bindings,
+                            &mut state,
+                        );
+                    }
                 }
                 Declaration::Import { names, range } => {
                     for item in names {
@@ -222,6 +245,7 @@ fn inspect_inner(
                     decorators,
                     unsupported: has_unsupported_syntax,
                     range,
+                    ..
                 } => {
                     if *has_unsupported_syntax {
                         unsupported(
@@ -279,6 +303,7 @@ fn inspect_inner(
                     name,
                     parameters,
                     returns,
+                    decorators,
                     unsupported: has_unsupported_syntax,
                     range,
                     ..
@@ -291,32 +316,44 @@ fn inspect_inner(
                             "nested or generic function declarations are unsupported",
                         );
                     }
-                    for parameter in parameters {
-                        if let Some(annotation) = &parameter.annotation {
-                            lower_function_annotation(
-                                &mut result,
-                                file,
-                                annotation,
-                                &format!("{name}.{}", parameter.name),
-                                &state,
-                                &symbols,
-                                &bindings,
-                            );
-                        }
-                    }
-                    if let Some(annotation) = returns {
-                        lower_function_annotation(
+                    if !decorators.is_empty() {
+                        unsupported(
                             &mut result,
                             file,
-                            annotation,
-                            &format!("{name}.return"),
-                            &state,
-                            &symbols,
-                            &bindings,
+                            *range,
+                            "decorated functions are unresolved in 0.1",
                         );
+                        state.clear_module(&file.module, &mut bindings);
+                    } else {
+                        if !state.future_annotations {
+                            for parameter in parameters {
+                                if let Some(annotation) = &parameter.annotation {
+                                    lower_function_annotation(
+                                        &mut result,
+                                        file,
+                                        annotation,
+                                        &format!("{name}.{}", parameter.name),
+                                        &state,
+                                        &symbols,
+                                        &bindings,
+                                    );
+                                }
+                            }
+                            if let Some(annotation) = returns {
+                                lower_function_annotation(
+                                    &mut result,
+                                    file,
+                                    annotation,
+                                    &format!("{name}.return"),
+                                    &state,
+                                    &symbols,
+                                    &bindings,
+                                );
+                            }
+                        }
+                        // Python evaluates eager annotations before installing the new function binding.
+                        state.clear_name(name, &file.module, &mut bindings);
                     }
-                    // Python evaluates eager annotations before installing the new function binding.
-                    state.clear_name(name, &file.module, &mut bindings);
                 }
                 Declaration::Unsupported { message, range } => {
                     unsupported(&mut result, file, *range, message);
@@ -530,47 +567,97 @@ fn summary_uses_contract_wrapper(summary: &ParseSummary) -> bool {
         return false;
     };
     let mut state = FileState::default();
+    let mut bindings = BTreeMap::new();
     for declaration in declarations {
-        if let Declaration::ImportFrom {
-            module,
-            level: 0,
-            names,
-            ..
-        } = declaration
-        {
-            for name in names {
-                let local = name.alias.as_deref().unwrap_or(&name.name);
-                register_import(&name.name, local, module, &mut state);
-            }
-        }
-    }
-    declarations.iter().any(|declaration| match declaration {
-        Declaration::Class { decorators, .. } | Declaration::Function { decorators, .. } => {
-            decorators
+        let uses_wrapper = match declaration {
+            Declaration::Class { decorators, .. } => decorators
                 .iter()
-                .any(|expr| expression_uses_wrapper(expr, &state.imports))
-                || match declaration {
-                    Declaration::Function {
-                        parameters,
-                        returns,
-                        ..
-                    } => {
-                        parameters.iter().any(|parameter| {
-                            parameter.annotation.as_ref().is_some_and(|annotation| {
-                                expression_uses_wrapper(annotation, &state.imports)
-                            })
-                        }) || returns.as_ref().is_some_and(|annotation| {
+                .any(|expr| expression_uses_wrapper(expr, &state.imports)),
+            Declaration::Function {
+                decorators,
+                parameters,
+                returns,
+                ..
+            } => {
+                decorators
+                    .iter()
+                    .any(|expr| expression_uses_wrapper(expr, &state.imports))
+                    || parameters.iter().any(|parameter| {
+                        parameter.annotation.as_ref().is_some_and(|annotation| {
                             expression_uses_wrapper(annotation, &state.imports)
                         })
-                    }
-                    _ => false,
-                }
+                    })
+                    || returns.as_ref().is_some_and(|annotation| {
+                        expression_uses_wrapper(annotation, &state.imports)
+                    })
+            }
+            Declaration::Assignment { value, .. } => value
+                .as_ref()
+                .is_some_and(|expr| expression_uses_wrapper(expr, &state.imports)),
+            _ => false,
+        };
+        if uses_wrapper {
+            return true;
         }
-        Declaration::Assignment { value, .. } => value
-            .as_ref()
-            .is_some_and(|expr| expression_uses_wrapper(expr, &state.imports)),
-        _ => false,
-    })
+
+        match declaration {
+            Declaration::ImportFrom {
+                module,
+                level: 0,
+                names,
+                ..
+            } if module == "__future__" && names.iter().any(|name| name.name == "annotations") => {}
+            Declaration::ImportFrom {
+                module,
+                level: 0,
+                names,
+                ..
+            } => {
+                for name in names {
+                    let local = name.alias.as_deref().unwrap_or(&name.name);
+                    state.clear_name(local, "", &mut bindings);
+                    register_import(&name.name, local, module, &mut state);
+                }
+            }
+            Declaration::ImportFrom { names, .. } => {
+                for name in names {
+                    let local = name.alias.as_deref().unwrap_or(&name.name);
+                    state.clear_name(local, "", &mut bindings);
+                }
+            }
+            Declaration::Import { names, .. } => {
+                for name in names {
+                    let local = name
+                        .alias
+                        .as_deref()
+                        .unwrap_or_else(|| name.name.split('.').next().unwrap_or(&name.name));
+                    state.clear_name(local, "", &mut bindings);
+                }
+            }
+            Declaration::Class { name, .. } | Declaration::Function { name, .. } => {
+                state.clear_name(name, "", &mut bindings);
+            }
+            Declaration::Assignment {
+                name,
+                value: Some(_),
+                ..
+            } => {
+                if let Some(name) = name {
+                    state.clear_name(name, "", &mut bindings);
+                }
+            }
+            Declaration::Delete { names, .. } => {
+                for name in names.iter().flatten() {
+                    state.clear_name(name, "", &mut bindings);
+                }
+            }
+            Declaration::TypeAlias { .. } | Declaration::Unsupported { .. } => {
+                state.clear_module("", &mut bindings);
+            }
+            Declaration::Assignment { .. } => {}
+        }
+    }
+    false
 }
 
 pub(crate) fn inspect_module(
@@ -680,6 +767,7 @@ pub(crate) fn combine_project(
 
 #[derive(Default)]
 struct FileState {
+    future_annotations: bool,
     imports: BTreeMap<String, String>,
     unresolved_imports: BTreeMap<String, UnresolvedImport>,
     aliases: BTreeMap<String, String>,
@@ -912,6 +1000,7 @@ fn lower_class(
 ) {
     let mut closed: Option<(String, Span)> = None;
     let mut conflict = false;
+    let mut unsupported_decorator = None;
     for decorator in decorators {
         let (function, arguments, keywords) = match &decorator.kind {
             AstExprKind::Call {
@@ -927,11 +1016,15 @@ fn lower_class(
                         decorator.range,
                         "resource decorator requires a literal closed_by keyword",
                     );
+                    unsupported_decorator.get_or_insert(decorator.range);
+                } else {
+                    unsupported_decorator.get_or_insert(decorator.range);
                 }
                 continue;
             }
         };
         if canonical(function, &state.imports).as_deref() != Some("typepact::resource") {
+            unsupported_decorator.get_or_insert(decorator.range);
             continue;
         }
         let Some(method) = parse_resource_decorator_call(arguments, keywords) else {
@@ -941,6 +1034,7 @@ fn lower_class(
                 decorator.range,
                 "resource decorator supports only one literal closed_by keyword",
             );
+            unsupported_decorator.get_or_insert(decorator.range);
             continue;
         };
         if !is_identifier(&method) {
@@ -973,6 +1067,16 @@ fn lower_class(
         }
     }
     state.clear_name(name, &file.module, bindings);
+    if let Some(range) = unsupported_decorator {
+        unsupported(
+            result,
+            file,
+            range,
+            "class decorator expression is outside the supported TypePact resource subset",
+        );
+        state.clear_module(&file.module, bindings);
+        return;
+    }
     if conflict {
         return;
     }
@@ -1519,6 +1623,22 @@ fn parse_annotation(
     if identity != "typing::Annotated" {
         return ParsedAnnotation::plain(None);
     }
+    if arguments.len() < 2 {
+        return ParsedAnnotation {
+            base,
+            access: Access::Unspecified,
+            origin: "annotated",
+            has_resource: false,
+            closed_by: None,
+            access_span: None,
+            closed_by_span: None,
+            conflict: None,
+            conflict_spans: Vec::new(),
+            unsupported_reason: Some(
+                "Annotated requires a base type and at least one metadata item",
+            ),
+        };
+    }
 
     let mut access_values = Vec::<(Access, Span)>::new();
     let mut resources = Vec::<(Option<String>, Span)>::new();
@@ -1776,8 +1896,8 @@ fn add_contract(result: &mut Inspection, contract: Contract) {
 
 fn is_identifier(value: &str) -> bool {
     let mut chars = value.chars();
-    matches!(chars.next(), Some(character) if character == '_' || character.is_ascii_alphabetic())
-        && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
+    matches!(chars.next(), Some(character) if character == '_' || unicode_ident::is_xid_start(character))
+        && chars.all(|character| character == '_' || unicode_ident::is_xid_continue(character))
 }
 
 fn unsupported(result: &mut Inspection, file: &SourceFile, range: SourceRange, message: &str) {

@@ -49,8 +49,8 @@ fn module_from_relative_path(path: &Path) -> Result<String, String> {
 
 fn is_identifier(value: &str) -> bool {
     let mut chars = value.chars();
-    matches!(chars.next(), Some(c) if c == '_' || c.is_ascii_alphabetic())
-        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+    matches!(chars.next(), Some(c) if c == '_' || unicode_ident::is_xid_start(c))
+        && chars.all(|c| c == '_' || unicode_ident::is_xid_continue(c))
 }
 
 fn main() -> ExitCode {

@@ -469,7 +469,7 @@ impl AnalysisSession {
         let (non_growing, growing): (Vec<_>, Vec<_>) = files.iter().partition(|file| {
             self.files
                 .get(&file.path)
-                .is_none_or(|existing| existing.source(&self.db).len() >= file.source.len())
+                .is_some_and(|existing| existing.source(&self.db).len() >= file.source.len())
         });
         for file in non_growing.into_iter().chain(growing) {
             self.set_file(file.path.clone(), file.module.clone(), file.source.clone())
@@ -532,6 +532,21 @@ mod tests {
         let edited = SourceFile::new("module.py", "module", "class D: pass\n");
         session.inspect(&[edited, other], "3.11");
         assert_eq!(executions.load(Ordering::Relaxed) - cold_executions, 4);
+    }
+
+    #[test]
+    fn batch_update_applies_new_files_after_existing_file_shrinks() {
+        let mut session = AnalysisSession::default();
+        let existing = SourceFile::new("existing.py", "existing", "#".repeat(800_000));
+        session.inspect(std::slice::from_ref(&existing), "3.11");
+
+        let added = SourceFile::new("added.py", "added", "#".repeat(800_000));
+        let shrunk = SourceFile::new("existing.py", "existing", "#".repeat(100_000));
+        let files = [added, shrunk];
+        let session_result = session.inspect(&files, "3.11");
+
+        assert_eq!(session_result.coverage.source_bytes, 900_000);
+        assert_eq!(session_result, crate::inspect(&files, "3.11"));
     }
 
     #[test]
