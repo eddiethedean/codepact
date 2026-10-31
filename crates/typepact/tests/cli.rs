@@ -104,6 +104,64 @@ fn check_branch_join_is_possible_and_borrowed_close_is_rejected() {
 }
 
 #[test]
+fn check_preserves_call_effects_and_reports_unknown_qualified_calls() {
+    let root = fixture_root().with_extension("lifecycle-call-effects");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("calls.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\ndef ignore(value): pass\nconnection = Connection()\nshutdown(connection)\nconnection.status()\nignore(connection.close())\nconnection.status()\nexternal.mutate(connection)\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic["code"] == "TP1001")
+            .count(),
+        2,
+        "{diagnostics:#?}"
+    );
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic["code"] == "TP9001"
+            && diagnostic["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("unresolved method receiver"))
+    }));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn recursive_summaries_stop_with_an_incomplete_boundary() {
+    let root = fixture_root().with_extension("lifecycle-recursion");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("recursive.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef recurse(value):\n    recurse(value)\n    recurse(value)\nconnection = Connection()\nrecurse(connection)\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    assert_eq!(output.status.code(), Some(0));
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    assert!(result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| {
+            diagnostic["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("recursive function summary"))
+        }));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn logical_module_identity_is_stable_for_relative_and_absolute_paths() {
     let root = fixture_root();
     let _ = fs::remove_dir_all(&root);

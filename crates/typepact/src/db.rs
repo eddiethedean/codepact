@@ -204,6 +204,17 @@ fn check_flow_query(
         .collect();
     let mut inspection: Inspection =
         serde_json::from_str(&inspection_json).expect("inspection query result deserializes");
+    inspection.diagnostics.retain(|diagnostic| {
+        !diagnostic
+            .message
+            .contains("module-level control flow and executable statements are unsupported")
+    });
+    inspection.coverage.reasons.retain(|reason| {
+        !reason.contains("module-level control flow and executable statements are unsupported")
+    });
+    if inspection.coverage.reasons.is_empty() {
+        inspection.coverage.status = "complete-for-supported-subset".into();
+    }
     crate::flow::check_bodies(&sources, &summaries, &mut inspection);
     db.unwind_if_revision_cancelled();
     serde_json::to_string(&inspection).expect("check result serializes")

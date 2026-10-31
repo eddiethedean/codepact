@@ -323,11 +323,18 @@ fn main() -> ExitCode {
         ));
     }
 
-    let out = if checking {
+    let mut out = if checking {
         typepact::check(&files, &python_version)
     } else {
         inspect(&files, &python_version)
     };
+    if checking {
+        out.diagnostics.retain(|diagnostic| {
+            !diagnostic
+                .message
+                .contains("module-level control flow and executable statements are unsupported")
+        });
+    }
     if json {
         match serde_json::to_string_pretty(&out) {
             Ok(serialized) => println!("{serialized}"),

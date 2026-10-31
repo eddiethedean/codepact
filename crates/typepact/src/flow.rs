@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const OPEN: u8 = 1;
 const CLOSED: u8 = 2;
 const UNKNOWN: u8 = 4;
+const MAX_CALL_DEPTH: usize = 8;
 type CallKeyword = (Option<String>, AstExpr);
 type MethodCall<'a> = (&'a AstExpr, &'a str, &'a [AstExpr], &'a [CallKeyword]);
 type ProjectFunctionMap = BTreeMap<(String, String), (Vec<String>, Vec<FlowStatement>)>;
@@ -14,10 +15,13 @@ type ProjectFunctionMap = BTreeMap<(String, String), (Vec<String>, Vec<FlowState
 #[derive(Clone, Default)]
 struct State {
     places: BTreeMap<String, BTreeSet<String>>,
+    unknown_places: BTreeSet<String>,
+    shadowed_classes: BTreeSet<String>,
     objects: BTreeMap<String, u8>,
     kinds: BTreeMap<String, String>,
     borrowed: BTreeSet<String>,
     escaped: BTreeSet<String>,
+    call_stack: BTreeSet<String>,
     close_origins: BTreeMap<String, Span>,
     alive: bool,
 }
@@ -53,6 +57,22 @@ fn merge(left: &State, right: &State) -> State {
             .entry(place.clone())
             .or_default()
             .extend(targets.iter().cloned());
+    }
+    joined
+        .unknown_places
+        .extend(right.unknown_places.iter().cloned());
+    joined
+        .shadowed_classes
+        .extend(right.shadowed_classes.iter().cloned());
+    for place in left.places.keys() {
+        if !right.places.contains_key(place) {
+            joined.unknown_places.insert(place.clone());
+        }
+    }
+    for place in right.places.keys() {
+        if !left.places.contains_key(place) {
+            joined.unknown_places.insert(place.clone());
+        }
     }
     for (object, state) in &right.objects {
         *joined.objects.entry(object.clone()).or_default() |= *state;
@@ -182,6 +202,23 @@ fn weaken(state: &mut State, objects: impl Iterator<Item = String>) {
 
 type FunctionMap = BTreeMap<String, (Vec<String>, Vec<FlowStatement>)>;
 
+fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<String>) {
+    for object in objects {
+        if let Some(mask) = parent.objects.get(object) {
+            child.objects.insert(object.clone(), *mask);
+        }
+        if let Some(kind) = parent.kinds.get(object) {
+            child.kinds.insert(object.clone(), kind.clone());
+        }
+        if parent.borrowed.contains(object) {
+            child.borrowed.insert(object.clone());
+        }
+        if let Some(origin) = parent.close_origins.get(object) {
+            child.close_origins.insert(object.clone(), origin.clone());
+        }
+    }
+}
+
 fn resolve_imported_contracts(
     module: &str,
     name: &str,
@@ -291,6 +328,36 @@ fn resolve_imported_function(
     None
 }
 
+fn evaluate_call_arguments(
+    expr: &AstExpr,
+    env: &mut State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+    depth: usize,
+) {
+    let AstExprKind::Call {
+        arguments,
+        keywords,
+        ..
+    } = &expr.kind
+    else {
+        return;
+    };
+    for argument in arguments
+        .iter()
+        .chain(keywords.iter().map(|(_, value)| value))
+    {
+        if matches!(
+            argument.kind,
+            AstExprKind::Call { .. } | AstExprKind::Tuple(_)
+        ) {
+            consume_expr(argument, env, file, contracts, functions, result, depth + 1);
+        }
+    }
+}
+
 fn consume_expr(
     expr: &AstExpr,
     env: &mut State,
@@ -300,7 +367,7 @@ fn consume_expr(
     result: &mut Inspection,
     depth: usize,
 ) {
-    if depth > 32 {
+    if depth > MAX_CALL_DEPTH {
         weaken(
             env,
             env.places
@@ -318,9 +385,14 @@ fn consume_expr(
         );
         return;
     }
+    evaluate_call_arguments(expr, env, file, contracts, functions, result, depth);
     if let Some((receiver, method, arguments, keywords)) = called_method(expr) {
         if let Some(name) = expr_name(receiver) {
             if let Some(targets) = env.places.get(name).cloned() {
+                let has_open_alternative = targets.iter().any(|object| {
+                    let mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
+                    mask & (OPEN | UNKNOWN) != 0
+                }) || env.unknown_places.contains(name);
                 for object in &targets {
                     let mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
                     let is_close = contracts.iter().any(|contract| {
@@ -336,7 +408,7 @@ fn consume_expr(
                                 .is_some_and(|lifecycle| lifecycle.closed_by == method)
                     });
                     if mask & CLOSED != 0 && !is_close {
-                        let certainty = if mask & (OPEN | UNKNOWN) == 0 {
+                        let certainty = if !has_open_alternative && mask & UNKNOWN == 0 {
                             "definite"
                         } else {
                             "possible"
@@ -386,7 +458,7 @@ fn consume_expr(
                         }
                         env.close_origins
                             .insert(object.clone(), span(file, expr.range));
-                        if targets.len() == 1 {
+                        if targets.len() == 1 && !env.unknown_places.contains(name) {
                             env.objects.insert(object.clone(), CLOSED);
                         } else {
                             *env.objects.entry(object.clone()).or_default() |= CLOSED;
@@ -399,14 +471,35 @@ fn consume_expr(
                             .unwrap_or_default(),
                         method
                     )) {
+                        let method_key = format!(
+                            "@{}.{}",
+                            env.kinds
+                                .get(object)
+                                .map(String::as_str)
+                                .unwrap_or_default(),
+                            method
+                        );
+                        if env.call_stack.contains(&method_key) {
+                            weaken(env, [object.clone()].into_iter());
+                            boundary(
+                                result,
+                                file,
+                                expr.range,
+                                "recursive method summary is unknown",
+                            );
+                            continue;
+                        }
                         let mut child = State {
                             alive: true,
+                            call_stack: env.call_stack.clone(),
                             ..State::default()
                         };
+                        child.call_stack.insert(method_key);
                         child.places.insert(
                             parameters.first().cloned().unwrap_or_else(|| "self".into()),
                             BTreeSet::from([object.clone()]),
                         );
+                        copy_object_metadata(&mut child, env, &BTreeSet::from([object.clone()]));
                         child.objects.insert(object.clone(), mask);
                         if let Some(origin) = env.close_origins.get(object) {
                             child.close_origins.insert(object.clone(), origin.clone());
@@ -415,6 +508,7 @@ fn consume_expr(
                             if let Some(actual) = expr_name(argument) {
                                 if let Some(targets) = env.places.get(actual) {
                                     child.places.insert(parameter.clone(), targets.clone());
+                                    copy_object_metadata(&mut child, env, targets);
                                 }
                             }
                         }
@@ -429,6 +523,7 @@ fn consume_expr(
                                     child
                                         .places
                                         .insert(parameters[index].clone(), targets.clone());
+                                    copy_object_metadata(&mut child, env, targets);
                                 }
                             }
                         }
@@ -441,8 +536,8 @@ fn consume_expr(
                             result,
                             depth + 1,
                         );
-                        if let Some(value) = child.objects.get(object) {
-                            env.objects.insert(object.clone(), *value);
+                        for (changed_object, value) in child.objects {
+                            env.objects.insert(changed_object, value);
                         }
                         env.close_origins.extend(child.close_origins);
                         env.escaped.extend(child.escaped);
@@ -456,7 +551,40 @@ fn consume_expr(
                         );
                     }
                 }
+            } else {
+                weaken(
+                    env,
+                    env.places
+                        .values()
+                        .flatten()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into_iter(),
+                );
+                boundary(
+                    result,
+                    file,
+                    expr.range,
+                    "unresolved method receiver may affect tracked resources",
+                );
             }
+        } else {
+            // Attribute calls without a resolved local resource receiver are unknown effects.
+            weaken(
+                env,
+                env.places
+                    .values()
+                    .flatten()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            );
+            boundary(
+                result,
+                file,
+                expr.range,
+                "unresolved method call may affect tracked resources",
+            );
         }
         for argument in arguments {
             if let Some(name) = expr_name(argument) {
@@ -482,24 +610,37 @@ fn consume_expr(
     {
         if let Some(callee) = expr_name(function) {
             if let Some((parameters, body)) = functions.get(callee) {
+                if env.call_stack.contains(callee) {
+                    weaken(
+                        env,
+                        env.places
+                            .values()
+                            .flatten()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .into_iter(),
+                    );
+                    boundary(
+                        result,
+                        file,
+                        expr.range,
+                        "recursive function summary is unknown",
+                    );
+                    return;
+                }
                 let mut child = State {
                     alive: true,
+                    call_stack: env.call_stack.clone(),
                     ..State::default()
                 };
+                child.call_stack.insert(callee.to_string());
                 for (parameter, argument) in parameters.iter().zip(arguments) {
                     if let Some(actual) = expr_name(argument) {
                         if let Some(targets) = env.places.get(actual) {
                             child.places.insert(parameter.clone(), targets.clone());
-                            for object in targets {
-                                if let Some(mask) = env.objects.get(object) {
-                                    child.objects.insert(object.clone(), *mask);
-                                }
-                                if env.borrowed.contains(object) {
-                                    child.borrowed.insert(object.clone());
-                                }
-                                if let Some(origin) = env.close_origins.get(object) {
-                                    child.close_origins.insert(object.clone(), origin.clone());
-                                }
+                            copy_object_metadata(&mut child, env, targets);
+                            if env.unknown_places.contains(actual) {
+                                child.unknown_places.insert(parameter.clone());
                             }
                         }
                     }
@@ -523,6 +664,10 @@ fn consume_expr(
                                 child
                                     .places
                                     .insert(parameters[index].clone(), targets.clone());
+                                copy_object_metadata(&mut child, env, targets);
+                                if env.unknown_places.contains(actual) {
+                                    child.unknown_places.insert(parameters[index].clone());
+                                }
                             }
                         }
                     }
@@ -650,15 +795,19 @@ fn execute(
         }
         match statement {
             FlowStatement::Assign { name, value, range } => {
+                evaluate_call_arguments(value, env, file, contracts, functions, result, depth);
                 if let AstExprKind::Call { function, .. } = &value.kind {
                     if let Some(class) = expr_name(function) {
                         if contracts.iter().any(|contract| {
-                            contract.display_name == class && contract.lifecycle.is_some()
+                            contract.display_name == class
+                                && contract.lifecycle.is_some()
+                                && !env.shadowed_classes.contains(class)
                         }) {
                             let object = format!("{}:{}:{}", file.path, range.start, class);
                             env.objects.insert(object.clone(), OPEN);
                             env.kinds.insert(object.clone(), class.to_owned());
                             env.places.insert(name.clone(), BTreeSet::from([object]));
+                            env.shadowed_classes.remove(name);
                             continue;
                         }
                     }
@@ -690,13 +839,21 @@ fn execute(
                 if let Some(source) = expr_name(value) {
                     if let Some(objects) = env.places.get(source).cloned() {
                         env.places.insert(name.clone(), objects);
+                        if env.unknown_places.contains(source) {
+                            env.unknown_places.insert(name.clone());
+                        } else {
+                            env.unknown_places.remove(name);
+                        }
                     } else {
                         env.places.remove(name);
+                        env.unknown_places.remove(name);
                     }
                 } else {
                     env.places.remove(name);
+                    env.unknown_places.remove(name);
                     consume_expr(value, env, file, contracts, functions, result, depth);
                 }
+                env.shadowed_classes.insert(name.clone());
             }
             FlowStatement::Expression { value, .. } => {
                 consume_expr(value, env, file, contracts, functions, result, depth)
