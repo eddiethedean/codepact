@@ -54,7 +54,7 @@ pub fn parse_file(db: &dyn Db, file: FileInput, python_version: String) -> Parse
             absolute_imports: Vec::new(),
         };
     }
-    let parsed = crate::frontend::parse_frontend(file.source(db), &python_version);
+    let parsed = crate::frontend::parse_frontend(file.source(db), file.module(db), &python_version);
     db.unwind_if_revision_cancelled();
     match parsed {
         Ok(frontend) => ParseSummary {
@@ -368,6 +368,46 @@ pub struct SessionInspection {
     pub inspection: Inspection,
 }
 
+fn rejected_check_input(files: &[SourceFile]) -> Option<Inspection> {
+    let source_bytes = files.iter().fold(0usize, |total, file| {
+        total.saturating_add(file.source.len())
+    });
+    if files.len() > crate::DEFAULT_MAX_INPUT_FILES {
+        return Some(crate::invalid_input_inspection(
+            files.first().map_or("<input>", |file| file.path.as_str()),
+            "input file count exceeds the 10,000 file inspection limit",
+            source_bytes,
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    if let Some(duplicate) = files.iter().find(|file| !seen.insert(&file.path)) {
+        return Some(crate::invalid_input_inspection(
+            &duplicate.path,
+            "duplicate source path supplied to one inspection",
+            source_bytes,
+        ));
+    }
+    if source_bytes > crate::DEFAULT_MAX_SOURCE_BYTES {
+        let path = files
+            .iter()
+            .scan(0usize, |total, file| {
+                *total = total.saturating_add(file.source.len());
+                Some((*total, file))
+            })
+            .find(|(total, file)| {
+                *total > crate::DEFAULT_MAX_SOURCE_BYTES
+                    || file.source.len() > crate::DEFAULT_MAX_SOURCE_BYTES
+            })
+            .map_or("<input>", |(_, file)| file.path.as_str());
+        return Some(crate::invalid_input_inspection(
+            path,
+            "supplied source files exceed the 1,000,000 byte total inspection limit",
+            source_bytes,
+        ));
+    }
+    None
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionInputError {
     FileLimitExceeded,
@@ -569,6 +609,13 @@ impl AnalysisSession {
         files: &[SourceFile],
         python_version: &str,
     ) -> Result<SessionInspection, AnalysisCancelled> {
+        if let Some(mut inspection) = rejected_check_input(files) {
+            inspection.assurance = "lifecycle-checking-for-supported-normal-flow".into();
+            return Ok(SessionInspection {
+                revision: self.revision,
+                inspection,
+            });
+        }
         let inspected = self.inspect_cancellable(files, python_version)?;
         let revision = inspected.revision;
         let inspection = inspected.inspection;

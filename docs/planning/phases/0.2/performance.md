@@ -1,7 +1,7 @@
 # 0.2 lifecycle performance baseline
 
-Status: preliminary local baseline; exact-candidate replay and reviewer
-acceptance remain required before G4 or LC01 can pass.
+Status: local working-tree replay from 2026-10-31. Exact-candidate replay and
+reviewer acceptance remain required before G4 or LC01 can pass.
 
 ## Environment and method
 
@@ -19,18 +19,32 @@ performance on other platforms or corpora.
 
 ## Lifecycle session timings
 
-Milliseconds, median (minimum–maximum):
+Milliseconds, median (minimum–maximum), measured after the exact-singleton
+flow-state optimization:
 
 | Resources | Cold session | Warm no-op | Unrelated body edit | Imported effect edit | Location-only edit |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 0.185 (0.144–1.320) | 0.010 (0.009–0.012) | 0.113 (0.112–0.128) | 0.114 (0.113–0.122) | 0.112 (0.111–0.114) |
-| 250 | 4.761 (4.742–5.237) | 0.390 (0.387–0.408) | 2.775 (2.753–2.824) | 3.097 (3.088–3.125) | 2.767 (2.757–2.783) |
-| 1,000 | 41.486 (41.185–42.031) | 1.416 (1.414–1.461) | 18.997 (18.685–19.188) | 20.923 (20.612–21.315) | 19.421 (19.277–19.436) |
+| 1 | 0.258 (0.213–2.073) | 0.009 (0.009–0.012) | 0.086 (0.080–0.347) | 0.099 (0.092–0.111) | 0.083 (0.079–0.182) |
+| 250 | 8.962 (8.067–10.917) | 0.365 (0.364–0.379) | 5.852 (5.683–6.320) | 7.527 (7.269–7.879) | 5.836 (5.630–6.096) |
+| 1,000 | 64.934 (63.714–67.133) | 1.420 (1.406–1.486) | 45.853 (45.317–46.105) | 51.633 (50.960–51.800) | 42.326 (42.126–44.541) |
 
-The 1,000-resource run reached 32.55 MiB peak child RSS, measured with Python's
-`resource.getrusage`. This is process high-water memory, not retained-session
-memory. Live RSS sampling was unavailable in this environment, so retained
-memory remains unmeasured.
+The 1,000-resource benchmark process reached 41.29 MiB maximum resident set
+size (`/usr/bin/time -l`), across its seven repeats of each scenario. This is a
+process high-water measurement, not retained-session memory; retained memory
+remains unmeasured.
+
+Compared with the earlier provisional measurements recorded before the latest
+correctness fixes, 1,000-resource cold time is
+1.57× higher and edit scenarios are 2.18×–2.47× higher; warm no-op time is
+unchanged. At 250 resources, cold time is 1.88× higher and edit scenarios are
+2.11×–2.43× higher; warm no-op time is slightly lower. The earlier source
+version and these later correctness fixes have not received an independent
+performance review, and no absolute latency threshold has been accepted. A
+release-review profile found full flow-state clones on definite singleton
+method calls; evaluating those calls in place reduced the 1,000-resource cold
+median from 476.1 ms to 64.9 ms and the 250-resource median from 35.8 ms to
+9.0 ms. The remaining difference from the earlier provisional result is
+recorded for reviewer assessment rather than treated as a passed threshold.
 
 ## Query reuse evidence
 
@@ -52,8 +66,8 @@ See `db::tests::unchanged_session_check_reuses_the_check_query`,
 ## Inspector comparison with 0.1.0
 
 The existing declaration-inspection corpus v1 was run with the same optimized
-binary method on this host. Current medians were 2.923 ms for the small CLI,
-81.861 ms for 1,000 classes / 2,000 contracts, and 21.181 ms for helper import;
+binary method on this host. Current medians were 2.904 ms for the small CLI,
+81.319 ms for 1,000 classes / 2,000 contracts, and 20.952 ms for helper import;
 maximum child RSS was 18.59 MiB. The recorded 0.1.0 medians were 2.732 ms,
 82.965 ms and 22.348 ms, with 18.61 MiB maximum child RSS. The synthetic CLI
 measurement is effectively unchanged. The small-process ranges include slow
@@ -65,10 +79,11 @@ Reproduce with:
 
 ```sh
 cargo build --release --locked -p typepact
-cargo build --release --locked -p typepact --example benchmark_lifecycle
+cargo build --release --locked -p typepact --bins --examples
 target/release/examples/benchmark_lifecycle 1
 target/release/examples/benchmark_lifecycle 250
 target/release/examples/benchmark_lifecycle 1000
+/usr/bin/time -l target/release/examples/benchmark_lifecycle 1000
 uv run --locked python scripts/benchmark_inspector.py --binary target/release/typepact --repeats 7 --classes 1000
 ```
 

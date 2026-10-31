@@ -24,12 +24,21 @@ type MethodCall<'a> = (&'a AstExpr, &'a str, &'a [AstExpr], &'a [CallKeyword]);
 #[derive(Clone)]
 struct FunctionBody {
     file: SourceFile,
-    name: String,
     parameters: Vec<String>,
     signature: CallSignature,
     contracts: Arc<[Contract]>,
+    parameter_contracts: BTreeMap<String, Contract>,
     statements: Vec<FlowStatement>,
     supported_binding: bool,
+    is_async: bool,
+    binding_key: Option<String>,
+    module_bindings: Arc<ModuleBindings>,
+}
+
+#[derive(Clone, Default)]
+struct ModuleBindings {
+    functions: BTreeMap<String, String>,
+    classes: BTreeMap<String, Option<Contract>>,
 }
 
 struct FlowContext<'a> {
@@ -44,7 +53,6 @@ struct MethodInvocation<'a> {
     arguments: &'a [AstExpr],
     keywords: &'a [CallKeyword],
     parent: &'a State,
-    depth: usize,
     call_key: String,
 }
 
@@ -62,8 +70,67 @@ struct State {
     borrowed_origins: BTreeMap<String, Span>,
     escaped: BTreeSet<String>,
     call_stack: BTreeSet<String>,
+    call_depth: usize,
+    control_depth: usize,
+    function_bindings: BTreeMap<String, String>,
+    function_bindings_complete: bool,
+    class_bindings: BTreeMap<String, Option<Contract>>,
+    module_function_bindings: BTreeMap<String, String>,
+    module_class_bindings: BTreeMap<String, Option<Contract>>,
+    imported_classes: BTreeMap<String, Option<Contract>>,
+    class_bindings_complete: bool,
+    module_scope: bool,
+    scope_module: String,
     close_origins: BTreeMap<String, Span>,
     alive: bool,
+}
+
+fn module_bindings_for_child(
+    parent: &State,
+    definition: &FunctionBody,
+) -> (BTreeMap<String, String>, BTreeMap<String, Option<Contract>>) {
+    if parent.scope_module == definition.file.module {
+        if parent.module_scope {
+            (
+                parent.function_bindings.clone(),
+                parent.class_bindings.clone(),
+            )
+        } else {
+            (
+                parent.module_function_bindings.clone(),
+                parent.module_class_bindings.clone(),
+            )
+        }
+    } else {
+        (
+            definition.module_bindings.functions.clone(),
+            definition.module_bindings.classes.clone(),
+        )
+    }
+}
+
+fn parameter_contracts(
+    file: &SourceFile,
+    name: &str,
+    parameters: &[crate::frontend::Parameter],
+    contracts: &[Contract],
+) -> BTreeMap<String, Contract> {
+    parameters
+        .iter()
+        .filter_map(|parameter| {
+            let annotation = parameter.annotation.as_ref()?;
+            let annotation_span = crate::source_span(&file.path, &file.source, annotation.range);
+            contracts
+                .iter()
+                .find(|contract| {
+                    contract.display_name == format!("{name}.{}", parameter.name)
+                        && contract.lifecycle.is_some()
+                        && contract.source == annotation_span
+                })
+                .cloned()
+                .map(|contract| (parameter.name.clone(), contract))
+        })
+        .collect()
 }
 
 #[derive(Default)]
@@ -99,18 +166,28 @@ fn resource_contract_for_class<'a>(
     contracts: &'a [Contract],
     class: &str,
     file: &SourceFile,
+    position: usize,
 ) -> Option<&'a Contract> {
+    let current_line = file.source[..position.min(file.source.len())]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1;
     contracts
         .iter()
-        .find(|contract| {
+        .filter(|contract| {
             contract.display_name == class
                 && contract.lifecycle.is_some()
                 && contract.source.file == file.path
+                && contract.source.line <= current_line
         })
+        .max_by_key(|contract| contract.source.line)
         .or_else(|| {
-            contracts
-                .iter()
-                .find(|contract| contract.display_name == class && contract.lifecycle.is_some())
+            contracts.iter().find(|contract| {
+                contract.display_name == class
+                    && contract.lifecycle.is_some()
+                    && contract.source.file != file.path
+            })
         })
 }
 
@@ -119,8 +196,37 @@ fn resource_method<'a>(
     method: &str,
     functions: &'a FunctionMap,
 ) -> Option<&'a FunctionBody> {
-    let (module, class) = resource.base_symbol.split('#').next()?.rsplit_once('.')?;
+    let (module, class) = resource.base_symbol.rsplit_once('.')?;
     functions.get(&format!("{module}::@{class}.{method}"))
+}
+
+fn class_resource_contract(
+    file: &SourceFile,
+    name: &str,
+    decorators: &[SourceRange],
+    contracts: &[Contract],
+) -> Option<Contract> {
+    contracts
+        .iter()
+        .find(|contract| {
+            contract.lifecycle.is_some()
+                && contract.display_name == name
+                && contract.source.file == file.path
+                && decorators
+                    .iter()
+                    .any(|decorator| contract.source == span(file, *decorator))
+        })
+        .cloned()
+}
+
+fn contract_inside_range(contract: &Contract, file: &SourceFile, range: SourceRange) -> bool {
+    if contract.source.file != file.path || contract.lifecycle.is_none() {
+        return false;
+    }
+    let container = span(file, range);
+    (contract.source.line, contract.source.column) >= (container.line, container.column)
+        && (contract.source.end_line, contract.source.end_column)
+            <= (container.end_line, container.end_column)
 }
 
 #[derive(Debug)]
@@ -276,19 +382,47 @@ fn call_may_return_resource(
     let Some(callee) = expr_name(function) else {
         return true;
     };
-    let definition = functions
-        .get(&format!("{}::{callee}", file.module))
-        .or_else(|| {
-            functions
-                .get(callee)
-                .filter(|definition| definition.file.module == file.module)
-        });
+    let definition = if env.function_bindings_complete {
+        env.function_bindings
+            .get(callee)
+            .and_then(|binding| functions.get(binding))
+    } else {
+        functions
+            .get(&format!("{}::{callee}", file.module))
+            .or_else(|| {
+                functions
+                    .get(callee)
+                    .filter(|definition| definition.file.module == file.module)
+            })
+    };
     definition.is_none_or(|definition| statements_may_return_resource(&definition.statements))
 }
 
 fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     let mut joined = left.clone();
     let mut effects = JoinEffects::default();
+    let binding_names: BTreeSet<_> = left
+        .function_bindings
+        .keys()
+        .chain(right.function_bindings.keys())
+        .cloned()
+        .collect();
+    for name in binding_names {
+        if left.function_bindings.get(&name) != right.function_bindings.get(&name) {
+            joined.function_bindings.remove(&name);
+        }
+    }
+    let class_names: BTreeSet<_> = left
+        .class_bindings
+        .keys()
+        .chain(right.class_bindings.keys())
+        .cloned()
+        .collect();
+    for name in class_names {
+        if left.class_bindings.get(&name) != right.class_bindings.get(&name) {
+            joined.class_bindings.remove(&name);
+        }
+    }
     joined
         .unknown_places
         .extend(right.unknown_places.iter().cloned());
@@ -534,7 +668,6 @@ fn check_borrowed_precondition(
     argument: &AstExpr,
     env: &State,
     call_site: Span,
-    contracts: &[Contract],
     result: &mut Inspection,
 ) {
     let Some(name) = expr_name(argument) else {
@@ -543,12 +676,10 @@ fn check_borrowed_precondition(
     let Some(targets) = env.places.get(name) else {
         return;
     };
-    let requires_open_resource = contracts.iter().any(|contract| {
-        contract.display_name == format!("{}.{parameter}", definition.name)
-            && contract.source.file == definition.file.path
-            && contract.access == "shared"
-            && contract.lifecycle.is_some()
-    });
+    let requires_open_resource = definition
+        .parameter_contracts
+        .get(parameter)
+        .is_some_and(|contract| contract.access == "shared" && contract.lifecycle.is_some());
     if !requires_open_resource {
         return;
     }
@@ -582,12 +713,22 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         arguments,
         keywords,
         parent,
-        depth,
         call_key,
     } = invocation;
+    let (module_function_bindings, module_class_bindings) =
+        module_bindings_for_child(parent, definition);
     let mut child = State {
         alive: true,
         call_stack: parent.call_stack.clone(),
+        function_bindings: module_function_bindings.clone(),
+        function_bindings_complete: true,
+        class_bindings: module_class_bindings.clone(),
+        module_function_bindings,
+        module_class_bindings,
+        class_bindings_complete: true,
+        call_depth: parent.call_depth.saturating_add(1),
+        control_depth: parent.control_depth,
+        scope_module: definition.file.module.clone(),
         ..State::default()
     };
     child.call_stack.insert(call_key);
@@ -638,7 +779,7 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         &definition.contracts,
         context.functions,
         context.result,
-        depth + 1,
+        0,
     );
     join_normal_exits(child, returned)
 }
@@ -651,60 +792,99 @@ fn resolve_imported_contracts(
     result: &Inspection,
     visited: &mut BTreeSet<(String, String)>,
 ) -> Vec<Contract> {
-    if !visited.insert((module.to_owned(), name.to_owned())) {
+    let key = (module.to_owned(), name.to_owned());
+    if !visited.insert(key.clone()) {
         return Vec::new();
     }
-    let symbol = format!("{module}.{name}");
-    let direct: Vec<_> = result
-        .contracts
-        .iter()
-        .filter(|contract| {
-            contract.lifecycle.is_some()
-                && (contract.base_symbol == symbol
-                    || contract.base_symbol.starts_with(&format!("{symbol}#")))
-        })
-        .cloned()
-        .collect();
-    if !direct.is_empty() {
-        return direct;
-    }
-    let Some(provider) = files.iter().find(|file| file.module == module) else {
-        return Vec::new();
-    };
-    let Some(declarations) = summaries
-        .get(&provider.path)
-        .and_then(|summary| summary.declarations.as_ref())
-    else {
-        return Vec::new();
-    };
-    declarations
-        .iter()
-        .filter_map(|declaration| {
-            let Declaration::ImportFrom {
-                module: source_module,
-                level: 0,
-                names,
-                ..
-            } = declaration
-            else {
-                return None;
-            };
-            names
-                .iter()
-                .find(|import| import.alias.as_deref().unwrap_or(&import.name) == name)
-                .map(|import| (source_module.clone(), import.name.clone()))
-        })
-        .flat_map(|(source_module, source_name)| {
-            resolve_imported_contracts(
-                &source_module,
-                &source_name,
-                files,
-                summaries,
-                result,
-                visited,
-            )
-        })
-        .collect()
+    let resolved = (|| {
+        let provider = files.iter().find(|file| file.module == module)?;
+        let declarations = summaries.get(&provider.path)?.declarations.as_ref()?;
+        let mut binding = Vec::new();
+        for declaration in declarations {
+            match declaration {
+                Declaration::Class {
+                    name: bound,
+                    decorators,
+                    ..
+                } if bound == name => {
+                    let ranges: Vec<_> =
+                        decorators.iter().map(|decorator| decorator.range).collect();
+                    binding = class_resource_contract(provider, bound, &ranges, &result.contracts)
+                        .into_iter()
+                        .collect();
+                }
+                Declaration::Function { name: bound, .. }
+                | Declaration::TypeAlias {
+                    name: Some(bound), ..
+                } if bound == name => binding.clear(),
+                Declaration::Assignment {
+                    name: Some(bound),
+                    value: Some(_),
+                    range,
+                    ..
+                } if bound == name => {
+                    binding = result
+                        .contracts
+                        .iter()
+                        .find(|contract| {
+                            contract.display_name == *bound
+                                && contract_inside_range(contract, provider, *range)
+                        })
+                        .cloned()
+                        .into_iter()
+                        .collect();
+                }
+                Declaration::Delete { names, .. }
+                    if names.iter().any(|bound| bound.as_deref() == Some(name)) =>
+                {
+                    binding.clear();
+                }
+                Declaration::ImportFrom {
+                    module: source_module,
+                    level,
+                    names,
+                    ..
+                } => {
+                    if let Some(import) = names
+                        .iter()
+                        .find(|import| import.alias.as_deref().unwrap_or(&import.name) == name)
+                    {
+                        binding = if *level == 0 {
+                            resolve_imported_contracts(
+                                source_module,
+                                &import.name,
+                                files,
+                                summaries,
+                                result,
+                                visited,
+                            )
+                        } else {
+                            Vec::new()
+                        };
+                    } else if names.iter().any(|import| import.name == "*") {
+                        binding.clear();
+                    }
+                }
+                Declaration::Import { names, .. } => {
+                    if names.iter().any(|import| {
+                        import
+                            .alias
+                            .as_deref()
+                            .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default())
+                            == name
+                    }) {
+                        binding.clear();
+                    }
+                }
+                Declaration::Unsupported { .. } => binding.clear(),
+                _ => {}
+            }
+        }
+        Some(binding)
+    })()
+    .unwrap_or_default();
+    visited.remove(&key);
+    resolved
 }
 
 fn contracts_for_module(
@@ -764,6 +944,135 @@ fn contracts_for_module(
     contracts
 }
 
+fn final_class_bindings(
+    file: &SourceFile,
+    declarations: &[Declaration],
+    files: &[SourceFile],
+    summaries: &BTreeMap<String, crate::db::ParseSummary>,
+    result: &Inspection,
+) -> BTreeMap<String, Option<Contract>> {
+    let mut bindings = BTreeMap::new();
+    for declaration in declarations {
+        match declaration {
+            Declaration::Class {
+                name, decorators, ..
+            } => {
+                let ranges: Vec<_> = decorators.iter().map(|decorator| decorator.range).collect();
+                bindings.insert(
+                    name.clone(),
+                    class_resource_contract(file, name, &ranges, &result.contracts),
+                );
+            }
+            Declaration::Function { name, .. } => {
+                bindings.insert(name.clone(), None);
+            }
+            Declaration::Assignment {
+                name: Some(name),
+                value,
+                range,
+                ..
+            } => {
+                if let Some(value) = value {
+                    let resource_view = result
+                        .contracts
+                        .iter()
+                        .filter(|contract| {
+                            contract.display_name == *name
+                                && contract_inside_range(contract, file, *range)
+                        })
+                        .max_by_key(|contract| (contract.source.line, contract.source.column))
+                        .cloned();
+                    let binding = resource_view.or_else(|| {
+                        expr_name(value)
+                            .and_then(|source| bindings.get(source))
+                            .cloned()
+                            .flatten()
+                    });
+                    bindings.insert(name.clone(), binding);
+                }
+            }
+            Declaration::ImportFrom {
+                module,
+                level,
+                names,
+                ..
+            } => {
+                if names.iter().any(|import| import.name == "*") {
+                    for binding in bindings.values_mut() {
+                        *binding = None;
+                    }
+                } else {
+                    for import in names {
+                        let local = import.alias.as_deref().unwrap_or(&import.name);
+                        let binding = if *level == 0 {
+                            resolve_imported_contracts(
+                                module,
+                                &import.name,
+                                files,
+                                summaries,
+                                result,
+                                &mut BTreeSet::new(),
+                            )
+                            .into_iter()
+                            .next()
+                            .map(|mut contract| {
+                                contract.display_name = local.to_owned();
+                                contract
+                            })
+                        } else {
+                            None
+                        };
+                        bindings.insert(local.to_owned(), binding);
+                    }
+                }
+            }
+            Declaration::Import { names, .. } => {
+                for import in names {
+                    let local = import
+                        .alias
+                        .as_deref()
+                        .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default());
+                    bindings.insert(local.to_owned(), None);
+                }
+            }
+            Declaration::Delete { names, .. } => {
+                for name in names.iter().flatten() {
+                    bindings.insert(name.clone(), None);
+                }
+            }
+            Declaration::TypeAlias {
+                name: Some(name), ..
+            } => {
+                bindings.insert(name.clone(), None);
+            }
+            Declaration::Unsupported { .. } => {
+                for binding in bindings.values_mut() {
+                    *binding = None;
+                }
+            }
+            Declaration::Assignment { .. } | Declaration::TypeAlias { .. } => {}
+        }
+    }
+    bindings
+}
+
+fn final_function_bindings(module: &str, functions: &FunctionMap) -> BTreeMap<String, String> {
+    let prefix = format!("{module}::");
+    functions
+        .iter()
+        .filter_map(|(key, body)| {
+            let name = key.strip_prefix(&prefix)?;
+            if name.starts_with('@') || name.contains(':') {
+                return None;
+            }
+            let binding = body.binding_key.as_ref()?;
+            functions
+                .contains_key(binding)
+                .then(|| (name.to_owned(), binding.clone()))
+        })
+        .collect()
+}
+
 fn resolve_imported_function(
     module: &str,
     name: &str,
@@ -776,38 +1085,79 @@ fn resolve_imported_function(
         return None;
     }
     let provider = files.iter().find(|file| file.module == module)?;
-    let provider_summary = summaries.get(&provider.path)?;
-    if assigned_names(&provider_summary.module_body).contains(name) {
-        return None;
-    }
-    if let Some(function) = functions.get(&(module.to_owned(), name.to_owned())) {
-        return Some(function.clone());
-    }
-    let declarations = provider_summary.declarations.as_ref()?;
-    for declaration in declarations {
-        let Declaration::ImportFrom {
-            module: source_module,
-            level: 0,
-            names,
-            ..
-        } = declaration
-        else {
-            continue;
-        };
-        if let Some(import) = names
-            .iter()
-            .find(|import| import.alias.as_deref().unwrap_or(&import.name) == name)
-        {
-            if let Some(function) = resolve_imported_function(
-                source_module,
-                &import.name,
-                files,
-                summaries,
-                functions,
-                visited,
-            ) {
-                return Some(function);
+    let declarations = summaries.get(&provider.path)?.declarations.as_ref()?;
+    for declaration in declarations.iter().rev() {
+        match declaration {
+            Declaration::Function {
+                name: bound,
+                decorators,
+                unsupported,
+                ..
+            } if bound == name => {
+                return if decorators.is_empty() && !unsupported {
+                    functions
+                        .get(&(module.to_owned(), name.to_owned()))
+                        .cloned()
+                } else {
+                    None
+                };
             }
+            Declaration::Class { name: bound, .. }
+            | Declaration::TypeAlias {
+                name: Some(bound), ..
+            } if bound == name => {
+                return None;
+            }
+            Declaration::Assignment {
+                name: Some(bound),
+                value: Some(_),
+                ..
+            } if bound == name => return None,
+            Declaration::Delete { names, .. }
+                if names.iter().any(|bound| bound.as_deref() == Some(name)) =>
+            {
+                return None;
+            }
+            Declaration::ImportFrom {
+                module: source,
+                level,
+                names,
+                ..
+            } => {
+                if let Some(import) = names
+                    .iter()
+                    .find(|import| import.alias.as_deref().unwrap_or(&import.name) == name)
+                {
+                    return if *level == 0 {
+                        resolve_imported_function(
+                            source,
+                            &import.name,
+                            files,
+                            summaries,
+                            functions,
+                            visited,
+                        )
+                    } else {
+                        None
+                    };
+                }
+                if names.iter().any(|import| import.name == "*") {
+                    return None;
+                }
+            }
+            Declaration::Import { names, .. } => {
+                if names.iter().any(|import| {
+                    import
+                        .alias
+                        .as_deref()
+                        .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default())
+                        == name
+                }) {
+                    return None;
+                }
+            }
+            Declaration::Unsupported { .. } => return None,
+            _ => {}
         }
     }
     None
@@ -858,7 +1208,7 @@ fn consume_expr(
     result: &mut Inspection,
     depth: usize,
 ) {
-    if depth > MAX_CALL_DEPTH {
+    if depth > MAX_CALL_DEPTH || env.call_depth >= MAX_CALL_DEPTH {
         weaken(
             env,
             env.places
@@ -890,9 +1240,21 @@ fn consume_expr(
                     let mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
                     mask & (OPEN | UNKNOWN) != 0
                 }) || env.unknown_places.contains(name);
-                let incoming = env.clone();
+                let exact_singleton = targets.len() == 1 && !env.unknown_places.contains(name);
+                let uncertain_receiver = !exact_singleton;
+                // A singleton receiver can be evaluated in place. Cloning the whole
+                // environment for every method call made straight-line resource
+                // workloads quadratic in the number of resources.
+                let incoming = (!exact_singleton).then(|| env.clone());
                 let mut normal_outcome: Option<State> = None;
-                if incoming.unknown_places.contains(name) {
+                let mut dead_exact_outcome: Option<State> = None;
+                if incoming
+                    .as_ref()
+                    .is_some_and(|incoming| incoming.unknown_places.contains(name))
+                {
+                    let incoming = incoming
+                        .as_ref()
+                        .expect("unknown receiver has an input state");
                     let mut unknown = incoming.clone();
                     let affected: Vec<_> = targets
                         .iter()
@@ -917,7 +1279,14 @@ fn consume_expr(
                     normal_outcome = Some(unknown);
                 }
                 for object in &targets {
-                    let mut alternative = incoming.clone();
+                    let mut alternative = if exact_singleton {
+                        std::mem::take(env)
+                    } else {
+                        incoming
+                            .as_ref()
+                            .expect("multi-target receiver has an input state")
+                            .clone()
+                    };
                     alternative
                         .places
                         .insert(name.to_owned(), BTreeSet::from([object.clone()]));
@@ -949,7 +1318,8 @@ fn consume_expr(
                                     affected.extend(targets.iter().cloned());
                                 }
                             }
-                            weaken(env, affected.into_iter());
+                            weaken(env, affected.iter().cloned());
+                            env.escaped.extend(affected);
                             boundary(
                                 result,
                                 file,
@@ -965,6 +1335,27 @@ fn consume_expr(
                                 binding_failure(failure, env, file, expr.range, result);
                                 return;
                             }
+                        }
+                        if definition.is_some_and(|definition| definition.is_async) {
+                            let mut affected = vec![object.clone()];
+                            for argument in arguments
+                                .iter()
+                                .chain(keywords.iter().map(|(_, value)| value))
+                                .filter_map(expr_name)
+                            {
+                                if let Some(targets) = env.places.get(argument) {
+                                    affected.extend(targets.iter().cloned());
+                                }
+                            }
+                            weaken(env, affected.iter().cloned());
+                            env.escaped.extend(affected);
+                            boundary(
+                                result,
+                                file,
+                                expr.range,
+                                "async method effects are not modeled",
+                            );
+                            return;
                         }
                         if mask & CLOSED != 0 && !is_close {
                             let certainty = if !has_open_alternative && mask & UNKNOWN == 0 {
@@ -1026,7 +1417,6 @@ fn consume_expr(
                                     arguments,
                                     keywords,
                                     parent: env,
-                                    depth,
                                     call_key: method_key,
                                 },
                                 FlowContext { functions, result },
@@ -1049,7 +1439,7 @@ fn consume_expr(
                             env.close_origins
                                 .insert(object.clone(), span(file, expr.range));
                             env.objects.insert(object.clone(), CLOSED);
-                        } else if !contracts.is_empty() {
+                        } else {
                             let mut affected = vec![object.clone()];
                             for argument in arguments
                                 .iter()
@@ -1061,6 +1451,7 @@ fn consume_expr(
                                 }
                             }
                             weaken(env, affected.into_iter());
+                            env.escaped.insert(object.clone());
                             boundary(
                                 result,
                                 file,
@@ -1069,7 +1460,7 @@ fn consume_expr(
                             );
                         }
                     })();
-                    if targets.len() > 1 || incoming.unknown_places.contains(name) {
+                    if uncertain_receiver {
                         for diagnostic in &mut result.diagnostics[diagnostic_start..] {
                             if diagnostic.code == "TP1001"
                                 && diagnostic.primary != span(file, expr.range)
@@ -1084,12 +1475,18 @@ fn consume_expr(
                             Some(previous) => merge(&previous, &alternative).0,
                             None => alternative,
                         });
+                    } else if exact_singleton {
+                        dead_exact_outcome = Some(alternative);
                     }
                 }
-                *env = normal_outcome.unwrap_or_else(|| {
-                    let mut stopped = incoming;
-                    stopped.alive = false;
-                    stopped
+                *env = normal_outcome.unwrap_or_else(|| match incoming {
+                    Some(mut incoming) => {
+                        incoming.alive = false;
+                        incoming
+                    }
+                    None => {
+                        dead_exact_outcome.expect("exact receiver has a normal or stopped outcome")
+                    }
                 });
             } else {
                 weaken(
@@ -1152,6 +1549,10 @@ fn consume_expr(
             let scoped_name = format!("{}::{callee}", file.module);
             let known_function = if env.shadowed_functions.contains(callee) {
                 None
+            } else if env.module_scope || env.function_bindings_complete {
+                env.function_bindings
+                    .get(callee)
+                    .and_then(|binding| functions.get(binding))
             } else {
                 functions.get(&scoped_name).or_else(|| {
                     functions
@@ -1168,6 +1569,25 @@ fn consume_expr(
                             return;
                         }
                     };
+                if definition.is_async {
+                    let affected: Vec<_> = arguments
+                        .iter()
+                        .chain(keywords.iter().map(|(_, value)| value))
+                        .filter_map(expr_name)
+                        .filter_map(|name| env.places.get(name))
+                        .flatten()
+                        .cloned()
+                        .collect();
+                    weaken(env, affected.iter().cloned());
+                    env.escaped.extend(affected);
+                    boundary(
+                        result,
+                        file,
+                        expr.range,
+                        "async function effects are not modeled",
+                    );
+                    return;
+                }
                 if env.call_stack.contains(callee) {
                     weaken(
                         env,
@@ -1186,9 +1606,20 @@ fn consume_expr(
                     );
                     return;
                 }
+                let (module_function_bindings, module_class_bindings) =
+                    module_bindings_for_child(env, definition);
                 let mut child = State {
                     alive: true,
                     call_stack: env.call_stack.clone(),
+                    function_bindings: module_function_bindings.clone(),
+                    function_bindings_complete: true,
+                    class_bindings: module_class_bindings.clone(),
+                    module_function_bindings,
+                    module_class_bindings,
+                    class_bindings_complete: true,
+                    call_depth: env.call_depth.saturating_add(1),
+                    control_depth: env.control_depth,
+                    scope_module: definition.file.module.clone(),
                     ..State::default()
                 };
                 child.call_stack.insert(callee.to_string());
@@ -1222,7 +1653,6 @@ fn consume_expr(
                         argument,
                         env,
                         call_site.clone(),
-                        &definition.contracts,
                         result,
                     );
                 }
@@ -1234,7 +1664,7 @@ fn consume_expr(
                     &definition.contracts,
                     functions,
                     result,
-                    depth + 1,
+                    0,
                 );
                 let child = join_normal_exits(child, returned);
                 let body_diagnostics = result.diagnostics.split_off(diagnostic_start);
@@ -1330,9 +1760,8 @@ fn consume_expr(
         AstExprKind::Other
         | AstExprKind::Attribute(_, _)
         | AstExprKind::Subscript(_, _)
-        | AstExprKind::DepthLimit
-            if !env.places.is_empty() =>
-        {
+        | AstExprKind::DepthLimit => {
+            env.unknown_places.extend(env.places.keys().cloned());
             weaken(
                 env,
                 env.places
@@ -1370,319 +1799,18 @@ fn execute(
         if !take_flow_step(env, file, statement_range(statement), result) {
             break;
         }
-        match statement {
-            FlowStatement::Assign { name, value, range } => {
-                if let AstExprKind::Call { function, .. } = &value.kind {
-                    if let Some(class) = expr_name(function) {
-                        if resource_contract_for_class(contracts, class, file).is_some()
-                            && !env.shadowed_classes.contains(class)
-                        {
-                            evaluate_call_arguments(
-                                value, env, file, contracts, functions, result, depth,
-                            );
-                            if !env.alive {
-                                continue;
-                            }
-                            let new_definition = resource_contract_for_class(
-                                contracts, class, file,
-                            )
-                            .and_then(|resource| resource_method(resource, "__new__", functions));
-                            if new_definition.is_some() {
-                                weaken(
-                                    env,
-                                    env.places
-                                        .values()
-                                        .flatten()
-                                        .cloned()
-                                        .collect::<Vec<_>>()
-                                        .into_iter(),
-                                );
-                                env.places.remove(name);
-                                env.unknown_places.insert(name.clone());
-                                env.shadowed_classes.insert(name.clone());
-                                env.shadowed_functions.insert(name.clone());
-                                boundary(
-                                    result,
-                                    file,
-                                    *range,
-                                    "custom __new__ allocation effects are not modeled",
-                                );
-                                continue;
-                            }
-                            let object = format!("{}:{}:{}", file.path, range.start, class);
-                            if !env.objects.contains_key(&object)
-                                && env.objects.len() >= MAX_FLOW_OBJECTS
-                            {
-                                env.places.remove(name);
-                                env.unknown_places.insert(name.clone());
-                                env.shadowed_classes.insert(name.clone());
-                                boundary(
-                                    result,
-                                    file,
-                                    *range,
-                                    "tracked resource object budget exceeded; lifecycle state is unknown",
-                                );
-                                continue;
-                            }
-                            env.objects.insert(object.clone(), OPEN);
-                            env.resources.insert(
-                                object.clone(),
-                                resource_contract_for_class(contracts, class, file)
-                                    .expect("resolved resource constructor")
-                                    .clone(),
-                            );
-                            if let AstExprKind::Call {
-                                arguments,
-                                keywords,
-                                ..
-                            } = &value.kind
-                            {
-                                let resource =
-                                    env.resources.get(&object).expect("constructed resource");
-                                let init_key = format!("{}::__init__", resource.base_symbol);
-                                let definition = resource_method(resource, "__init__", functions);
-                                if let Some(definition) = definition {
-                                    if !definition.supported_binding {
-                                        let mut affected = vec![object.clone()];
-                                        for argument in arguments
-                                            .iter()
-                                            .chain(keywords.iter().map(|(_, value)| value))
-                                            .filter_map(expr_name)
-                                        {
-                                            if let Some(targets) = env.places.get(argument) {
-                                                affected.extend(targets.iter().cloned());
-                                            }
-                                        }
-                                        weaken(env, affected.into_iter());
-                                        boundary(
-                                            result,
-                                            file,
-                                            *range,
-                                            "decorated method binding is not modeled",
-                                        );
-                                    } else if let Err(failure) = bind_arguments(
-                                        &definition.signature,
-                                        arguments,
-                                        keywords,
-                                        true,
-                                    ) {
-                                        binding_failure(failure, env, file, *range, result);
-                                    } else {
-                                        let child = execute_method_body(
-                                            MethodInvocation {
-                                                definition,
-                                                object: &object,
-                                                initial_mask: OPEN,
-                                                arguments,
-                                                keywords,
-                                                parent: env,
-                                                depth,
-                                                call_key: init_key,
-                                            },
-                                            FlowContext { functions, result },
-                                        );
-                                        for (changed_object, state) in child.objects {
-                                            env.objects.insert(changed_object, state);
-                                        }
-                                        env.resources.extend(child.resources);
-                                        env.close_origins.extend(child.close_origins);
-                                        env.escaped.extend(child.escaped);
-                                        if !child.alive {
-                                            env.alive = false;
-                                        }
-                                    }
-                                } else if let Err(failure) = bind_arguments(
-                                    &CallSignature::default(),
-                                    arguments,
-                                    keywords,
-                                    false,
-                                ) {
-                                    binding_failure(failure, env, file, *range, result);
-                                }
-                            }
-                            env.places
-                                .insert(name.clone(), BTreeSet::from([object.clone()]));
-                            env.unknown_places.remove(name);
-                            env.shadowed_classes.insert(name.clone());
-                            env.shadowed_functions.insert(name.clone());
-                            continue;
-                        }
-                    }
-                }
-                if let AstExprKind::Call {
-                    arguments,
-                    keywords,
-                    ..
-                } = &value.kind
-                {
-                    let passes_resource = arguments
-                        .iter()
-                        .chain(keywords.iter().map(|(_, value)| value))
-                        .any(|argument| {
-                            expr_name(argument).is_some_and(|name| env.places.contains_key(name))
-                        })
-                        || called_method(value).is_some_and(|(receiver, _, _, _)| {
-                            expr_name(receiver).is_some_and(|name| env.places.contains_key(name))
-                        });
-                    let may_return_resource =
-                        passes_resource && call_may_return_resource(value, env, file, functions);
-                    if may_return_resource {
-                        consume_expr(value, env, file, contracts, functions, result, depth);
-                        env.places.remove(name);
-                        env.unknown_places.insert(name.clone());
-                        boundary(
-                            result,
-                            file,
-                            *range,
-                            "resource-valued call result is not tracked",
-                        );
-                        continue;
-                    }
-                }
-                if let Some(source) = expr_name(value) {
-                    if let Some(objects) = env.places.get(source).cloned() {
-                        env.places.insert(name.clone(), objects);
-                        if env.unknown_places.contains(source) {
-                            env.unknown_places.insert(name.clone());
-                        } else {
-                            env.unknown_places.remove(name);
-                        }
-                    } else if env.unknown_places.contains(source) {
-                        env.places.remove(name);
-                        env.unknown_places.insert(name.clone());
-                    } else {
-                        env.places.remove(name);
-                        env.unknown_places.remove(name);
-                    }
-                } else {
-                    consume_expr(value, env, file, contracts, functions, result, depth);
-                    env.places.remove(name);
-                    env.unknown_places.remove(name);
-                }
-                env.shadowed_functions.insert(name.clone());
-                let assignment_span = span(file, *range);
-                let defines_resource_view = contracts.iter().any(|contract| {
-                    contract.display_name == *name
-                        && contract.lifecycle.is_some()
-                        && contract.source.file == file.path
-                        && contract.source.line == assignment_span.line
-                        && contract.source.column >= assignment_span.column
-                        && (contract.source.end_line < assignment_span.end_line
-                            || contract.source.end_column <= assignment_span.end_column)
-                });
-                if defines_resource_view {
-                    env.shadowed_classes.remove(name);
-                } else {
-                    env.shadowed_classes.insert(name.clone());
-                }
+        if let FlowStatement::If {
+            test,
+            body,
+            alternate,
+            range,
+        } = statement
+        {
+            consume_expr(test, env, file, contracts, functions, result, 0);
+            if !env.alive {
+                continue;
             }
-            FlowStatement::Expression { value, .. } => {
-                consume_expr(value, env, file, contracts, functions, result, depth)
-            }
-            FlowStatement::Pass { .. } => {}
-            FlowStatement::If {
-                test,
-                body,
-                alternate,
-                range,
-            } => {
-                consume_expr(test, env, file, contracts, functions, result, depth);
-                if !env.alive {
-                    continue;
-                }
-                if depth >= MAX_CONTROL_FLOW_DEPTH {
-                    weaken(
-                        env,
-                        env.places
-                            .values()
-                            .flatten()
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .into_iter(),
-                    );
-                    boundary(
-                        result,
-                        file,
-                        *range,
-                        "control-flow nesting budget exceeded; tracked resources are unknown",
-                    );
-                    continue;
-                }
-                let before = env.clone();
-                let mut left = before.clone();
-                left.alive = true;
-                let mut right = before;
-                right.alive = true;
-                let left_returns = execute(
-                    body,
-                    &mut left,
-                    file,
-                    contracts,
-                    functions,
-                    result,
-                    depth + 1,
-                );
-                let right_returns = execute(
-                    alternate,
-                    &mut right,
-                    file,
-                    contracts,
-                    functions,
-                    result,
-                    depth + 1,
-                );
-                returned_states.extend(left_returns);
-                returned_states.extend(right_returns);
-                let reachable = left.alive || right.alive;
-                let (joined, effects) = match (left.alive, right.alive) {
-                    (true, true) => merge(&left, &right),
-                    (true, false) => (left, JoinEffects::default()),
-                    (false, true) => (right, JoinEffects::default()),
-                    (false, false) => {
-                        let (mut joined, effects) = merge(&left, &right);
-                        joined.alive = false;
-                        (joined, effects)
-                    }
-                };
-                *env = joined;
-                if reachable {
-                    for place in effects.possibly_unbound {
-                        boundary(
-                            result,
-                            file,
-                            *range,
-                            &format!("local resource alias {place} may be unbound on one branch"),
-                        );
-                    }
-                    for place in effects.aliases_over_budget {
-                        boundary(
-                            result,
-                            file,
-                            *range,
-                            &format!(
-                                "alias target budget exceeded for {place}; affected resource states are unknown"
-                            ),
-                        );
-                    }
-                }
-            }
-            FlowStatement::Return { value, .. } => {
-                if let Some(value) = value {
-                    consume_expr(value, env, file, contracts, functions, result, depth);
-                }
-                if !env.alive {
-                    continue;
-                }
-                let mut returned = env.clone();
-                returned.alive = true;
-                returned_states.push(returned);
-                env.alive = false;
-            }
-            FlowStatement::Raise { range } => {
-                boundary(result, file, *range, "raise ends normal lifecycle flow");
-                env.alive = false;
-            }
-            FlowStatement::Unsupported { range } => {
+            if depth >= MAX_CONTROL_FLOW_DEPTH || env.control_depth >= MAX_CONTROL_FLOW_DEPTH {
                 weaken(
                     env,
                     env.places
@@ -1696,12 +1824,421 @@ fn execute(
                     result,
                     file,
                     *range,
-                    "unsupported flow weakens tracked resources",
+                    "control-flow nesting budget exceeded; tracked resources are unknown",
                 );
+                continue;
             }
+            let before = Box::new(env.clone());
+            let mut left = Box::new((*before).clone());
+            left.control_depth = left.control_depth.saturating_add(1);
+            left.alive = true;
+            let mut right = Box::new((*before).clone());
+            right.control_depth = right.control_depth.saturating_add(1);
+            right.alive = true;
+            let left_returns = execute(
+                body,
+                &mut left,
+                file,
+                contracts,
+                functions,
+                result,
+                depth + 1,
+            );
+            let right_returns = execute(
+                alternate,
+                &mut right,
+                file,
+                contracts,
+                functions,
+                result,
+                depth + 1,
+            );
+            returned_states.extend(left_returns);
+            returned_states.extend(right_returns);
+            let reachable = left.alive || right.alive;
+            let (mut joined, effects) = match (left.alive, right.alive) {
+                (true, true) => merge(&left, &right),
+                (true, false) => (*left, JoinEffects::default()),
+                (false, true) => (*right, JoinEffects::default()),
+                (false, false) => {
+                    let (mut joined, effects) = merge(&left, &right);
+                    joined.alive = false;
+                    (joined, effects)
+                }
+            };
+            joined.control_depth = before.control_depth;
+            *env = joined;
+            if reachable {
+                for place in effects.possibly_unbound {
+                    boundary(
+                        result,
+                        file,
+                        *range,
+                        &format!("local resource alias {place} may be unbound on one branch"),
+                    );
+                }
+                for place in effects.aliases_over_budget {
+                    boundary(
+                        result,
+                        file,
+                        *range,
+                        &format!(
+                            "alias target budget exceeded for {place}; affected resource states are unknown"
+                        ),
+                    );
+                }
+            }
+        } else if let Some(returned) =
+            execute_non_if_statement(statement, env, file, contracts, functions, result)
+        {
+            returned_states.push(returned);
         }
     }
     returned_states
+}
+
+fn execute_non_if_statement(
+    statement: &FlowStatement,
+    env: &mut State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+) -> Option<State> {
+    match statement {
+        FlowStatement::Assign { name, value, range } => {
+            let source_class_binding = expr_name(value)
+                .filter(|source| {
+                    !env.places.contains_key(*source) && !env.unknown_places.contains(*source)
+                })
+                .and_then(|source| env.class_bindings.get(source))
+                .cloned();
+            let resource_view = contracts
+                .iter()
+                .filter(|contract| {
+                    contract.display_name == *name && contract_inside_range(contract, file, *range)
+                })
+                .max_by_key(|contract| (contract.source.line, contract.source.column))
+                .cloned();
+            let defines_resource_view = resource_view.is_some();
+            if let AstExprKind::Call { function, .. } = &value.kind {
+                if let Some(class) = expr_name(function) {
+                    let resource_contract = match env.class_bindings.get(class) {
+                        Some(binding) => binding.clone(),
+                        None if env.module_scope || env.class_bindings_complete => None,
+                        None => {
+                            resource_contract_for_class(contracts, class, file, usize::MAX).cloned()
+                        }
+                    };
+                    if resource_contract.is_some() && !env.shadowed_classes.contains(class) {
+                        evaluate_call_arguments(value, env, file, contracts, functions, result, 0);
+                        if !env.alive {
+                            return None;
+                        }
+                        let new_definition = resource_contract
+                            .as_ref()
+                            .and_then(|resource| resource_method(resource, "__new__", functions));
+                        if new_definition.is_some() {
+                            weaken(
+                                env,
+                                env.places
+                                    .values()
+                                    .flatten()
+                                    .cloned()
+                                    .collect::<Vec<_>>()
+                                    .into_iter(),
+                            );
+                            env.places.remove(name);
+                            env.unknown_places.insert(name.clone());
+                            env.shadowed_classes.insert(name.clone());
+                            env.class_bindings.remove(name);
+                            env.shadowed_functions.insert(name.clone());
+                            boundary(
+                                result,
+                                file,
+                                *range,
+                                "custom __new__ allocation effects are not modeled",
+                            );
+                            return None;
+                        }
+                        let object = format!("{}:{}:{}", file.path, range.start, class);
+                        if !env.objects.contains_key(&object)
+                            && env.objects.len() >= MAX_FLOW_OBJECTS
+                        {
+                            env.places.remove(name);
+                            env.unknown_places.insert(name.clone());
+                            env.shadowed_classes.insert(name.clone());
+                            env.class_bindings.remove(name);
+                            boundary(
+                                    result,
+                                    file,
+                                    *range,
+                                    "tracked resource object budget exceeded; lifecycle state is unknown",
+                                );
+                            return None;
+                        }
+                        env.objects.insert(object.clone(), OPEN);
+                        env.resources.insert(
+                            object.clone(),
+                            resource_contract
+                                .clone()
+                                .expect("resolved resource constructor"),
+                        );
+                        if let AstExprKind::Call {
+                            arguments,
+                            keywords,
+                            ..
+                        } = &value.kind
+                        {
+                            let resource =
+                                env.resources.get(&object).expect("constructed resource");
+                            let init_key = format!("{}::__init__", resource.base_symbol);
+                            let definition = resource_method(resource, "__init__", functions);
+                            if let Some(definition) = definition {
+                                if env.call_depth >= MAX_CALL_DEPTH
+                                    || env.call_stack.contains(&init_key)
+                                {
+                                    let mut affected = vec![object.clone()];
+                                    for argument in arguments
+                                        .iter()
+                                        .chain(keywords.iter().map(|(_, value)| value))
+                                        .filter_map(expr_name)
+                                    {
+                                        if let Some(targets) = env.places.get(argument) {
+                                            affected.extend(targets.iter().cloned());
+                                        }
+                                    }
+                                    weaken(env, affected.iter().cloned());
+                                    env.escaped.extend(affected);
+                                    boundary(
+                                        result,
+                                        file,
+                                        *range,
+                                        "recursive or over-budget constructor effects are unknown",
+                                    );
+                                } else if definition.is_async {
+                                    weaken(env, [object.clone()].into_iter());
+                                    env.escaped.insert(object.clone());
+                                    boundary(
+                                        result,
+                                        file,
+                                        *range,
+                                        "async constructor effects are not modeled",
+                                    );
+                                } else if !definition.supported_binding {
+                                    let mut affected = vec![object.clone()];
+                                    for argument in arguments
+                                        .iter()
+                                        .chain(keywords.iter().map(|(_, value)| value))
+                                        .filter_map(expr_name)
+                                    {
+                                        if let Some(targets) = env.places.get(argument) {
+                                            affected.extend(targets.iter().cloned());
+                                        }
+                                    }
+                                    weaken(env, affected.into_iter());
+                                    env.escaped.insert(object.clone());
+                                    boundary(
+                                        result,
+                                        file,
+                                        *range,
+                                        "decorated method binding is not modeled",
+                                    );
+                                } else if let Err(failure) =
+                                    bind_arguments(&definition.signature, arguments, keywords, true)
+                                {
+                                    binding_failure(failure, env, file, *range, result);
+                                } else {
+                                    let child = execute_method_body(
+                                        MethodInvocation {
+                                            definition,
+                                            object: &object,
+                                            initial_mask: OPEN,
+                                            arguments,
+                                            keywords,
+                                            parent: env,
+                                            call_key: init_key,
+                                        },
+                                        FlowContext { functions, result },
+                                    );
+                                    for (changed_object, state) in child.objects {
+                                        env.objects.insert(changed_object, state);
+                                    }
+                                    env.resources.extend(child.resources);
+                                    env.close_origins.extend(child.close_origins);
+                                    env.escaped.extend(child.escaped);
+                                    if !child.alive {
+                                        env.alive = false;
+                                    }
+                                }
+                            } else if let Err(failure) = bind_arguments(
+                                &CallSignature::default(),
+                                arguments,
+                                keywords,
+                                false,
+                            ) {
+                                binding_failure(failure, env, file, *range, result);
+                            }
+                        }
+                        env.places
+                            .insert(name.clone(), BTreeSet::from([object.clone()]));
+                        env.unknown_places.remove(name);
+                        env.shadowed_classes.insert(name.clone());
+                        env.class_bindings.remove(name);
+                        env.shadowed_functions.insert(name.clone());
+                        return None;
+                    }
+                }
+            }
+            if let AstExprKind::Call {
+                arguments,
+                keywords,
+                ..
+            } = &value.kind
+            {
+                let passes_resource = arguments
+                    .iter()
+                    .chain(keywords.iter().map(|(_, value)| value))
+                    .any(|argument| {
+                        expr_name(argument).is_some_and(|name| env.places.contains_key(name))
+                    })
+                    || called_method(value).is_some_and(|(receiver, _, _, _)| {
+                        expr_name(receiver).is_some_and(|name| env.places.contains_key(name))
+                    });
+                let may_return_resource =
+                    passes_resource && call_may_return_resource(value, env, file, functions);
+                if may_return_resource {
+                    consume_expr(value, env, file, contracts, functions, result, 0);
+                    env.places.remove(name);
+                    env.unknown_places.insert(name.clone());
+                    env.shadowed_classes.insert(name.clone());
+                    env.class_bindings.remove(name);
+                    env.shadowed_functions.insert(name.clone());
+                    boundary(
+                        result,
+                        file,
+                        *range,
+                        "resource-valued call result is not tracked",
+                    );
+                    return None;
+                }
+            }
+            if let Some(source) = expr_name(value) {
+                if let Some(objects) = env.places.get(source).cloned() {
+                    env.places.insert(name.clone(), objects);
+                    if env.unknown_places.contains(source) {
+                        env.unknown_places.insert(name.clone());
+                    } else {
+                        env.unknown_places.remove(name);
+                    }
+                } else if env.unknown_places.contains(source) {
+                    env.places.remove(name);
+                    env.unknown_places.insert(name.clone());
+                } else {
+                    env.places.remove(name);
+                    env.unknown_places.remove(name);
+                }
+            } else {
+                if !defines_resource_view {
+                    consume_expr(value, env, file, contracts, functions, result, 0);
+                }
+                env.places.remove(name);
+                env.unknown_places.remove(name);
+            }
+            env.shadowed_functions.insert(name.clone());
+            if defines_resource_view {
+                env.shadowed_classes.remove(name);
+                if let Some(contract) = resource_view {
+                    env.class_bindings
+                        .insert(name.clone(), Some(contract.clone()));
+                }
+            } else {
+                if let Some(binding) = source_class_binding {
+                    env.shadowed_classes.remove(name);
+                    env.class_bindings.insert(name.clone(), binding);
+                } else {
+                    env.shadowed_classes.insert(name.clone());
+                    env.class_bindings.remove(name);
+                }
+            }
+        }
+        FlowStatement::Expression { value, .. } => {
+            consume_expr(value, env, file, contracts, functions, result, 0)
+        }
+        FlowStatement::Pass { .. } => {}
+        FlowStatement::Return { value, .. } => {
+            if let Some(value) = value {
+                consume_expr(value, env, file, contracts, functions, result, 0);
+            }
+            if !env.alive {
+                return None;
+            }
+            let mut returned = env.clone();
+            returned.alive = true;
+            env.alive = false;
+            return Some(returned);
+        }
+        FlowStatement::Raise { range } => {
+            boundary(result, file, *range, "raise ends normal lifecycle flow");
+            env.alive = false;
+        }
+        FlowStatement::BindFunction {
+            name,
+            binding,
+            class_decorators,
+            range: _,
+        } => {
+            env.shadowed_functions.remove(name);
+            env.shadowed_classes.remove(name);
+            if let Some(binding) = binding {
+                if binding == "class" {
+                    let resource = class_resource_contract(file, name, class_decorators, contracts);
+                    env.class_bindings.insert(name.clone(), resource);
+                    env.function_bindings.remove(name);
+                } else if binding.starts_with("import:") {
+                    if functions.contains_key(binding) {
+                        env.function_bindings.insert(name.clone(), binding.clone());
+                    } else {
+                        env.function_bindings.remove(name);
+                    }
+                    let contract = env.imported_classes.get(binding).cloned().flatten();
+                    env.class_bindings.insert(name.clone(), contract);
+                } else {
+                    env.function_bindings.insert(name.clone(), binding.clone());
+                    env.class_bindings.remove(name);
+                }
+            } else {
+                env.function_bindings.remove(name);
+                env.class_bindings.remove(name);
+            }
+        }
+        FlowStatement::Unsupported { range } => {
+            env.unknown_places.extend(env.places.keys().cloned());
+            if env.function_bindings_complete {
+                env.function_bindings.clear();
+            }
+            if env.class_bindings_complete {
+                env.class_bindings.clear();
+            }
+            weaken(
+                env,
+                env.places
+                    .values()
+                    .flatten()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            );
+            boundary(
+                result,
+                file,
+                *range,
+                "unsupported flow weakens tracked resources",
+            );
+        }
+        FlowStatement::If { .. } => unreachable!("if statements use the stack-bounded dispatcher"),
+    }
+    None
 }
 
 fn statement_range(statement: &FlowStatement) -> SourceRange {
@@ -1712,6 +2249,7 @@ fn statement_range(statement: &FlowStatement) -> SourceRange {
         | FlowStatement::If { range, .. }
         | FlowStatement::Return { range, .. }
         | FlowStatement::Raise { range }
+        | FlowStatement::BindFunction { range, .. }
         | FlowStatement::Unsupported { range } => *range,
     }
 }
@@ -1723,6 +2261,8 @@ fn check_bodies_impl(
     only_file: Option<&str>,
 ) {
     let mut project_functions = ProjectFunctionMap::new();
+    let mut historical_functions = FunctionMap::new();
+    let mut class_generations = BTreeMap::<(String, String), usize>::new();
     for file in files {
         let Some(declarations) = summaries
             .get(&file.path)
@@ -1741,32 +2281,63 @@ fn check_bodies_impl(
                     body,
                     is_async,
                     decorators,
+                    range,
+                    unsupported,
                     ..
                 } => {
-                    if *is_async || !decorators.is_empty() {
+                    if !decorators.is_empty() || *unsupported {
                         continue;
                     }
-                    project_functions.insert(
-                        (file.module.clone(), name.clone()),
-                        FunctionBody {
-                            file: file.clone(),
-                            name: name.clone(),
-                            parameters: parameters
-                                .iter()
-                                .map(|parameter| parameter.name.clone())
-                                .collect(),
-                            signature: signature.clone(),
-                            contracts: Arc::clone(&module_contracts),
-                            statements: body.clone(),
-                            supported_binding: true,
-                        },
-                    );
+                    let binding_key = format!("{}::{}:{}", file.module, name, range.start);
+                    let function = FunctionBody {
+                        file: file.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|parameter| parameter.name.clone())
+                            .collect(),
+                        signature: signature.clone(),
+                        contracts: Arc::clone(&module_contracts),
+                        parameter_contracts: parameter_contracts(
+                            file,
+                            name,
+                            parameters,
+                            &module_contracts,
+                        ),
+                        statements: body.clone(),
+                        supported_binding: true,
+                        is_async: *is_async,
+                        binding_key: Some(binding_key.clone()),
+                        module_bindings: Arc::new(ModuleBindings::default()),
+                    };
+                    historical_functions.insert(binding_key, function.clone());
+                    project_functions.insert((file.module.clone(), name.clone()), function);
                 }
-                Declaration::Class { name, methods, .. } => {
+                Declaration::Class {
+                    name,
+                    decorators,
+                    methods,
+                    range,
+                    ..
+                } => {
+                    let decorator_ranges: Vec<_> =
+                        decorators.iter().map(|decorator| decorator.range).collect();
+                    let resource_class =
+                        class_resource_contract(file, name, &decorator_ranges, &result.contracts);
+                    let generation = class_generations
+                        .entry((file.module.clone(), name.clone()))
+                        .or_default();
+                    *generation += 1;
+                    let fallback_identity = if *generation == 1 {
+                        name.clone()
+                    } else {
+                        format!("{name}#{}", *generation)
+                    };
+                    let class_identity = resource_class
+                        .as_ref()
+                        .and_then(|contract| contract.base_symbol.rsplit_once('.'))
+                        .map(|(_, class)| class.to_owned())
+                        .unwrap_or(fallback_identity);
                     for method in methods {
-                        if method.is_async {
-                            continue;
-                        }
                         if method.has_parameter_annotations {
                             boundary(
                                 result,
@@ -1775,18 +2346,25 @@ fn check_bodies_impl(
                                 "method parameter annotations are not modeled",
                             );
                         }
-                        project_functions.insert(
-                            (file.module.clone(), format!("@{name}.{}", method.name)),
-                            FunctionBody {
-                                file: file.clone(),
-                                name: format!("{name}.{}", method.name),
-                                parameters: method.parameters.clone(),
-                                signature: method.signature.clone(),
-                                contracts: Arc::clone(&module_contracts),
-                                statements: method.body.clone(),
-                                supported_binding: !method.decorated,
-                            },
-                        );
+                        let method_key = format!("@{class_identity}.{}", method.name);
+                        let definition = FunctionBody {
+                            file: file.clone(),
+                            parameters: method.parameters.clone(),
+                            signature: method.signature.clone(),
+                            contracts: Arc::clone(&module_contracts),
+                            parameter_contracts: BTreeMap::new(),
+                            statements: method.body.clone(),
+                            supported_binding: !method.decorated,
+                            is_async: method.is_async,
+                            binding_key: Some(format!(
+                                "{}::{}:{}:{}",
+                                file.module, method_key, range.start, method.range.start
+                            )),
+                            module_bindings: Arc::new(ModuleBindings::default()),
+                        };
+                        historical_functions
+                            .insert(definition.binding_key.clone().unwrap(), definition.clone());
+                        project_functions.insert((file.module.clone(), method_key), definition);
                     }
                 }
                 _ => {}
@@ -1797,6 +2375,7 @@ fn check_bodies_impl(
         .iter()
         .map(|((module, name), body)| (format!("{module}::{name}"), body.clone()))
         .collect();
+    qualified_functions.extend(historical_functions);
     for provider in files {
         let Some(declarations) = summaries
             .get(&provider.path)
@@ -1809,7 +2388,7 @@ fn check_bodies_impl(
                 module,
                 level: 0,
                 names,
-                ..
+                range,
             } = declaration
             else {
                 continue;
@@ -1824,21 +2403,136 @@ fn check_bodies_impl(
                     &project_functions,
                     &mut BTreeSet::new(),
                 ) {
-                    qualified_functions.insert(format!("{}::{local}", provider.module), function);
+                    let binding = format!("import:{}:{}:{}", provider.module, range.start, local);
+                    qualified_functions.insert(binding, function.clone());
                 }
             }
         }
     }
     for provider in files {
-        let Some(summary) = summaries.get(&provider.path) else {
+        let Some(declarations) = summaries
+            .get(&provider.path)
+            .and_then(|summary| summary.declarations.as_ref())
+        else {
             continue;
         };
-        let rebound_names = assigned_names(&summary.module_body);
-        let scope_prefix = format!("{}::", provider.module);
-        qualified_functions.retain(|key, _| {
-            !key.strip_prefix(&scope_prefix)
-                .is_some_and(|name| rebound_names.contains(name))
-        });
+        let mut final_bindings = BTreeMap::<String, Option<String>>::new();
+        for declaration in declarations {
+            match declaration {
+                Declaration::Function {
+                    name,
+                    range,
+                    decorators,
+                    unsupported,
+                    ..
+                } => {
+                    let key = format!("{}::{}:{}", provider.module, name, range.start);
+                    final_bindings.insert(
+                        name.clone(),
+                        (decorators.is_empty()
+                            && !unsupported
+                            && qualified_functions.contains_key(&key))
+                        .then_some(key),
+                    );
+                }
+                Declaration::Class { name, .. } => {
+                    final_bindings.insert(name.clone(), None);
+                }
+                Declaration::Assignment {
+                    name: Some(name),
+                    value: Some(_),
+                    ..
+                }
+                | Declaration::TypeAlias {
+                    name: Some(name), ..
+                } => {
+                    final_bindings.insert(name.clone(), None);
+                }
+                Declaration::Delete { names, .. } => {
+                    for name in names.iter().flatten() {
+                        final_bindings.insert(name.clone(), None);
+                    }
+                }
+                Declaration::ImportFrom {
+                    module: _,
+                    level: 0,
+                    names,
+                    range,
+                } => {
+                    if names.iter().any(|import| import.name == "*") {
+                        for binding in final_bindings.values_mut() {
+                            *binding = None;
+                        }
+                    } else {
+                        for import in names {
+                            let local = import.alias.as_deref().unwrap_or(&import.name);
+                            let key =
+                                format!("import:{}:{}:{}", provider.module, range.start, local);
+                            final_bindings.insert(
+                                local.to_owned(),
+                                qualified_functions.contains_key(&key).then_some(key),
+                            );
+                        }
+                    }
+                }
+                Declaration::ImportFrom { names, .. } => {
+                    if names.iter().any(|import| import.name == "*") {
+                        for binding in final_bindings.values_mut() {
+                            *binding = None;
+                        }
+                    } else {
+                        for import in names {
+                            let local = import.alias.as_deref().unwrap_or(&import.name);
+                            final_bindings.insert(local.to_owned(), None);
+                        }
+                    }
+                }
+                Declaration::Import { names, .. } => {
+                    for import in names {
+                        let local = import
+                            .alias
+                            .as_deref()
+                            .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default());
+                        final_bindings.insert(local.to_owned(), None);
+                    }
+                }
+                Declaration::Unsupported { .. } => {
+                    for binding in final_bindings.values_mut() {
+                        *binding = None;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (name, binding) in final_bindings {
+            qualified_functions.remove(&format!("{}::{name}", provider.module));
+            if let Some(binding) = binding {
+                if let Some(function) = qualified_functions.get(&binding).cloned() {
+                    qualified_functions.insert(format!("{}::{name}", provider.module), function);
+                }
+            }
+        }
+    }
+    let mut module_bindings = BTreeMap::<String, Arc<ModuleBindings>>::new();
+    for file in files {
+        let Some(declarations) = summaries
+            .get(&file.path)
+            .and_then(|summary| summary.declarations.as_ref())
+        else {
+            continue;
+        };
+        module_bindings.insert(
+            file.path.clone(),
+            Arc::new(ModuleBindings {
+                functions: final_function_bindings(&file.module, &qualified_functions),
+                classes: final_class_bindings(file, declarations, files, summaries, result),
+            }),
+        );
+    }
+    for function in qualified_functions.values_mut() {
+        if let Some(bindings) = module_bindings.get(&function.file.path) {
+            function.module_bindings = Arc::clone(bindings);
+        }
     }
     for file in files {
         if only_file.is_some_and(|path| file.path != path) {
@@ -1851,48 +2545,9 @@ fn check_bodies_impl(
             continue;
         };
         let contracts = contracts_for_module(file, files, summaries, result);
-        let mut functions: FunctionMap = project_functions
-            .iter()
-            .filter(|((module, _), _)| module == &file.module)
-            .map(|((_, name), body)| (name.clone(), body.clone()))
-            .collect();
-        functions.extend(qualified_functions.clone());
-        let rebound_module_names = summaries
-            .get(&file.path)
-            .map(|summary| assigned_names(&summary.module_body))
-            .unwrap_or_default();
-        let scope_prefix = format!("{}::", file.module);
-        functions.retain(|name, _| {
-            !rebound_module_names.contains(name)
-                && !name
-                    .strip_prefix(&scope_prefix)
-                    .is_some_and(|scoped| rebound_module_names.contains(scoped))
-        });
-        for declaration in declarations {
-            if let Declaration::ImportFrom {
-                module,
-                level: 0,
-                names,
-                ..
-            } = declaration
-            {
-                for import in names {
-                    let local = import.alias.as_deref().unwrap_or(&import.name);
-                    if !rebound_module_names.contains(local) {
-                        if let Some(function) = resolve_imported_function(
-                            module,
-                            &import.name,
-                            files,
-                            summaries,
-                            &project_functions,
-                            &mut BTreeSet::new(),
-                        ) {
-                            functions.insert(local.to_owned(), function.clone());
-                        }
-                    }
-                }
-            }
-        }
+        let final_classes = final_class_bindings(file, declarations, files, summaries, result);
+        let functions = qualified_functions.clone();
+        let final_functions = final_function_bindings(&file.module, &functions);
         for declaration in declarations {
             let Declaration::Function {
                 name,
@@ -1907,6 +2562,13 @@ fn check_bodies_impl(
             };
             let mut env = State {
                 alive: true,
+                scope_module: file.module.clone(),
+                function_bindings: final_functions.clone(),
+                function_bindings_complete: true,
+                class_bindings: final_classes.clone(),
+                class_bindings_complete: true,
+                module_function_bindings: final_functions.clone(),
+                module_class_bindings: final_classes.clone(),
                 ..State::default()
             };
             env.shadowed_functions
@@ -1915,16 +2577,15 @@ fn check_bodies_impl(
             env.shadowed_classes
                 .extend(parameters.iter().map(|parameter| parameter.name.clone()));
             env.shadowed_classes.extend(assigned_names(body));
+            let function_parameter_contracts =
+                parameter_contracts(file, name, parameters, &result.contracts);
             for parameter in parameters {
                 if parameter.annotation.is_none() {
                     continue;
                 }
-                let parameter_name = format!("{name}.{}", parameter.name);
-                let Some(parameter_contract) = result.contracts.iter().find(|contract| {
-                    contract.display_name == parameter_name
-                        && contract.lifecycle.is_some()
-                        && contract.source.file == file.path
-                }) else {
+                let Some(parameter_contract) =
+                    function_parameter_contracts.get(&parameter.name).cloned()
+                else {
                     continue;
                 };
                 let object = format!("{}:{}:{}", file.path, range.start, parameter.name);
@@ -1948,8 +2609,46 @@ fn check_bodies_impl(
         }
         let mut module = State {
             alive: true,
+            scope_module: file.module.clone(),
+            function_bindings_complete: true,
+            class_bindings_complete: true,
+            module_scope: true,
             ..State::default()
         };
+        for declaration in declarations {
+            let Declaration::ImportFrom {
+                module: source_module,
+                level,
+                names,
+                range,
+            } = declaration
+            else {
+                continue;
+            };
+            for import in names {
+                let local = import.alias.as_deref().unwrap_or(&import.name);
+                let binding_key = format!("import:{}:{}:{}", file.module, range.start, local);
+                let imported = if *level == 0 {
+                    resolve_imported_contracts(
+                        source_module,
+                        &import.name,
+                        files,
+                        summaries,
+                        result,
+                        &mut BTreeSet::new(),
+                    )
+                    .into_iter()
+                    .next()
+                    .map(|mut contract| {
+                        contract.display_name = local.to_owned();
+                        contract
+                    })
+                } else {
+                    None
+                };
+                module.imported_classes.insert(binding_key, imported);
+            }
+        }
         if let Some(summary) = summaries.get(&file.path) {
             execute(
                 &summary.module_body,
