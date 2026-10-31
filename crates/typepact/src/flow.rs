@@ -12,9 +12,10 @@ const MAX_CALL_DEPTH: usize = 8;
 const MAX_CONTROL_FLOW_DEPTH: usize = 128;
 const MAX_ALIAS_TARGETS: usize = 64;
 const MAX_FLOW_OBJECTS: usize = 4_096;
-const MAX_FLOW_STEPS: usize = 100_000;
+pub(crate) const MAX_FLOW_STEPS: usize = 100_000;
 thread_local! {
     static FLOW_STEPS: Cell<usize> = const { Cell::new(0) };
+    static FLOW_STEP_LIMIT: Cell<usize> = const { Cell::new(MAX_FLOW_STEPS) };
     static FLOW_BUDGET_REPORTED: Cell<bool> = const { Cell::new(false) };
 }
 type CallKeyword = (Option<String>, AstExpr);
@@ -25,6 +26,7 @@ struct FunctionBody {
     name: String,
     parameters: Vec<String>,
     statements: Vec<FlowStatement>,
+    supported_binding: bool,
 }
 
 struct FlowContext<'a> {
@@ -89,6 +91,109 @@ fn called_method(expr: &AstExpr) -> Option<MethodCall<'_>> {
         return None;
     };
     Some((receiver, method, arguments, keywords))
+}
+
+fn expression_may_return_resource(expression: &AstExpr) -> bool {
+    match &expression.kind {
+        AstExprKind::NoneLiteral | AstExprKind::String(_) => false,
+        AstExprKind::Tuple(items) => items.iter().any(expression_may_return_resource),
+        AstExprKind::Name(_)
+        | AstExprKind::Attribute(_, _)
+        | AstExprKind::Subscript(_, _)
+        | AstExprKind::Call { .. }
+        | AstExprKind::Other
+        | AstExprKind::DepthLimit => true,
+    }
+}
+
+fn statements_may_return_resource(statements: &[FlowStatement]) -> bool {
+    statements.iter().any(|statement| match statement {
+        FlowStatement::Return {
+            value: Some(value), ..
+        } => expression_may_return_resource(value),
+        FlowStatement::If {
+            body, alternate, ..
+        } => statements_may_return_resource(body) || statements_may_return_resource(alternate),
+        FlowStatement::Unsupported { .. } => true,
+        _ => false,
+    })
+}
+
+fn call_may_return_resource(
+    expression: &AstExpr,
+    env: &State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+) -> bool {
+    if let Some((receiver, method, _, _)) = called_method(expression) {
+        if let Some(name) = expr_name(receiver) {
+            if let Some(object) = env
+                .places
+                .get(name)
+                .and_then(|objects| objects.iter().next())
+            {
+                let kind = env
+                    .kinds
+                    .get(object)
+                    .map(String::as_str)
+                    .unwrap_or_default();
+                let is_close = contracts.iter().any(|contract| {
+                    contract.display_name == kind
+                        && contract
+                            .lifecycle
+                            .as_ref()
+                            .is_some_and(|lifecycle| lifecycle.closed_by == method)
+                });
+                let method_key = format!("@{kind}.{method}");
+                let definition = contracts
+                    .iter()
+                    .find(|contract| contract.display_name == kind)
+                    .and_then(|contract| {
+                        contract
+                            .base_symbol
+                            .split('#')
+                            .next()
+                            .and_then(|base| base.rsplit_once('.'))
+                    })
+                    .and_then(|(module, base)| {
+                        functions.get(&format!("{module}::@{base}.{method}"))
+                    })
+                    .or_else(|| functions.get(&format!("{}::{method_key}", file.module)))
+                    .or_else(|| {
+                        functions
+                            .get(&method_key)
+                            .filter(|definition| definition.file.module == file.module)
+                    });
+                if is_close {
+                    return definition.is_none_or(|definition| {
+                        !definition.supported_binding
+                            || statements_may_return_resource(&definition.statements)
+                    });
+                }
+                return definition.is_none_or(|definition| {
+                    !definition.supported_binding
+                        || statements_may_return_resource(&definition.statements)
+                });
+            }
+        }
+        return true;
+    }
+
+    let AstExprKind::Call { function, .. } = &expression.kind else {
+        return false;
+    };
+    let Some(callee) = expr_name(function) else {
+        return true;
+    };
+    let definition = functions
+        .get(&format!("{}::{callee}", file.module))
+        .or_else(|| {
+            functions
+                .get(callee)
+                .filter(|definition| definition.file.module == file.module)
+        });
+    definition.is_none_or(|definition| statements_may_return_resource(&definition.statements))
 }
 
 fn merge(left: &State, right: &State) -> (State, JoinEffects) {
@@ -267,7 +372,7 @@ fn take_flow_step(
 ) -> bool {
     let within_budget = FLOW_STEPS.with(|steps| {
         let current = steps.get();
-        if current >= MAX_FLOW_STEPS {
+        if current >= FLOW_STEP_LIMIT.with(Cell::get) {
             false
         } else {
             steps.set(current + 1);
@@ -305,8 +410,9 @@ fn take_flow_step(
     false
 }
 
-pub(crate) fn reset_flow_budget() {
+pub(crate) fn reset_flow_budget(limit: usize) {
     FLOW_STEPS.with(|steps| steps.set(0));
+    FLOW_STEP_LIMIT.with(|budget| budget.set(limit));
     FLOW_BUDGET_REPORTED.with(|reported| reported.set(false));
 }
 
@@ -693,6 +799,47 @@ fn consume_expr(
                                 .as_ref()
                                 .is_some_and(|lifecycle| lifecycle.closed_by == method)
                     });
+                    let kind = env.kinds.get(object).cloned().unwrap_or_default();
+                    let method_key = format!("@{kind}.{method}");
+                    let definition = contracts
+                        .iter()
+                        .find(|contract| contract.display_name == kind)
+                        .and_then(|contract| {
+                            contract
+                                .base_symbol
+                                .split('#')
+                                .next()
+                                .and_then(|base| base.rsplit_once('.'))
+                        })
+                        .and_then(|(module, base)| {
+                            functions.get(&format!("{module}::@{base}.{method}"))
+                        })
+                        .or_else(|| functions.get(&format!("{}::{method_key}", file.module)))
+                        .or_else(|| {
+                            functions
+                                .get(&method_key)
+                                .filter(|definition| definition.file.module == file.module)
+                        });
+                    if definition.is_some_and(|definition| !definition.supported_binding) {
+                        let mut affected = vec![object.clone()];
+                        for argument in arguments
+                            .iter()
+                            .chain(keywords.iter().map(|(_, value)| value))
+                            .filter_map(expr_name)
+                        {
+                            if let Some(targets) = env.places.get(argument) {
+                                affected.extend(targets.iter().cloned());
+                            }
+                        }
+                        weaken(env, affected.into_iter());
+                        boundary(
+                            result,
+                            file,
+                            expr.range,
+                            "decorated method binding is not modeled",
+                        );
+                        continue;
+                    }
                     if mask & CLOSED != 0 && !is_close {
                         let certainty = if !has_open_alternative && mask & UNKNOWN == 0 {
                             "definite"
@@ -737,44 +884,14 @@ fn consume_expr(
                             "definite",
                         );
                     }
-                    if is_close {
-                        if mask & CLOSED != 0 {
-                            boundary(
-                                result,
-                                file,
-                                expr.range,
-                                "repeat-close behavior is not modeled",
-                            );
-                        }
-                        env.close_origins
-                            .insert(object.clone(), span(file, expr.range));
-                        if targets.len() == 1 && !env.unknown_places.contains(name) {
-                            env.objects.insert(object.clone(), CLOSED);
-                        } else {
-                            *env.objects.entry(object.clone()).or_default() |= CLOSED;
-                        }
+                    if is_close && mask & CLOSED != 0 {
+                        boundary(
+                            result,
+                            file,
+                            expr.range,
+                            "repeat-close behavior is not modeled",
+                        );
                     }
-                    let kind = env.kinds.get(object).cloned().unwrap_or_default();
-                    let method_key = format!("@{kind}.{method}");
-                    let definition = contracts
-                        .iter()
-                        .find(|contract| contract.display_name == kind)
-                        .and_then(|contract| {
-                            contract
-                                .base_symbol
-                                .split('#')
-                                .next()
-                                .and_then(|base| base.rsplit_once('.'))
-                        })
-                        .and_then(|(module, base)| {
-                            functions.get(&format!("{module}::@{base}.{method}"))
-                        })
-                        .or_else(|| functions.get(&format!("{}::{method_key}", file.module)))
-                        .or_else(|| {
-                            functions
-                                .get(&method_key)
-                                .filter(|definition| definition.file.module == file.module)
-                        });
                     if let Some(definition) = definition {
                         if env.call_stack.contains(&method_key) {
                             weaken(env, [object.clone()].into_iter());
@@ -811,10 +928,37 @@ fn consume_expr(
                                 *env.objects.entry(changed_object).or_default() |= value;
                             }
                         }
+                        if is_close {
+                            env.close_origins
+                                .insert(object.clone(), span(file, expr.range));
+                            if targets.len() == 1 && !env.unknown_places.contains(name) {
+                                env.objects.insert(object.clone(), CLOSED);
+                            } else {
+                                *env.objects.entry(object.clone()).or_default() |= CLOSED;
+                            }
+                        }
                         env.close_origins.extend(child.close_origins);
                         env.escaped.extend(child.escaped);
-                    } else if !is_close && mask & OPEN != 0 && !contracts.is_empty() {
-                        *env.objects.entry(object.clone()).or_default() |= UNKNOWN;
+                    } else if is_close {
+                        env.close_origins
+                            .insert(object.clone(), span(file, expr.range));
+                        if targets.len() == 1 && !env.unknown_places.contains(name) {
+                            env.objects.insert(object.clone(), CLOSED);
+                        } else {
+                            *env.objects.entry(object.clone()).or_default() |= CLOSED;
+                        }
+                    } else if mask & OPEN != 0 && !contracts.is_empty() {
+                        let mut affected = vec![object.clone()];
+                        for argument in arguments
+                            .iter()
+                            .chain(keywords.iter().map(|(_, value)| value))
+                            .filter_map(expr_name)
+                        {
+                            if let Some(targets) = env.places.get(argument) {
+                                affected.extend(targets.iter().cloned());
+                            }
+                        }
+                        weaken(env, affected.into_iter());
                         boundary(
                             result,
                             file,
@@ -1154,6 +1298,44 @@ fn execute(
                             evaluate_call_arguments(
                                 value, env, file, contracts, functions, result, depth,
                             );
+                            let new_definition = contracts
+                                .iter()
+                                .find(|contract| contract.display_name == class)
+                                .and_then(|contract| {
+                                    contract
+                                        .base_symbol
+                                        .split('#')
+                                        .next()
+                                        .and_then(|base| base.rsplit_once('.'))
+                                })
+                                .and_then(|(module, base)| {
+                                    functions.get(&format!("{module}::@{base}.__new__"))
+                                })
+                                .or_else(|| {
+                                    functions.get(&format!("{}::@{class}.__new__", file.module))
+                                });
+                            if new_definition.is_some() {
+                                weaken(
+                                    env,
+                                    env.places
+                                        .values()
+                                        .flatten()
+                                        .cloned()
+                                        .collect::<Vec<_>>()
+                                        .into_iter(),
+                                );
+                                env.places.remove(name);
+                                env.unknown_places.insert(name.clone());
+                                env.shadowed_classes.insert(name.clone());
+                                env.shadowed_functions.insert(name.clone());
+                                boundary(
+                                    result,
+                                    file,
+                                    *range,
+                                    "custom __new__ allocation effects are not modeled",
+                                );
+                                continue;
+                            }
                             let object = format!("{}:{}:{}", file.path, range.start, class);
                             if !env.objects.contains_key(&object)
                                 && env.objects.len() >= MAX_FLOW_OBJECTS
@@ -1171,10 +1353,6 @@ fn execute(
                             }
                             env.objects.insert(object.clone(), OPEN);
                             env.kinds.insert(object.clone(), class.to_owned());
-                            env.places.insert(name.clone(), BTreeSet::from([object]));
-                            env.unknown_places.remove(name);
-                            env.shadowed_classes.remove(name);
-                            let object = env.places[name].iter().next().cloned().unwrap();
                             if let AstExprKind::Call {
                                 arguments,
                                 keywords,
@@ -1223,6 +1401,11 @@ fn execute(
                                     env.escaped.extend(child.escaped);
                                 }
                             }
+                            env.places
+                                .insert(name.clone(), BTreeSet::from([object.clone()]));
+                            env.unknown_places.remove(name);
+                            env.shadowed_classes.remove(name);
+                            env.shadowed_functions.insert(name.clone());
                             continue;
                         }
                     }
@@ -1233,15 +1416,21 @@ fn execute(
                     ..
                 } = &value.kind
                 {
-                    let may_return_resource = arguments
+                    let passes_resource = arguments
                         .iter()
                         .chain(keywords.iter().map(|(_, value)| value))
                         .any(|argument| {
                             expr_name(argument).is_some_and(|name| env.places.contains_key(name))
+                        })
+                        || called_method(value).is_some_and(|(receiver, _, _, _)| {
+                            expr_name(receiver).is_some_and(|name| env.places.contains_key(name))
                         });
+                    let may_return_resource = passes_resource
+                        && call_may_return_resource(value, env, file, contracts, functions);
                     if may_return_resource {
-                        env.places.remove(name);
                         consume_expr(value, env, file, contracts, functions, result, depth);
+                        env.places.remove(name);
+                        env.unknown_places.insert(name.clone());
                         boundary(
                             result,
                             file,
@@ -1267,9 +1456,9 @@ fn execute(
                         env.unknown_places.remove(name);
                     }
                 } else {
+                    consume_expr(value, env, file, contracts, functions, result, depth);
                     env.places.remove(name);
                     env.unknown_places.remove(name);
-                    consume_expr(value, env, file, contracts, functions, result, depth);
                 }
                 env.shadowed_functions.insert(name.clone());
                 let assignment_span = span(file, *range);
@@ -1438,9 +1627,10 @@ fn check_bodies_impl(
                     parameters,
                     body,
                     is_async,
+                    decorators,
                     ..
                 } => {
-                    if *is_async {
+                    if *is_async || !decorators.is_empty() {
                         continue;
                     }
                     project_functions.insert(
@@ -1453,6 +1643,7 @@ fn check_bodies_impl(
                                 .map(|parameter| parameter.name.clone())
                                 .collect(),
                             statements: body.clone(),
+                            supported_binding: true,
                         },
                     );
                 }
@@ -1468,6 +1659,7 @@ fn check_bodies_impl(
                                 name: format!("{name}.{}", method.name),
                                 parameters: method.parameters.clone(),
                                 statements: method.body.clone(),
+                                supported_binding: !method.decorated,
                             },
                         );
                     }
@@ -1697,26 +1889,28 @@ fn check_bodies_impl(
                 };
                 let parameter_name = format!("{name}.{}", parameter.name);
                 let Some(parameter_contract) = result.contracts.iter().find(|contract| {
-                    contract.display_name == parameter_name
-                        && contract.access == "shared"
-                        && contract.lifecycle.is_some()
+                    contract.display_name == parameter_name && contract.lifecycle.is_some()
                 }) else {
                     continue;
                 };
-                let kind = borrowed_resource(annotation, &annotation_imports).or_else(|| {
-                    result
-                        .contracts
-                        .iter()
-                        .find(|contract| {
-                            contract.base_symbol == parameter_contract.base_symbol
-                                && contract.lifecycle.is_some()
-                                && !contract.display_name.contains('.')
+                let kind = borrowed_resource(annotation, &annotation_imports)
+                    .filter(|kind| {
+                        contracts.iter().any(|contract| {
+                            contract.display_name == *kind && contract.lifecycle.is_some()
                         })
-                        .map(|contract| contract.display_name.clone())
-                });
-                let Some(kind) = kind else {
-                    continue;
-                };
+                    })
+                    .or_else(|| {
+                        result
+                            .contracts
+                            .iter()
+                            .find(|contract| {
+                                contract.base_symbol == parameter_contract.base_symbol
+                                    && contract.lifecycle.is_some()
+                                    && !contract.display_name.contains('.')
+                            })
+                            .map(|contract| contract.display_name.clone())
+                    })
+                    .unwrap_or_else(|| parameter_contract.display_name.clone());
                 if !contracts
                     .iter()
                     .any(|contract| contract.display_name == kind && contract.lifecycle.is_some())
@@ -1728,9 +1922,11 @@ fn check_bodies_impl(
                 env.kinds.insert(object.clone(), kind.clone());
                 env.places
                     .insert(parameter.name.clone(), BTreeSet::from([object.clone()]));
-                env.borrowed.insert(object.clone());
-                env.borrowed_origins
-                    .insert(object.clone(), parameter_contract.source.clone());
+                if parameter_contract.access == "shared" {
+                    env.borrowed.insert(object.clone());
+                    env.borrowed_origins
+                        .insert(object.clone(), parameter_contract.source.clone());
+                }
             }
             if *is_async {
                 boundary(result, file, *range, "async function body is not checked");

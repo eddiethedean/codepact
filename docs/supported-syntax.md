@@ -35,10 +35,10 @@ coverage. See [CLI input behavior](cli.md).
 | Local alias assignment and rebinding | Tracks shared objects and detached local names |
 | Straight-line synchronous code and ordinary returns | Applies supported effects in source order |
 | `if`/`else` joins | Preserves possible lifecycle states rather than assuming every path closes |
-| Resolved local functions and resource methods | Applies supported body effects to passed resource objects |
+| Resolved local functions and undecorated resource methods | Applies supported body effects to passed resource objects |
 | Close through a Borrowed parameter | Reports TP2001 within supported bodies |
 | Acyclic named re-exports | Preserves supported resource and callable identities across local modules |
-| Unknown effects, recursive calls, unsupported flow | Reports incomplete coverage where encountered |
+| Decorated methods, custom `__new__`, unknown effects, recursive calls, unsupported flow | Reports incomplete coverage and weakens affected resource state |
 
 This table describes implemented patterns, not completion of every phase 0.2
 validation case. General exception handling, loops, async, fields and containers,
@@ -81,6 +81,9 @@ weakens reachable resource state, and reports a TP9001 boundary with incomplete
 coverage. It does not truncate an alias set and continue as if the remaining
 objects were exact. These values are current source-preview defaults; release
 qualification still requires the phase plan's budget fixtures and measurements.
+The request-wide flow limit is split evenly among files; unused work in one file
+is not reassigned. An edit in one file therefore cannot shift another file's
+budget and invalidate its cached result when that file is otherwise unaffected.
 
 The Rust `AnalysisSession` also bounds retained source to 1,000,000 bytes and periodically resets its incremental database after 1,000 source mutations. See the [Rust API](rust-api.md#incremental-analysis-session).
 

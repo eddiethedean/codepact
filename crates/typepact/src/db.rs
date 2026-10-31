@@ -187,6 +187,7 @@ fn check_flow_file_query(
     file: FileInput,
     dependencies: Vec<FileInput>,
     python_version: String,
+    flow_budget: usize,
     inspection_json: String,
 ) -> String {
     db.unwind_if_revision_cancelled();
@@ -211,6 +212,7 @@ fn check_flow_file_query(
         .collect();
     let mut inspection: Inspection =
         serde_json::from_str(&inspection_json).expect("flow file input deserializes");
+    crate::flow::reset_flow_budget(flow_budget);
     crate::flow::check_file_bodies(file.path(db), &sources, &summaries, &mut inspection);
     db.unwind_if_revision_cancelled();
     serde_json::to_string(&inspection).expect("flow file result serializes")
@@ -223,7 +225,6 @@ fn check_flow_query(
     python_version: String,
     inspection_json: String,
 ) -> String {
-    crate::flow::reset_flow_budget();
     db.unwind_if_revision_cancelled();
     let sources: Vec<_> = files
         .iter()
@@ -258,6 +259,10 @@ fn check_flow_query(
             .or_default()
             .push(file);
     }
+    // Fixed shares keep an edit in one file from changing another file's query key.
+    // Since the input file cap is lower than the total flow-step limit, every file
+    // receives a nonzero share and the sum of all per-file limits stays bounded.
+    let flow_budget = crate::flow::MAX_FLOW_STEPS / files.len().max(1);
     for (target, source) in files.iter().copied().zip(&sources) {
         db.unwind_if_revision_cancelled();
         let mut dependency_modules = BTreeSet::from([source.module.clone()]);
@@ -307,6 +312,7 @@ fn check_flow_query(
             target,
             dependencies,
             python_version.clone(),
+            flow_budget,
             serde_json::to_string(&flow_input).expect("flow file input serializes"),
         );
         let flow: Inspection =
@@ -1428,5 +1434,69 @@ mod tests {
             .unwrap();
         assert!(!session.parse_summary_for("aliases.py", "3.11").unwrap().ok);
         assert!(session.parse_summary_for("aliases.py", "3.12").unwrap().ok);
+    }
+
+    #[test]
+    fn flow_budget_is_an_input_to_incremental_file_queries() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let mut expensive = String::from("def f0():\n    pass\n");
+        for level in 1..=6 {
+            expensive.push_str(&format!("def f{level}():\n"));
+            for _ in 0..10 {
+                expensive.push_str(&format!("    f{}()\n", level - 1));
+            }
+        }
+        expensive.push_str("f6()\n");
+        let expensive = SourceFile::new("a.py", "a", expensive);
+        let resource = SourceFile::new(
+            "b.py",
+            "b",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\nc.close()\nc.status()\n",
+        );
+        let first = session.check(&[expensive.clone(), resource.clone()], "3.11");
+        assert_eq!(first.coverage.status, "incomplete");
+        assert!(first
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let edited = SourceFile::new("a.py", "a", "pass\n");
+        let warm = session.check(&[edited.clone(), resource.clone()], "3.11");
+        let executed_flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        let fresh = crate::check(&[edited, resource], "3.11");
+        assert_eq!(warm, fresh);
+        assert_eq!(executed_flow_queries.len(), 1, "{executed_flow_queries:#?}");
+        assert!(warm
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+        assert_eq!(warm.coverage.status, "complete-for-supported-subset");
     }
 }

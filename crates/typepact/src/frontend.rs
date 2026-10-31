@@ -82,6 +82,7 @@ pub(crate) struct MethodBody {
     pub parameters: Vec<String>,
     pub body: Vec<FlowStatement>,
     pub is_async: bool,
+    pub decorated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -560,6 +561,7 @@ pub(crate) fn parse_frontend(
                             parameters,
                             body: flow_statements(&method.body, &mut expression_budget),
                             is_async: method.is_async,
+                            decorated: !method.decorator_list.is_empty(),
                         })
                     })
                     .collect(),

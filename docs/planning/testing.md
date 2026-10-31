@@ -50,7 +50,7 @@ Compare fresh and incrementally updated sessions after each edit, including an u
 
 Record cold-session, warm no-op, local-edit and dependency-edit measurements separately. Disk-cache and editor cancellation stress tests expand this corpus in 0.8; basic in-memory query correctness is required from 0.1.
 
-The current source suite has 31 Rust unit tests, 22 lifecycle CLI integration tests, 60 semantic fixtures and 8 Python tests. It covers provider body and model edits, missing-provider addition/removal, moved spans, no-op reuse, session revisions and cancellation recovery. The clean Cargo archive and installed Python wheel/sdist checks now also run the lifecycle example, assert one definite TP1001 with a related close location, and verify inspected source is not executed. These are implementation regressions; they do not replace the exact-candidate V02 evidence, compatibility review or release decision.
+The current source suite has 32 Rust unit tests, 34 lifecycle CLI integration tests, 60 semantic fixtures and 8 Python tests. It covers provider body and model edits, missing-provider addition/removal, moved spans, no-op reuse, session revisions, cancellation recovery and per-file flow-budget cache stability. The clean Cargo archive and installed Python wheel/sdist checks also run the lifecycle example, assert one definite TP1001 with a related close location, and verify inspected source is not executed. These are implementation regressions; they do not replace the exact-candidate V02 evidence, compatibility review or release decision.
 
 ## Python helper and CLI distributions
 

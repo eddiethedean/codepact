@@ -80,8 +80,11 @@ uv run --locked python scripts/benchmark_inspector.py --binary target/release/ty
 | Possible targets for one local alias | 64 | `flow::tests::alias_overflow_drops_exact_targets_and_weakens_all_candidates` |
 | Tracked resource objects per body | 4,096 | `flow::tests::object_budget_exhaustion_does_not_create_an_exact_place` |
 | Nested call/effect evaluation | 8 | `flow::tests::call_depth_exhaustion_weakens_resources_and_reports_a_boundary` |
+| Flow transfers per request | 100,000 | `tests/cli.rs::flow_work_budget_stops_exponential_helper_expansion`, `db::tests::flow_budget_is_an_input_to_incremental_file_queries` |
 
-Each limit triggers visible incomplete coverage and weakens affected state; the
-tests exercise exhaustion recovery. The limits still need an accepted LC01
-rationale and measured workload impact. No absolute latency threshold has been
-set from this preliminary corpus.
+The request-wide transfer budget is divided evenly among files. Unused work in
+one file is not reassigned, which keeps edits in earlier files from changing
+unrelated query inputs. Each limit triggers visible incomplete coverage and
+weakens affected state; the tests exercise exhaustion recovery. The limits
+still need an accepted LC01 rationale and measured workload impact. No absolute
+latency threshold has been set from this preliminary corpus.

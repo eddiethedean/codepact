@@ -71,8 +71,8 @@ fn check_reports_one_use_after_close_at_the_call_site() {
     assert_eq!(findings[0]["primary"]["line"], 12);
     assert_eq!(findings[0]["related"][0]["line"], 11);
     assert_eq!(
-        result["coverage"]["status"],
-        "complete-for-supported-subset"
+        result["coverage"]["status"], "complete-for-supported-subset",
+        "{result:#?}"
     );
 
     assert_eq!(
@@ -331,8 +331,8 @@ connection.status()
     assert_eq!(findings[0]["certainty"], "definite");
     assert_eq!(findings[0]["primary"]["file"], "client.py");
     assert_eq!(
-        result["coverage"]["status"],
-        "complete-for-supported-subset"
+        result["coverage"]["status"], "complete-for-supported-subset",
+        "{result:#?}"
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -1188,6 +1188,257 @@ fn flow_work_budget_stops_exponential_helper_expansion() {
         "{:#?}",
         result["diagnostics"]
     );
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn assignment_rhs_keeps_the_previous_binding_until_its_effects_finish() {
+    let root = fixture_root().with_extension("lifecycle-assignment-order");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("assignment.py"),
+        r#"from typepact import resource
+@resource(closed_by='close')
+class C:
+    def close(self): pass
+    def status(self): return 'ready'
+@resource(closed_by='close')
+class Wrapper:
+    def __init__(self, other): other.close()
+    def close(self): pass
+    def status(self): return 'ready'
+def shutdown(value: C): value.close()
+a = C()
+alias = a
+a = Wrapper(a)
+alias.status()
+a.status()
+b = C()
+alias_b = b
+b = b.close()
+alias_b.status()
+c = C()
+alias_c = c
+c = shutdown(c)
+alias_c.status()
+"#,
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings: Vec<_> = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert_eq!(findings.len(), 3, "{:#?}", result["diagnostics"]);
+    assert!(findings
+        .iter()
+        .all(|diagnostic| diagnostic["certainty"] == "definite"));
+    assert_eq!(
+        result["coverage"]["status"], "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn assignment_of_a_resource_returning_close_method_stays_unknown() {
+    let root = fixture_root().with_extension("lifecycle-close-return");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("close_return.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): return self\n    def status(self): return 'ready'\nc = C()\nalias = c\nc = c.close()\nalias.status()\nc.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic["code"] == "TP1001" && diagnostic["certainty"] == "definite"
+        }),
+        "{diagnostics:#?}"
+    );
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic["code"] == "TP9001"
+                && diagnostic["message"].as_str().is_some_and(|message| {
+                    message.contains("resource-valued call result is not tracked")
+                })
+        }),
+        "{diagnostics:#?}"
+    );
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn close_body_runs_before_the_designated_close_transition() {
+    let root = fixture_root().with_extension("lifecycle-close-body-order");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("close_body.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def flush(self): pass\n    def close(self): self.flush()\n    def status(self): return 'ready'\nc = C()\nc.close()\nc.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings: Vec<_> = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert_eq!(findings.len(), 1, "{:#?}", result["diagnostics"]);
+    assert_eq!(findings[0]["primary"]["line"], 9);
+    assert_eq!(findings[0]["related"][0]["line"], 8);
+    assert_eq!(
+        result["coverage"]["status"],
+        "complete-for-supported-subset"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn decorated_methods_report_a_boundary_without_assuming_instance_binding() {
+    let root = fixture_root().with_extension("lifecycle-decorated-method");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("decorated.py"),
+        r#"from typepact import resource
+@resource(closed_by='close')
+class C:
+    def close(self): pass
+    def status(self): return 'ready'
+    @staticmethod
+    def shutdown(target): target.close()
+a = C()
+b = C()
+a.close()
+a.shutdown(b)
+b.status()
+"#,
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert!(!diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP1001"));
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic["code"] == "TP9001"
+                && diagnostic["message"].as_str().is_some_and(|message| {
+                    message.contains("decorated method binding is not modeled")
+                })
+        }),
+        "{diagnostics:#?}"
+    );
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn custom_new_effects_are_reported_as_unknown() {
+    let root = fixture_root().with_extension("lifecycle-custom-new");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("custom_new.py"),
+        r#"from typepact import resource
+@resource(closed_by='close')
+class C:
+    def __new__(cls, other):
+        other.close()
+        return object.__new__(cls)
+    def close(self): pass
+    def status(self): return 'ready'
+other = C(None)
+value = C(other)
+other.status()
+"#,
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert!(!diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP1001"));
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic["code"] == "TP9001"
+                && diagnostic["message"].as_str().is_some_and(|message| {
+                    message.contains("custom __new__ allocation effects are not modeled")
+                })
+        }),
+        "{diagnostics:#?}"
+    );
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn inline_annotated_borrowed_resource_rejects_close() {
+    let root = fixture_root().with_extension("lifecycle-inline-borrowed");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("borrowed.py"),
+        "from typing import Annotated\nfrom typepact.contracts import Resource, SharedBorrow\nclass C:\n    def close(self): pass\ndef consume(value: Annotated[C, Resource(closed_by='close'), SharedBorrow()]):\n    value.close()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "TP2001"),
+        "{:#?}",
+        result
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unknown_method_effect_weakens_tracked_resource_arguments() {
+    let root = fixture_root().with_extension("lifecycle-unknown-method-argument");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("unknown_method.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\na = C()\nb = C()\nb.close()\na.external(b)\nb.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    let use_after_close: Vec<_> = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert_eq!(use_after_close.len(), 1, "{diagnostics:#?}");
+    assert_eq!(use_after_close[0]["certainty"], "possible");
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP9001"));
     assert_eq!(result["coverage"]["status"], "incomplete");
     fs::remove_dir_all(root).unwrap();
 }
