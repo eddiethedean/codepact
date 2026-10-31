@@ -27,6 +27,7 @@ struct FunctionBody {
     parameters: Vec<String>,
     statements: Vec<FlowStatement>,
     supported_binding: bool,
+    has_parameter_annotations: bool,
 }
 
 struct FlowContext<'a> {
@@ -95,7 +96,7 @@ fn called_method(expr: &AstExpr) -> Option<MethodCall<'_>> {
 
 fn expression_may_return_resource(expression: &AstExpr) -> bool {
     match &expression.kind {
-        AstExprKind::NoneLiteral | AstExprKind::String(_) => false,
+        AstExprKind::NoneLiteral | AstExprKind::String(_) | AstExprKind::Primitive => false,
         AstExprKind::Tuple(items) => items.iter().any(expression_may_return_resource),
         AstExprKind::Name(_)
         | AstExprKind::Attribute(_, _)
@@ -461,6 +462,9 @@ fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<St
         if parent.borrowed.contains(object) {
             child.borrowed.insert(object.clone());
         }
+        if parent.escaped.contains(object) {
+            child.escaped.insert(object.clone());
+        }
         if let Some(origin) = parent.borrowed_origins.get(object) {
             child
                 .borrowed_origins
@@ -540,6 +544,12 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         .extend(definition.parameters.iter().cloned());
     child
         .shadowed_functions
+        .extend(assigned_names(&definition.statements));
+    child
+        .shadowed_classes
+        .extend(definition.parameters.iter().cloned());
+    child
+        .shadowed_classes
         .extend(assigned_names(&definition.statements));
     let receiver = definition
         .parameters
@@ -738,9 +748,12 @@ fn evaluate_call_arguments(
         .iter()
         .chain(keywords.iter().map(|(_, value)| value))
     {
-        if matches!(
+        if !matches!(
             argument.kind,
-            AstExprKind::Call { .. } | AstExprKind::Tuple(_)
+            AstExprKind::Name(_)
+                | AstExprKind::String(_)
+                | AstExprKind::NoneLiteral
+                | AstExprKind::Primitive
         ) {
             consume_expr(argument, env, file, contracts, functions, result, depth + 1);
         }
@@ -820,7 +833,9 @@ fn consume_expr(
                                 .get(&method_key)
                                 .filter(|definition| definition.file.module == file.module)
                         });
-                    if definition.is_some_and(|definition| !definition.supported_binding) {
+                    if definition.is_some_and(|definition| {
+                        !definition.supported_binding || definition.has_parameter_annotations
+                    }) {
                         let mut affected = vec![object.clone()];
                         for argument in arguments
                             .iter()
@@ -836,7 +851,11 @@ fn consume_expr(
                             result,
                             file,
                             expr.range,
-                            "decorated method binding is not modeled",
+                            if definition.is_some_and(|definition| !definition.supported_binding) {
+                                "decorated method binding is not modeled"
+                            } else {
+                                "method parameter annotations are not modeled"
+                            },
                         );
                         continue;
                     }
@@ -1065,6 +1084,12 @@ fn consume_expr(
                     .extend(definition.parameters.iter().cloned());
                 child
                     .shadowed_functions
+                    .extend(assigned_names(&definition.statements));
+                child
+                    .shadowed_classes
+                    .extend(definition.parameters.iter().cloned());
+                child
+                    .shadowed_classes
                     .extend(assigned_names(&definition.statements));
                 for (parameter, argument) in definition.parameters.iter().zip(arguments) {
                     if let Some(actual) = expr_name(argument) {
@@ -1377,7 +1402,9 @@ fn execute(
                                         functions.get(&format!("{}::{init_key}", file.module))
                                     });
                                 if let Some(definition) = definition {
-                                    if !definition.supported_binding {
+                                    if !definition.supported_binding
+                                        || definition.has_parameter_annotations
+                                    {
                                         let mut affected = vec![object.clone()];
                                         for argument in arguments
                                             .iter()
@@ -1393,7 +1420,11 @@ fn execute(
                                             result,
                                             file,
                                             *range,
-                                            "decorated method binding is not modeled",
+                                            if !definition.supported_binding {
+                                                "decorated method binding is not modeled"
+                                            } else {
+                                                "method parameter annotations are not modeled"
+                                            },
                                         );
                                     } else {
                                         let child = execute_method_body(
@@ -1664,6 +1695,7 @@ fn check_bodies_impl(
                                 .collect(),
                             statements: body.clone(),
                             supported_binding: true,
+                            has_parameter_annotations: false,
                         },
                     );
                 }
@@ -1671,6 +1703,14 @@ fn check_bodies_impl(
                     for method in methods {
                         if method.is_async {
                             continue;
+                        }
+                        if method.has_parameter_annotations {
+                            boundary(
+                                result,
+                                file,
+                                method.range,
+                                "method parameter annotations are not modeled",
+                            );
                         }
                         project_functions.insert(
                             (file.module.clone(), format!("@{name}.{}", method.name)),
@@ -1680,6 +1720,7 @@ fn check_bodies_impl(
                                 parameters: method.parameters.clone(),
                                 statements: method.body.clone(),
                                 supported_binding: !method.decorated,
+                                has_parameter_annotations: method.has_parameter_annotations,
                             },
                         );
                     }
@@ -1903,6 +1944,9 @@ fn check_bodies_impl(
             env.shadowed_functions
                 .extend(parameters.iter().map(|parameter| parameter.name.clone()));
             env.shadowed_functions.extend(assigned_names(body));
+            env.shadowed_classes
+                .extend(parameters.iter().map(|parameter| parameter.name.clone()));
+            env.shadowed_classes.extend(assigned_names(body));
             for parameter in parameters {
                 let Some(annotation) = &parameter.annotation else {
                     continue;

@@ -29,6 +29,7 @@ pub(crate) enum AstExprKind {
     },
     Tuple(Vec<AstExpr>),
     String(String),
+    Primitive,
     NoneLiteral,
     Other,
     DepthLimit,
@@ -80,6 +81,8 @@ pub(crate) enum FlowStatement {
 pub(crate) struct MethodBody {
     pub name: String,
     pub parameters: Vec<String>,
+    pub has_parameter_annotations: bool,
+    pub range: SourceRange,
     pub body: Vec<FlowStatement>,
     pub is_async: bool,
     pub decorated: bool,
@@ -360,6 +363,7 @@ fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usize) -> AstEx
                 .collect(),
         ),
         Expr::StringLiteral(string) => AstExprKind::String(string.value.to_str().to_owned()),
+        Expr::BooleanLiteral(_) | Expr::NumberLiteral(_) => AstExprKind::Primitive,
         Expr::NoneLiteral(_) => AstExprKind::NoneLiteral,
         _ => AstExprKind::Other,
     };
@@ -559,6 +563,11 @@ pub(crate) fn parse_frontend(
                         Some(MethodBody {
                             name: method.name.to_string(),
                             parameters,
+                            has_parameter_annotations: method
+                                .parameters
+                                .iter_source_order()
+                                .any(|parameter| parameter.annotation().is_some()),
+                            range: source_range(method),
                             body: flow_statements(&method.body, &mut expression_budget),
                             is_async: method.is_async,
                             decorated: !method.decorator_list.is_empty(),
@@ -713,6 +722,12 @@ pub(crate) fn parse_frontend(
         .into_iter()
         .zip(module.body.iter())
         .filter_map(|(flow, statement)| match statement {
+            Stmt::FunctionDef(function)
+                if function.parameters.iter_source_order().any(|parameter| {
+                    matches!(parameter, AnyParameterRef::NonVariadic(parameter) if parameter.default.is_some())
+                }) => Some(FlowStatement::Unsupported {
+                range: source_range(statement),
+            }),
             Stmt::FunctionDef(_)
             | Stmt::ClassDef(_)
             | Stmt::Import(_)

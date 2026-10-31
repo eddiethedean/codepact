@@ -1247,6 +1247,125 @@ alias_c.status()
 }
 
 #[test]
+fn unsupported_call_argument_expressions_create_a_boundary() {
+    let root = fixture_root().with_extension("lifecycle-call-argument-expression");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("argument.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef noop(value): pass\nc = C()\nnoop(c.close() or None)\nc.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP9001"));
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn function_defaults_with_resource_effects_create_a_boundary() {
+    let root = fixture_root().with_extension("lifecycle-function-default-effect");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("default.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\ndef f(value=c.close()): pass\nc.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP9001"));
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn function_parameters_shadow_resource_class_names() {
+    let root = fixture_root().with_extension("lifecycle-shadowed-class-parameter");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("shadow.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef use(C):\n    value = C()\n    value.close()\n    value.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| {
+            diagnostic["code"] == "TP1001" && diagnostic["certainty"] == "definite"
+        }));
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn annotated_method_parameters_are_visible_as_an_incomplete_boundary() {
+    let root = fixture_root().with_extension("lifecycle-annotated-method-parameter");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("method.py"),
+        "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def consume(self, other: Borrowed['C']): other.close()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| {
+            diagnostic["code"] == "TP9001"
+                && diagnostic["message"].as_str().is_some_and(|message| {
+                    message.contains("method parameter annotations are not modeled")
+                })
+        }));
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn escaped_resource_state_reaches_unknown_calls_in_callees() {
+    let root = fixture_root().with_extension("lifecycle-escaped-callee");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("escaped.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef f(value): external()\nc = C()\nunknown(c)\nc.close()\nf(c)\nc.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings: Vec<_> = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert!(findings
+        .iter()
+        .any(|diagnostic| diagnostic["certainty"] == "possible"));
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn assignment_of_a_resource_returning_close_method_stays_unknown() {
     let root = fixture_root().with_extension("lifecycle-close-return");
     let _ = fs::remove_dir_all(&root);
