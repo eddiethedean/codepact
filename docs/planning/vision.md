@@ -31,6 +31,8 @@ Initial scope is lifecycle checking, cross-interface normalization, a CLI and st
 
 A general replacement for mypy or Pyright, a Python compiler, and a universal memory-safety proof are outside the initial product. Native Python exceptions remain available. Users do not need to rewrite every return value into Result.
 
+The optional [typepact-pyrefly-cli prototype](typepact-pyrefly-cli.md) explores one command for ordinary type checking and TypePact resource checks by embedding upstream Pyrefly alongside the core analyzer. General Python type semantics remain upstream-owned; this separate experimental distribution does not expand the core engine into a general type checker.
+
 ## Adoption path
 
 Begin with advisory checks and curated resource models that can find useful issues without annotations. Add explicit resource declarations where library behavior is known. Enable strict boundary checks in selected modules, then expand after triaging diagnostics. Support baselines for existing findings and fail CI on newly introduced issues.

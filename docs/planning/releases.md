@@ -28,6 +28,12 @@ Document deprecation warnings, replacement paths and removal releases. A 1.0 rel
 
 Publishing is a separate authorized release action. Creating these planning documents does not publish packages or reserve registry names.
 
+## Optional combined Pyrefly prototype
+
+The [typepact-pyrefly-cli plan](typepact-pyrefly-cli.md) defines a third, optional distribution combining embedded Pyrefly type checking with the TypePact Rust engine. It has a distinct `typepact-pyrefly` executable, independent prerelease versions and a planned `release-pyrefly.yml` workflow using environment `pypi`. The PyPI trusted publisher is project `typepact-pyrefly-cli`, owner `eddiethedean`, repository `typepact`, workflow filename `release-pyrefly.yml`, environment `pypi`. A maintainer-supplied screenshot confirms this configuration on 2026-10-30; workflow implementation and successful OIDC publication remain outstanding.
+
+Qualify the PF01–PF05 work and PF-V01–PF-V08 gates before releasing it. The first proposed version is `0.1.0a1`, tagged `typepact-pyrefly-v0.1.0a1`; manual candidate builds do not publish. Start with verified Linux glibc x86-64, macOS ARM64 and Windows x86-64 wheels plus a buildable source archive; additional targets need evidence. Use a separate artifact verifier and publishing job. The existing two-project version pins, artifact counts and `release.yml` publication retain their D015 contract. The combined prototype remains planned, and this document does not implement its workflow or authorize publication.
+
 ## Recovery and support
 
 Never silently replace a published artifact. For a broken release, document the issue, yank where supported, publish a corrected version and give pinning guidance. Preserve source tags for auditability.

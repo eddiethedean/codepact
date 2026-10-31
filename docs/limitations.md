@@ -1,6 +1,8 @@
 # Current limitations
 
-TypePact 0.1 is a contract-inspection release. It records supported declarations and reports where analysis cannot establish complete coverage. It does not prove that resources are managed safely.
+The published TypePact 0.1 line is a contract-inspection release. The current working tree adds an unreleased `check` command for a bounded synchronous lifecycle subset. It records supported declarations and reports where analysis cannot establish complete coverage. Neither mode proves that resources are managed safely in arbitrary Python programs.
+
+The lifecycle preview tracks direct construction, local aliases, ordinary synchronous calls, local helpers and `if`/`else` joins. It can report use after close and closing a `Borrowed` parameter. It does not model loops, exception handlers, `finally`, context managers, async suspension, dynamic dispatch, arbitrary fields/containers, or returned resource aliases. Those constructs weaken affected facts and appear as incomplete coverage. Unknown methods and calls do not imply purity. A clean run does not prove leak freedom or runtime cleanup.
 
 ## Static analysis boundaries
 

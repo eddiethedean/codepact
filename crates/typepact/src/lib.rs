@@ -3,6 +3,7 @@ pub mod db;
 pub use db::{
     AnalysisCancelled, AnalysisSession, CancellationToken, SessionInputError, SessionInspection,
 };
+mod flow;
 mod frontend;
 mod identifiers;
 pub use identifiers::is_python_identifier;
@@ -98,6 +99,11 @@ fn input_warning(result: &mut Inspection, path: &str, message: &str) {
 /// Inspect one or more explicitly supplied files. Source is treated only as text.
 pub fn inspect(files: &[SourceFile], python_version: &str) -> Inspection {
     AnalysisSession::default().inspect(files, python_version)
+}
+
+/// Check resource lifecycle uses in the currently supported synchronous subset.
+pub fn check(files: &[SourceFile], python_version: &str) -> Inspection {
+    AnalysisSession::default().check(files, python_version)
 }
 
 pub(crate) fn source_limit_inspection(files: &[(String, usize)]) -> Inspection {

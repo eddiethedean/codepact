@@ -7,8 +7,50 @@ use std::{
 };
 use typepact::{inspect, is_python_identifier, SourceFile, DEFAULT_MAX_SOURCE_BYTES};
 
+fn discover_python_files(
+    root: &Path,
+    output: &mut Vec<PathBuf>,
+    budget: usize,
+) -> Result<(), String> {
+    if output.len() >= budget {
+        return Err(format!("project discovery exceeds the {budget} file limit"));
+    }
+    let entries = fs::read_dir(root)
+        .map_err(|error| format!("cannot read project directory {}: {error}", root.display()))?;
+    let mut paths = entries
+        .map(|entry| {
+            entry
+                .map(|entry| entry.path())
+                .map_err(|error| error.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    paths.sort();
+    for path in paths {
+        let metadata = fs::symlink_metadata(&path)
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir()
+            && !matches!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some(".git" | ".venv" | "venv" | "target" | "build" | "dist" | "__pycache__")
+            )
+        {
+            discover_python_files(&path, output, budget)?;
+        } else if metadata.is_file() && path.extension().is_some_and(|extension| extension == "py")
+        {
+            output.push(path);
+            if output.len() > budget {
+                return Err(format!("project discovery exceeds the {budget} file limit"));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn usage() {
-    eprintln!("Usage: typepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] [--json] FILE...\n       typepact --version\n\nInspect declarations without importing or executing Python source.\nWithout --root, each file's stem is its logical module name; use --root for packages and multi-file imports.");
+    eprintln!("Usage: typepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       typepact check [--root DIR] [--python-version VERSION] [--json] [FILE...]\n       typepact --version\n\nInspect declarations or check the supported resource lifecycle subset without executing Python source.\ncheck discovers Python files under its root; inspect-contracts requires explicit files.");
 }
 
 fn module_from_relative_path(path: &Path, python_version: &str) -> Result<String, String> {
@@ -64,13 +106,14 @@ fn main() -> ExitCode {
         usage();
         return ExitCode::SUCCESS;
     }
-    if command != "inspect-contracts" {
+    if command != "inspect-contracts" && command != "check" {
         eprintln!("Unknown command: {command}");
         usage();
         return ExitCode::from(2);
     }
+    let checking = command == "check";
     let mut python_version = "3.11".to_string();
-    let mut json = true;
+    let mut json = !checking;
     let mut root = None;
     let mut paths = Vec::new();
     let mut it = args;
@@ -103,7 +146,7 @@ fn main() -> ExitCode {
             _ => paths.push(PathBuf::from(arg)),
         }
     }
-    if paths.is_empty() {
+    if paths.is_empty() && !checking {
         eprintln!("inspect-contracts requires at least one file");
         return ExitCode::from(2);
     }
@@ -130,12 +173,44 @@ fn main() -> ExitCode {
                 }
             }
         }
+        None if checking => Some(cwd.clone()),
         None => None,
     };
+
+    if checking {
+        let project_root = root.as_deref().expect("check always has a root");
+        let mut discovered = Vec::new();
+        if let Err(error) = discover_python_files(
+            project_root,
+            &mut discovered,
+            typepact::DEFAULT_MAX_INPUT_FILES,
+        ) {
+            eprintln!("{error}");
+            return ExitCode::from(2);
+        }
+        if paths.is_empty() && discovered.is_empty() {
+            eprintln!(
+                "check found no Python files under {}",
+                project_root.display()
+            );
+            return ExitCode::from(2);
+        }
+        paths.extend(discovered);
+        paths.sort();
+        paths.dedup();
+        if paths.len() > typepact::DEFAULT_MAX_INPUT_FILES {
+            eprintln!(
+                "project input exceeds the {} file limit",
+                typepact::DEFAULT_MAX_INPUT_FILES
+            );
+            return ExitCode::from(2);
+        }
+    }
 
     let mut files = Vec::new();
     let mut total_bytes = 0usize;
     let mut modules = std::collections::BTreeSet::new();
+    let mut physical_files = std::collections::BTreeSet::new();
     for path in paths {
         let physical_path = if path.is_absolute() {
             path
@@ -149,6 +224,9 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         };
+        if !physical_files.insert(canonical_path.clone()) {
+            continue;
+        }
         let logical_path = match &root {
             Some(root) => match canonical_path.strip_prefix(root) {
                 Ok(relative) => relative.to_path_buf(),
@@ -245,7 +323,11 @@ fn main() -> ExitCode {
         ));
     }
 
-    let out = inspect(&files, &python_version);
+    let out = if checking {
+        typepact::check(&files, &python_version)
+    } else {
+        inspect(&files, &python_version)
+    };
     if json {
         match serde_json::to_string_pretty(&out) {
             Ok(serialized) => println!("{serialized}"),
@@ -254,12 +336,35 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         }
+    } else {
+        for diagnostic in &out.diagnostics {
+            println!(
+                "{}:{}:{}: {} {}: {}",
+                diagnostic.primary.file,
+                diagnostic.primary.line,
+                diagnostic.primary.column,
+                diagnostic.severity,
+                diagnostic.code,
+                diagnostic.message
+            );
+            if !diagnostic.related.is_empty() {
+                for related in &diagnostic.related {
+                    println!(
+                        "  related: {}:{}:{}",
+                        related.file, related.line, related.column
+                    );
+                }
+            }
+        }
+        if out.coverage.status != "complete-for-supported-subset" {
+            println!("analysis incomplete: {}", out.coverage.reasons.join("; "));
+        }
     }
     if out
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.severity == "error")
-        || out.coverage.status != "complete-for-supported-subset"
+        || (!checking && out.coverage.status != "complete-for-supported-subset")
     {
         ExitCode::from(1)
     } else {

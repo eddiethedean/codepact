@@ -8,6 +8,8 @@ Completion: F01–F08 and V01–V24 pass, including captured-identity regression
 
 ## Phase 1: deliver the mixed-interface slice
 
+The [refined 0.2 plan](phases/0.2-lifecycle.md), [lifecycle specification](phases/0.2/specification.md) and [validation matrix](phases/0.2/validation.md) define the bounded release slice, LC01–LC07 execution order and L01–L06 evidence.
+
 Implement module discovery, parsing, name resolution and resource decorator recognition. Add explicit Borrowed lowering, normal control flow and a minimal call-summary mechanism. Track local aliases and object lifecycle. Add human-readable CLI output.
 
 Completion: the documented Connection example produces exactly the intended post-close diagnostic, with close and use locations. Valid calls, unrelated symbols named resource, imported aliases, branch joins and unknown calls have defined outcomes.
@@ -35,6 +37,10 @@ Completion: feature-specific gates in features.md pass; both frontends produce t
 Finish platform artifacts, version compatibility, persistent cache qualification, documentation, editor protocol and release automation. Extend the Salsa infrastructure and invalidation tests established in 0.1. Run the release candidate against the pilot corpus and published benchmark suite.
 
 Completion: release checklist is satisfied, remaining limitations are published, and API/diagnostic stability commitments have maintainers.
+
+## Optional combined type-checking prototype
+
+The optional [Pyrefly combined CLI prototype](typepact-pyrefly-cli.md) follows PF01–PF05 independently of these phases: embedded-library feasibility, combined reports, compatibility/workflow evidence, package qualification and a dedicated trusted-publishing lane. It reuses the core engine and does not block its phase acceptance. Keep dependency integration gated on the spike and publication gated on PF-V01–PF-V08.
 
 ## Work item template
 

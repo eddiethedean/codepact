@@ -25,6 +25,84 @@ fn run_for_version(root: &PathBuf, paths: &[&str], version: &str) -> Output {
         .expect("CLI starts")
 }
 
+fn run_check(root: &PathBuf) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_typepact"))
+        .current_dir(root)
+        .args(["check", "--root"])
+        .arg(root)
+        .arg("--json")
+        .output()
+        .expect("CLI starts")
+}
+
+#[test]
+fn check_reports_one_use_after_close_at_the_call_site() {
+    let root = fixture_root().with_extension("lifecycle");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("connection.py"),
+        "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass Connection:\n    def status(self): return 'ready'\n    def close(self): pass\ndef inspect(conn: Borrowed[Connection]):\n    return conn.status()\nconn = Connection()\ninspect(conn)\nconn.close()\ninspect(conn)\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    let findings: Vec<_> = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert_eq!(findings.len(), 1, "{diagnostics:#?}");
+    assert_eq!(findings[0]["certainty"], "definite");
+    assert_eq!(findings[0]["primary"]["line"], 12);
+    assert_eq!(findings[0]["related"][0]["line"], 11);
+    assert_eq!(
+        result["assurance"],
+        "lifecycle-checking-for-supported-normal-flow"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn check_branch_join_is_possible_and_borrowed_close_is_rejected() {
+    let root = fixture_root().with_extension("lifecycle-uncertainty");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("connection.py"),
+        "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass Connection:\n    def status(self): return 'ready'\n    def close(self): pass\ndef inspect(conn: Borrowed[Connection]):\n    conn.close()\nconn = Connection()\nif flag:\n    conn.close()\nconn.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP2001"));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "TP1001"
+                && diagnostic["certainty"] == "possible"),
+        "{diagnostics:#?}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn logical_module_identity_is_stable_for_relative_and_absolute_paths() {
     let root = fixture_root();

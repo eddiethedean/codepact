@@ -2,6 +2,8 @@ PYTHON ?= python
 CARGO ?= cargo
 RUSTUP ?= rustup
 UV ?= uv
+CARGO_AUDIT_ARGS ?=
+CARGO_DENY_ARGS ?=
 
 .DEFAULT_GOAL := check
 .PHONY: check check-python check-python-package check-rust check-msrv check-dependencies check-rust-package check-inspector check-docs
@@ -43,11 +45,13 @@ check-python-package:
 	$(PYTHON) scripts/check_python_package.py
 
 check-dependencies:
-	cargo audit
-	cargo deny check advisories bans licenses sources
+	$(CARGO) audit $(CARGO_AUDIT_ARGS)
+	$(CARGO) deny check $(CARGO_DENY_ARGS) advisories bans licenses sources
 
 check-msrv:
-	$(RUSTUP) toolchain install 1.96.0 --profile minimal
+	@if ! $(RUSTUP) toolchain list | grep -Eq '^1[.]96[.]0([ -]|$$)'; then \
+		$(RUSTUP) toolchain install 1.96.0 --profile minimal; \
+	fi
 	$(CARGO) +1.96.0 check --workspace --locked
 
 check-rust-package:
@@ -85,4 +89,8 @@ check-inspector:
 	if test -e "$$tmp/marker"; then echo "inspected Python source was executed" >&2; exit 1; fi
 
 check-docs:
-	$(UV) run --no-project --with-requirements docs/requirements.txt sphinx-build -b html -n -W --keep-going docs target/docs/html
+	@if command -v sphinx-build >/dev/null 2>&1; then \
+		sphinx-build -b html -n -W --keep-going docs target/docs/html; \
+	else \
+		$(UV) run --no-project --with-requirements docs/requirements.txt sphinx-build -b html -n -W --keep-going docs target/docs/html; \
+	fi

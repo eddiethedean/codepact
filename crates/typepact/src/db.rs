@@ -1,4 +1,7 @@
-use crate::{frontend::Declaration, Inspection, SourceFile};
+use crate::{
+    frontend::{Declaration, FlowStatement},
+    Inspection, SourceFile,
+};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -34,6 +37,7 @@ pub struct ParseSummary {
     pub error: Option<String>,
     pub(crate) error_offset: Option<usize>,
     pub(crate) declarations: Option<Vec<Declaration>>,
+    pub(crate) module_body: Vec<FlowStatement>,
     pub(crate) absolute_imports: Vec<String>,
 }
 
@@ -46,6 +50,7 @@ pub fn parse_file(db: &dyn Db, file: FileInput, python_version: String) -> Parse
             error: Some("source file exceeds the inspection byte limit".into()),
             error_offset: Some(0),
             declarations: None,
+            module_body: Vec::new(),
             absolute_imports: Vec::new(),
         };
     }
@@ -57,6 +62,7 @@ pub fn parse_file(db: &dyn Db, file: FileInput, python_version: String) -> Parse
             error: None,
             error_offset: None,
             declarations: Some(frontend.declarations),
+            module_body: frontend.module_body,
             absolute_imports: frontend.absolute_imports,
         },
         Err((error, error_offset)) => ParseSummary {
@@ -64,6 +70,7 @@ pub fn parse_file(db: &dyn Db, file: FileInput, python_version: String) -> Parse
             error: Some(error),
             error_offset: Some(error_offset),
             declarations: None,
+            module_body: Vec::new(),
             absolute_imports: Vec::new(),
         },
     }
@@ -172,6 +179,34 @@ fn inspect_project_query(db: &dyn Db, files: Vec<FileInput>, python_version: Str
     let inspection = crate::semantic::combine_project(plan.inspection, module_inspections);
     db.unwind_if_revision_cancelled();
     serde_json::to_string(&inspection).expect("project inspection result serializes")
+}
+
+#[salsa::tracked(returns(clone))]
+fn check_flow_query(
+    db: &dyn Db,
+    files: Vec<FileInput>,
+    python_version: String,
+    inspection_json: String,
+) -> String {
+    db.unwind_if_revision_cancelled();
+    let sources: Vec<_> = files
+        .iter()
+        .map(|file| SourceFile::new(file.path(db), file.module(db), file.source(db)))
+        .collect();
+    let summaries: BTreeMap<_, _> = files
+        .iter()
+        .map(|file| {
+            (
+                file.path(db).to_string(),
+                parse_file(db, *file, python_version.clone()).clone(),
+            )
+        })
+        .collect();
+    let mut inspection: Inspection =
+        serde_json::from_str(&inspection_json).expect("inspection query result deserializes");
+    crate::flow::check_bodies(&sources, &summaries, &mut inspection);
+    db.unwind_if_revision_cancelled();
+    serde_json::to_string(&inspection).expect("check result serializes")
 }
 
 #[derive(Clone, Debug)]
@@ -392,6 +427,61 @@ impl AnalysisSession {
             Ok(result) => result.inspection,
             Err(_) => crate::cancelled_inspection(files),
         }
+    }
+
+    /// Check lifecycle uses in the bounded synchronous subset.
+    pub fn check(&mut self, files: &[SourceFile], python_version: &str) -> Inspection {
+        match self.check_cancellable(files, python_version) {
+            Ok(result) => result.inspection,
+            Err(_) => {
+                let mut inspection = crate::cancelled_inspection(files);
+                inspection.assurance = "lifecycle-checking-for-supported-normal-flow".into();
+                inspection
+            }
+        }
+    }
+
+    /// Check lifecycle uses and return the exact session revision that was analyzed.
+    pub fn check_cancellable(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+    ) -> Result<SessionInspection, AnalysisCancelled> {
+        let inspected = self.inspect_cancellable(files, python_version)?;
+        let revision = inspected.revision;
+        let inspection = inspected.inspection;
+        let inspection_json =
+            serde_json::to_string(&inspection).expect("inspection result serializes");
+        let result_json = salsa::Cancelled::catch(|| {
+            check_flow_query(
+                &self.db,
+                self.files.values().copied().collect(),
+                python_version.to_string(),
+                inspection_json,
+            )
+        });
+        let result_json = result_json.map_err(|_| AnalysisCancelled)?;
+        let mut result: Inspection =
+            serde_json::from_str(&result_json).expect("check query returns valid JSON");
+        result.diagnostics.sort_by(|left, right| {
+            (
+                &left.primary.file,
+                left.primary.line,
+                left.primary.column,
+                &left.code,
+            )
+                .cmp(&(
+                    &right.primary.file,
+                    right.primary.line,
+                    right.primary.column,
+                    &right.code,
+                ))
+        });
+        result.assurance = "lifecycle-checking-for-supported-normal-flow".into();
+        Ok(SessionInspection {
+            revision,
+            inspection: result,
+        })
     }
 
     /// Inspect files and return the session revision used to compute the result.

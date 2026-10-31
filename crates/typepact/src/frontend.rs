@@ -48,6 +48,43 @@ pub(crate) struct Parameter {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum FlowStatement {
+    Pass {
+        range: SourceRange,
+    },
+    Assign {
+        name: String,
+        value: AstExpr,
+        range: SourceRange,
+    },
+    Expression {
+        value: AstExpr,
+        range: SourceRange,
+    },
+    If {
+        test: AstExpr,
+        body: Vec<FlowStatement>,
+        alternate: Vec<FlowStatement>,
+        range: SourceRange,
+    },
+    Return {
+        value: Option<AstExpr>,
+        range: SourceRange,
+    },
+    Unsupported {
+        range: SourceRange,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MethodBody {
+    pub name: String,
+    pub parameters: Vec<String>,
+    pub body: Vec<FlowStatement>,
+    pub is_async: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Declaration {
     ImportFrom {
         module: String,
@@ -62,6 +99,7 @@ pub(crate) enum Declaration {
     Class {
         name: String,
         decorators: Vec<AstExpr>,
+        methods: Vec<MethodBody>,
         unsupported: bool,
         range: SourceRange,
     },
@@ -72,6 +110,7 @@ pub(crate) enum Declaration {
         decorators: Vec<AstExpr>,
         is_async: bool,
         unsupported: bool,
+        body: Vec<FlowStatement>,
         range: SourceRange,
     },
     Assignment {
@@ -98,6 +137,7 @@ pub(crate) enum Declaration {
 pub(crate) struct FrontendOutput {
     pub declarations: Vec<Declaration>,
     pub absolute_imports: Vec<String>,
+    pub module_body: Vec<FlowStatement>,
 }
 
 fn source_range(node: &impl Ranged) -> SourceRange {
@@ -346,6 +386,83 @@ fn decorators(list: &[ruff_python_ast::Decorator], budget: &mut ExpressionBudget
         .collect()
 }
 
+fn flow_statements(statements: &[Stmt], budget: &mut ExpressionBudget) -> Vec<FlowStatement> {
+    statements
+        .iter()
+        .map(|statement| match statement {
+            Stmt::Assign(assign) if assign.targets.len() == 1 => match &assign.targets[0] {
+                Expr::Name(name) => FlowStatement::Assign {
+                    name: name.id.to_string(),
+                    value: expression(&assign.value, budget, 0),
+                    range: source_range(assign),
+                },
+                _ => FlowStatement::Unsupported {
+                    range: source_range(statement),
+                },
+            },
+            Stmt::AnnAssign(assign) => match assign.target.as_ref() {
+                Expr::Name(name) => assign.value.as_deref().map_or(
+                    FlowStatement::Unsupported {
+                        range: source_range(statement),
+                    },
+                    |value| FlowStatement::Assign {
+                        name: name.id.to_string(),
+                        value: expression(value, budget, 0),
+                        range: source_range(statement),
+                    },
+                ),
+                _ => FlowStatement::Unsupported {
+                    range: source_range(statement),
+                },
+            },
+            Stmt::Expr(expr) => FlowStatement::Expression {
+                value: expression(&expr.value, budget, 0),
+                range: source_range(statement),
+            },
+            Stmt::If(branch) => {
+                let mut alternate = Vec::new();
+                if let Some(clause) = branch.elif_else_clauses.last() {
+                    alternate = flow_statements(&clause.body, budget);
+                    if branch
+                        .elif_else_clauses
+                        .iter()
+                        .any(|clause| clause.test.is_some())
+                    {
+                        alternate.insert(
+                            0,
+                            FlowStatement::Unsupported {
+                                range: SourceRange {
+                                    start: clause.range.start().to_usize(),
+                                    end: clause.range.end().to_usize(),
+                                },
+                            },
+                        );
+                    }
+                }
+                FlowStatement::If {
+                    test: expression(&branch.test, budget, 0),
+                    body: flow_statements(&branch.body, budget),
+                    alternate,
+                    range: source_range(branch),
+                }
+            }
+            Stmt::Return(ret) => FlowStatement::Return {
+                value: ret
+                    .value
+                    .as_deref()
+                    .map(|value| expression(value, budget, 0)),
+                range: source_range(statement),
+            },
+            Stmt::Pass(_) => FlowStatement::Pass {
+                range: source_range(statement),
+            },
+            _ => FlowStatement::Unsupported {
+                range: source_range(statement),
+            },
+        })
+        .collect()
+}
+
 pub(crate) fn parse_frontend(
     source: &str,
     python_version: &str,
@@ -421,6 +538,31 @@ pub(crate) fn parse_frontend(
             Stmt::ClassDef(class) => declarations.push(Declaration::Class {
                 name: class.name.to_string(),
                 decorators: decorators(&class.decorator_list, &mut expression_budget),
+                methods: class
+                    .body
+                    .iter()
+                    .filter_map(|statement| {
+                        let Stmt::FunctionDef(method) = statement else {
+                            return None;
+                        };
+                        let parameters = method
+                            .parameters
+                            .iter_source_order()
+                            .map(|parameter| match parameter {
+                                AnyParameterRef::NonVariadic(parameter) => {
+                                    parameter.parameter.name.to_string()
+                                }
+                                AnyParameterRef::Variadic(parameter) => parameter.name.to_string(),
+                            })
+                            .collect();
+                        Some(MethodBody {
+                            name: method.name.to_string(),
+                            parameters,
+                            body: flow_statements(&method.body, &mut expression_budget),
+                            is_async: method.is_async,
+                        })
+                    })
+                    .collect(),
                 unsupported: class
                     .type_params
                     .as_ref()
@@ -469,6 +611,7 @@ pub(crate) fn parse_frontend(
                             .body
                             .iter()
                             .any(|stmt| matches!(stmt, Stmt::FunctionDef(_) | Stmt::ClassDef(_))),
+                    body: flow_statements(&function.body, &mut expression_budget),
                     range: source_range(function),
                 });
             }
@@ -558,5 +701,23 @@ pub(crate) fn parse_frontend(
     Ok(FrontendOutput {
         declarations,
         absolute_imports,
+        module_body: flow_statements(
+            &module.body,
+            &mut ExpressionBudget {
+                nodes: 0,
+                exceeded: false,
+            },
+        )
+        .into_iter()
+        .zip(module.body.iter())
+        .filter_map(|(flow, statement)| match statement {
+            Stmt::FunctionDef(_)
+            | Stmt::ClassDef(_)
+            | Stmt::Import(_)
+            | Stmt::ImportFrom(_)
+            | Stmt::Pass(_) => None,
+            _ => Some(flow),
+        })
+        .collect(),
     })
 }

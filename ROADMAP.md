@@ -35,6 +35,12 @@ flowchart LR
 
 Release acceptance is sequential by default. Independent prototypes may run earlier: Result/Option work can begin after 0.2, and Ruff AST resolution, declaration identities and in-memory Salsa queries are required in 0.1. Early work does not waive dependencies or required gates. Update this roadmap if the sequence or supported scope changes.
 
+The [linting and IDE diagnostics plan](docs/planning/linting-and-editors.md) adds lint reporting foundations in 0.4 and a shared language server plus VS Code, PyCharm/IntelliJ, Neovim and Emacs integration targets in 0.8. Acceptance requires CLI/editor parity, correct source highlighting, current-revision hints and verified setup for each claimed editor. These integrations remain planned.
+
+The [AI-agent integration plan](docs/planning/ai-agent-integration.md) adds structured analysis schemas, repair explanations and check–edit–recheck workflows in 0.4, followed by local read-only MCP tools and qualified agent clients in 0.8. Acceptance requires preserved certainty/coverage, current-source evidence, CLI/tool parity and verified repairs without weakening project policy. These integrations remain planned.
+
+The optional [typepact-pyrefly-cli prototype](docs/planning/typepact-pyrefly-cli.md) combines embedded Pyrefly type checking with TypePact resource checks in a separate package and command. It has independent prerelease versions, PF01–PF05 work packages and PF-V01–PF-V08 gates, and may progress alongside lifecycle work without blocking the main release sequence. Its planned trusted publisher uses `release-pyrefly.yml` and environment `pypi`; embedded-library feasibility and clean packaging must pass before publication.
+
 ## Version policy
 
 The first accepted release in each line is 0.N.0. Use 0.N.patch for corrections and compatible improvements within that phase's scope. Public API or semantic breaks belong in a new minor line with migration guidance. New default diagnostics can affect CI and require explicit release notes even when APIs do not change.

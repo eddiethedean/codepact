@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import site
 
 
 def main() -> None:
@@ -14,6 +15,9 @@ def main() -> None:
         work = Path(temporary)
         environment = os.environ.copy()
         environment["MATURIN_PEP517_ARGS"] = "--locked"
+        environment["PYTHONPATH"] = os.pathsep.join(
+            [*site.getsitepackages(), environment.get("PYTHONPATH", "")]
+        ).rstrip(os.pathsep)
         for project in (root / "cli", root):
             subprocess.run(
                 [
@@ -58,18 +62,7 @@ def main() -> None:
                 if cli
                 else ["--no-index", "--find-links", str(work / "dist")]
             )
-            if not cli and artifact.name.endswith(".tar.gz"):
-                subprocess.run(
-                    [
-                        "uv",
-                        "pip",
-                        "install",
-                        "--python",
-                        str(interpreter),
-                        "hatchling==1.27.0",
-                    ],
-                    check=True,
-                )
+            if artifact.name.endswith(".tar.gz"):
                 options.append("--no-build-isolation")
             subprocess.run(
                 [

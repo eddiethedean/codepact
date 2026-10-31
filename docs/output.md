@@ -7,7 +7,7 @@ The CLI emits one JSON object. The Rust library returns the same `Inspection` da
 | Field | Meaning |
 | --- | --- |
 | `schema_version` | JSON schema version; currently `0` |
-| `assurance` | Always `contract-inspection-only` in 0.1 |
+| `assurance` | `contract-inspection-only` for inspection; `lifecycle-checking-for-supported-normal-flow` for the checking preview |
 | `contracts` | Normalized resource and access declarations |
 | `diagnostics` | Syntax errors, declaration conflicts, and unsupported or unresolved boundaries |
 | `coverage` | Coverage status, reasons, source byte count, and emitted declaration count |
@@ -33,12 +33,14 @@ Current provenance origins include `python-resource-decorator`, `python-annotati
 
 ## Diagnostics
 
-Each diagnostic has a code, severity, message, primary span, related spans, and certainty. The primary span points to the source construct. Related spans are used when a conflict has an earlier declaration to show. Common 0.1 codes are:
+Each diagnostic has a code, severity, message, primary span, related spans, and certainty. Lifecycle diagnostics use the invalidating call as the primary span and the close operation as a related span when available. Common codes are:
 
 | Code | Meaning |
 | --- | --- |
 | `TP4001` | Python syntax could not be parsed |
 | `TP4002` | A contract declaration is invalid or conflicts with another declaration |
+| `TP1001` | A resource that may be closed is used |
+| `TP2001` | A `Borrowed` resource is closed within a supported body |
 | `TP9001` | An unsupported or unresolved construct prevents complete coverage |
 | `TP9002` | The Rust `inspect` convenience API reports a cancelled inspection; `inspect_cancellable` returns `AnalysisCancelled` instead |
 

@@ -2,7 +2,7 @@
 
 **Python resource contracts, inspected by Rust.** TypePact records declared resource lifecycle and access intent from Python source and reports normalized contract facts, source locations, provenance, and diagnostics.
 
-Version **0.1.0** provides contract inspection. The analyzer reads source as text and does not import or execute the inspected project. It does not yet check resource use through control flow or enforce ownership at runtime.
+Version **0.1.0** provides contract inspection. The working tree also includes an unreleased lifecycle-checking preview through `typepact check`. The analyzer reads source as text and does not import or execute the inspected project. Lifecycle checking covers only its documented synchronous subset and does not enforce ownership at runtime.
 
 ```sh
 uv add typepact==0.1.0

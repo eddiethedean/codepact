@@ -23,6 +23,8 @@
 
 D009–D012 establish direction, not implementation completion. [AM01–AM06](analyzer-migration.md) define the evidence and rollout; D007's MIT choice remains in force.
 
+**D016 — Optional Pyrefly composition prototype.** Plan a separate `typepact-pyrefly-cli` PyPI distribution and `typepact-pyrefly` command combining ordinary type checking from embedded Pyrefly with the existing TypePact resource engine. The maintainer selected Pyrefly for this experiment and supplied a screenshot confirming its trusted publisher configuration on 2026-10-30. Exact dependency/API selection, source packaging and supported targets remain evidence-dependent under [PF01–PF05 and PF-V01–PF-V08](typepact-pyrefly-cli.md). Use independent prerelease versions and the configured `release-pyrefly.yml`/`pypi` publisher identity; workflow implementation and publication remain pending. This adds an optional host; D002/D011/D014/D015 continue to govern the core engine and existing packages.
+
 ## Proposed decisions requiring evidence
 
 | Question | Starting proposal | Evidence needed |

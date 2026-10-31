@@ -11,10 +11,14 @@ Planning baseline: 2026-10-30. These documents record the direction from the “
 | [Architecture](architecture.md) | Components, dependencies, execution and packaging |
 | [Analyzer migration](analyzer-migration.md) | Ruff AST, declaration identities, Salsa query graph and AM01–AM06 acceptance |
 | [0.1 implementation repair](phases/0.1/remediation.md) | Current-code gap map and file-level R01–R08 execution plan |
+| [0.2 lifecycle plan](phases/0.2-lifecycle.md) | Ordered LC01–LC07 work, lifecycle specification and V02 validation matrix |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
 | [Limitations](limitations.md) | Ownership, aliasing, dynamic code and assurance boundaries |
 | [Compatibility](compatibility.md) | Python typing, versions and ecosystem integration |
+| [Linting and IDE diagnostics](linting-and-editors.md) | Lint command, shared language server, editor targets and validation gates |
+| [AI-agent integration](ai-agent-integration.md) | Structured findings, repair context, check–edit–recheck workflows and MCP tools |
+| [Pyrefly combined CLI prototype](typepact-pyrefly-cli.md) | Optional `typepact-pyrefly-cli` package, ordinary typing plus resource checks, packaging and publisher setup |
 | [Roadmap](roadmap.md) | Priorities, dependencies and release scope |
 | [Implementation](implementation.md) | Work packages and completion gates |
 | [Testing and performance](testing.md) | Correctness, interoperability, benchmarks and CI |

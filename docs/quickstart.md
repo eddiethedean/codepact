@@ -43,3 +43,15 @@ uv run typepact inspect-contracts --root src src/models.py src/client.py
 The root is used to name modules; TypePact does not discover files or follow imports automatically. For the full option and input behavior, see the [CLI reference](cli.md). For the declarations understood by 0.1, see [supported syntax](supported-syntax.md).
 
 Continue with the [multi-file tutorial](project-guide.md) to resolve declarations across modules, or [automation](automation.md) to check an explicit source set in CI.
+
+## Check a resource lifecycle
+
+`typepact check` discovers Python files under the project root and reports supported use-after-close cases:
+
+```sh
+uv run typepact check --root examples
+```
+
+The first lifecycle checks cover direct construction, local aliases, normal synchronous calls, and `if`/`else` joins. Unknown calls and unsupported control flow appear as coverage warnings. The command does not prove cleanup on exceptional paths or general ownership safety. See the [CLI reference](cli.md) for the supported subset and exit behavior.
+
+The repository's [lifecycle example](../examples/lifecycle.py) demonstrates the post-close diagnostic.

@@ -45,6 +45,10 @@ def read(conn: Borrowed[Connection]) -> str: ...
 
 `inspect` returns an `Inspection` with contract facts, diagnostics, and coverage. It does not import or execute the Python source. The analyzer accepts source targets 3.11, 3.12, and 3.13.
 
+## Lifecycle checking preview
+
+The current unreleased source also exposes `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. They return the same `Inspection` shape with lifecycle findings and `assurance` set to `lifecycle-checking-for-supported-normal-flow`. This path tracks supported local constructions, aliases, branches and synchronous direct calls. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
+
 ## Incremental analysis session
 
 Use `AnalysisSession` when inputs change repeatedly. It stores source in a Salsa database, tracks input revisions, and invalidates computations from changed files while retaining reusable work for unchanged files.
@@ -75,6 +79,8 @@ The default one-shot function and incremental session share the same analysis pi
 | Operation | Behavior |
 | --- | --- |
 | `inspect(files, target)` | Synchronizes the full input snapshot and returns `Inspection` |
+| `check(files, target)` | Synchronizes the snapshot and adds bounded lifecycle diagnostics |
+| `check_cancellable(files, target)` | Returns checked `SessionInspection` with revision; cancellation returns `AnalysisCancelled` |
 | `inspect_cancellable(files, target)` | Returns `Result<SessionInspection, AnalysisCancelled>` with a revision on success |
 | `set_file(path, module, source)` | Updates one stored input; returns `SessionInputError` if its source or file budgets would be exceeded |
 | `remove_file(path)` | Removes a stored input; removing an absent path is a no-op |
