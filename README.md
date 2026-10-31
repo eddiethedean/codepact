@@ -92,12 +92,12 @@ See the complete [paired example](https://github.com/eddiethedean/typepact/blob/
 
 ## Try lifecycle checking from source
 
-Use a checkout and Rust 1.96+ to run the preview; the published 0.1.0 packages do not include `check`. For a reproducible preview, check out the source baseline used for the current implementation, `5da5d21b3638a91be590a66fe1b67d5ea2649843`:
+Use a checkout and Rust 1.96+ to run the preview; the published 0.1.0 packages do not include `check`. For a reproducible preview, check out the implementation commit `cf2fb90989d3ed01b7ca9edb56cc5ff8bd7122c4`:
 
 ```sh
 git clone https://github.com/eddiethedean/typepact.git
 cd typepact
-git checkout 5da5d21b3638a91be590a66fe1b67d5ea2649843
+git checkout cf2fb90989d3ed01b7ca9edb56cc5ff8bd7122c4
 cargo run --locked -- check --root examples
 ```
 

@@ -57,7 +57,7 @@ Use Rust 1.96+ and a linker to run it independently of an installed 0.1.0 comman
 ```sh
 git clone https://github.com/eddiethedean/typepact.git
 cd typepact
-git checkout 5da5d21b3638a91be590a66fe1b67d5ea2649843
+git checkout cf2fb90989d3ed01b7ca9edb56cc5ff8bd7122c4
 cargo run --locked -- check --root examples
 ```
 
