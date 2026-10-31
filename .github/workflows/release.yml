@@ -126,6 +126,17 @@ jobs:
           container: 'off'
           rust-toolchain: 1.96.0
           maturin-version: '1.9.6'
+      - name: Install and smoke the native wheel
+        if: ${{ !contains(matrix.name, 'musllinux') }}
+        run: python scripts/smoke_release_cli.py --wheel-dir dist
+      - name: Smoke the musllinux wheel in Alpine
+        if: ${{ contains(matrix.name, 'musllinux') }}
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE/dist:/dist:ro" \
+            --volume "$GITHUB_WORKSPACE/scripts:/scripts:ro" \
+            python:3.11-alpine3.22@sha256:a4fc589b32e824f3f02ed9d7e7be19518aa47e105b80416336af9f202275a489 \
+            python /scripts/smoke_release_cli.py --wheel-dir /dist
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: typepact-dist-${{ matrix.name }}
