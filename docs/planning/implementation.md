@@ -55,3 +55,9 @@ These engineering phases group work by subsystem. The [root ROADMAP](../../ROADM
 ## Python helper and CLI distributions
 
 D015 makes the pure typepact to native typepact-cli dependency part of WP02/WP06 in 0.1. Use Hatchling/maturin, two complete sdists, eight CLI release targets and installed-artifact checks before publication; later phases retain this contract.
+
+## Concurrent resource safety work stream
+
+Implement [CS01–CS07](concurrency.md) within the mapped releases. Phase 2 adds bounded coroutine/suspension/cancellation cleanup edges and async reporting/pilot evidence; phase 3 adds structured task identities, captures, joins, borrow regions and explicit transfer commit points; phase 4 adds suspension-aware exclusivity and finite task/pool protocol effects. Phase 5 qualifies versioned models, integration/cache parity and stable claims. Keep 0.2 synchronous and implement each semantic extension separately with counterexamples.
+
+Model process/thread submission as an escape boundary unless explicitly qualified. Do not treat moving a Python handle as serialization, isolation or safe process delivery. Multiprocessing model design remains separate evidence-gated work, not a dependency on proving general cross-process ownership.

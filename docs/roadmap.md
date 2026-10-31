@@ -6,10 +6,10 @@ TypePact 0.x grows from declaration inspection toward broader resource lifecycle
 | --- | --- |
 | 0.1.x | Parse supported declarations and report contract facts, provenance, diagnostics, and coverage |
 | 0.2.x | Lifecycle flow checking and use-after-close analysis; in source preview, qualification pending |
-| 0.3.x | Cleanup obligations and additional resource tracking |
+| 0.3.x | Cleanup obligations and bounded async cancellation/cleanup |
 | 0.4.x | Adoption tooling and useful previews |
-| 0.5.x | Ownership transfer and lexical borrowing |
-| 0.6.x | Exclusive access, typestate, and effects |
+| 0.5.x | Ownership transfer, lexical borrowing and structured task lifetimes |
+| 0.6.x | Suspension-aware exclusive access, typestate, and effects |
 | 0.7.x | Typed outcomes and finite exhaustiveness |
 | 0.8.x | Ecosystem integrations, shared lint language server and IDE diagnostics |
 | 0.9.x | Stabilization and a 1.0 readiness decision |
@@ -23,3 +23,5 @@ Planned AI-agent integration adds structured reports, rule explanations and chec
 An optional `typepact-pyrefly-cli` prototype is also planned, with its own `typepact-pyrefly` command combining Pyrefly's ordinary Python type checking and TypePact's resource checks. It will have independent prereleases and qualification gates alongside the main roadmap; no combined package or command is available yet.
 
 For the detailed planning documents, see the [repository roadmap](https://github.com/eddiethedean/typepact/blob/main/ROADMAP.md) and [planning index](https://github.com/eddiethedean/typepact/tree/main/docs/planning).
+
+Planned concurrent resource safety starts with bounded async cleanup/cancellation in 0.3, structured task ownership and borrow escapes in 0.5, and suspension-aware exclusivity and protocol states in 0.6. Reporting, outcome adapters, integrations and stabilization inherit explicit cancellation and coverage requirements. Initial task models target `asyncio.TaskGroup`; multiprocessing and thread handoffs remain unsupported escape boundaries until separately qualified. This adds no race-freedom or deadlock-freedom guarantee and does not change the synchronous 0.2 preview. See the [concurrency plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/concurrency.md) for scope and acceptance gates.

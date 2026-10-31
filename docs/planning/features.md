@@ -15,6 +15,10 @@ Every feature requires a mixed-interface fixture, a valid case, an invalid case 
 | Exhaustiveness | Check supported finite variants | Missing variants diagnosed; guards do not count as unconditional coverage |
 | Protocol / trait bridge | Reuse structural signatures where possible | No claim of Rust coherence or specialization without a separate design |
 | Effect contracts | Describe mutation, escape and raises | Verify supported bodies; retain unknown effects at external boundaries |
+| Structured async lifetimes | Track coroutine captures, task completion and resource owner/borrow regions | CS01–CS03: cleanup/cancellation paths, join-before-close and borrow escape fixtures |
+| Suspension-aware access | Retain only justified facts across suspension and concurrent effects | CS04: overlap and await/yield boundaries are rejected or visibly unsupported |
+| Concurrent protocol models | Check finite task-group/pool states with explicit effects | CS04/CS06: normal, failure and shutdown paths for named versioned models |
+| Process/thread handoff boundaries | Distinguish escape from proven transfer; preserve unknowns | CS03/CS06: unresolved queues, executors, serialization and shared memory never establish isolation or cleanup |
 | Lifetime relations | Relate returned borrows to inputs | Research gate; no general lifetime syntax before soundness scope is defined |
 
 ## Resource modeling
@@ -40,3 +44,7 @@ Rust-style trait coherence, associated types, general higher-ranked lifetimes, S
 ## Shared analyzer prerequisites
 
 Every analyzer feature uses the [Ruff AST and Salsa architecture](analyzer-migration.md). Before expanding lifecycle or ownership claims, qualify declaration identities, captured aliases, uniform annotation conflict checks and explicit unknown boundaries in 0.1. Each later feature extends tracked semantic summaries and adds fresh/updated parity and dependency-invalidation cases. Parser support, query caching and ordinary typing compatibility do not by themselves establish contract enforcement.
+
+## Concurrency model policy
+
+[CS01–CS07](concurrency.md) define staged acceptance. Creating a coroutine does not establish body execution or consumption; requesting cancellation does not establish completion; joining a task does not by itself establish resource cleanup. Borrowed is not deep immutability; Owned is not serialization/send permission. Cancellation and exceptional cleanup require their own postconditions. Structured task support begins with reviewed TaskGroup models; general asynchronous ownership, process sharing, lock proofs and scheduler analysis remain outside the supported subset.

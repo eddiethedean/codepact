@@ -52,3 +52,7 @@ These operational policies extend the [release plan](releases.md).
 ## Python helper and CLI distributions
 
 G5 includes D015: eight native typepact-cli wheels, a pure typepact wheel with exact CLI dependency, and two complete source archives, matching versions and required quality/build/inventory checks. Importing helpers alone does not establish executable compatibility.
+
+## Concurrent scope evidence
+
+For releases assigned [CS01–CS07](concurrency.md), G1/G2 require the mapped gate's valid, invalid and unknown-boundary corpus and reviewed model semantics; G3 records exact supported library/interpreter and any platform/start-method assumptions. G4 requires task-budget and model-summary invalidation parity. G6/G7 require claims that distinguish resource lifetime/protocol checking from race, deadlock, thread or process safety. Earlier releases retain their original scope; unsupported process boundary fixtures do not qualify multiprocessing semantic support.

@@ -81,3 +81,9 @@ Conflicting metadata is a declaration error; frontend order must not silently ch
 ## Analyzer identity boundary
 
 Public Python spellings lower through the Ruff adapter and TypePact declaration/binding index described in the [migration plan](analyzer-migration.md). Supported eager aliases capture the class and metadata present at assignment; subsequent name rebinding cannot rewrite them. Internal Salsa identities are not public Rust/JSON identities. Preserve the one-shot inspector API while introducing a reusable analysis session; schema changes require an explicit compatibility decision.
+
+## Planned async and process contracts
+
+Reuse resource, Owned, Borrowed, BorrowedMut, typestate and effect concepts for the [bounded structured async subset](concurrency.md); do not add a parallel ownership API. Equivalent Pythonic/explicit contracts must lower to the same captures, task/borrow regions, transfer commit points and cancellation effects. Public syntax for async cleanup or task relationships requires a reviewed design and fixtures before implementation; no new helper spelling is reserved here.
+
+Borrowed does not imply immutable or safe across arbitrary tasks, and Owned does not imply picklable, process-transferable or thread-safe. Coroutine creation differs from execution; a join differs from cleanup. Process/queue/shared-memory and thread handoffs use explicit unknown/escape boundaries until their semantics are qualified. Send/Sync-style markers and lock-proof APIs remain research.

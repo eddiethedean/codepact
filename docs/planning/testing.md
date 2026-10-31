@@ -55,3 +55,9 @@ The current source suite has 32 Rust unit tests, 34 lifecycle CLI integration te
 ## Python helper and CLI distributions
 
 Packaging checks require a pure helper wheel declaring the exact native typepact-cli dependency, eight CLI platform wheels and separate helper/CLI source archives. The local make check gate builds both packages through their sdists and installs all four local artifacts into fresh uv environments outside the checkout, then verifies CLI version/help, inspection, lifecycle checking and source non-execution. Release CI builds all eight targets and validates inventory/metadata. Full candidate platform qualification still requires recorded evidence.
+
+## Planned concurrent resource qualification
+
+Add the full [concurrency validation corpus](concurrency.md) as CS01–CS07 land, retaining valid/invalid/unknown and mixed-interface cases. Test coroutine creation without execution, capture escape, join-before-close, close-before-join, transfer followed by scheduling failure, cancellation before start/during use/during cleanup, exceptional group exit, pending cancellation, overlapping borrows and suspension. Unmodeled detached work, process queues/executors, serialization, shared memory and thread offload must not produce isolation or completion evidence.
+
+Repeat fresh/updated parity after capture/join/cancellation/model changes, source-span moves and task-budget exhaustion; integration/caching hosts must preserve related sites, certainty and incomplete coverage. Distinguish analysis-request cancellation fixtures from target-program cancellation fixtures. Optional controlled runtime model-conformance tests are separate from source-only analyzer tests and never execute users' target code. Pin interpreter/library/platform/start-method combinations for any semantic support claim; unsupported cases are boundary evidence, not verified process support.

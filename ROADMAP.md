@@ -1,6 +1,6 @@
 # TypePact 0.x release roadmap
 
-Planning baseline: 2026-10-30. **TypePact 0.1.0 is published and its qualification gates passed.** The release provides declaration inspection. The current source includes an unreleased lifecycle-checking preview for the upcoming 0.2.0 release; its qualification gates remain pending. See the [0.1.0 release evidence](docs/releases/0.1.0-evidence.md) for the accepted scope and the [0.2 plan](docs/planning/phases/0.2-lifecycle.md) for preview status.
+Planning baseline: 2026-10-31. **TypePact 0.1.0 is published and its qualification gates passed.** The release provides declaration inspection. The current source includes an unreleased lifecycle-checking preview for the upcoming 0.2.0 release; its qualification gates remain pending. See the [0.1.0 release evidence](docs/releases/0.1.0-evidence.md) for the accepted scope and the [0.2 plan](docs/planning/phases/0.2-lifecycle.md) for preview status.
 
 This document is the authoritative release sequence. The original [feature milestones](docs/planning/roadmap.md) and [implementation phases](docs/planning/implementation.md) remain technical work groupings; they are mapped below rather than treated as version numbers.
 
@@ -10,10 +10,10 @@ This document is the authoritative release sequence. The original [feature miles
 | --- | --- | --- | --- |
 | 0.1.x | Foundations and feasibility | [0.1 plan](docs/planning/phases/0.1-foundations.md) | M0 |
 | 0.2.x | Mixed-interface lifecycle checking | [0.2 plan](docs/planning/phases/0.2-lifecycle.md) | M1 |
-| 0.3.x | Cleanup and resource obligations | [0.3 plan](docs/planning/phases/0.3-cleanup.md) | M2 part 1 |
+| 0.3.x | Cleanup obligations and bounded async cancellation/cleanup | [0.3 plan](docs/planning/phases/0.3-cleanup.md) | M2 part 1 |
 | 0.4.x | Adoption tooling and useful preview | [0.4 plan](docs/planning/phases/0.4-adoption.md) | M2 part 2 |
-| 0.5.x | Explicit ownership and lexical borrowing | [0.5 plan](docs/planning/phases/0.5-ownership.md) | M3 |
-| 0.6.x | Exclusive access, typestate and effects | [0.6 plan](docs/planning/phases/0.6-advanced-contracts.md) | M4 |
+| 0.5.x | Explicit ownership, lexical borrowing and structured task lifetimes | [0.5 plan](docs/planning/phases/0.5-ownership.md) | M3 |
+| 0.6.x | Suspension-aware exclusive access, typestate and effects | [0.6 plan](docs/planning/phases/0.6-advanced-contracts.md) | M4 |
 | 0.7.x | Typed outcomes and finite exhaustiveness | [0.7 plan](docs/planning/phases/0.7-typed-outcomes.md) | M5 runtime portion |
 | 0.8.x | Ecosystem integration, editor services and persistent caching | [0.8 plan](docs/planning/phases/0.8-ecosystem.md) | M5 integration portion |
 | 0.9.x | Stabilization and 1.0 readiness | [0.9 plan](docs/planning/phases/0.9-stabilization.md) | M5 stability portion |
@@ -40,6 +40,8 @@ The [linting and IDE diagnostics plan](docs/planning/linting-and-editors.md) add
 The [AI-agent integration plan](docs/planning/ai-agent-integration.md) adds structured analysis schemas, repair explanations and check–edit–recheck workflows in 0.4, followed by local read-only MCP tools and qualified agent clients in 0.8. Acceptance requires preserved certainty/coverage, current-source evidence, CLI/tool parity and verified repairs without weakening project policy. These integrations remain planned.
 
 The optional [typepact-pyrefly-cli prototype](docs/planning/typepact-pyrefly-cli.md) combines embedded Pyrefly type checking with TypePact resource checks in a separate package and command. It has independent prerelease versions, PF01–PF05 work packages and PF-V01–PF-V08 gates, and may progress alongside lifecycle work without blocking the main release sequence. Its planned trusted publisher uses `release-pyrefly.yml` and environment `pypi`; embedded-library feasibility and clean packaging must pass before publication.
+
+The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded async cleanup and cancellation foundations in 0.3 (CS01), reporting and an async pilot in 0.4 (CS02), opt-in structured task ownership/borrow checking in 0.5 (CS03), suspension-aware exclusivity and protocol states in 0.6 (CS04), cancellation-preserving outcomes in 0.7 (CS05), qualified models and integration parity in 0.8 (CS06), and a stable-scope audit in 0.9 (CS07). Start with modeled `asyncio.TaskGroup` lifetimes. Multiprocessing and thread handoffs remain conservative escape boundaries until separately qualified; no race, deadlock, Send/Sync or general process-ownership guarantee is added. The synchronous 0.2 preview scope is unchanged.
 
 ## Version policy
 

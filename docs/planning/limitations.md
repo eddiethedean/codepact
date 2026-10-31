@@ -16,7 +16,8 @@ Python execution retains its normal object model. Ownership annotations do not c
 | Reflection, descriptors and metaclasses | Attribute access can execute arbitrary behavior | Use explicit models or conservative effects |
 | Native extensions | Memory and lifetime behavior is external | Trust reviewed summaries only; no memory-safety claim |
 | Containers, globals and closures | Hidden aliases can escape | Reject within strict ownership subset or mark unknown |
-| Threads and async tasks | Interleaving can invalidate local facts | No data-race guarantee; invalidate at modeled boundaries |
+| Async tasks and suspension | Captures can outlive owners; interleaving can invalidate local facts | Qualify structured task models; preserve pending borrows until modeled completion; weaken affected facts |
+| Threads and process handoffs | Aliases, serialization, inherited handles or shared memory cross the modeled region | Conservative escape/unknown boundary without reviewed models; no race, isolation or transfer guarantee |
 | Exceptions and cancellation | Cleanup or transfer can be interrupted | Model exceptional edges and suspension explicitly |
 | User contract assertions | Declarations may be false | Verify supported bodies; label trusted contracts |
 
@@ -41,3 +42,7 @@ Keep 0.1 limited to contract inspection with bounded declaration resolution; int
 ## Frontend and query assurance
 
 Parsing with Ruff does not imply support for every Python construct. Salsa reuse does not imply semantic correctness or convergence. Mark unsupported binding/evaluation forms, dynamic imports and exhausted budgets as incomplete. Preserve unknowns and provenance across cached results. Declaration identities captured by aliases and runtime resource instances are distinct. The [migration plan](analyzer-migration.md) defines the supported boundaries and their qualification requirements.
+
+## Concurrency assurance
+
+The [planned concurrency subset](concurrency.md) targets resource lifetime and protocol violations, not race freedom, deadlock freedom or thread safety. Current 0.2 analysis remains synchronous. A coroutine call does not execute its body; cancellation requested does not mean task completed; task completion does not establish owned-resource cleanup. Shared borrow is not immutability, and Owned does not establish process transferability. Unknown scheduling, detached captures, serialization, start methods and shared-memory effects must remain visible boundaries. Analyzer request cancellation is distinct from cancellation in the target program.

@@ -74,3 +74,16 @@ Mark Complete only after G8 and every required gate pass. Hold the release while
 ## Python helper and CLI distributions
 
 Record the D015 eight-platform CLI build inventory plus the pure helper wheel, wheel tags and hashes, exact CLI/helper dependency versions, both sdist contents, and local installed-wheel/sdist CLI results. Mark unexecuted target runtime qualification explicitly pending.
+
+## Concurrent resource evidence (when applicable)
+
+- Applicable [CS gates](concurrency.md), status and fixture/log links:
+- Supported async subset and reviewed model identities/versions:
+- Interpreter/library/platform and any process start-method assumptions:
+- Valid/invalid/unknown corpus, cancellation and interrupted-cleanup outcomes:
+- Task capture/join/transfer semantics and budget/fresh-reused parity evidence:
+- CLI/editor/agent parity where delivered:
+- Unsupported task/process/thread boundaries and experimental features excluded from claims:
+- Reviewed lifetime/protocol claims; no inferred race/deadlock/process safety:
+
+For pre-concurrency releases, record not applicable with the unchanged synchronous scope; do not retrofit safety claims to historical evidence.

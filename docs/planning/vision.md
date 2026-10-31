@@ -11,6 +11,7 @@ The Pythonic interface favors decorators, native types, context managers and inf
 | Audience | Problem | First useful outcome |
 | --- | --- | --- |
 | Application teams | Resources remain in use after close or escape cleanup | Precise lifecycle diagnostics with source locations |
+| Async application teams | Background tasks outlive resources or cancellation interrupts cleanup | Modeled structured task lifetimes and explicit unsupported handoffs |
 | Library maintainers | Callers misunderstand consumption or result handling | Published contracts and actionable caller diagnostics |
 | Rust developers using Python | Ownership intent is hard to express | Familiar opt-in annotations with explicit limitations |
 | Existing typing users | General type checks miss lifecycle mistakes | An additional analyzer that works beside their checker |
@@ -48,3 +49,7 @@ Track runtime import cost, cold analysis time, incremental latency, memory and i
 ## Analyzer foundation
 
 The implementation direction is a Ruff AST frontend, TypePact-owned declaration and contract semantics, and Salsa incremental queries following ty's architectural separation. The [migration plan](analyzer-migration.md) makes correctness and observable reuse foundation requirements. This direction improves the basis for contract analysis without promising general Python type-checker coverage or Rust safety guarantees.
+
+## Concurrent resource safety direction
+
+Use the [concurrency plan](concurrency.md) to extend resource checking to structured async tasks before general concurrency analysis. Prioritize owner/borrow lifetimes, explicit handoffs, cancellation-aware cleanup and finite protocol states. Include an async application in adoption pilots and measure useful findings separately from unsupported cases. Multiprocessing requires explicit serialization, handle and start-method models; thread/process safety, lock proofs, race freedom and deadlock freedom are outside this direction's guarantees.

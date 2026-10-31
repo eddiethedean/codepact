@@ -68,3 +68,7 @@ Do not claim automatic compatibility for every LSP-capable editor. Each recipe m
 | LE-V07 — artifacts | Installed CLI/server and editor packages work on each declared target; protocol/schema incompatibilities fail clearly with upgrade guidance. |
 
 Attach these results to 0.4 A01/A03/A07 for the command foundations and 0.8 E03/E07/E08 for editor delivery. Keep all gates pending until evidence exists. Rule explanation pages and editor setup/troubleshooting guides must accompany the first supported release. Automatic resource-closing fixes remain deferred until their semantic preconditions are proven.
+
+## Concurrent resource diagnostics
+
+As [CS02/CS06](concurrency.md) land, preserve task origin, resource owner, capture/transfer, close, suspension and join/escape related sites where modeled. CLI and editor must agree on certainty, unsupported async/process boundaries, model assumptions and source revision. Include a supported structured-task lifetime violation and an unsupported process handoff in CLI/LSP parity fixtures. A green editor state must not turn unknown concurrency coverage into a safety claim; fixes that add joins, shielding or cleanup need verified behavioral preconditions.

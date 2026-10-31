@@ -71,3 +71,11 @@ The [migration specification](analyzer-migration.md) defines the semantic index 
 Tracked parsing/index/export/contract queries begin in 0.1. From 0.2 add CFG, summary and body-check queries, with callers depending on relevant callee summaries. Exceptions, effects, ownership and typestate extend those summaries in later phases. Query caching must preserve diagnostics, certainty, provenance and coverage. Separate source-location changes from semantic export changes and test both invalidation paths.
 
 Use explicit cycle recovery: unresolved import cycles are bounded incomplete boundaries in 0.1; recursive summary inference requires a designed fixed point and widening later. Salsa tracks dependencies but does not define Python evaluation, aliasing, termination or soundness.
+
+## Planned concurrent flow and summaries
+
+Follow [CS01–CS07](concurrency.md). Add coroutine creation, capture, schedule, await/suspension, cancellation, completion/join and async cleanup events. Track task identities, resource identities, handle validity and outstanding borrows separately. Calling an async function does not apply body/close postconditions. A cancellation request does not discharge a task borrow, and completion does not discharge resource cleanup without a verified effect.
+
+Summaries specify transfer commit points and normal, exceptional and cancellation outcomes; failed scheduling cannot silently restore a moved handle. Modeled group completion can end borrow regions only for all relevant work. At suspension or unresolved handoff, weaken facts affected by escaped/concurrent aliases without fabricating uniqueness, open state or completion. Reject or report unsupported exclusive regions spanning suspension according to mode. Task/alias graphs, recursive effects and joins use bounded domains with visible exhaustion.
+
+Process/thread submission, queues, shared memory and custom serialization are conservative escape boundaries until qualified models distinguish local handles, receiver objects and shared backing resources. No schedule enumeration, lock proof or process isolation inference is part of this flow engine.

@@ -54,3 +54,9 @@ Bound source bytes, graph traversal, declarations, work and retained memory. Att
 ## Dependency qualification
 
 AM01 records exact Ruff/Salsa versions or reviewed revisions, licenses, notices, Rust MSRV and build/archive evidence. Ruff semantic and ty internal crates are not assumed to be stable public integration APIs. Verify Cargo registry delivery before adopting Git-only dependencies. Target Python support follows parser and semantic fixtures, not helper-runtime support or a dependency version alone.
+
+## Concurrent resource analysis extensions
+
+The [concurrency plan](concurrency.md) extends CFGs and summaries with coroutine/task creation, captures, scheduling, suspension, completion and cancellation-aware cleanup. Keep task identities, handles, resource instances and borrow regions distinct in the shared engine; neither frontend gains independent concurrency semantics. Analyzer request cancellation and target-program cancellation are separate mechanisms.
+
+Track concurrency-model versions, platform/start-method assumptions and policy as explicit inputs. Capture/join/cleanup summary edits must refresh dependent facts, coverage and related locations, with fresh/reused parity. Bound task/alias graphs and retain unknown outcomes on exhausted work. Multiprocessing/thread boundaries remain conservative without models; no target code or scheduler is executed to infer effects.

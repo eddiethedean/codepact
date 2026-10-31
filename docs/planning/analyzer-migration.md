@@ -82,3 +82,7 @@ Later phases extend this query graph with flow, effects, models and editor servi
 These moving upstream links explain the design. AM01 must record immutable revisions and verified versions for implementation evidence.
 
 The current 0.1 integration assessment is recorded in [D014](decisions.md): `ruff_python_semantic` is not adopted because its published component API is explicitly unstable and its Ruff-specific semantic behavior does not replace TypePact's eager binding and contract-view rules. The frontend uses Ruff parser/AST crates with a TypePact-owned narrow binding index.
+
+## Later concurrent-summary dependencies
+
+[CS01–CS07](concurrency.md) extend the existing query architecture after the synchronous 0.2 slice. Coroutine captures, scheduling/transfer commit points, task completion, cancellation and async cleanup effects become semantic-summary dependencies. Model identity/version and relevant platform/start-method settings are tracked inputs; changes invalidate facts, certainty, coverage and source relations. Add task/borrow-graph budgets and fresh/reused counterexamples without treating Salsa caching or analyzer cancellation as target-program concurrency semantics. No foundation release evidence is retroactively expanded by this plan.

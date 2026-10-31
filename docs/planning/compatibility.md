@@ -54,3 +54,7 @@ The [migration plan](analyzer-migration.md) requires a jointly compatible Ruff p
 ## Python helper and CLI distributions
 
 The typepact distribution remains pure Python and pins its typepact-cli dependency, which supplies native platform wheels containing the Rust CLI (D015). Installation supports Python 3.11+; qualify helper behavior on 3.11–3.14 independently of the analyzer grammar target. See the eight-target release matrix and Rust prerequisites for source installs in [releases](releases.md).
+
+## Concurrency model compatibility
+
+The [concurrency plan](concurrency.md) begins with reviewed asyncio.TaskGroup models and bounded async cleanup/ownership semantics. Publish exact interpreter, library and model versions plus valid/invalid/unknown fixtures before claiming support; helper runtime compatibility does not establish async analysis support. Keep unsupported detached tasks, thread offload and process handoffs visible. Future multiprocessing models must qualify platform/start-method, serialization, descriptor/shared-memory and worker-failure assumptions separately; never infer fork/spawn/forkserver equivalence. No such semantic model is currently qualified.

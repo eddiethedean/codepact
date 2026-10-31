@@ -75,3 +75,7 @@ Qualification targets are a shell-based agent using JSON, an IDE agent consuming
 | AI-V06 — usefulness | Record a reproducible valid/invalid/unknown corpus, task selection, tool/client/model versions where applicable, repair success, new regressions, false clean claims, remaining boundaries, latency and output size. Keep deterministic contract tests separate from variable live-agent evaluations. |
 
 For 0.4, A08 requires AI01–AI03 and AI-V01–AI-V04 for CLI workflows, plus a recorded CLI repair walkthrough. For 0.8, E09 requires AI04–AI05 and all AI-V01–AI-V06, including parity with released editor behavior. Agree evaluation budgets and acceptance thresholds before running the corpus; missing evidence keeps gates pending. Link results to the candidate [release evidence record](release-evidence-template.md).
+
+## Concurrent repair workflows
+
+Inherit [CS02/CS06](concurrency.md) reporting and model assumptions. Agent tools preserve task/resource origins, capture/close/transfer/join sites, cancellation effects, certainty and unknown process/thread boundaries. Qualify one structured-task repair and one unsupported process-handoff walkthrough alongside CLI/editor parity. Rechecking must not turn an unsupported boundary into a verified repair. Do not recommend or automatically insert cancellation suppression, shielding, joins, moves or close calls without verified behavioral preconditions; a wrapper or cancellation request alone proves neither completion nor cleanup.

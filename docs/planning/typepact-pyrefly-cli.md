@@ -109,3 +109,7 @@ Only the publishing job receives `id-token: write`, uses environment `pypi` and 
 Reuse the contracts in the [editor plan](linting-and-editors.md) and [AI-agent plan](ai-agent-integration.md). Their future adapters may expose the combined report with engine labels and per-engine status. The first prototype is a combined CLI, with editor external-tool/agent JSON recipes; it does not merge two language servers or promise new MCP support.
 
 Sharing internal inference facts, a single incremental database, cross-engine automatic fixes and replacing the default TypePact distribution require separate evidence and scope decisions after the prototype. Adoption of this package does not change the core analyzer's resource-focused mission.
+
+## Inherited concurrent resource boundaries
+
+As the embedded TypePact engine gains [CS01–CS07](concurrency.md), preserve its async model assumptions, capture/close/join sites, certainty and unsupported process/thread coverage in combined reports. PF-V02/PF-V05 parity must cover a supported async lifetime case and an unsupported handoff when those core capabilities are included. Upstream ordinary typing success cannot discharge task ownership or cleanup obligations. This adds no concurrency capability to the initial synchronous prototype and does not require a separate concurrency engine.

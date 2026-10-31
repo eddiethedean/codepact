@@ -1,6 +1,6 @@
 # TypePact planning index
 
-Planning baseline: 2026-10-30. These documents record the direction from the “Design Rust Typing Python” discussion and concrete proposals for implementation. They do not assert that planned features exist; current release facts are linked to the evidence records.
+Planning baseline: 2026-10-31. These documents record the direction from the “Design Rust Typing Python” discussion and concrete proposals for implementation. They do not assert that planned features exist; current release facts are linked to the evidence records.
 
 ## Reading order
 
@@ -13,6 +13,7 @@ Planning baseline: 2026-10-30. These documents record the direction from the “
 | [0.1 implementation repair](phases/0.1/remediation.md) | Archived file-level repair plan; see the release evidence for completed work |
 | [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, implemented preview scope, V02 matrix and preliminary performance record |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
+| [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
 | [Limitations](limitations.md) | Ownership, aliasing, dynamic code and assurance boundaries |
 | [Compatibility](compatibility.md) | Python typing, versions and ecosystem integration |
