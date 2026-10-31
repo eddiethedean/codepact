@@ -6,6 +6,7 @@
 [![CLI on PyPI](https://img.shields.io/pypi/v/typepact-cli.svg?label=CLI)](https://pypi.org/project/typepact-cli/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](#compatibility)
 [![Quality](https://github.com/eddiethedean/typepact/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/eddiethedean/typepact/actions/workflows/quality.yml)
+[![Documentation](https://readthedocs.org/projects/typepact/badge/?version=latest)](https://typepact.readthedocs.io/en/latest/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/eddiethedean/typepact/blob/main/LICENSE)
 
 TypePact lets you declare how resources close and how APIs intend to access them, alongside ordinary Python types. A shared Rust inspector resolves those declarations into contract facts with source locations, provenance, and diagnostics.
@@ -209,6 +210,7 @@ See [CONTRIBUTING.md](https://github.com/eddiethedean/typepact/blob/main/CONTRIB
 
 ## Documentation
 
+- [Full documentation](https://typepact.readthedocs.io/en/latest/): installation, quick start, Python and Rust APIs, CLI, output schema, and supported syntax.
 - [Inspector guide](https://github.com/eddiethedean/typepact/blob/main/docs/inspector.md): supported syntax, output, limits, and sessions.
 - [Release roadmap](https://github.com/eddiethedean/typepact/blob/main/ROADMAP.md): the planned 0.1–0.9 sequence.
 - [Product vision](https://github.com/eddiethedean/typepact/blob/main/docs/planning/vision.md): goals and intended use cases.

@@ -13,6 +13,20 @@ permissions:
   contents: read
 
 jobs:
+  docs:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: '3.11'
+          enable-cache: true
+      - name: Build the documentation
+        run: make check-docs
+
   quality:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest

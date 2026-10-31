@@ -4,9 +4,9 @@ RUSTUP ?= rustup
 UV ?= uv
 
 .DEFAULT_GOAL := check
-.PHONY: check check-python check-python-package check-rust check-msrv check-dependencies check-rust-package check-inspector
+.PHONY: check check-python check-python-package check-rust check-msrv check-dependencies check-rust-package check-inspector check-docs
 
-check: check-rust check-python check-python-package check-dependencies check-msrv check-rust-package check-inspector
+check: check-rust check-python check-python-package check-dependencies check-msrv check-rust-package check-inspector check-docs
 
 check-rust:
 	$(CARGO) fmt --all -- --check
@@ -83,3 +83,6 @@ check-inspector:
 	fi; \
 	grep -Fq '"status": "incomplete"' "$$tmp/inspection.json"; \
 	if test -e "$$tmp/marker"; then echo "inspected Python source was executed" >&2; exit 1; fi
+
+check-docs:
+	$(UV) run --no-project --with-requirements docs/requirements.txt sphinx-build -b html -n -W --keep-going docs target/docs/html
