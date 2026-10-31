@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - id: version
         name: Validate package and tag versions
         env:
@@ -46,6 +47,12 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'version={version}\n')
           PY
+      - name: Require completed release evidence before publishing
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: python3 scripts/check_release_evidence.py "$RELEASE_VERSION" --tag-commit "$GITHUB_SHA"
 
   build-wheels:
     name: Wheel (${{ matrix.name }})

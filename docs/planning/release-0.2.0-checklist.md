@@ -10,6 +10,11 @@ maintainer records a decision.
 - [ ] Complete L01–L06 and pre-publication gates G1–G7; attach results for the
   exact candidate commit to a 0.2.0 evidence record. Record G8 after publication
   and registry verification.
+- [ ] Confirm the tag workflow accepts the evidence record. It checks every
+  common gate G1–G7, each phase gate, the candidate commit, and an explicit
+  maintainer approval before any build or publication job starts. Run
+  `python scripts/check_release_evidence.py 0.2.0 --tag-commit "$(git rev-parse HEAD)"`
+  locally first; the tag workflow repeats that check.
 - [ ] Confirm the 0.1.0 regressions remain covered and the release scope,
   supported syntax, limitations, exit behavior, output schema, and examples
   match the candidate implementation.
@@ -21,6 +26,10 @@ maintainer records a decision.
   install instructions accurate.
 - [ ] Run `uv run --locked make check`, wait for the corresponding Quality
   workflow on the candidate commit, and review the source and artifact diffs.
+- [ ] Record the exact source candidate commit after qualification. Add the
+  completed evidence record and maintainer approval in a docs-only follow-up
+  commit, then tag that commit. The tag workflow confirms the source tree has
+  not changed since the qualified candidate.
 - [ ] Confirm the repository secrets and PyPI trusted publishers are configured
   without reading or exposing credential values. The release job uses PyPI OIDC
   and `CARGO_REGISTRY_TOKEN` for crates.io publication.
