@@ -181,6 +181,8 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: validate-artifacts
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     environment:
       name: pypi
       url: https://pypi.org/p/typepact-cli
@@ -194,14 +196,14 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: cli-dist/
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          attestations: false
+          attestations: true
 
   publish-typepact:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: [validate-artifacts, publish-cli]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     environment:
       name: pypi
       url: https://pypi.org/p/typepact
@@ -215,9 +217,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: helper-dist/
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          attestations: false
+          attestations: true
 
   publish-crates:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
