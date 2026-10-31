@@ -24,7 +24,7 @@ typepact check --root src
 typepact check --root src --python-version 3.12 src/app.py
 ```
 
-The current checking subset tracks direct resource construction, local aliases, straight-line synchronous code, `if`/`else`, returns, resolved local helpers and named imports. It reports use after a known close as TP1001 and close through a Borrowed parameter as TP2001. Unsupported statements and unknown effects are shown as incomplete coverage. A possible violation is a warning and does not by itself make the command fail.
+The current checking subset tracks direct resource construction, local aliases, straight-line synchronous code, `if`/`else`, returns, resolved local helpers, and acyclic named re-exports. It reports use after a known close as TP1001 and close through a Borrowed parameter as TP2001. Unsupported statements and unknown effects are shown as incomplete coverage. A possible violation is a warning and does not by itself make the command fail.
 
 This is bounded lifecycle checking, not a guarantee of runtime safety, leak freedom or cleanup across exceptions. Loops, exception handlers, context managers, dynamic dispatch and escaped resource storage are not modeled precisely; related resource facts are weakened and a coverage boundary is reported. Read the [limitations](limitations.md) before treating a clean result as a proof.
 
@@ -48,7 +48,7 @@ typepact inspect-contracts --root src src/models.py src/client.py
 
 With a root, paths below it form the logical module name. For example, `src/my_app/models.py` under `src` becomes `my_app.models`. Without a root, the filename stem is used as the module name. Input files must map to distinct module names.
 
-For `inspect-contracts`, `--root` only names the explicitly supplied modules. `check` discovers `.py` files under the root in sorted order and resolves supported direct absolute imports among them. Relative imports and star imports remain unsupported.
+For `inspect-contracts`, `--root` only names the explicitly supplied modules. `check` discovers `.py` files under the root in sorted order and resolves supported direct absolute imports and acyclic named re-exports among them. Relative imports and star imports remain unsupported.
 
 The checker scans the entire root even when filenames are supplied. It skips
 symlinks and directories named `.git`, `.venv`, `venv`, `target`, `build`, `dist`,

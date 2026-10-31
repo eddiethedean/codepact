@@ -20,6 +20,7 @@ struct State {
     objects: BTreeMap<String, u8>,
     kinds: BTreeMap<String, String>,
     borrowed: BTreeSet<String>,
+    borrowed_origins: BTreeMap<String, Span>,
     escaped: BTreeSet<String>,
     call_stack: BTreeSet<String>,
     close_origins: BTreeMap<String, Span>,
@@ -79,6 +80,12 @@ fn merge(left: &State, right: &State) -> State {
     }
     joined.kinds.extend(right.kinds.clone());
     joined.borrowed.extend(right.borrowed.iter().cloned());
+    for (object, origin) in &right.borrowed_origins {
+        joined
+            .borrowed_origins
+            .entry(object.clone())
+            .or_insert_with(|| origin.clone());
+    }
     joined.escaped.extend(right.escaped.iter().cloned());
     for (object, origin) in &right.close_origins {
         joined
@@ -213,6 +220,11 @@ fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<St
         if parent.borrowed.contains(object) {
             child.borrowed.insert(object.clone());
         }
+        if let Some(origin) = parent.borrowed_origins.get(object) {
+            child
+                .borrowed_origins
+                .insert(object.clone(), origin.clone());
+        }
         if let Some(origin) = parent.close_origins.get(object) {
             child.close_origins.insert(object.clone(), origin.clone());
         }
@@ -230,14 +242,14 @@ fn resolve_imported_contracts(
     if !visited.insert((module.to_owned(), name.to_owned())) {
         return Vec::new();
     }
+    let symbol = format!("{module}.{name}");
     let direct: Vec<_> = result
         .contracts
         .iter()
         .filter(|contract| {
             contract.lifecycle.is_some()
-                && contract
-                    .base_symbol
-                    .starts_with(&format!("{module}.{name}#"))
+                && (contract.base_symbol == symbol
+                    || contract.base_symbol.starts_with(&format!("{symbol}#")))
         })
         .cloned()
         .collect();
@@ -443,7 +455,11 @@ fn consume_expr(
                             "TP2001",
                             "Borrowed parameter cannot close the resource",
                             span(file, expr.range),
-                            Vec::new(),
+                            env.borrowed_origins
+                                .get(object)
+                                .cloned()
+                                .into_iter()
+                                .collect(),
                             "definite",
                         );
                     }
@@ -1139,7 +1155,9 @@ pub(crate) fn check_bodies(
                 env.kinds.insert(object.clone(), kind.clone());
                 env.places
                     .insert(parameter.name.clone(), BTreeSet::from([object.clone()]));
-                env.borrowed.insert(object);
+                env.borrowed.insert(object.clone());
+                env.borrowed_origins
+                    .insert(object.clone(), parameter_contract.source.clone());
             }
             if *is_async {
                 boundary(result, file, *range, "async function body is not checked");

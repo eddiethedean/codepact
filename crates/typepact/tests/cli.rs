@@ -54,6 +54,16 @@ fn check_reports_one_use_after_close_at_the_call_site() {
         String::from_utf8_lossy(&output.stdout)
     );
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let source = fs::read_to_string(root.join("connection.py")).unwrap();
+    let api = typepact::check(
+        &[typepact::SourceFile::new(
+            "connection.py",
+            "connection",
+            source,
+        )],
+        "3.11",
+    );
+    assert_eq!(result, serde_json::to_value(api).unwrap());
     let diagnostics = result["diagnostics"].as_array().unwrap();
     let findings: Vec<_> = diagnostics
         .iter()
@@ -99,6 +109,176 @@ fn check_branch_join_is_possible_and_borrowed_close_is_rejected() {
             .any(|diagnostic| diagnostic["code"] == "TP1001"
                 && diagnostic["certainty"] == "possible"),
         "{diagnostics:#?}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn check_alias_rebinding_and_uncertain_joins_preserve_object_state() {
+    let root = fixture_root().with_extension("lifecycle-alias-joins");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("aliases.py"),
+        r#"from typepact import resource
+@resource(closed_by='close')
+class Connection:
+    def close(self): pass
+    def status(self): return 'ready'
+same = Connection()
+alias = same
+alias.close()
+same.status()
+original = Connection()
+detached = original
+detached = Connection()
+detached.close()
+original.status()
+left = Connection()
+right = Connection()
+if flag:
+    selected = left
+else:
+    selected = right
+selected.close()
+left.status()
+right.status()
+shared = Connection()
+if flag:
+    selected_shared = shared
+else:
+    selected_shared = shared
+selected_shared.close()
+shared.status()
+"#,
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings: Vec<_> = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    let certainties: Vec<_> = findings
+        .iter()
+        .filter_map(|diagnostic| diagnostic["certainty"].as_str())
+        .collect();
+    assert_eq!(
+        certainties,
+        ["definite", "possible", "possible", "definite"],
+        "{:#?}",
+        result["diagnostics"]
+    );
+    assert_eq!(findings[0]["related"].as_array().unwrap().len(), 1);
+    assert_eq!(findings[3]["related"].as_array().unwrap().len(), 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn close_through_an_aliased_helper_reports_the_borrow_origin() {
+    let root = fixture_root().with_extension("lifecycle-borrow-helper");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("borrowed.py"),
+        r#"from typepact import resource
+from typepact.rust import Borrowed
+@resource(closed_by='close')
+class Connection:
+    def close(self): pass
+def close_alias(value):
+    alias = value
+    alias.close()
+def inspect(value: Borrowed[Connection]):
+    close_alias(value)
+"#,
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings: Vec<_> = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP2001")
+        .collect();
+    assert_eq!(findings.len(), 1, "{:#?}", result["diagnostics"]);
+    assert_eq!(findings[0]["primary"]["line"], 8);
+    assert_eq!(findings[0]["related"].as_array().unwrap().len(), 1);
+    assert_eq!(findings[0]["related"][0]["line"], 9);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn check_follows_acyclic_named_reexports_without_losing_resource_identity() {
+    let root = fixture_root().with_extension("lifecycle-reexports");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("models.py"),
+        r#"from typepact import resource
+@resource(closed_by='close')
+class Connection:
+    def close(self): pass
+    def status(self): return 'ready'
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("facade.py"),
+        "from models import Connection as OriginalConnection\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("api.py"),
+        "from facade import OriginalConnection as Connection\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("client.py"),
+        r#"from api import Connection as Conn
+connection = Conn()
+connection.close()
+connection.status()
+"#,
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    let findings: Vec<_> = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert_eq!(findings.len(), 1, "{diagnostics:#?}");
+    assert_eq!(findings[0]["certainty"], "definite");
+    assert_eq!(findings[0]["primary"]["file"], "client.py");
+    assert_eq!(
+        result["coverage"]["status"],
+        "complete-for-supported-subset"
     );
     fs::remove_dir_all(root).unwrap();
 }

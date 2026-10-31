@@ -21,12 +21,11 @@ Class lifecycle and function access declarations compose independently. Compatib
 
 ## Import resolution
 
-Imports are resolved only among the files explicitly passed to the command. `--root` assigns package-qualified names to files. Without it, each file's stem supplies the logical module name. Every supplied file must have a distinct module name.
+For `inspect-contracts`, imports resolve only among the explicitly supplied files. For the lifecycle preview, the checker discovers `.py` files under `--root` and resolves direct absolute imports plus acyclic named re-exports of supported classes and aliases. `--root` assigns package-qualified names to files; without it, each file's stem supplies the logical module name. Duplicate module names are reported. Neither mode imports packages or executes Python source.
 
-The inspector resolves direct absolute imports when the imported module is supplied.
-The preview checker discovers `.py` files below its root and applies declaration
-resolution to that snapshot. Neither mode imports installed packages or executes
-Python source. See [CLI input behavior](cli.md).
+Relative imports, star imports, dynamic imports, import cycles, and ambiguous
+modules remain outside the checking subset or produce visible incomplete
+coverage. See [CLI input behavior](cli.md).
 
 ## Lifecycle preview subset
 
@@ -38,12 +37,14 @@ Python source. See [CLI input behavior](cli.md).
 | `if`/`else` joins | Preserves possible lifecycle states rather than assuming every path closes |
 | Resolved local functions and resource methods | Applies supported body effects to passed resource objects |
 | Close through a Borrowed parameter | Reports TP2001 within supported bodies |
+| Acyclic named re-exports | Preserves supported resource and callable identities across local modules |
 | Unknown effects, recursive calls, unsupported flow | Reports incomplete coverage where encountered |
 
 This table describes implemented patterns, not completion of every phase 0.2
 validation case. General exception handling, loops, async, fields and containers,
-returned aliases, dynamic dispatch, and full import/re-export semantics remain
-outside the qualified checking subset. Consult [limitations](limitations.md).
+returned aliases, dynamic dispatch, relative and star imports, import cycles, and
+ambiguous modules remain outside the qualified checking subset. Consult
+[limitations](limitations.md).
 
 ## Python version support
 

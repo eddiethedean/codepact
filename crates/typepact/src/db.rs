@@ -636,6 +636,69 @@ mod tests {
     }
 
     #[test]
+    fn unchanged_session_check_reuses_the_check_query() {
+        let executions = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if matches!(event.kind, salsa::EventKind::WillExecute { .. }) {
+                observed.fetch_add(1, Ordering::Relaxed);
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let file = SourceFile::new(
+            "module.py",
+            "module",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n",
+        );
+
+        let first = session.check(std::slice::from_ref(&file), "3.11");
+        let executions_after_first_check = executions.load(Ordering::Relaxed);
+        assert!(executions_after_first_check >= 3);
+        let second = session.check(std::slice::from_ref(&file), "3.11");
+
+        assert_eq!(second, first);
+        assert_eq!(
+            executions.load(Ordering::Relaxed),
+            executions_after_first_check
+        );
+    }
+
+    #[test]
+    fn lifecycle_callee_edits_match_a_fresh_check() {
+        let mut session = AnalysisSession::default();
+        let before = SourceFile::new(
+            "module.py",
+            "module",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\nconnection = C()\nshutdown(connection)\nconnection.status()\n",
+        );
+        let first = session.check(std::slice::from_ref(&before), "3.11");
+        assert!(first
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+
+        let after = SourceFile::new(
+            "module.py",
+            "module",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    pass\nconnection = C()\nshutdown(connection)\nconnection.status()\n",
+        );
+        let updated = session.check(std::slice::from_ref(&after), "3.11");
+
+        assert!(!updated
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+        assert_eq!(updated, crate::check(&[after], "3.11"));
+    }
+
+    #[test]
     fn batch_update_applies_new_files_after_existing_file_shrinks() {
         let mut session = AnalysisSession::default();
         let existing = SourceFile::new("existing.py", "existing", "#".repeat(800_000));

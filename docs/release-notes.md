@@ -10,7 +10,7 @@ analysis. Version 0.1.0 remains the latest published release and provides contra
 - Local constructions, aliases, straight-line calls, returns, and `if`/`else` joins.
 - TP1001 use-after-close findings with certainty and related close locations.
 - TP2001 close-through-Borrowed findings in supported bodies.
-- Project-root scanning, readable output, provisional JSON, and Rust checking entry points.
+- Project-root scanning, acyclic named re-exports, readable output, provisional JSON, and Rust checking entry points.
 - Unknown summaries for recursive calls and visible coverage boundaries.
 
 Recent fixes preserve resource metadata across calls, retain uncertain alias

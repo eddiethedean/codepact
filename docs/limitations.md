@@ -6,7 +6,7 @@ of the upcoming 0.2.0 release. Its qualification gates remain pending; green
 repository checks do not establish that every required lifecycle validation
 case has passed.
 
-The lifecycle preview tracks direct construction, local aliases, ordinary synchronous calls, local helpers and `if`/`else` joins. It can report use after close and closing a `Borrowed` parameter. It does not precisely model loops, exception handlers, `finally`, context managers, async suspension, dynamic dispatch, arbitrary fields/containers, or returned resource aliases. Unsupported regions can produce boundaries and weaken tracked state; qualification for every alias and boundary combination remains pending. Recursive calls recover to unknown summaries. Unknown methods and calls do not establish purity. A clean run does not prove leak freedom, cleanup on every exit, or correctness of declared resource models.
+The lifecycle preview tracks direct construction, local aliases, ordinary synchronous calls, local helpers, `if`/`else` joins, and acyclic named re-exports from local modules. It can report use after close and closing a `Borrowed` parameter. It does not precisely model loops, exception handlers, `finally`, context managers, async suspension, dynamic dispatch, arbitrary fields/containers, or returned resource aliases. Unsupported regions can produce boundaries and weaken tracked state; qualification for every alias and boundary combination remains pending. Recursive calls recover to unknown summaries. Unknown methods and calls do not establish purity. A clean run does not prove leak freedom, cleanup on every exit, or correctness of declared resource models.
 
 Repeat close has no general policy and is reported as a coverage boundary rather
 than a dedicated double-close error. Project checking scans all `.py` files below
@@ -15,7 +15,7 @@ the [lifecycle tutorial](lifecycle.md).
 
 ## Static analysis boundaries
 
-The declaration inspector reports incomplete coverage for relevant constructs including:
+The published 0.1.0 declaration inspector reports incomplete coverage for relevant constructs including:
 
 - String and forward-reference annotations, including `from __future__ import annotations`.
 - Relative imports, star imports, import re-export chains, ambiguous supplied modules, and module import cycles.

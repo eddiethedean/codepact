@@ -953,6 +953,7 @@ fn register_supplied_module_import(
         );
         return;
     };
+    state.exports.insert(local.to_owned(), view.clone());
     state.aliases.insert(local.to_owned(), view.symbol.clone());
     let import_span = crate::source_span(&file.path, &file.source, range);
     if view.access != Access::Unspecified {

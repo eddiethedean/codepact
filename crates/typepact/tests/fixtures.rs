@@ -1,4 +1,4 @@
-use typepact::{inspect, AnalysisSession, SourceFile};
+use typepact::{check, inspect, AnalysisSession, SourceFile};
 
 #[test]
 fn eager_class_global_writes_invalidate_module_bindings() {
@@ -631,23 +631,64 @@ fn supplied_module_cycles_are_incomplete_and_deterministic() {
 }
 
 #[test]
-fn supplied_module_reexports_are_reported_as_incomplete() {
-    let origin = SourceFile::new("origin.py", "origin", "class Connection: pass\n");
-    let facade = SourceFile::new("facade.py", "facade", "from origin import Connection\n");
+fn acyclic_named_reexports_preserve_contract_and_lifecycle_identity() {
+    let origin = SourceFile::new(
+        "models.py",
+        "models",
+        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
+    );
+    let facade = SourceFile::new(
+        "facade.py",
+        "facade",
+        "from models import Connection as OriginConnection\n",
+    );
+    let api = SourceFile::new(
+        "api.py",
+        "api",
+        "from facade import OriginConnection as Connection\n",
+    );
     let consumer = SourceFile::new(
         "client.py",
         "client",
-        "from facade import Connection\nfrom typepact.rust import Borrowed\ndef use(value: Borrowed[Connection]): pass\n",
+        "from api import Connection as Conn\nfrom typepact.rust import Borrowed\ndef use(value: Borrowed[Conn]): return value.status()\nconnection = Conn()\nconnection.close()\nconnection.status()\n",
     );
-    let result = inspect(&[origin, facade, consumer], "3.11");
-    assert_eq!(result.coverage.status, "incomplete");
-    assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
-        .message
-        .contains("does not directly export class")));
-    assert!(result
+    let result = check(
+        &[
+            consumer.clone(),
+            api.clone(),
+            facade.clone(),
+            origin.clone(),
+        ],
+        "3.11",
+    );
+    let reordered = check(&[origin, facade, api, consumer], "3.11");
+    assert_eq!(result, reordered);
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    let contract = result
         .contracts
         .iter()
-        .all(|contract| contract.display_name != "use.value"));
+        .find(|contract| contract.display_name == "use.value")
+        .expect("the borrowed declaration resolves through both re-export modules");
+    assert_eq!(contract.base_symbol, "models.Connection");
+    assert_eq!(
+        contract
+            .lifecycle
+            .as_ref()
+            .map(|lifecycle| lifecycle.closed_by.as_str()),
+        Some("close")
+    );
+    let findings: Vec<_> = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1001")
+        .collect();
+    assert_eq!(findings.len(), 1, "{result:#?}");
+    assert_eq!(findings[0].certainty, "definite");
+    assert_eq!(findings[0].primary.file, "client.py");
+    assert_eq!(findings[0].related[0].file, "client.py");
 }
 
 #[test]
