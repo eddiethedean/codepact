@@ -72,6 +72,9 @@ pub(crate) enum FlowStatement {
         value: Option<AstExpr>,
         range: SourceRange,
     },
+    Raise {
+        range: SourceRange,
+    },
     Unsupported {
         range: SourceRange,
     },
@@ -458,6 +461,9 @@ fn flow_statements(statements: &[Stmt], budget: &mut ExpressionBudget) -> Vec<Fl
                     .map(|value| expression(value, budget, 0)),
                 range: source_range(statement),
             },
+            Stmt::Raise(_) => FlowStatement::Raise {
+                range: source_range(statement),
+            },
             Stmt::Pass(_) => FlowStatement::Pass {
                 range: source_range(statement),
             },
@@ -722,18 +728,12 @@ pub(crate) fn parse_frontend(
         .into_iter()
         .zip(module.body.iter())
         .filter_map(|(flow, statement)| match statement {
-            Stmt::FunctionDef(function)
-                if parameters_have_defaults(&function.parameters) =>
-            {
+            Stmt::FunctionDef(function) if parameters_have_defaults(&function.parameters) => {
                 Some(FlowStatement::Unsupported {
                     range: source_range(statement),
                 })
             }
-            Stmt::ClassDef(class)
-                if class.body.iter().any(|statement| {
-                    matches!(statement, Stmt::FunctionDef(function) if parameters_have_defaults(&function.parameters))
-                }) =>
-            {
+            Stmt::ClassDef(class) if class_body_requires_boundary(class) => {
                 Some(FlowStatement::Unsupported {
                     range: source_range(statement),
                 })
@@ -753,4 +753,21 @@ fn parameters_have_defaults(parameters: &ruff_python_ast::Parameters) -> bool {
     parameters.iter_source_order().any(|parameter| {
         matches!(parameter, AnyParameterRef::NonVariadic(parameter) if parameter.default.is_some())
     })
+}
+
+fn class_body_requires_boundary(class: &ruff_python_ast::StmtClassDef) -> bool {
+    class
+        .body
+        .iter()
+        .enumerate()
+        .any(|(index, statement)| match statement {
+            Stmt::FunctionDef(function) => parameters_have_defaults(&function.parameters),
+            Stmt::Pass(_) => false,
+            Stmt::Expr(expression)
+                if index == 0 && matches!(expression.value.as_ref(), Expr::StringLiteral(_)) =>
+            {
+                false
+            }
+            _ => true,
+        })
 }

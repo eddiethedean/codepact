@@ -93,6 +93,25 @@ fn called_method(expr: &AstExpr) -> Option<MethodCall<'_>> {
     Some((receiver, method, arguments, keywords))
 }
 
+fn resource_contract_for_class<'a>(
+    contracts: &'a [Contract],
+    class: &str,
+    file: &SourceFile,
+) -> Option<&'a Contract> {
+    contracts
+        .iter()
+        .find(|contract| {
+            contract.display_name == class
+                && contract.lifecycle.is_some()
+                && contract.source.file == file.path
+        })
+        .or_else(|| {
+            contracts
+                .iter()
+                .find(|contract| contract.display_name == class && contract.lifecycle.is_some())
+        })
+}
+
 fn expression_may_return_resource(expression: &AstExpr) -> bool {
     match &expression.kind {
         AstExprKind::NoneLiteral | AstExprKind::String(_) | AstExprKind::Primitive => false,
@@ -608,6 +627,7 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         context.result,
         depth + 1,
     );
+    let has_normal_exit = child.alive || !returned.is_empty();
     for exit in returned {
         for (changed_object, value) in exit.objects {
             *child.objects.entry(changed_object).or_default() |= value;
@@ -615,6 +635,7 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         child.close_origins.extend(exit.close_origins);
         child.escaped.extend(exit.escaped);
     }
+    child.alive = has_normal_exit;
     child
 }
 
@@ -945,7 +966,7 @@ fn consume_expr(
                                 *env.objects.entry(changed_object).or_default() |= value;
                             }
                         }
-                        if is_close {
+                        if is_close && child.alive {
                             env.close_origins
                                 .insert(object.clone(), span(file, expr.range));
                             if targets.len() == 1 && !env.unknown_places.contains(name) {
@@ -956,6 +977,9 @@ fn consume_expr(
                         }
                         env.close_origins.extend(child.close_origins);
                         env.escaped.extend(child.escaped);
+                        if !child.alive {
+                            env.alive = false;
+                        }
                     } else if is_close {
                         env.close_origins
                             .insert(object.clone(), span(file, expr.range));
@@ -1165,15 +1189,23 @@ fn consume_expr(
                     }
                 }
                 let diagnostic_start = result.diagnostics.len();
+                let mut callee_contracts: Vec<_> = result
+                    .contracts
+                    .iter()
+                    .filter(|contract| contract.source.file == definition.file.path)
+                    .cloned()
+                    .collect();
+                callee_contracts.extend(contracts.iter().cloned());
                 let returned = execute(
                     &definition.statements,
                     &mut child,
                     &definition.file,
-                    contracts,
+                    &callee_contracts,
                     functions,
                     result,
                     depth + 1,
                 );
+                let has_normal_exit = child.alive || !returned.is_empty();
                 for exit in returned {
                     for (object, state) in exit.objects {
                         *child.objects.entry(object).or_default() |= state;
@@ -1207,6 +1239,9 @@ fn consume_expr(
                 }
                 env.close_origins.extend(child.close_origins);
                 env.escaped.extend(child.escaped);
+                if !has_normal_exit {
+                    env.alive = false;
+                }
             } else {
                 let mut affected = Vec::new();
                 for argument in arguments {
@@ -1314,30 +1349,27 @@ fn execute(
             FlowStatement::Assign { name, value, range } => {
                 if let AstExprKind::Call { function, .. } = &value.kind {
                     if let Some(class) = expr_name(function) {
-                        if contracts.iter().any(|contract| {
-                            contract.display_name == class
-                                && contract.lifecycle.is_some()
-                                && !env.shadowed_classes.contains(class)
-                        }) {
+                        if resource_contract_for_class(contracts, class, file).is_some()
+                            && !env.shadowed_classes.contains(class)
+                        {
                             evaluate_call_arguments(
                                 value, env, file, contracts, functions, result, depth,
                             );
-                            let new_definition = contracts
-                                .iter()
-                                .find(|contract| contract.display_name == class)
-                                .and_then(|contract| {
-                                    contract
-                                        .base_symbol
-                                        .split('#')
-                                        .next()
-                                        .and_then(|base| base.rsplit_once('.'))
-                                })
-                                .and_then(|(module, base)| {
-                                    functions.get(&format!("{module}::@{base}.__new__"))
-                                })
-                                .or_else(|| {
-                                    functions.get(&format!("{}::@{class}.__new__", file.module))
-                                });
+                            let new_definition =
+                                resource_contract_for_class(contracts, class, file)
+                                    .and_then(|contract| {
+                                        contract
+                                            .base_symbol
+                                            .split('#')
+                                            .next()
+                                            .and_then(|base| base.rsplit_once('.'))
+                                    })
+                                    .and_then(|(module, base)| {
+                                        functions.get(&format!("{module}::@{base}.__new__"))
+                                    })
+                                    .or_else(|| {
+                                        functions.get(&format!("{}::@{class}.__new__", file.module))
+                                    });
                             if new_definition.is_some() {
                                 weaken(
                                     env,
@@ -1384,22 +1416,21 @@ fn execute(
                             } = &value.kind
                             {
                                 let init_key = format!("@{class}.__init__");
-                                let definition = contracts
-                                    .iter()
-                                    .find(|contract| contract.display_name == class)
-                                    .and_then(|contract| {
-                                        contract
-                                            .base_symbol
-                                            .split('#')
-                                            .next()
-                                            .and_then(|base| base.rsplit_once('.'))
-                                    })
-                                    .and_then(|(module, base)| {
-                                        functions.get(&format!("{module}::@{base}.__init__"))
-                                    })
-                                    .or_else(|| {
-                                        functions.get(&format!("{}::{init_key}", file.module))
-                                    });
+                                let definition =
+                                    resource_contract_for_class(contracts, class, file)
+                                        .and_then(|contract| {
+                                            contract
+                                                .base_symbol
+                                                .split('#')
+                                                .next()
+                                                .and_then(|base| base.rsplit_once('.'))
+                                        })
+                                        .and_then(|(module, base)| {
+                                            functions.get(&format!("{module}::@{base}.__init__"))
+                                        })
+                                        .or_else(|| {
+                                            functions.get(&format!("{}::{init_key}", file.module))
+                                        });
                                 if let Some(definition) = definition {
                                     if !definition.supported_binding {
                                         let mut affected = vec![object.clone()];
@@ -1442,13 +1473,16 @@ fn execute(
                                         }
                                         env.close_origins.extend(child.close_origins);
                                         env.escaped.extend(child.escaped);
+                                        if !child.alive {
+                                            env.alive = false;
+                                        }
                                     }
                                 }
                             }
                             env.places
                                 .insert(name.clone(), BTreeSet::from([object.clone()]));
                             env.unknown_places.remove(name);
-                            env.shadowed_classes.remove(name);
+                            env.shadowed_classes.insert(name.clone());
                             env.shadowed_functions.insert(name.clone());
                             continue;
                         }
@@ -1617,6 +1651,19 @@ fn execute(
                 returned_states.push(returned);
                 env.alive = false;
             }
+            FlowStatement::Raise { range } => {
+                weaken(
+                    env,
+                    env.places
+                        .values()
+                        .flatten()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into_iter(),
+                );
+                boundary(result, file, *range, "raise ends normal lifecycle flow");
+                env.alive = false;
+            }
             FlowStatement::Unsupported { range } => {
                 weaken(
                     env,
@@ -1646,6 +1693,7 @@ fn statement_range(statement: &FlowStatement) -> SourceRange {
         | FlowStatement::Expression { range, .. }
         | FlowStatement::If { range, .. }
         | FlowStatement::Return { range, .. }
+        | FlowStatement::Raise { range }
         | FlowStatement::Unsupported { range } => *range,
     }
 }

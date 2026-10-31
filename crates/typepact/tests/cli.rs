@@ -94,6 +94,101 @@ fn check_reports_one_use_after_close_at_the_call_site() {
 }
 
 #[test]
+fn constructor_assignment_shadows_the_resource_class_binding() {
+    let root = fixture_root().with_extension("constructor-shadow");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def status(self): pass\n    def close(self): pass\nC = C()\nvalue = C()\nvalue.status()\n",
+    )
+    .unwrap();
+
+    let result: serde_json::Value = serde_json::from_slice(&run_check(&root).stdout).unwrap();
+    assert_ne!(
+        result["coverage"]["status"],
+        "complete-for-supported-subset"
+    );
+    assert!(!result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP1001"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn class_body_executable_effects_mark_coverage_incomplete() {
+    let root = fixture_root().with_extension("class-body-effect");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def status(self): pass\n    def close(self): pass\nc = C()\nclass Config:\n    c.close()\nc.status()\n",
+    )
+    .unwrap();
+
+    let result: serde_json::Value = serde_json::from_slice(&run_check(&root).stdout).unwrap();
+    assert_ne!(
+        result["coverage"]["status"],
+        "complete-for-supported-subset"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn raise_stops_normal_flow_and_does_not_report_unreachable_use() {
+    let root = fixture_root().with_extension("raise-flow");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def status(self): pass\n    def close(self): pass\nc = C()\nraise RuntimeError()\nc.close()\nc.status()\n",
+    )
+    .unwrap();
+
+    let result: serde_json::Value = serde_json::from_slice(&run_check(&root).stdout).unwrap();
+    assert_ne!(
+        result["coverage"]["status"],
+        "complete-for-supported-subset"
+    );
+    assert!(!result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP1001"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn helper_constructor_resolution_uses_the_provider_class() {
+    let root = fixture_root().with_extension("provider-constructor");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("provider.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def __init__(self, other): other.close()\n    def close(self): pass\ndef wrap(value: C):\n    temp = C(value)\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("caller.py"),
+        "from typepact import resource\nfrom provider import wrap\n@resource(closed_by='close')\nclass C:\n    def __init__(self): pass\n    def status(self): pass\n    def close(self): pass\nc = C()\nwrap(c)\nc.status()\n",
+    )
+    .unwrap();
+
+    let result: serde_json::Value = serde_json::from_slice(&run_check(&root).stdout).unwrap();
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "TP1001"),
+        "{result:#?}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn check_branch_join_is_possible_and_borrowed_close_is_rejected() {
     let root = fixture_root().with_extension("lifecycle-uncertainty");
     let _ = fs::remove_dir_all(&root);
