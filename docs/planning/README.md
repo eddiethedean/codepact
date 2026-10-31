@@ -11,7 +11,7 @@ Planning baseline: 2026-10-30. These documents record the direction from the “
 | [Architecture](architecture.md) | Components, dependencies, execution and packaging |
 | [Analyzer migration](analyzer-migration.md) | Ruff AST, declaration identities, Salsa query graph and AM01–AM06 acceptance |
 | [0.1 implementation repair](phases/0.1/remediation.md) | Archived file-level repair plan; see the release evidence for completed work |
-| [0.2 lifecycle plan](phases/0.2-lifecycle.md) | Ordered LC01–LC07 work, lifecycle specification and V02 validation matrix |
+| [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, implemented preview scope, V02 matrix and preliminary performance record |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
 | [Limitations](limitations.md) | Ownership, aliasing, dynamic code and assurance boundaries |

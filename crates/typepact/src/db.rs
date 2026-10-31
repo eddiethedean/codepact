@@ -905,8 +905,129 @@ mod tests {
     }
 
     #[test]
-    fn moving_an_imported_close_refreshes_the_related_lifecycle_span() {
+    fn conditional_and_model_edits_refresh_imported_lifecycle_findings() {
         let mut session = AnalysisSession::default();
+        let client = SourceFile::new(
+            "client.py",
+            "client",
+            "from provider import C, shutdown\nvalue = C()\nshutdown(value)\nvalue.status()\n",
+        );
+        let provider_source = |lifecycle: &str, effect: &str| {
+            format!(
+                "from typepact import resource\n@resource(closed_by='{lifecycle}')\nclass C:\n    def close(self): pass\n    def finish(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n{effect}"
+            )
+        };
+        let open_provider = SourceFile::new(
+            "provider.py",
+            "provider",
+            provider_source("close", "    pass\n"),
+        );
+        let open = session.check(&[open_provider.clone(), client.clone()], "3.11");
+        assert!(!open
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+
+        let conditional_provider = SourceFile::new(
+            "provider.py",
+            "provider",
+            provider_source("close", "    if should_close:\n        value.close()\n"),
+        );
+        let conditional = session.check(&[conditional_provider.clone(), client.clone()], "3.11");
+        assert!(conditional.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1001" && diagnostic.certainty == "possible"
+        }));
+        assert_eq!(
+            conditional,
+            crate::check(&[conditional_provider.clone(), client.clone()], "3.11")
+        );
+
+        let definite_provider = SourceFile::new(
+            "provider.py",
+            "provider",
+            provider_source("close", "    value.close()\n"),
+        );
+        let definite = session.check(&[definite_provider.clone(), client.clone()], "3.11");
+        assert!(definite.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1001" && diagnostic.certainty == "definite"
+        }));
+        assert_eq!(
+            definite,
+            crate::check(&[definite_provider.clone(), client.clone()], "3.11")
+        );
+
+        let changed_model = SourceFile::new(
+            "provider.py",
+            "provider",
+            provider_source("finish", "    value.close()\n"),
+        );
+        let after_model_edit = session.check(&[changed_model.clone(), client.clone()], "3.11");
+        assert!(!after_model_edit
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+        assert_eq!(
+            after_model_edit,
+            crate::check(&[changed_model, client], "3.11")
+        );
+    }
+
+    #[test]
+    fn adding_and_removing_a_lifecycle_provider_matches_fresh_checks() {
+        let mut session = AnalysisSession::default();
+        let client = SourceFile::new(
+            "client.py",
+            "client",
+            "from provider import Connection\nvalue = Connection()\nvalue.close()\nvalue.status()\n",
+        );
+        let before = session.check(std::slice::from_ref(&client), "3.11");
+        assert_eq!(before, crate::check(std::slice::from_ref(&client), "3.11"));
+        assert!(!before
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+
+        let provider = SourceFile::new(
+            "provider.py",
+            "provider",
+            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
+        );
+        let added = session.check(&[client.clone(), provider.clone()], "3.11");
+        assert!(added
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+        assert_eq!(added, crate::check(&[provider, client.clone()], "3.11"));
+
+        let removed = session.check(std::slice::from_ref(&client), "3.11");
+        assert_eq!(removed, crate::check(std::slice::from_ref(&client), "3.11"));
+        assert_eq!(removed.coverage.status, "incomplete");
+        assert!(!removed
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+    }
+
+    #[test]
+    fn moving_an_imported_close_refreshes_the_related_lifecycle_span() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
         let provider = SourceFile::new(
             "provider.py",
             "provider",
@@ -929,6 +1050,10 @@ mod tests {
             .first()
             .expect("the finding retains the provider close origin")
             .clone();
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
 
         let moved_provider = SourceFile::new(
             "provider.py",
@@ -953,6 +1078,18 @@ mod tests {
             moved_close.line,
             first_close.line + 1,
             "before: {first:#?}\nafter: {moved:#?}"
+        );
+        let executed_flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            executed_flow_queries.len(),
+            2,
+            "provider and its caller refresh locations: {executed_flow_queries:#?}"
         );
         assert_eq!(moved, crate::check(&[moved_provider, client], "3.11"));
     }

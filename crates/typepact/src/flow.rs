@@ -915,7 +915,21 @@ fn execute(
                     env.unknown_places.remove(name);
                     consume_expr(value, env, file, contracts, functions, result, depth);
                 }
-                env.shadowed_classes.insert(name.clone());
+                let assignment_span = span(file, *range);
+                let defines_resource_view = contracts.iter().any(|contract| {
+                    contract.display_name == *name
+                        && contract.lifecycle.is_some()
+                        && contract.source.file == file.path
+                        && contract.source.line == assignment_span.line
+                        && contract.source.column >= assignment_span.column
+                        && (contract.source.end_line < assignment_span.end_line
+                            || contract.source.end_column <= assignment_span.end_column)
+                });
+                if defines_resource_view {
+                    env.shadowed_classes.remove(name);
+                } else {
+                    env.shadowed_classes.insert(name.clone());
+                }
             }
             FlowStatement::Expression { value, .. } => {
                 consume_expr(value, env, file, contracts, functions, result, depth)

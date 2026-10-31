@@ -1,6 +1,6 @@
 # Testing, performance and quality plan
 
-This is the target verification strategy. The implementation now has local Rust coverage for the core AST, resolution, Salsa reuse, cancellation and work-budget paths; the complete release matrix and candidate evidence remain pending.
+This is the verification strategy for the published inspector and the unreleased lifecycle preview. Local Rust and CLI fixtures cover core flow, resolution, incremental reuse, cancellation, budgets and conservative boundaries. The V02 matrix is mapped to automation below, while full candidate evidence and review remain pending.
 
 ## Correctness layers
 
@@ -50,8 +50,8 @@ Compare fresh and incrementally updated sessions after each edit, including an u
 
 Record cold-session, warm no-op, local-edit and dependency-edit measurements separately. Disk-cache and editor cancellation stress tests expand this corpus in 0.8; basic in-memory query correctness is required from 0.1.
 
-The local implementation suite currently passes 17 Rust unit tests, 1 CLI integration test and 35 semantic fixtures, plus 3 Python helper tests. Dedicated query tests cover body-only provider edits, changed exports, moved provider spans, no-op reuse, session revisions and cancellation recovery. The locked MSRV check, strict Clippy gate, extracted Cargo package test/install/smoke, Python wheel/sdist clean installs, Twine check, and pinned mypy/Pyright fixtures passed locally on Python 3.11. This is partial implementation evidence; it does not replace the V01–V24 matrix, cross-platform compatibility runs or candidate release record.
+The current source suite has 31 Rust unit tests, 22 lifecycle CLI integration tests, 60 semantic fixtures and 8 Python tests. It covers provider body and model edits, missing-provider addition/removal, moved spans, no-op reuse, session revisions and cancellation recovery. The clean Cargo archive and installed Python wheel/sdist checks now also run the lifecycle example, assert one definite TP1001 with a related close location, and verify inspected source is not executed. These are implementation regressions; they do not replace the exact-candidate V02 evidence, compatibility review or release decision.
 
 ## Python helper and CLI distributions
 
-Packaging checks require a pure helper wheel declaring the exact native typepact-cli dependency, eight CLI platform wheels and separate helper/CLI source archives. The local make check gate builds both packages through their sdists and installs all four local artifacts into fresh uv environments outside the checkout, then verifies CLI version/help, inspection and source non-execution. Release CI builds all eight targets and validates inventory/metadata; it does not import sparkless's release test suite. Full candidate platform qualification still requires recorded evidence.
+Packaging checks require a pure helper wheel declaring the exact native typepact-cli dependency, eight CLI platform wheels and separate helper/CLI source archives. The local make check gate builds both packages through their sdists and installs all four local artifacts into fresh uv environments outside the checkout, then verifies CLI version/help, inspection, lifecycle checking and source non-execution. Release CI builds all eight targets and validates inventory/metadata. Full candidate platform qualification still requires recorded evidence.

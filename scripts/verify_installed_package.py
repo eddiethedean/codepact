@@ -1,11 +1,23 @@
 """Exercise an installed wheel or source distribution outside the checkout."""
 
 import importlib.metadata
+import json
 from pathlib import Path
 import subprocess
 import sys
 import sysconfig
 import tempfile
+from typing import TypedDict, cast
+
+
+class Diagnostic(TypedDict):
+    code: str
+    certainty: str
+    related: list[dict[str, object]]
+
+
+class CheckResult(TypedDict):
+    diagnostics: list[Diagnostic]
 
 
 def main() -> None:
@@ -63,6 +75,41 @@ def main() -> None:
         assert result.returncode == 1, result.stderr
         assert '"incomplete"' in result.stdout
         assert not marker.exists()
+
+        check_root = Path(temporary) / "lifecycle"
+        check_root.mkdir()
+        lifecycle_source = check_root / "connection.py"
+        lifecycle_marker = check_root / "executed"
+        lifecycle_source.write_text(
+            f"open({str(lifecycle_marker)!r}, 'w').close()\n"
+            "from typepact import resource\n"
+            "@resource(closed_by='close')\n"
+            "class Connection:\n"
+            "    def close(self): pass\n"
+            "    def status(self): return 'ready'\n"
+            "connection = Connection()\n"
+            "connection.close()\n"
+            "connection.status()\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [str(executable), "check", "--root", str(check_root), "--json"],
+            cwd=temporary,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1, result.stderr
+        checked = cast(CheckResult, json.loads(result.stdout))
+        findings = [
+            diagnostic
+            for diagnostic in checked["diagnostics"]
+            if diagnostic["code"] == "TP1001"
+        ]
+        assert len(findings) == 1, checked["diagnostics"]
+        assert findings[0]["certainty"] == "definite"
+        assert findings[0]["related"], findings[0]
+        assert not lifecycle_marker.exists()
     print(f"Installed distribution and Rust CLI verified: {version}")
 
 

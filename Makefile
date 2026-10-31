@@ -73,7 +73,24 @@ check-rust-package:
 	version_output="$$($$tmp/install/bin/typepact --version)"; \
 	test "$$version_output" = "typepact $$package_version"; \
 	printf '%s\n' "$$version_output"; \
-	(cd "$$package_dir" && "$$tmp/install/bin/typepact" inspect-contracts tests/contracts.py)
+	(cd "$$package_dir" && "$$tmp/install/bin/typepact" inspect-contracts tests/contracts.py); \
+	mkdir "$$tmp/lifecycle"; \
+	printf '%s\n' \
+		"open('$$tmp/lifecycle/executed', 'w').close()" \
+		"from typepact import resource" \
+		"@resource(closed_by='close')" \
+		"class Connection:" \
+		"    def close(self): pass" \
+		"    def status(self): return 'ready'" \
+		"connection = Connection()" \
+		"connection.close()" \
+		"connection.status()" >"$$tmp/lifecycle/connection.py"; \
+	if "$$tmp/install/bin/typepact" check --root "$$tmp/lifecycle" --json >"$$tmp/lifecycle.json"; then status=0; else status="$$?"; fi; \
+	test "$$status" -eq 1; \
+	grep -Fq '"code": "TP1001"' "$$tmp/lifecycle.json"; \
+	grep -Fq '"certainty": "definite"' "$$tmp/lifecycle.json"; \
+	grep -Fq '"related": [' "$$tmp/lifecycle.json"; \
+	test ! -e "$$tmp/lifecycle/executed"
 
 check-inspector:
 	@set -eu; \

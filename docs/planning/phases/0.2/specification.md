@@ -1,6 +1,6 @@
 # 0.2 lifecycle specification
 
-Status: **Proposal for implementation**, not shipped behavior. The [phase plan](../0.2-lifecycle.md) defines acceptance and scope. Preserve the 0.1 inspector while adding separate checking results and assurance.
+Status: **Implemented in the unreleased source preview; release and LC01 acceptance remain pending.** This document defines the 0.2 acceptance scope and supported normal-flow model. The [phase plan](../0.2-lifecycle.md) and [validation matrix](validation.md) define the required review and evidence. Preserve the published 0.1 inspector while adding separate checking results and assurance.
 
 ## Executable acceptance example
 
@@ -98,8 +98,9 @@ The source preview currently uses provisional flow defaults of 128 nested `if`
 regions, 64 possible objects per local alias at a join, 4,096 tracked objects
 per function or module body, and 8 nested call/effect evaluations. These values
 are implementation limits for exercising bounded recovery, not accepted LC01
-decisions. Record their rationale, fixture results, and performance impact
-before marking budget qualification complete.
+decisions. The [preliminary performance record](performance.md) maps each
+default to its exhaustion fixture and current measurements. Accept the rationale
+and measured impact in LC01 before marking budget qualification complete.
 
 ## Diagnostic and command contract
 
