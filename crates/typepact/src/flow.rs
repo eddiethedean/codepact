@@ -8,9 +8,12 @@ const OPEN: u8 = 1;
 const CLOSED: u8 = 2;
 const UNKNOWN: u8 = 4;
 const MAX_CALL_DEPTH: usize = 8;
+const MAX_CONTROL_FLOW_DEPTH: usize = 128;
+const MAX_ALIAS_TARGETS: usize = 64;
+const MAX_FLOW_OBJECTS: usize = 4_096;
 type CallKeyword = (Option<String>, AstExpr);
 type MethodCall<'a> = (&'a AstExpr, &'a str, &'a [AstExpr], &'a [CallKeyword]);
-type ProjectFunctionMap = BTreeMap<(String, String), (Vec<String>, Vec<FlowStatement>)>;
+type ProjectFunctionMap = BTreeMap<(String, String), (SourceFile, Vec<String>, Vec<FlowStatement>)>;
 
 #[derive(Clone, Default)]
 struct State {
@@ -25,6 +28,12 @@ struct State {
     call_stack: BTreeSet<String>,
     close_origins: BTreeMap<String, Span>,
     alive: bool,
+}
+
+#[derive(Default)]
+struct JoinEffects {
+    aliases_over_budget: Vec<String>,
+    possibly_unbound: Vec<String>,
 }
 
 fn expr_name(expr: &AstExpr) -> Option<&str> {
@@ -50,29 +59,46 @@ fn called_method(expr: &AstExpr) -> Option<MethodCall<'_>> {
     Some((receiver, method, arguments, keywords))
 }
 
-fn merge(left: &State, right: &State) -> State {
+fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     let mut joined = left.clone();
-    for (place, targets) in &right.places {
-        joined
-            .places
-            .entry(place.clone())
-            .or_default()
-            .extend(targets.iter().cloned());
-    }
+    let mut effects = JoinEffects::default();
     joined
         .unknown_places
         .extend(right.unknown_places.iter().cloned());
     joined
         .shadowed_classes
         .extend(right.shadowed_classes.iter().cloned());
-    for place in left.places.keys() {
-        if !right.places.contains_key(place) {
+    let places: BTreeSet<_> = left
+        .places
+        .keys()
+        .chain(right.places.keys())
+        .cloned()
+        .collect();
+    for place in places {
+        let left_targets = left.places.get(&place);
+        let right_targets = right.places.get(&place);
+        let mut targets = left_targets.cloned().unwrap_or_default();
+        targets.extend(right_targets.into_iter().flatten().cloned());
+        if left_targets.is_some() != right_targets.is_some() {
             joined.unknown_places.insert(place.clone());
+            let missing_path_is_unbound = if left_targets.is_some() {
+                !right.unknown_places.contains(&place)
+            } else {
+                !left.unknown_places.contains(&place)
+            };
+            if missing_path_is_unbound {
+                effects.possibly_unbound.push(place.clone());
+            }
         }
-    }
-    for place in right.places.keys() {
-        if !left.places.contains_key(place) {
+        if targets.len() > MAX_ALIAS_TARGETS {
+            joined.places.remove(&place);
             joined.unknown_places.insert(place.clone());
+            effects.aliases_over_budget.push(place);
+            for object in targets {
+                *joined.objects.entry(object).or_default() |= UNKNOWN;
+            }
+        } else {
+            joined.places.insert(place, targets);
         }
     }
     for (object, state) in &right.objects {
@@ -94,7 +120,7 @@ fn merge(left: &State, right: &State) -> State {
             .or_insert_with(|| origin.clone());
     }
     joined.alive |= right.alive;
-    joined
+    (joined, effects)
 }
 
 fn span(file: &SourceFile, range: SourceRange) -> Span {
@@ -207,7 +233,7 @@ fn weaken(state: &mut State, objects: impl Iterator<Item = String>) {
     }
 }
 
-type FunctionMap = BTreeMap<String, (Vec<String>, Vec<FlowStatement>)>;
+type FunctionMap = BTreeMap<String, (SourceFile, Vec<String>, Vec<FlowStatement>)>;
 
 fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<String>) {
     for object in objects {
@@ -302,7 +328,7 @@ fn resolve_imported_function(
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     functions: &ProjectFunctionMap,
     visited: &mut BTreeSet<(String, String)>,
-) -> Option<(Vec<String>, Vec<FlowStatement>)> {
+) -> Option<(SourceFile, Vec<String>, Vec<FlowStatement>)> {
     if !visited.insert((module.to_owned(), name.to_owned())) {
         return None;
     }
@@ -479,14 +505,16 @@ fn consume_expr(
                         } else {
                             *env.objects.entry(object.clone()).or_default() |= CLOSED;
                         }
-                    } else if let Some((parameters, body)) = functions.get(&format!(
-                        "@{}.{}",
-                        env.kinds
-                            .get(object)
-                            .map(String::as_str)
-                            .unwrap_or_default(),
-                        method
-                    )) {
+                    } else if let Some((definition_file, parameters, body)) =
+                        functions.get(&format!(
+                            "@{}.{}",
+                            env.kinds
+                                .get(object)
+                                .map(String::as_str)
+                                .unwrap_or_default(),
+                            method
+                        ))
+                    {
                         let method_key = format!(
                             "@{}.{}",
                             env.kinds
@@ -546,7 +574,7 @@ fn consume_expr(
                         execute(
                             body,
                             &mut child,
-                            file,
+                            definition_file,
                             contracts,
                             functions,
                             result,
@@ -625,7 +653,7 @@ fn consume_expr(
     } = &expr.kind
     {
         if let Some(callee) = expr_name(function) {
-            if let Some((parameters, body)) = functions.get(callee) {
+            if let Some((definition_file, parameters, body)) = functions.get(callee) {
                 if env.call_stack.contains(callee) {
                     weaken(
                         env,
@@ -692,7 +720,7 @@ fn consume_expr(
                 execute(
                     body,
                     &mut child,
-                    file,
+                    definition_file,
                     contracts,
                     functions,
                     result,
@@ -820,9 +848,24 @@ fn execute(
                                 && !env.shadowed_classes.contains(class)
                         }) {
                             let object = format!("{}:{}:{}", file.path, range.start, class);
+                            if !env.objects.contains_key(&object)
+                                && env.objects.len() >= MAX_FLOW_OBJECTS
+                            {
+                                env.places.remove(name);
+                                env.unknown_places.insert(name.clone());
+                                env.shadowed_classes.insert(name.clone());
+                                boundary(
+                                    result,
+                                    file,
+                                    *range,
+                                    "tracked resource object budget exceeded; lifecycle state is unknown",
+                                );
+                                continue;
+                            }
                             env.objects.insert(object.clone(), OPEN);
                             env.kinds.insert(object.clone(), class.to_owned());
                             env.places.insert(name.clone(), BTreeSet::from([object]));
+                            env.unknown_places.remove(name);
                             env.shadowed_classes.remove(name);
                             continue;
                         }
@@ -860,6 +903,9 @@ fn execute(
                         } else {
                             env.unknown_places.remove(name);
                         }
+                    } else if env.unknown_places.contains(source) {
+                        env.places.remove(name);
+                        env.unknown_places.insert(name.clone());
                     } else {
                         env.places.remove(name);
                         env.unknown_places.remove(name);
@@ -879,28 +925,82 @@ fn execute(
                 test,
                 body,
                 alternate,
-                ..
+                range,
             } => {
                 consume_expr(test, env, file, contracts, functions, result, depth);
+                if depth >= MAX_CONTROL_FLOW_DEPTH {
+                    weaken(
+                        env,
+                        env.places
+                            .values()
+                            .flatten()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .into_iter(),
+                    );
+                    boundary(
+                        result,
+                        file,
+                        *range,
+                        "control-flow nesting budget exceeded; tracked resources are unknown",
+                    );
+                    continue;
+                }
                 let before = env.clone();
                 let mut left = before.clone();
                 left.alive = true;
                 let mut right = before;
                 right.alive = true;
-                execute(body, &mut left, file, contracts, functions, result, depth);
                 execute(
-                    alternate, &mut right, file, contracts, functions, result, depth,
+                    body,
+                    &mut left,
+                    file,
+                    contracts,
+                    functions,
+                    result,
+                    depth + 1,
                 );
-                *env = match (left.alive, right.alive) {
+                execute(
+                    alternate,
+                    &mut right,
+                    file,
+                    contracts,
+                    functions,
+                    result,
+                    depth + 1,
+                );
+                let reachable = left.alive || right.alive;
+                let (joined, effects) = match (left.alive, right.alive) {
                     (true, true) => merge(&left, &right),
-                    (true, false) => left,
-                    (false, true) => right,
+                    (true, false) => (left, JoinEffects::default()),
+                    (false, true) => (right, JoinEffects::default()),
                     (false, false) => {
-                        let mut joined = merge(&left, &right);
+                        let (mut joined, effects) = merge(&left, &right);
                         joined.alive = false;
-                        joined
+                        (joined, effects)
                     }
                 };
+                *env = joined;
+                if reachable {
+                    for place in effects.possibly_unbound {
+                        boundary(
+                            result,
+                            file,
+                            *range,
+                            &format!("local resource alias {place} may be unbound on one branch"),
+                        );
+                    }
+                    for place in effects.aliases_over_budget {
+                        boundary(
+                            result,
+                            file,
+                            *range,
+                            &format!(
+                                "alias target budget exceeded for {place}; affected resource states are unknown"
+                            ),
+                        );
+                    }
+                }
             }
             FlowStatement::Return { value, .. } => {
                 if let Some(value) = value {
@@ -929,13 +1029,13 @@ fn execute(
     }
 }
 
-pub(crate) fn check_bodies(
+fn check_bodies_impl(
     files: &[SourceFile],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &mut Inspection,
+    only_file: Option<&str>,
 ) {
-    let mut project_functions: BTreeMap<(String, String), (Vec<String>, Vec<FlowStatement>)> =
-        BTreeMap::new();
+    let mut project_functions = ProjectFunctionMap::new();
     for file in files {
         let Some(declarations) = summaries
             .get(&file.path)
@@ -958,6 +1058,7 @@ pub(crate) fn check_bodies(
                     project_functions.insert(
                         (file.module.clone(), name.clone()),
                         (
+                            file.clone(),
                             parameters
                                 .iter()
                                 .map(|parameter| parameter.name.clone())
@@ -973,7 +1074,7 @@ pub(crate) fn check_bodies(
                         }
                         project_functions.insert(
                             (file.module.clone(), format!("@{name}.{}", method.name)),
-                            (method.parameters.clone(), method.body.clone()),
+                            (file.clone(), method.parameters.clone(), method.body.clone()),
                         );
                     }
                 }
@@ -982,6 +1083,9 @@ pub(crate) fn check_bodies(
         }
     }
     for file in files {
+        if only_file.is_some_and(|path| file.path != path) {
+            continue;
+        }
         let Some(declarations) = summaries
             .get(&file.path)
             .and_then(|summary| summary.declarations.as_ref())
@@ -1181,5 +1285,275 @@ pub(crate) fn check_bodies(
                 0,
             );
         }
+    }
+}
+
+pub(crate) fn check_file_bodies(
+    target_path: &str,
+    files: &[SourceFile],
+    summaries: &BTreeMap<String, crate::db::ParseSummary>,
+    result: &mut Inspection,
+) {
+    check_bodies_impl(files, summaries, result, Some(target_path));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Contract, Coverage, Lifecycle, Provenance};
+
+    fn inspection() -> Inspection {
+        Inspection {
+            schema_version: 1,
+            assurance: "test".into(),
+            contracts: Vec::new(),
+            diagnostics: Vec::new(),
+            coverage: Coverage {
+                status: "complete-for-supported-subset".into(),
+                reasons: Vec::new(),
+                source_bytes: 0,
+                declarations: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn alias_overflow_drops_exact_targets_and_weakens_all_candidates() {
+        let left_targets: BTreeSet<_> = (0..MAX_ALIAS_TARGETS)
+            .map(|index| format!("left-{index}"))
+            .collect();
+        let mut left = State::default();
+        left.places.insert("selected".into(), left_targets.clone());
+        for object in &left_targets {
+            left.objects.insert(object.clone(), OPEN);
+        }
+        let mut right = State::default();
+        right
+            .places
+            .insert("selected".into(), BTreeSet::from(["right".into()]));
+        right.objects.insert("right".into(), OPEN);
+        let all_targets: BTreeSet<_> = left_targets
+            .iter()
+            .cloned()
+            .chain(["right".to_owned()])
+            .collect();
+
+        let (joined, effects) = merge(&left, &right);
+
+        assert_eq!(effects.aliases_over_budget, ["selected"]);
+        assert!(!joined.places.contains_key("selected"));
+        assert!(joined.unknown_places.contains("selected"));
+        assert!(all_targets.iter().all(|object| joined
+            .objects
+            .get(object)
+            .is_some_and(|state| state & UNKNOWN != 0)));
+    }
+
+    #[test]
+    fn aliasing_an_unknown_place_preserves_the_unknown_target() {
+        let file = SourceFile::new("module.py", "module", "alias = source\n");
+        let mut state = State {
+            alive: true,
+            ..State::default()
+        };
+        state.unknown_places.insert("source".into());
+        let statement = FlowStatement::Assign {
+            name: "alias".into(),
+            value: AstExpr {
+                range: SourceRange { start: 8, end: 14 },
+                kind: AstExprKind::Name("source".into()),
+            },
+            range: SourceRange { start: 0, end: 14 },
+        };
+        let mut result = inspection();
+
+        execute(
+            &[statement],
+            &mut state,
+            &file,
+            &[],
+            &FunctionMap::new(),
+            &mut result,
+            0,
+        );
+
+        assert!(state.unknown_places.contains("alias"));
+        assert!(!state.places.contains_key("alias"));
+    }
+
+    #[test]
+    fn control_flow_depth_exhaustion_weakens_resources_and_reports_a_boundary() {
+        let file = SourceFile::new("module.py", "module", "\n".repeat(2));
+        let mut state = State {
+            alive: true,
+            ..State::default()
+        };
+        state
+            .places
+            .insert("resource".into(), BTreeSet::from(["object".into()]));
+        state.objects.insert("object".into(), OPEN);
+        let mut body = vec![FlowStatement::Pass {
+            range: SourceRange { start: 0, end: 1 },
+        }];
+        for _ in 0..=MAX_CONTROL_FLOW_DEPTH {
+            body = vec![FlowStatement::If {
+                test: AstExpr {
+                    range: SourceRange { start: 0, end: 1 },
+                    kind: AstExprKind::Name("flag".into()),
+                },
+                body,
+                alternate: Vec::new(),
+                range: SourceRange { start: 0, end: 1 },
+            }];
+        }
+        let mut result = inspection();
+
+        execute(
+            &body,
+            &mut state,
+            &file,
+            &[],
+            &FunctionMap::new(),
+            &mut result,
+            0,
+        );
+
+        assert_eq!(state.objects.get("object"), Some(&(OPEN | UNKNOWN)));
+        assert_eq!(result.coverage.status, "incomplete");
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic
+                    .message
+                    .contains("control-flow nesting budget exceeded")
+        }));
+    }
+
+    #[test]
+    fn call_depth_exhaustion_weakens_resources_and_reports_a_boundary() {
+        let file = SourceFile::new("module.py", "module", "\n".repeat(MAX_CALL_DEPTH + 2));
+        let mut state = State {
+            alive: true,
+            ..State::default()
+        };
+        state
+            .places
+            .insert("resource".into(), BTreeSet::from(["object".into()]));
+        state.objects.insert("object".into(), OPEN);
+        let mut expression = AstExpr {
+            range: SourceRange { start: 0, end: 1 },
+            kind: AstExprKind::Name("resource".into()),
+        };
+        for _ in 0..=MAX_CALL_DEPTH + 1 {
+            expression = AstExpr {
+                range: SourceRange { start: 0, end: 1 },
+                kind: AstExprKind::Call {
+                    function: Box::new(AstExpr {
+                        range: SourceRange { start: 0, end: 1 },
+                        kind: AstExprKind::Name("unknown".into()),
+                    }),
+                    arguments: vec![expression],
+                    keywords: Vec::new(),
+                },
+            };
+        }
+        let mut result = inspection();
+
+        consume_expr(
+            &expression,
+            &mut state,
+            &file,
+            &[],
+            &FunctionMap::new(),
+            &mut result,
+            0,
+        );
+
+        assert_eq!(state.objects.get("object"), Some(&(OPEN | UNKNOWN)));
+        assert_eq!(result.coverage.status, "incomplete");
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic
+                    .message
+                    .contains("call-summary recursion budget exceeded")
+        }));
+    }
+
+    #[test]
+    fn object_budget_exhaustion_does_not_create_an_exact_place() {
+        let file = SourceFile::new("module.py", "module", "\n".repeat(MAX_FLOW_OBJECTS + 1));
+        let contract = Contract {
+            schema_version: 1,
+            base_symbol: "module.Connection".into(),
+            display_name: "Connection".into(),
+            lifecycle: Some(Lifecycle {
+                closed_by: "close".into(),
+            }),
+            access: "unspecified".into(),
+            source: Span {
+                file: file.path.clone(),
+                line: 1,
+                column: 0,
+                end_line: 1,
+                end_column: 1,
+            },
+            provenance: vec![Provenance {
+                origin: "test".into(),
+                trust: "declared-unverified".into(),
+            }],
+        };
+        let statements: Vec<_> = (0..=MAX_FLOW_OBJECTS)
+            .map(|index| FlowStatement::Assign {
+                name: format!("resource_{index}"),
+                value: AstExpr {
+                    range: SourceRange {
+                        start: index,
+                        end: index + 1,
+                    },
+                    kind: AstExprKind::Call {
+                        function: Box::new(AstExpr {
+                            range: SourceRange {
+                                start: index,
+                                end: index + 1,
+                            },
+                            kind: AstExprKind::Name("Connection".into()),
+                        }),
+                        arguments: Vec::new(),
+                        keywords: Vec::new(),
+                    },
+                },
+                range: SourceRange {
+                    start: index,
+                    end: index + 1,
+                },
+            })
+            .collect();
+        let mut state = State {
+            alive: true,
+            ..State::default()
+        };
+        let mut result = inspection();
+
+        execute(
+            &statements,
+            &mut state,
+            &file,
+            &[contract],
+            &FunctionMap::new(),
+            &mut result,
+            0,
+        );
+
+        assert_eq!(state.objects.len(), MAX_FLOW_OBJECTS);
+        assert!(!state
+            .places
+            .contains_key(&format!("resource_{MAX_FLOW_OBJECTS}")));
+        assert!(state
+            .unknown_places
+            .contains(&format!("resource_{MAX_FLOW_OBJECTS}")));
+        assert_eq!(result.coverage.status, "incomplete");
+        assert_eq!(result.diagnostics.len(), 1);
+        assert!(result.diagnostics[0]
+            .message
+            .contains("object budget exceeded"));
     }
 }

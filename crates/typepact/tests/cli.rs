@@ -184,6 +184,47 @@ shared.status()
 }
 
 #[test]
+fn check_exposes_unbound_aliases_and_alias_budget_exhaustion() {
+    let root = fixture_root().with_extension("lifecycle-alias-budgets");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let mut source = String::from(
+        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\nshared = Connection()\nif maybe_defined:\n    maybe = shared\nalias = maybe\nalias.close()\nshared.status()\nselected = Connection()\nselected.close()\n",
+    );
+    for index in 0..(64 + 1) {
+        source.push_str(&format!(
+            "if choose_{index}:\n    selected = Connection()\n    selected.close()\n"
+        ));
+    }
+    source.push_str("selected.status()\n");
+    fs::write(root.join("aliases.py"), source).unwrap();
+
+    let output = run_check(&root);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic["code"] == "TP9001"
+            && diagnostic["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("may be unbound on one branch"))
+    }));
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic["code"] == "TP9001"
+            && diagnostic["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("alias target budget exceeded"))
+    }));
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn close_through_an_aliased_helper_reports_the_borrow_origin() {
     let root = fixture_root().with_extension("lifecycle-borrow-helper");
     let _ = fs::remove_dir_all(&root);
@@ -338,6 +379,64 @@ fn recursive_summaries_stop_with_an_incomplete_boundary() {
                 .as_str()
                 .is_some_and(|message| message.contains("recursive function summary"))
         }));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn check_applies_a_reexported_helper_and_retains_its_provider_location() {
+    let root = fixture_root().with_extension("lifecycle-helper-reexports");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("resources.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("helpers.py"),
+        "def close_connection(value):\n    value.close()\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("reexports.py"),
+        "from helpers import close_connection as close_connection\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("client.py"),
+        "from resources import Connection\nfrom reexports import close_connection\nvalue = Connection()\nclose_connection(value)\nvalue.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings: Vec<_> = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert_eq!(findings.len(), 1, "{:#?}", result["diagnostics"]);
+    assert_eq!(findings[0]["primary"]["file"], "client.py");
+    assert_eq!(findings[0]["related"][0]["file"], "helpers.py");
+
+    let sources: Vec<_> = ["resources.py", "helpers.py", "reexports.py", "client.py"]
+        .into_iter()
+        .map(|path| {
+            let source = fs::read_to_string(root.join(path)).unwrap();
+            typepact::SourceFile::new(path, path.trim_end_matches(".py"), source)
+        })
+        .collect();
+    assert_eq!(
+        result,
+        serde_json::to_value(typepact::check(&sources, "3.11")).unwrap()
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

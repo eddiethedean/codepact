@@ -1,8 +1,8 @@
 use crate::{
     frontend::{Declaration, FlowStatement},
-    Inspection, SourceFile,
+    Coverage, Inspection, SourceFile,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
@@ -182,6 +182,41 @@ fn inspect_project_query(db: &dyn Db, files: Vec<FileInput>, python_version: Str
 }
 
 #[salsa::tracked(returns(clone))]
+fn check_flow_file_query(
+    db: &dyn Db,
+    file: FileInput,
+    dependencies: Vec<FileInput>,
+    python_version: String,
+    inspection_json: String,
+) -> String {
+    db.unwind_if_revision_cancelled();
+    let sources: Vec<_> = dependencies
+        .iter()
+        .map(|dependency| {
+            SourceFile::new(
+                dependency.path(db),
+                dependency.module(db),
+                dependency.source(db),
+            )
+        })
+        .collect();
+    let summaries: BTreeMap<_, _> = dependencies
+        .iter()
+        .map(|dependency| {
+            (
+                dependency.path(db).to_string(),
+                parse_file(db, *dependency, python_version.clone()).clone(),
+            )
+        })
+        .collect();
+    let mut inspection: Inspection =
+        serde_json::from_str(&inspection_json).expect("flow file input deserializes");
+    crate::flow::check_file_bodies(file.path(db), &sources, &summaries, &mut inspection);
+    db.unwind_if_revision_cancelled();
+    serde_json::to_string(&inspection).expect("flow file result serializes")
+}
+
+#[salsa::tracked(returns(clone))]
 fn check_flow_query(
     db: &dyn Db,
     files: Vec<FileInput>,
@@ -215,7 +250,76 @@ fn check_flow_query(
     if inspection.coverage.reasons.is_empty() {
         inspection.coverage.status = "complete-for-supported-subset".into();
     }
-    crate::flow::check_bodies(&sources, &summaries, &mut inspection);
+    let mut module_files = BTreeMap::<String, Vec<FileInput>>::new();
+    for file in files.iter().copied() {
+        module_files
+            .entry(file.module(db).to_string())
+            .or_default()
+            .push(file);
+    }
+    for (target, source) in files.iter().copied().zip(&sources) {
+        db.unwind_if_revision_cancelled();
+        let mut dependency_modules = BTreeSet::from([source.module.clone()]);
+        let mut pending = vec![source.module.clone()];
+        while let Some(module) = pending.pop() {
+            for dependency in module_files.get(&module).into_iter().flatten() {
+                let Some(summary) = summaries.get(dependency.path(db)) else {
+                    continue;
+                };
+                for imported in &summary.absolute_imports {
+                    if module_files.contains_key(imported)
+                        && dependency_modules.insert(imported.clone())
+                    {
+                        pending.push(imported.clone());
+                    }
+                }
+            }
+        }
+        let dependencies: Vec<_> = files
+            .iter()
+            .copied()
+            .filter(|dependency| dependency_modules.contains(dependency.module(db)))
+            .collect();
+        let dependency_paths: BTreeSet<_> = dependencies
+            .iter()
+            .map(|dependency| dependency.path(db).to_string())
+            .collect();
+        let flow_input = Inspection {
+            schema_version: inspection.schema_version,
+            assurance: inspection.assurance.clone(),
+            contracts: inspection
+                .contracts
+                .iter()
+                .filter(|contract| dependency_paths.contains(&contract.source.file))
+                .cloned()
+                .collect(),
+            diagnostics: Vec::new(),
+            coverage: Coverage {
+                status: "complete-for-supported-subset".into(),
+                reasons: Vec::new(),
+                source_bytes: 0,
+                declarations: 0,
+            },
+        };
+        let flow_json = check_flow_file_query(
+            db,
+            target,
+            dependencies,
+            python_version.clone(),
+            serde_json::to_string(&flow_input).expect("flow file input serializes"),
+        );
+        let flow: Inspection =
+            serde_json::from_str(&flow_json).expect("flow file result deserializes");
+        inspection.diagnostics.extend(flow.diagnostics);
+        for reason in flow.coverage.reasons {
+            if !inspection.coverage.reasons.contains(&reason) {
+                inspection.coverage.reasons.push(reason);
+            }
+        }
+        if flow.coverage.status == "incomplete" {
+            inspection.coverage.status = "incomplete".into();
+        }
+    }
     db.unwind_if_revision_cancelled();
     serde_json::to_string(&inspection).expect("check result serializes")
 }
@@ -668,6 +772,189 @@ mod tests {
             executions.load(Ordering::Relaxed),
             executions_after_first_check
         );
+    }
+
+    #[test]
+    fn unrelated_edit_reuses_other_file_lifecycle_checks() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let consumer = SourceFile::new(
+            "consumer.py",
+            "consumer",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nvalue = C()\nvalue.close()\nvalue.status()\n",
+        );
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let first = session.check(&[consumer.clone(), unrelated.clone()], "3.11");
+        assert!(first
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+
+        let edited = SourceFile::new("unrelated.py", "unrelated", "value = 2\n");
+        let after = session.check(&[consumer.clone(), edited.clone()], "3.11");
+        let executed_flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            executed_flow_queries.len(),
+            1,
+            "only the edited file's lifecycle query should execute: {executed_flow_queries:#?}"
+        );
+        assert_eq!(after, crate::check(&[consumer, edited], "3.11"));
+    }
+
+    #[test]
+    fn imported_effect_edits_refresh_callers_but_reuse_unrelated_checks() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let provider = SourceFile::new(
+            "provider.py",
+            "provider",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\n",
+        );
+        let client = SourceFile::new(
+            "client.py",
+            "client",
+            "from provider import C, shutdown\nvalue = C()\nshutdown(value)\nvalue.status()\n",
+        );
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let first = session.check(
+            &[provider.clone(), client.clone(), unrelated.clone()],
+            "3.11",
+        );
+        assert!(first
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+
+        let edited_provider = SourceFile::new(
+            "provider.py",
+            "provider",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    pass\n",
+        );
+        let after = session.check(
+            &[edited_provider.clone(), client.clone(), unrelated.clone()],
+            "3.11",
+        );
+        let executed_flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert!(!after
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+        assert_eq!(
+            executed_flow_queries.len(),
+            2,
+            "provider and its caller should refresh; unrelated checks should reuse: {executed_flow_queries:#?}"
+        );
+        assert_eq!(
+            after,
+            crate::check(&[edited_provider, client, unrelated], "3.11")
+        );
+    }
+
+    #[test]
+    fn moving_an_imported_close_refreshes_the_related_lifecycle_span() {
+        let mut session = AnalysisSession::default();
+        let provider = SourceFile::new(
+            "provider.py",
+            "provider",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\n",
+        );
+        let client = SourceFile::new(
+            "client.py",
+            "client",
+            "from provider import C, shutdown\nvalue = C()\nshutdown(value)\nvalue.status()\n",
+        );
+        let first = session.check(&[provider.clone(), client.clone()], "3.11");
+        let first_use = first
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "TP1001")
+            .expect("the imported helper closes the resource");
+        assert_eq!(first_use.primary.file, "client.py");
+        let first_close = first_use
+            .related
+            .first()
+            .expect("the finding retains the provider close origin")
+            .clone();
+
+        let moved_provider = SourceFile::new(
+            "provider.py",
+            "provider",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\n\ndef shutdown(value):\n    value.close()\n",
+        );
+        let moved = session.check(&[moved_provider.clone(), client.clone()], "3.11");
+        let moved_use = moved
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "TP1001")
+            .expect("the imported helper still closes the resource");
+        let moved_close = moved_use
+            .related
+            .first()
+            .expect("the refreshed finding retains its provider origin");
+
+        assert_eq!(moved_use.primary, first_use.primary);
+        assert_eq!(moved_use.certainty, first_use.certainty);
+        assert_eq!(moved_close.file, first_close.file);
+        assert_eq!(
+            moved_close.line,
+            first_close.line + 1,
+            "before: {first:#?}\nafter: {moved:#?}"
+        );
+        assert_eq!(moved, crate::check(&[moved_provider, client], "3.11"));
     }
 
     #[test]

@@ -17,6 +17,12 @@ Recent fixes preserve resource metadata across calls, retain uncertain alias
 alternatives, propagate supported method argument effects, evaluate nested
 constructor calls, and keep literal arguments from weakening known resource state.
 Checking also removes inspection-only boundaries for supported module statements.
+Unknown aliases remain unknown when copied, possibly unbound aliases produce a
+coverage boundary, and alias/object/flow limits weaken state instead of
+preserving an exact proof. File-scoped lifecycle queries now reuse unaffected
+checks after unrelated edits while refreshing callers when an imported effect
+changes. Named re-exported helpers carry source origins through the call so
+diagnostics point back to the defining module.
 
 Start with the [lifecycle tutorial](lifecycle.md). Possible findings and incomplete
 coverage alone can return exit `0`; read the report before accepting a result.

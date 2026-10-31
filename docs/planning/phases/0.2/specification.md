@@ -94,6 +94,13 @@ Track CFG, summary and body checks separately from rendering. Summary semantic e
 
 Identify recursive components before summary evaluation. Initially return unknown effects plus a boundary for the component without entering uncontrolled Salsa cycles. Accepting recursive effects requires a separately reviewed finite domain, iteration budget, monotone fixed point and widening tests. Bound CFG size, objects/alias sets, call graph and summary work. Exhaustion weakens facts, exposes incompleteness and preserves session usability. Truncating an alias set must never leave an exact-object claim.
 
+The source preview currently uses provisional flow defaults of 128 nested `if`
+regions, 64 possible objects per local alias at a join, 4,096 tracked objects
+per function or module body, and 8 nested call/effect evaluations. These values
+are implementation limits for exercising bounded recovery, not accepted LC01
+decisions. Record their rationale, fixture results, and performance impact
+before marking budget qualification complete.
+
 ## Diagnostic and command contract
 
 - TP1001: closed-resource use. All incoming states closed means definite; known open/closed mixture means possible. Unknown state produces a TP9xxx boundary; retain independently known violations without inventing certainty.

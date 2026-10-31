@@ -47,6 +47,7 @@ impl ParsedAnnotation {
 struct SemanticProject {
     inspection: Inspection,
     module_exports: BTreeMap<String, BTreeMap<String, ExportedView>>,
+    module_functions: BTreeMap<String, BTreeSet<String>>,
     symbols: BTreeMap<String, ClassDecl>,
 }
 
@@ -121,6 +122,11 @@ fn inspect_inner(
         .into_iter()
         .flat_map(|context| context.dependency_exports.iter())
         .map(|(module, exports)| (module.clone(), exports.names.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut module_functions = module_context
+        .into_iter()
+        .flat_map(|context| context.dependency_exports.iter())
+        .map(|(module, exports)| (module.clone(), exports.functions.clone()))
         .collect::<BTreeMap<_, _>>();
     for index in ordered {
         let file = &files[index];
@@ -206,6 +212,7 @@ fn inspect_inner(
                             &ambiguous_modules,
                             &symbols,
                             &module_exports,
+                            &module_functions,
                             &mut bindings,
                             &mut state,
                         );
@@ -353,6 +360,9 @@ fn inspect_inner(
                         }
                         // Python evaluates eager annotations before installing the new function binding.
                         state.clear_name(name, &file.module, &mut bindings);
+                        if !has_unsupported_syntax {
+                            state.callables.insert(name.clone());
+                        }
                     }
                 }
                 Declaration::Unsupported { message, range } => {
@@ -363,6 +373,7 @@ fn inspect_inner(
         }
         if !stop {
             module_exports.insert(file.module.clone(), state.exports.clone());
+            module_functions.insert(file.module.clone(), state.callables.clone());
         } else {
             break;
         }
@@ -401,6 +412,7 @@ fn inspect_inner(
     SemanticProject {
         inspection: result,
         module_exports,
+        module_functions,
         symbols,
     }
 }
@@ -418,6 +430,7 @@ struct ExportedView {
 pub(crate) struct SemanticExports {
     classes: BTreeMap<String, ClassDecl>,
     names: BTreeMap<String, ExportedView>,
+    functions: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -492,12 +505,40 @@ pub(crate) fn context_for_module(
 ) -> ModuleContext {
     let mut context = ModuleContext::default();
     let retain_origins = summary_uses_contract_wrapper(summary);
+    let mut imported_names = BTreeMap::<String, BTreeSet<String>>::new();
+    if let Some(declarations) = summary.declarations.as_ref() {
+        for declaration in declarations {
+            let Declaration::ImportFrom {
+                module,
+                level: 0,
+                names,
+                ..
+            } = declaration
+            else {
+                continue;
+            };
+            imported_names
+                .entry(module.clone())
+                .or_default()
+                .extend(names.iter().map(|name| name.name.clone()));
+        }
+    }
     for module in &summary.absolute_imports {
         match plan.module_counts.get(module).copied() {
             Some(1) => {
                 context.supplied_modules.insert(module.clone());
                 if let Some(exports) = computed_exports.get(module) {
                     let mut exports = exports.clone();
+                    let names = imported_names.get(module);
+                    exports
+                        .names
+                        .retain(|name, _| names.is_some_and(|names| names.contains(name)));
+                    exports
+                        .functions
+                        .retain(|name| names.is_some_and(|names| names.contains(name)));
+                    exports.classes.retain(|symbol, _| {
+                        exports.names.values().any(|view| &view.symbol == symbol)
+                    });
                     if !retain_origins {
                         for view in exports.names.values_mut() {
                             view.access_span = None;
@@ -696,9 +737,18 @@ pub(crate) fn inspect_module(
             })
         })
         .collect();
+    let functions = project
+        .module_functions
+        .get(&file.module)
+        .cloned()
+        .unwrap_or_default();
     ModuleAnalysis {
         inspection: project.inspection,
-        exports: SemanticExports { classes, names },
+        exports: SemanticExports {
+            classes,
+            names,
+            functions,
+        },
     }
 }
 
@@ -775,6 +825,7 @@ struct FileState {
     alias_lifecycle: BTreeMap<String, (String, Span)>,
     alias_access: BTreeMap<String, (Access, Span)>,
     exports: BTreeMap<String, ExportedView>,
+    callables: BTreeSet<String>,
 }
 
 #[derive(Clone)]
@@ -798,6 +849,7 @@ impl FileState {
         self.alias_lifecycle.remove(name);
         self.alias_access.remove(name);
         self.exports.remove(name);
+        self.callables.remove(name);
         bindings.remove(&format!("{module}.{name}"));
     }
 
@@ -810,6 +862,7 @@ impl FileState {
         self.alias_lifecycle.clear();
         self.alias_access.clear();
         self.exports.clear();
+        self.callables.clear();
     }
 }
 
@@ -840,6 +893,7 @@ fn process_import_from(
     ambiguous_modules: &BTreeSet<String>,
     symbols: &BTreeMap<String, ClassDecl>,
     module_exports: &BTreeMap<String, BTreeMap<String, ExportedView>>,
+    module_functions: &BTreeMap<String, BTreeSet<String>>,
     bindings: &mut BTreeMap<String, String>,
     state: &mut FileState,
 ) {
@@ -876,6 +930,7 @@ fn process_import_from(
             ambiguous_modules,
             symbols,
             module_exports,
+            module_functions,
             bindings,
             state,
         );
@@ -912,6 +967,7 @@ fn register_supplied_module_import(
     ambiguous_modules: &BTreeSet<String>,
     symbols: &BTreeMap<String, ClassDecl>,
     module_exports: &BTreeMap<String, BTreeMap<String, ExportedView>>,
+    module_functions: &BTreeMap<String, BTreeSet<String>>,
     bindings: &mut BTreeMap<String, String>,
     state: &mut FileState,
 ) {
@@ -945,6 +1001,13 @@ fn register_supplied_module_import(
         .cloned()
         .filter(|view| symbols.contains_key(&view.symbol))
     else {
+        if module_functions
+            .get(module)
+            .is_some_and(|functions| functions.contains(original))
+        {
+            state.callables.insert(local.to_owned());
+            return;
+        }
         unsupported(
             result,
             file,

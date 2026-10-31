@@ -8,6 +8,13 @@ case has passed.
 
 The lifecycle preview tracks direct construction, local aliases, ordinary synchronous calls, local helpers, `if`/`else` joins, and acyclic named re-exports from local modules. It can report use after close and closing a `Borrowed` parameter. It does not precisely model loops, exception handlers, `finally`, context managers, async suspension, dynamic dispatch, arbitrary fields/containers, or returned resource aliases. Unsupported regions can produce boundaries and weaken tracked state; qualification for every alias and boundary combination remains pending. Recursive calls recover to unknown summaries. Unknown methods and calls do not establish purity. A clean run does not prove leak freedom, cleanup on every exit, or correctness of declared resource models.
 
+Flow work is bounded to 128 nested `if` regions, 64 possible objects for one
+local alias at a join, 4,096 tracked objects in one function or module body, and
+8 nested call/effect evaluations. Exhaustion produces an incomplete-coverage
+boundary and weakens affected facts. The defaults are documented in the
+[supported syntax guide](supported-syntax.md#input-and-work-limits); their
+release qualification remains pending.
+
 Repeat close has no general policy and is reported as a coverage boundary rather
 than a dedicated double-close error. Project checking scans all `.py` files below
 the root; explicit filenames do not limit that scan. Use a narrow root and follow

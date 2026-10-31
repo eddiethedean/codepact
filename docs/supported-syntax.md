@@ -21,7 +21,7 @@ Class lifecycle and function access declarations compose independently. Compatib
 
 ## Import resolution
 
-For `inspect-contracts`, imports resolve only among the explicitly supplied files. For the lifecycle preview, the checker discovers `.py` files under `--root` and resolves direct absolute imports plus acyclic named re-exports of supported classes and aliases. `--root` assigns package-qualified names to files; without it, each file's stem supplies the logical module name. Duplicate module names are reported. Neither mode imports packages or executes Python source.
+For `inspect-contracts`, imports resolve only among the explicitly supplied files. For the lifecycle preview, the checker discovers `.py` files under `--root` and resolves direct absolute imports plus acyclic named re-exports of supported classes, aliases, and synchronous helper functions. `--root` assigns package-qualified names to files; without it, each file's stem supplies the logical module name. Duplicate module names are reported. Neither mode imports packages or executes Python source.
 
 Relative imports, star imports, dynamic imports, import cycles, and ambiguous
 modules remain outside the checking subset or produce visible incomplete
@@ -65,6 +65,21 @@ The analyzer bounds memory and work per request:
 | Emitted contracts | 10,000 |
 | Expression nesting per statement | 128 |
 | Converted expression nodes per statement | 50,000 |
+
+Lifecycle checking has additional conservative flow limits:
+
+| Flow limit | Maximum |
+| --- | ---: |
+| Nested `if` regions | 128 |
+| Possible objects for one local alias at a join | 64 |
+| Tracked resource objects in one function or module body | 4,096 |
+| Nested call/effect evaluation | 8 |
+
+When a flow limit is reached, the checker drops the affected exact facts,
+weakens reachable resource state, and reports a TP9001 boundary with incomplete
+coverage. It does not truncate an alias set and continue as if the remaining
+objects were exact. These values are current source-preview defaults; release
+qualification still requires the phase plan's budget fixtures and measurements.
 
 The Rust `AnalysisSession` also bounds retained source to 1,000,000 bytes and periodically resets its incremental database after 1,000 source mutations. See the [Rust API](rust-api.md#incremental-analysis-session).
 

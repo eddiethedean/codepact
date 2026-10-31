@@ -47,7 +47,7 @@ def read(conn: Borrowed[Connection]) -> str: ...
 
 ## Lifecycle checking preview
 
-The current unreleased source also exposes `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. They return the same `Inspection` shape with lifecycle findings and `assurance` set to `lifecycle-checking-for-supported-normal-flow`. This path tracks supported local constructions, aliases, branches and synchronous direct calls. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
+The current unreleased source also exposes `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. They return the same `Inspection` shape with lifecycle findings and `assurance` set to `lifecycle-checking-for-supported-normal-flow`. This path tracks supported local constructions, aliases, branches, synchronous calls, and imported helpers through acyclic named re-exports. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
 
 These methods require a dependency built from the source preview; the crates.io
 0.1.0 installation shown above provides inspection. The host supplies all
@@ -79,6 +79,12 @@ fn inspect_edits() {
 The session also provides `set_file`, `remove_file`, `reset`, `files`, `parse_summary`, and `parse_summary_for`. `set_file` reports file-count or source-size violations as `SessionInputError`. `CancellationToken` can request cancellation from another thread; cancellation publishes no partial result, and the session can be used again after the query stops.
 
 The default one-shot function and incremental session share the same analysis pipeline and input bounds. See the [architecture page](architecture.md) for the computation model.
+
+Lifecycle body checks use tracked per-file queries with their supplied import
+dependencies. An edit to an unrelated file can reuse unaffected body checks;
+editing an imported effect refreshes that module and its callers. The 0.2
+validation matrix records query-execution evidence for both cases; phase
+qualification remains pending until the candidate record is complete.
 
 ## Session operations
 
