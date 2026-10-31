@@ -4,7 +4,7 @@ The inspector handles a deliberately limited set of Python declarations. It pars
 
 The declaration sections describe published 0.1.0. The
 [lifecycle preview](lifecycle.md) adds the checking subset below in a source
-checkout. Phase 0.2 release qualification remains pending.
+checkout for the upcoming 0.2.0 release. Its phase qualification remains pending.
 
 ## Recognized declarations
 

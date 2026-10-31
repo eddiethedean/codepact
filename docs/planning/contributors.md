@@ -2,7 +2,7 @@
 
 ## Onboarding
 
-Provide a runnable development setup when manifests land, with pinned tools, documented native build prerequisites and one short command for the focused suite. First contributions should include documentation fixes, diagnostic explanations, fixture cases and external resource models with evidence.
+The development manifests and workflows are available. New contributors can follow [CONTRIBUTING.md](../../CONTRIBUTING.md) and the [development guide](../development.md) for pinned setup, native build requirements, focused checks and the full CI-equivalent gate. Good first changes include documentation fixes, diagnostic explanations and small fixture cases with evidence.
 
 Label issues by component and milestone. Include minimal reproductions and expected semantics. Assign an accountable maintainer to each milestone before scheduling it.
 

@@ -1,6 +1,6 @@
 # Analyzer foundation migration
 
-Status: accepted architecture direction; analyzer implementation complete, qualification pending. The frontend produces structured Ruff AST declarations and expression trees with source ranges and target-version parsing. The TypePact semantic pass resolves ordered bindings, captured local views, and direct supplied-module class/alias exports. Salsa tracks per-file parsing, per-module semantic inspection, and semantic-only exports. Cancellation recovery, revision-tagged session results and bounded work/cache budgets are implemented. The V01–V24, F01–F08 and candidate-specific release evidence remains open; this plan does not claim a qualified release.
+Status: accepted architecture direction; 0.1.0 implementation and qualification complete. The frontend produces structured Ruff AST declarations and expression trees with source ranges and target-version parsing. The TypePact semantic pass resolves ordered bindings, captured local views, and direct supplied-module class/alias exports. Salsa tracks per-file parsing, per-module semantic inspection, and semantic-only exports. Cancellation recovery, revision-tagged session results and bounded work/cache budgets are implemented. The [0.1.0 evidence record](../releases/0.1.0-evidence.md) records the V01–V24 and F01–F08 results; the 0.2 lifecycle extension has separate pending gates.
 
 ## Scope and upstream boundary
 
@@ -68,7 +68,7 @@ AM01 precedes dependency changes; AM02 and AM03 define the facts consumed by AM0
 
 ## Completion and rollout
 
-All AM work belongs to 0.1 WP01–WP07 and gates F01–F08; the expanded validation matrix is required. The implementation has replaced the previous prototype path, and local query, cancellation and budget regressions now cover the updated architecture. Candidate qualification is still open until the full validation matrix, compatibility matrix and distribution evidence are recorded. Preserve the Python helper API and inspection-only assurance unless an explicit semantic decision changes them.
+The AM work belongs to 0.1 WP01–WP07 and gates F01–F08. Those release gates are complete; see the [0.1.0 evidence record](../releases/0.1.0-evidence.md). Preserve the Python helper API and inspection-only assurance unless an explicit semantic decision changes them. The 0.2 preview extends this architecture and is qualified independently under the [0.2 phase plan](phases/0.2-lifecycle.md).
 
 Later phases extend this query graph with flow, effects, models and editor services. Persistent caches are a separate 0.8 deliverable with format/version compatibility and corruption recovery. No later phase may replace unknown facts with certainty merely because a query was cached.
 

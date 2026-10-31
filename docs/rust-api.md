@@ -101,3 +101,63 @@ The default one-shot function and incremental session share the same analysis pi
 Obtain `session.cancellation_token()` before starting the inspection, then give the token to the thread responsible for cancelling work. Calling `cancel()` requests cancellation of the associated query. Use `inspect_cancellable` to distinguish cancellation from a completed analysis: it returns `Err(AnalysisCancelled)` without publishing partial output. The convenience `inspect` method represents cancellation as an incomplete report with `TP9002`.
 
 An `Ok` return does not establish successful declaration analysis. Check the returned `inspection.coverage.status` and diagnostics, since syntax errors, unresolved declarations, and work limits can be represented by a completed report. `SessionInspection.revision` describes the source/settings revision, not the JSON schema version.
+
+## Public types and limits
+
+The crate root exports the following result and input types. The 0.x API is
+provisional; the [`typepact` 0.1.0 rustdoc](https://docs.rs/typepact/0.1.0/typepact/)
+documents the published crate. Checking methods are available only from the
+upcoming 0.2.0 source until that release is published.
+
+| Type or function | Purpose |
+| --- | --- |
+| `SourceFile { path, module, source }` | One source snapshot item; `SourceFile::new(path, module, source)` accepts values convertible to `String` |
+| `inspect(files, python_version) -> Inspection` | One-shot declaration inspection |
+| `check(files, python_version) -> Inspection` | Source-preview lifecycle checking for the supported subset |
+| `AnalysisSession` | Reusable database for full-snapshot updates and inspection |
+| `SessionInspection { revision, inspection }` | Result plus the session revision used for analysis |
+| `AnalysisCancelled` | Error returned by cancellable methods when no complete current result is available |
+| `SessionInputError` | `FileLimitExceeded`, `SourceLimitExceeded`, or `TotalSourceLimitExceeded` from `set_file` |
+| `CancellationToken` | `cancel()` requests cancellation; `is_cancelled()` reports its state |
+| `Span`, `Provenance`, `Lifecycle`, `Contract`, `Diagnostic`, `Coverage`, `Inspection` | Public result model types; fields are public and serializable |
+| `is_python_identifier(value, python_version) -> bool` | Checks an identifier against the selected analyzer target's Unicode rules |
+
+The crate root also exports `SCHEMA_VERSION` and these defaults:
+`DEFAULT_MAX_SOURCE_BYTES` (1,000,000 bytes per file and request),
+`DEFAULT_MAX_DECLARATIONS` (10,000 contracts),
+`DEFAULT_MAX_INPUT_FILES` (10,000 files),
+`DEFAULT_MAX_AST_DECLARATIONS` (20,000 statements per file),
+`DEFAULT_MAX_TOTAL_AST_DECLARATIONS` (50,000 statements per request),
+`DEFAULT_MAX_IMPORT_EDGES` (50,000 edges), and
+`DEFAULT_MAX_SESSION_MUTATIONS` (1,000 changes before session storage resets).
+
+`Inspection` carries `schema_version`, `assurance`, `contracts`, `diagnostics`,
+and `coverage`. Contract records contain the normalized base symbol, display
+name, optional lifecycle, access intent, source span, and provenance. Diagnostic
+records contain a code, severity, message, primary and related spans, and
+certainty. Span lines and columns are one-based; columns count UTF-8 bytes.
+String-valued access, certainty, severity, assurance, and coverage status fields
+are schema values, so consumers should handle unknown values defensively.
+
+The public `db` module also exposes lower-level Salsa types: `Db`, `Database`,
+`FileInput`, `ParseSummary`, and `parse_file`. `FileInput` represents the path,
+logical module, and source text stored in the database. `ParseSummary` exposes
+`ok` and an optional `error`; its converted declarations and flow statements are
+internal. `files()` yields the session's current `FileInput` handles. These types
+provide access to the current database integration and are not needed for
+ordinary one-shot or session use. Treat them as provisional during 0.x; consult
+the source rustdoc for their exact signatures.
+
+## Complete error and status handling
+
+`inspect` and `check` return an `Inspection` even when the analyzer found syntax,
+declaration, or coverage problems. A returned value is not synonymous with a
+clean analysis. Check `inspection.coverage.status` and inspect diagnostics.
+
+`inspect_cancellable` and `check_cancellable` return
+`Result<SessionInspection, AnalysisCancelled>`. `set_file` returns
+`Result<(), SessionInputError>`. `remove_file`, `reset`, and the convenience
+`inspect`/`check` methods do not return `Result`. The convenience `inspect`
+represents cancellation as an incomplete report containing `TP9002`; use the
+cancellable method when the host must distinguish cancellation from a completed
+analysis.

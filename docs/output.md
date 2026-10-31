@@ -1,9 +1,9 @@
 # JSON output reference
 
-`inspect-contracts` emits one JSON object. The source preview `check` emits the
-same envelope when `--json` is supplied; readable diagnostics are its default.
-The Rust library returns `Inspection`. Schema version 0 is provisional, and
-checking JSON has not completed phase 0.2 release qualification.
+`inspect-contracts` emits one JSON object. The 0.2.0 source preview `check` emits
+the same envelope when `--json` is supplied; readable diagnostics are its
+default. The Rust library returns `Inspection`. Schema version 0 is provisional,
+and checking JSON has not completed phase 0.2 release qualification.
 
 ## Top-level object
 
@@ -70,4 +70,4 @@ Span line and column values are one-based. Columns count UTF-8 bytes, not Unicod
 
 Spans start at `line`/`column` and end just before `end_line`/`end_column`. Convert byte columns appropriately when highlighting text in an editor. The JSON envelope and each contract carry their own `schema_version`; `assurance` and provenance `trust` describe the strength of the recorded facts.
 
-To preserve a report in a script while handling failed inspections, see [automation and CI](automation.md#save-and-consume-json). For help interpreting a finding, see [troubleshooting](troubleshooting.md).
+To preserve a report in a script while handling failed inspections, see [automation and CI](automation.md#save-and-consume-inspection-json). For help interpreting a finding, see [troubleshooting](troubleshooting.md).

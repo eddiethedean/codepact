@@ -7,9 +7,9 @@ usually includes an explanation on standard error. In a JSON report, read both
 
 ## The command is unavailable after installation
 
-For a project installation, run `uv run typepact --version` from the project directory. For a standalone installation, use `uv tool install typepact-cli==0.1.0` and check that the uv tool directory is on your shell's PATH.
+For a project installation, run `uv run typepact --version` from the project directory. For a standalone installation of the currently published release, use `uv tool install typepact-cli==0.1.0` and check that the uv tool directory is on your shell's PATH. After 0.2.0 is published, use its version in the install command.
 
-Both distributions require Python 3.11+. A CLI source build requires Rust 1.96+ and a linker; a compatible platform wheel includes the executable. See [installation](install.md) for the platform matrix.
+Both distributions require Python 3.11+. A CLI source build requires Rust 1.96+ and a linker; a compatible platform wheel includes the executable. If installation reports that no compatible wheel exists, confirm the operating system, architecture, and libc against the [platform matrix](availability.md#platform-and-runtime-evidence). See [installation](install.md) for source-build requirements.
 
 ## The command does not recognize `check`
 
@@ -42,6 +42,13 @@ warnings and do not alone cause a failing exit. Read the operation and related
 close location, then inspect the paths that reach it. Unknown effects produce
 coverage boundaries rather than a proof of safety. The
 [lifecycle tutorial](lifecycle.md) shows a definite violation and its valid counterpart.
+
+## CI passes while the report contains a warning
+
+The lifecycle checker can exit `0` when it reports only possible findings or
+incomplete coverage. If your build requires a clean, complete result, read
+`diagnostics` and `coverage.status` and apply a consumer policy such as the one
+in [CI report handling](ci-reporting.md).
 
 ## A contract is nested inside a container
 

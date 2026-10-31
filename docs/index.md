@@ -1,8 +1,8 @@
 # TypePact documentation
 
-**Declare resource intent in Python. Inspect and check it with Rust.** TypePact reads Python source and reports resource contracts, source locations, provenance, and diagnostics.
+TypePact finds conflicting resource declarations and supported lifecycle errors in Python without importing or running your application. It reports each finding with source locations, certainty, and coverage information.
 
-Published version **0.1.0** provides contract inspection. The source checkout also includes an **unreleased phase 0.2 lifecycle preview** through `typepact check`; release qualification is pending. Both commands read source without importing or executing the project.
+**0.1.0 is the currently published release** and provides contract inspection. **0.2.0 is being prepared** and adds lifecycle checking; its implementation is available as a source preview. The preview is not in the published 0.1.0 packages. The current documentation describes that upcoming release and marks the preview boundaries explicitly.
 
 ```sh
 uv add typepact==0.1.0
@@ -12,7 +12,8 @@ uv run typepact inspect-contracts connection.py
 Create `connection.py` with the [quick start](quickstart.md), then read the result using the [JSON reference](output.md).
 
 To try the source preview, follow the [lifecycle tutorial](lifecycle.md). Installing
-the published 0.1.0 packages does not provide `check`.
+the published 0.1.0 packages does not provide `check`. See the [availability guide](availability.md)
+for exact release, platform, and preview status.
 
 ## Find your next step
 
@@ -20,9 +21,11 @@ the published 0.1.0 packages does not provide `check`.
 | --- | --- |
 | Declare a resource and inspect it | [Quick start](quickstart.md) |
 | Find a supported use after close | [Lifecycle checking preview](lifecycle.md) |
+| Decide whether my project fits the supported subset | [Adopting TypePact](adopting.md) |
 | Resolve imports across my own modules | [Multi-file tutorial](project-guide.md) |
-| Use the inspector in a build pipeline | [Automation and CI](automation.md) |
+| Use the inspector in a build pipeline | [Automation and CI](automation.md) and [report handling](ci-reporting.md) |
 | Understand an error or incomplete result | [Troubleshooting](troubleshooting.md) |
+| Look up a diagnostic or example | [Rule catalog](rules.md) and [examples](examples.md) |
 | Embed the analyzer in a Rust application | [Rust API](rust-api.md) |
 
 ```{note}
@@ -36,9 +39,15 @@ Python helpers run on Python 3.11+. The analyzer accepts source targets 3.11–3
 install
 quickstart
 lifecycle
+availability
+adopting
+upgrading
 contracts
 project-guide
 automation
+ci-reporting
+examples
+faq
 ```
 
 ```{toctree}
@@ -51,6 +60,9 @@ supported-syntax
 limitations
 troubleshooting
 inspector
+rules
+security
+performance
 ```
 
 ```{toctree}
@@ -62,6 +74,7 @@ rust-api
 architecture
 roadmap
 release-notes
+support
 development
 ```
 
@@ -72,3 +85,4 @@ development
 - [PyPI package](https://pypi.org/project/typepact/)
 - [Native CLI package](https://pypi.org/project/typepact-cli/)
 - [MIT license](https://github.com/eddiethedean/typepact/blob/main/LICENSE)
+- [Security reporting instructions](https://github.com/eddiethedean/typepact/blob/main/SECURITY.md)

@@ -1,13 +1,14 @@
 # Contributing to TypePact
 
-Published TypePact 0.1.0 provides contract inspection. Current source development
-includes the phase 0.2 lifecycle preview; release qualification is pending. Start
-with the [development guide](docs/development.md), [phase 0.2 plan](docs/planning/phases/0.2-lifecycle.md),
-and [validation matrix](docs/planning/phases/0.2/validation.md).
+Version 0.1.0 is published. The current source also contains a lifecycle
+checking preview for the upcoming 0.2.0 release; its qualification gates remain
+open. Start with the [development guide](docs/development.md) for setup and the
+[0.2 phase plan](docs/planning/phases/0.2-lifecycle.md) for current scope.
 
-The Rust analyzer requires Rust 1.96 or newer. Install the locked Python
-environment and pinned Rust dependency auditors, then run
-the same full gate used by CI:
+## Set up the repository
+
+Use Python 3.11 or newer, Rust 1.96 or newer, `uv`, Make, and a linker. The full
+dependency audit also needs the pinned `cargo-audit` and `cargo-deny` tools.
 
 ~~~sh
 uv sync --locked
@@ -16,32 +17,48 @@ cargo install cargo-deny --version 0.20.2 --locked
 uv run --locked make check
 ~~~
 
-Run the current analyzer directly from the checkout:
+The `make check` target runs Rust formatting, compilation, Clippy and tests;
+Python typing/lint/package checks; dependency audits; MSRV and archive checks;
+the inspector's no-execution guard; and the strict Sphinx build. GitHub Actions
+runs the Python checks on Python 3.11–3.14 and the Rust and dependency checks on
+Linux. Use focused targets while iterating; see the
+[development guide](docs/development.md#focused-checks).
 
-~~~sh
-cargo run --locked -- inspect-contracts --root . examples/contracts.py
-cargo run --locked -- check --root examples
-~~~
+## Find a good first change
 
-The lifecycle example intentionally emits TP1001 and exits `1`. To isolate the
-preview and make the example pass, follow the [lifecycle tutorial](docs/lifecycle.md).
-Explicit filenames do not narrow the checker's project-root scan.
+The repository has no published list of beginner issues. A contained first
+contribution is to clarify an existing guide, add a minimal supported or
+boundary example, or improve a diagnostic explanation. The source lives in
+`crates/typepact/src`, Python helper declarations live in `python/typepact`,
+fixture tests live in `crates/typepact/tests`, and user docs live in `docs`.
 
-The Python package supports Python 3.11 and newer. Its CI matrix runs package
-checks on Python 3.11 through 3.14. To run the strict package typing and lint
-checks locally, use the focused targets:
+For analyzer work, describe the source pattern, add a positive or negative
+fixture, and add an explicit incomplete-coverage case when behavior is unknown.
+The [diagnostic catalog](docs/rules.md) and [supported syntax](docs/supported-syntax.md)
+are the reference for expected behavior. Never execute inspected Python files
+as part of analysis.
 
-~~~sh
-uv run --locked make check-python check-python-package
-~~~
+## Submit a change
 
-The full `make check` target also runs Rust formatting, compilation, Clippy,
-tests, MSRV validation, packaged-crate smoke checks, dependency audits, and the
-inspector side-effect guard. CI runs the Python targets on Python 3.11 through
-3.14 and runs the Rust and dependency checks once per workflow.
+1. For a behavior or API change, open an issue or design discussion with a
+   minimal source example and expected result.
+2. Make one focused change and update the relevant public guide, limitations,
+   and release notes.
+3. Run the focused check for the affected component, then run
+   `uv run --locked make check` when practical.
+4. In the pull request, describe the behavior, compatibility impact, evidence,
+   and any remaining uncertainty.
 
-The uv workspace has a pure Python typepact package built by Hatchling and a typepact-cli package built by maturin. typepact pins typepact-cli to the same version. Package installation checks must prove that installing typepact resolves its CLI dependency and that standalone typepact-cli works, in clean environments outside the checkout. CLI source builds require Rust 1.96+; helper source builds remain pure Python. Cargo archive checks should run from the extracted `typepact` crate, outside the checkout. Analyzer changes should add fixtures for supported behavior and explicit incomplete-coverage boundaries. Never execute inspected Python files as part of analysis.
+Public APIs, diagnostic codes, configuration keys, and semantic changes need a
+recorded design decision. Keep unsupported constructs visible rather than
+silently treating them as resolved. Do not add dependencies or copied code
+without provenance and license review.
 
-Before changing public semantics, document the use case, canonical contract, compatibility impact and both interface expressions. Keep unsupported constructs visible rather than silently treating them as resolved.
+## Release work
 
-See the [release plan](docs/planning/releases.md) for versioning, distribution and candidate evidence requirements.
+Release versions must match across the Python helper, CLI, and Rust crate. The
+tag workflow builds and validates the exact artifact set before publishing.
+See the [release plan](docs/planning/releases.md) and the
+[0.2.0 release checklist](docs/planning/release-0.2.0-checklist.md). Do not
+publish a release from an unreviewed candidate or claim qualification from a
+passing unrelated CI run.

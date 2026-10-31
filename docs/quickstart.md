@@ -2,7 +2,7 @@
 
 This example declares that a `Connection` is closed by `close`, then describes how two functions intend to access it.
 
-From a Python project, install the helpers and command with `uv add typepact==0.1.0`. See [installation](install.md) for standalone CLI use and platform requirements.
+From a Python project, install the helpers and command with `uv add typepact==0.1.0`. This is the latest published release while 0.2.0 is being prepared. See [installation](install.md) for pip, standalone CLI, and platform requirements.
 
 Save the code as `connection.py`:
 
@@ -20,7 +20,13 @@ A successful run exits with status `0`, has an empty `diagnostics` list, and rep
 
 The JSON result contains a resource contract for `Connection` and access contracts for `read.conn` and `consume.conn`. The first parameter is shared; the second is owned. Both inherit the class lifecycle metadata.
 
-The source is parsed without importing `connection.py`. TypePact records the declared method name, but this release does not check whether `close()` is called on every path or whether the method actually releases a resource.
+The source is parsed without importing `connection.py`. TypePact records the declared method name, but the published 0.1.0 release does not check whether `close()` is called on every path or whether the method actually releases a resource.
+
+The inspector also catches inconsistent declarations. For example, if a view
+uses `Resource(closed_by="release")` while its class declares
+`@resource(closed_by="close")`, it reports `TP4002` with both source locations.
+See the [diagnostic catalog](rules.md#example-conflicting-lifecycle-metadata)
+for a complete copyable example and repair.
 
 ## Read the result
 

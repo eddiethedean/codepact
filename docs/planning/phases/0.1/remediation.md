@@ -1,8 +1,8 @@
 # Phase 0.1 implementation repair plan
 
-Status: analyzer implementation complete; R07/R08 candidate evidence and release gates remain pending. This document translates the [accepted analyzer migration](../../analyzer-migration.md) into changes to the repository. It refines WP01–WP07 and AM01–AM06 without replacing F01–F08 or V01–V24.
+Status: **archived implementation repair plan; the 0.1.0 release is complete.** The [0.1.0 evidence record](../../../releases/0.1.0-evidence.md) is authoritative for R07/R08, F01–F08, V01–V24, release approval, and publication. This document preserves the file-level work plan and is not a current blocker list.
 
-Implementation status (2026-10-30): pinned Ruff parser/AST 0.0.12 and Salsa 0.28.5 are in Cargo.lock; Rust MSRV is 1.96. Ruff AST traversal emits structured declarations and expression trees with exact source ranges, consumed by a TypePact-owned ordered binding and contract-view pass. It supports captured local aliases and deterministic direct absolute imports of exported classes and aliases. Salsa tracks per-file parsing, per-module semantic analysis and semantic-only export summaries. Session results carry an external revision; Salsa cancellation returns an error without publishing partial results. Source, file, statement, expression, import-graph, output and retained-session budgets are implemented. The CLI uses logical module names, root-relative spans and bounded reads. Local query, cancellation, span-refresh and work-limit tests are present. The locked Rust 1.96 check, strict Clippy gate, extracted Cargo archive test/install/smoke, three Python helper tests, wheel/sdist build and clean install, Twine metadata check, and pinned mypy/Pyright fixtures passed locally on Python 3.11. Full V01–V24/F01–F08 evidence and cross-platform candidate qualification remain open. The `ruff_python_semantic` integration assessment is recorded in D014. Keep release gates pending until their stated evidence exists.
+Implementation summary: the accepted release uses Ruff AST declarations and exact source ranges, a TypePact-owned ordered binding and contract-view pass, captured aliases, direct absolute imports of supplied modules, and per-file/per-module Salsa queries. Session results carry revisions; cancellation avoids publishing partial results. Source and work budgets, logical module names, root-relative spans, and bounded file reads are implemented. The release evidence records the full gate decision, local checks, CI matrix, artifact verification, and remaining operational follow-up. The `ruff_python_semantic` integration assessment is recorded in D014.
 
 ## Required outcome
 
@@ -26,7 +26,7 @@ The immediate correctness target is `View = Borrowed[C]; C = int`: View must ret
 | `.github/workflows/quality.yml` | Rust/Python checks, Cargo archive verification, clean wheel/sdist installation and extracted CLI smoke are configured. Local equivalents passed on Python 3.11 | Run the full workflow across its matrix on the release candidate and record its result |
 | Documentation and qualification | Architecture, supported boundaries, limits, session revisions and cancellation are documented | Complete F01–F08/G1–G7 evidence and candidate report; publisher verification remains explicit |
 
-The current local Rust regression suite has 17 unit tests, 1 CLI test and 35 fixture tests. Candidate qualification, cross-platform CI results, release gates and publisher verification are not claimed.
+The test counts and qualification claims in this archived plan were superseded by the exact-candidate results in the [0.1.0 evidence record](../../../releases/0.1.0-evidence.md). Consult that record rather than the historical counts below when checking release status.
 
 ## Target internal layout
 
@@ -174,7 +174,7 @@ R05 scaffolding can proceed after R03 while R04 resolves modules, but query acce
 - [ ] Limits, cancellation and source identity behave consistently through API, CLI and clean package installations.
 - [ ] Dependency/MSRV qualification, docs and candidate gates reflect actual implementation rather than planned capabilities.
 
-The AST frontend, typed declaration lowering, captured local/exported alias views, exact source ranges, per-module Salsa summaries, cancellation recovery and bounded work/cache policies are implemented. Finish candidate qualification by recording the full V01–V24/F01–F08 matrix, platform results and extracted-package installation evidence; do not mark publication gates complete without their separate evidence.
+The AST frontend, typed declaration lowering, captured local/exported alias views, exact source ranges, per-module Salsa summaries, cancellation recovery and bounded work/cache policies were included in 0.1.0. Candidate evidence and publication results are complete in the [release record](../../../releases/0.1.0-evidence.md). Follow the separate 0.2 lifecycle plan for the next release.
 
 ## Python helper and CLI distributions
 

@@ -1,6 +1,6 @@
 # 0.2 validation matrix
 
-Status: **Planned fixtures and evidence; no row is passed.** The [specification](specification.md) is the oracle; the [phase plan](../0.2-lifecycle.md) defines L01–L06. IDs below are independent of 0.1 V01–V24.
+Status: **No row is accepted as qualified yet.** Existing source and tests cover part of this matrix; the candidate evidence record must link exact results before any row or gate is marked passed. The [specification](specification.md) is the oracle; the [phase plan](../0.2-lifecycle.md) defines L01–L06. IDs below are independent of 0.1 V01–V24.
 
 ## Required matrix
 

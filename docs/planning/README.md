@@ -1,6 +1,6 @@
 # TypePact planning index
 
-Planning baseline: 2026-10-30. These documents record the direction from the “Design Rust Typing Python” discussion and concrete proposals for implementation. They do not assert that features exist.
+Planning baseline: 2026-10-30. These documents record the direction from the “Design Rust Typing Python” discussion and concrete proposals for implementation. They do not assert that planned features exist; current release facts are linked to the evidence records.
 
 ## Reading order
 
@@ -10,7 +10,7 @@ Planning baseline: 2026-10-30. These documents record the direction from the “
 | [API design](apis.md) | Pythonic and explicit APIs, interoperability, examples |
 | [Architecture](architecture.md) | Components, dependencies, execution and packaging |
 | [Analyzer migration](analyzer-migration.md) | Ruff AST, declaration identities, Salsa query graph and AM01–AM06 acceptance |
-| [0.1 implementation repair](phases/0.1/remediation.md) | Current-code gap map and file-level R01–R08 execution plan |
+| [0.1 implementation repair](phases/0.1/remediation.md) | Archived file-level repair plan; see the release evidence for completed work |
 | [0.2 lifecycle plan](phases/0.2-lifecycle.md) | Ordered LC01–LC07 work, lifecycle specification and V02 validation matrix |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
@@ -24,6 +24,7 @@ Planning baseline: 2026-10-30. These documents record the direction from the “
 | [Testing and performance](testing.md) | Correctness, interoperability, benchmarks and CI |
 | [Contributor plan](contributors.md) | Review, governance and onboarding |
 | [Release plan](releases.md) | Distribution, versioning, release and recovery |
+| [0.2.0 release checklist](release-0.2.0-checklist.md) | Candidate checks, tag publication, verification, and partial-publish recovery |
 | [Decisions and risks](decisions.md) | Settled direction, proposals and open questions |
 
 ## Status vocabulary
@@ -36,11 +37,11 @@ Documents use “must” for a proposed acceptance requirement, not a claim of p
 
 ## Repository baseline
 
-A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The implementation includes local declaration identities, captured aliases, explicitly supplied direct class and alias imports, typed AST lowering, target-version-aware parsing, per-module Salsa semantic queries, cancellation recovery, revision-tagged session results and bounded work/cache budgets. The complete V01–V24 and F01–F08 qualification matrix remains open; 0.1 candidate qualification remains pending.
+A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The 0.1.0 release evidence records passing G1–G8 and F01–F08 gates, the V01–V24 mapping, cross-platform build results, registry verification, and the maintainer release decision. The current 0.2.0 lifecycle preview is still being qualified; see its phase plan and validation matrix.
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. Each linked phase has its own work packages and numbered gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate. All phase gates currently remain pending.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The 0.1.0 release is complete; gates for 0.2.0 and later releases remain pending until candidate evidence and a maintainer decision are recorded. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 

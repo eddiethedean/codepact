@@ -2,6 +2,9 @@
 
 TypePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, which are supported in 0.1.
 
+For a project-level evaluation path and lifecycle-preview constraints, see
+[Adopting TypePact](adopting.md).
+
 ## Create the source files
 
 Start with this directory layout:

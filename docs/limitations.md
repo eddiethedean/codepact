@@ -1,9 +1,10 @@
 # Current limitations
 
 Published TypePact 0.1.0 provides contract inspection. The source checkout adds
-an unreleased `check` command for a bounded synchronous lifecycle subset. Phase
-0.2 qualification remains pending; green repository checks do not establish that
-every required lifecycle validation case has passed.
+an unreleased `check` command for a bounded synchronous lifecycle subset as part
+of the upcoming 0.2.0 release. Its qualification gates remain pending; green
+repository checks do not establish that every required lifecycle validation
+case has passed.
 
 The lifecycle preview tracks direct construction, local aliases, ordinary synchronous calls, local helpers and `if`/`else` joins. It can report use after close and closing a `Borrowed` parameter. It does not precisely model loops, exception handlers, `finally`, context managers, async suspension, dynamic dispatch, arbitrary fields/containers, or returned resource aliases. Unsupported regions can produce boundaries and weaken tracked state; qualification for every alias and boundary combination remains pending. Recursive calls recover to unknown summaries. Unknown methods and calls do not establish purity. A clean run does not prove leak freedom, cleanup on every exit, or correctness of declared resource models.
 

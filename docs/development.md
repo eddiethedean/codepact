@@ -20,6 +20,8 @@ uv run --locked make check
 
 `make check` covers Rust formatting, compilation, Clippy, tests, MSRV validation, dependency audits, strict Python typing and linting, packaging, and the docs build. `make check-docs` runs just the Sphinx build.
 
+## Focused checks
+
 For a focused change, use the relevant target before the full gate:
 
 | Change | Local check |
@@ -55,15 +57,18 @@ Open `http://localhost:8000` in a browser and check navigation, narrow layouts, 
 
 ## Maintain the documentation
 
-Public documentation starts at `docs/index.md`; repository planning notes remain under `docs/planning` and are linked from the public roadmap. Write guides in MyST Markdown and generated API reference entries in reStructuredText. Use Sphinx document links so the strict build detects missing pages.
+Public documentation starts at `docs/index.md`; repository planning notes remain under `docs/planning` and are linked from the public roadmap. The public site is grouped into getting-started guides, analyzer references, and API/project information. Write guides in MyST Markdown and generated API reference entries in reStructuredText. `make check-docs` checks local relative file links and runs the strict Sphinx build; Sphinx checks public page references and headings.
 
 The quick start and multi-file tutorial include source files from `docs/_examples`. The JSON reference includes the quick-start inspection result from that directory. When changing the example, regenerate its JSON with the current CLI and keep the logical input name `connection.py` so the displayed paths and symbols remain consistent.
 
 The lifecycle tutorial includes `examples/lifecycle.py` directly. Check its exact
 primary and related lines after edits, and confirm that removing the final use
 leaves no diagnostics or coverage boundaries. Keep published installation
-instructions distinct from source-preview commands. Documentation of implemented
-patterns does not mark phase validation rows or release gates as passed.
+instructions distinct from source-preview commands. The published 0.1.0
+qualification record is in `docs/releases/0.1.0-evidence.md`; the 0.2.0 phase
+matrix remains pending until its candidate is qualified. Documentation of
+implemented patterns does not mark phase validation rows or release gates as
+passed.
 
 Read the Docs uses `.readthedocs.yaml` at the repository root. Connect the GitHub repository to the `typepact` Read the Docs project and enable the desired branches or release tags there. The checked-in configuration selects the build tools, requirements, and Sphinx entry point. GitHub's docs job runs the same strict local build target on pushes and pull requests.
 
@@ -75,7 +80,7 @@ Read the Docs uses `.readthedocs.yaml` at the repository root. Connect the GitHu
 - Update documentation when changing the contract API, CLI, schema, supported Python targets, or limits.
 - Do not execute inspected Python files as part of analysis.
 
-See [CONTRIBUTING.md](https://github.com/eddiethedean/typepact/blob/main/CONTRIBUTING.md) for repository guidance.
+See [CONTRIBUTING.md](https://github.com/eddiethedean/typepact/blob/main/CONTRIBUTING.md) for repository guidance. The current 0.2.0 release procedure is in [the release checklist](https://github.com/eddiethedean/typepact/blob/main/docs/planning/release-0.2.0-checklist.md).
 
 ## Measure the release baseline
 

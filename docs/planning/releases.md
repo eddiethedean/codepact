@@ -1,5 +1,11 @@
 # Packaging and release plan
 
+TypePact 0.1.0 has been published and verified. The next planned release is
+0.2.0; its lifecycle preview is not release-qualified yet. See the
+[0.1.0 evidence record](../releases/0.1.0-evidence.md) for completed release
+results and the [0.2.0 release checklist](release-0.2.0-checklist.md) for the
+current candidate process.
+
 ## Artifacts
 
 Deliver a pure Python typepact package built with Hatchling and an exact dependency on typepact-cli at the same version (D015). Maturin bin bindings build typepact-cli with the Rust command. Publish eight CLI platform wheels, one universal helper wheel and two complete source archives. Retain the reusable typepact Rust crate and optional Cargo CLI installation. The Ruff/Salsa migration must retain reproducible registry-compatible dependencies and documented Rust prerequisites; qualify these before selecting dependency versions.
@@ -38,7 +44,7 @@ Qualify the PF01–PF05 work and PF-V01–PF-V08 gates before releasing it. The 
 
 Never silently replace a published artifact. For a broken release, document the issue, yank where supported, publish a corrected version and give pinning guidance. Preserve source tags for auditability.
 
-Treat analyzer crashes, unsound acceptance in supported scope, and destructive suggested fixes as urgent defects. Publish security reporting instructions only after a working private channel exists. Maintain at least the current stable release and define backport scope before 1.0.
+Treat analyzer crashes, unsound acceptance in supported scope, and destructive suggested fixes as urgent defects. State the available vulnerability-reporting route accurately; do not request sensitive details in a public issue or imply that private reporting is configured when it is not. Define support and backport scope before 1.0.
 
 ## Release communication
 
@@ -46,19 +52,18 @@ Every release note states added rules, behavior changes, support versions, known
 
 ## Tag-triggered GitHub workflow
 
-The workflow `.github/workflows/release.yml` validates stable tags of the exact form `v1.2.3`. Manual dispatch and codex/release-* branches build candidates without publishing. Eight matrix jobs build native typepact-cli wheels using the robin-sparkless release matrix as a template. A source job creates both sdists and the pure typepact wheel and runs `cargo publish --dry-run`. Publication requires quality, all builds, complete artifact inventory and matching version/metadata checks. All three publishers consume the same validated candidate revision and verified artifacts. Publish typepact-cli to PyPI before typepact so the exact dependency is available.
+The implemented workflow `.github/workflows/release.yml` validates stable tags of the exact form `v1.2.3`. Manual dispatch and `codex/release-*` branches build candidates without publishing. Eight matrix jobs build native `typepact-cli` wheels. The source job builds the helper wheel and both source archives and runs a Cargo dry run. Publication requires the reusable quality workflow, all builds, complete artifact inventory and matching version/metadata checks. All three publishers consume the same validated candidate revision and verified artifacts. `typepact-cli` publishes before `typepact` so the exact dependency is available. The 0.1.0 evidence records the successful first release; repeat this process for each candidate.
 
-Before tagging a release:
+Before tagging a subsequent release:
 
-- Add a buildable root `pyproject.toml` with a configured build backend, a root `Cargo.toml` (package or workspace) containing the `typepact` crate, and a committed `Cargo.lock`.
-- Set root pyproject.toml, cli/pyproject.toml and the Rust crate version to the tag version without the leading v; pin typepact-cli to that exact version in typepact dependencies.
-- Configure a separate PyPI Trusted Publisher for each project using repository `eddiethedean/typepact`, workflow `release.yml`, and environment `pypi`. Record the publisher identity, not any token values.
-- Add the repository Actions secret `CARGO_REGISTRY_TOKEN` with permission to publish the `typepact` crate.
-- Use the pinned maturin backend and committed uv.lock/Cargo.lock. Require exactly the eight CLI platform wheels listed below, one pure helper wheel and both sdists. Reject native helper wheels, pure CLI wheels, duplicate platforms, mismatched versions, missing CLI/helper files and incorrect helper dependency pins.
+- Set the root Python project, `cli/pyproject.toml`, and Rust crate version to the tag version without the leading `v`; pin `typepact-cli` to that exact version in the helper dependency and refresh `uv.lock`.
+- Confirm the PyPI trusted publishers for both projects and the `CARGO_REGISTRY_TOKEN` GitHub secret are configured. Never put credential values in evidence or logs.
+- Use the pinned build tools and committed `uv.lock`/`Cargo.lock`. Require the eight CLI platform wheels, one pure helper wheel and both source archives; validate version metadata and dependency pins.
+- Complete the exact-candidate release evidence, maintainer approval, local checks, and CI review. Use the [0.2.0 release checklist](release-0.2.0-checklist.md) for the next tag.
 
 Push the version tag to trigger publication. Both PyPI publish jobs use Trusted Publishing: grant job-scoped `id-token: write`, omit username/password inputs, and enable attestations. Keep the `pypi` environment on both jobs. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; typepact publication also depends on successful typepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
 
-This workflow does not create package implementations or publish anything until a matching tag is pushed. Full future quality gates from the planning documents must be wired in as implementation lands.
+This workflow does not publish anything until a matching tag is pushed. Manual dispatch is build-only. The current Quality workflow is wired into release validation; a successful run on an unrelated revision is not candidate evidence.
 
 ## Analyzer dependency updates
 

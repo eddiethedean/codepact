@@ -89,6 +89,7 @@ check-inspector:
 	if test -e "$$tmp/marker"; then echo "inspected Python source was executed" >&2; exit 1; fi
 
 check-docs:
+	$(PYTHON) scripts/check_docs_links.py
 	@if command -v sphinx-build >/dev/null 2>&1; then \
 		sphinx-build -b html -n -W --keep-going docs target/docs/html; \
 	else \

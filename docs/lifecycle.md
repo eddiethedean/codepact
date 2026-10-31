@@ -1,6 +1,6 @@
 # Check a resource lifecycle
 
-The source checkout includes an unreleased phase 0.2 preview of `typepact check`.
+The source checkout includes the unreleased 0.2.0 preview of `typepact check`.
 It follows a bounded subset of normal synchronous Python execution and reports
 supported uses after close and closes through Borrowed parameters. The published
 0.1.0 packages provide declaration inspection; build the preview from source.
@@ -12,6 +12,7 @@ With Rust 1.96+ and a linker installed:
 ```sh
 git clone https://github.com/eddiethedean/typepact.git
 cd typepact
+git checkout 5da5d21b3638a91be590a66fe1b67d5ea2649843
 cargo build --locked
 ```
 

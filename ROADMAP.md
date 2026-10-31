@@ -1,6 +1,6 @@
 # TypePact 0.x release roadmap
 
-Planning baseline: 2026-10-30. **The 0.1 analyzer implementation is complete; release qualification remains pending.** The analyzer uses structured Ruff AST declarations and ranges, target-version checks, captured local and exported alias views, and direct absolute imports between supplied modules. A reusable Salsa session tracks per-file parsing, per-module semantic results and semantic-only exports, with cancellation, revisions and bounded work/cache policies. The [candidate evidence record](docs/releases/0.1.0-evidence.md) maps V01–V24 and tracks release qualification; later phases remain planned.
+Planning baseline: 2026-10-30. **TypePact 0.1.0 is published and its qualification gates passed.** The release provides declaration inspection. The current source includes an unreleased lifecycle-checking preview for the upcoming 0.2.0 release; its qualification gates remain pending. See the [0.1.0 release evidence](docs/releases/0.1.0-evidence.md) for the accepted scope and the [0.2 plan](docs/planning/phases/0.2-lifecycle.md) for preview status.
 
 This document is the authoritative release sequence. The original [feature milestones](docs/planning/roadmap.md) and [implementation phases](docs/planning/implementation.md) remain technical work groupings; they are mapped below rather than treated as version numbers.
 
@@ -57,9 +57,7 @@ Each phase owner is assigned before work starts; maintainers record the release 
 
 ## First executable release
 
-The refined [0.1 plan](docs/planning/phases/0.1-foundations.md) targets a usable contract-inspection API and CLI, lightweight Python helpers, seven ordered work packages and F01–F08 acceptance gates. Its [prototype specification](docs/planning/phases/0.1/prototype.md) defines normalization and inspection outcomes; its [validation matrix](docs/planning/phases/0.1/validation.md) defines fixtures and candidate evidence. Selected initial delivery is a pure Python typepact package depending on typepact-cli at the same version. The CLI uses maturin binary wheels for eight OS/architecture targets and a Rust-buildable source archive; retain the helper source archive and reusable Cargo crate. See the [release matrix](docs/planning/releases.md). Lifecycle enforcement remains in 0.2.
-
-0.1 must produce a useful foundational preview with matching Python and Rust artifacts. Before tagging it, complete the analyzer migration, qualify the updated dependencies/MSRV and clean artifacts, and verify registry configuration. Existing workflow and fixture results do not establish the expanded gates.
+The [0.1 plan](docs/planning/phases/0.1-foundations.md) is complete: its pure Python helper, matching CLI package, Rust crate, eight native CLI wheel targets, source archives, and F01–F08/G1–G8 evidence are recorded in the [release evidence](docs/releases/0.1.0-evidence.md). The [0.1 prototype](docs/planning/phases/0.1/prototype.md) and [validation matrix](docs/planning/phases/0.1/validation.md) remain as historical design and test references. The current release target is 0.2.0; follow the [phase plan](docs/planning/phases/0.2-lifecycle.md) and do not treat the preview as a qualified release.
 
 ## 1.0 boundary
 

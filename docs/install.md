@@ -4,13 +4,23 @@ TypePact is distributed as two version-matched Python packages. The `typepact` p
 
 ## Install the package and command
 
-Add TypePact to an application with [uv](https://docs.astral.sh/uv/):
+The latest published package is 0.1.0 while 0.2.0 is being prepared. Add it to
+an application with [uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv add typepact==0.1.0
 ```
 
-This installs both distributions at version 0.1.0. Your Python program can import the helper without starting the analyzer:
+With pip, install the same published helper and its matching CLI dependency:
+
+```sh
+python -m pip install 'typepact==0.1.0'
+```
+
+Version 0.1.0 is currently the latest published release. This installs both
+distributions at that version. Once 0.2.0 is published, use
+`uv add typepact==0.2.0` to pin the upcoming release. Your Python program can
+import the helper without starting the analyzer:
 
 ```python
 from typepact import resource
@@ -41,20 +51,22 @@ Python 3.11 or newer is required to install either distribution. CLI wheels are 
 
 ## Build the lifecycle preview from source
 
-The unreleased `check` command is available on the repository's `main` branch.
+The unreleased `check` command is available in the source preview for 0.2.0.
 Use Rust 1.96+ and a linker to run it independently of an installed 0.1.0 command:
 
 ```sh
 git clone https://github.com/eddiethedean/typepact.git
 cd typepact
+git checkout 5da5d21b3638a91be590a66fe1b67d5ea2649843
 cargo run --locked -- check --root examples
 ```
 
 The example intentionally reports a use after close and exits `1`. See the
 [lifecycle tutorial](lifecycle.md) for an isolated example and expected output.
-Package versions still read `0.1.0` in the checkout; the version string alone
-does not identify whether an executable contains the preview. Use the checkout's
-Cargo invocation when following preview instructions.
+Package versions still read `0.1.0` in the preview checkout; the version string
+alone does not identify whether an executable contains the preview. Record the
+commit SHA and use Cargo from the checkout. Once 0.2.0 is published, install it
+with `uv add typepact==0.2.0` instead.
 
 ## Platform compatibility
 
@@ -75,5 +87,8 @@ uv run python -c "from typepact import resource; from typepact.rust import Borro
 ```
 
 The command should print `typepact 0.1.0`; the Python import should exit successfully. The analyzer target is selected separately with `--python-version`. Running the helpers on Python 3.14 does not add analyzer support for the Python 3.14 grammar.
+
+For platform availability and which release includes lifecycle checking, see
+[release availability](availability.md).
 
 Continue with the [quick start](quickstart.md). If installation falls back to a source build or the command cannot be found, see [troubleshooting](troubleshooting.md).

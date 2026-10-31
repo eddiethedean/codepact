@@ -1,6 +1,6 @@
 # 0.1 validation and evidence matrix
 
-Status: implementation qualification is tracked in the [0.1.0 evidence record](../../../releases/0.1.0-evidence.md), including the V01–V24 fixture mapping, measured baseline, candidate builds, and explicit remaining maintainer/publication decisions. The evidence record, rather than this plan, determines which gates have actually passed.
+Status: **the 0.1.0 release is complete.** The [0.1.0 evidence record](../../../releases/0.1.0-evidence.md) includes the V01–V24 fixture mapping, measured baseline, candidate builds, maintainer decision, and verified publication. It is authoritative for the historical gate results below.
 
 ## Required fixture matrix
 
@@ -58,7 +58,10 @@ The current release workflow depends on quality checks covering part of this lis
 
 Record the selected license and dependency notice review, registry namespace control, and publisher identity settings. Configure a separate PyPI trusted publisher for each project against eddiethedean/typepact, release.yml and the pypi environment; the release workflow should publish with job-scoped OIDC and no PyPI API token. Confirm CARGO_REGISTRY_TOKEN is configured with the needed crates.io publishing authority without exposing its value.
 
-Before first publication, inspect configuration and use non-publishing checks where available. Actual successful upload verification belongs to G8 after an authorized release tag; do not make a pre-tag gate depend on an upload that has not happened.
+For 0.1.0, the pre-publication configuration and build checks are recorded in
+the completed [release evidence](../../../releases/0.1.0-evidence.md). For a
+future release, repeat these checks before tagging; successful registry upload
+and artifact verification belong to G8 after the authorized tag.
 
 ## Performance baseline
 
@@ -68,7 +71,7 @@ Measure representative small fixtures and a versioned synthetic declaration corp
 
 Create docs/releases/0.1.0-evidence.md from the [shared template](../../release-evidence-template.md) when a real candidate exists. Attach CI links, canonical snapshots, parser/alias decisions, exact support matrix, artifact hashes and clean-install logs.
 
-Keep a row per F01–F08 plus G1–G8. Include candidate revision, reviewer and status. G8 remains pending until both published artifacts are downloaded and verified. Do not commit fabricated passing logs or mark decisions accepted on the strength of this plan.
+For a future candidate, keep a row per phase gate and G1–G8, with candidate revision, reviewer, status, and evidence. For 0.1.0, the downloaded artifacts and registry digests were verified; G8 is Pass in the [evidence record](../../../releases/0.1.0-evidence.md). Do not copy these results to a later candidate without repeating its checks.
 
 ## 0.2 handoff checklist
 

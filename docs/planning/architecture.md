@@ -1,6 +1,6 @@
 # Architecture
 
-Status: analyzer implementation complete; qualification pending. The inspector lowers structured Ruff AST declarations through a TypePact-owned binding and contract-view resolver. Salsa tracks per-file frontend results, per-module semantic analysis and semantic-only export summaries. Session cancellation, revisions and work/cache limits are implemented. Full validation and candidate qualification remain open in the [migration plan](analyzer-migration.md).
+Status: the 0.1.0 inspector implementation and release qualification are complete; the evidence is in the [release record](../releases/0.1.0-evidence.md). The current source extends the engine with lifecycle checking for 0.2.0, whose release gates remain pending. The inspector lowers structured Ruff AST declarations through a TypePact-owned binding and contract-view resolver. Salsa tracks per-file frontend results, per-module semantic analysis and semantic-only export summaries. Session cancellation, revisions and work/cache limits are implemented.
 
 ## Dependency direction
 

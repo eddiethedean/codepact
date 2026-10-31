@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 project = "TypePact"
 author = "TypePact contributors"
 copyright = "2026, TypePact contributors"
-version = "0.1"
-release = "0.1.0"
+version = "0.2"
+release = "0.2.0"
 
 extensions = [
     "myst_parser",
@@ -34,7 +34,7 @@ nitpick_ignore = [
 ]
 
 html_theme = "sphinx_rtd_theme"
-html_title = "TypePact 0.1.0 documentation"
+html_title = "TypePact documentation — 0.2.0 preparation"
 html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 3,

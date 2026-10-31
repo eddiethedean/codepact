@@ -2,8 +2,9 @@
 
 The `typepact` command inspects declarations or checks resource lifecycles in Python source without importing or executing the project.
 
-`inspect-contracts` is available in published 0.1.0. `check` is an unreleased
-source preview. Use the [source installation instructions](install.md#build-the-lifecycle-preview-from-source)
+`inspect-contracts` is available in published 0.1.0. `check` is a source preview
+for the upcoming 0.2.0 release; its release qualification remains pending. Use
+the [availability guide](availability.md) and [source installation instructions](install.md#build-the-lifecycle-preview-from-source)
 and [lifecycle tutorial](lifecycle.md) to try it.
 
 ## Commands
