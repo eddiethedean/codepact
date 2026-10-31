@@ -1351,6 +1351,54 @@ b.status()
 }
 
 #[test]
+fn decorated_init_reports_boundary_without_assuming_receiver_binding() {
+    let root = fixture_root().with_extension("lifecycle-decorated-init");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("decorated_init.py"),
+        r#"from typepact import resource
+@resource(closed_by='close')
+class R:
+    def close(self): pass
+    def status(self): return 'ready'
+@resource(closed_by='close')
+class C:
+    @staticmethod
+    def __init__(other): other.close()
+    def close(self): pass
+    def status(self): return 'ready'
+other = R()
+value = C(other)
+other.status()
+value.status()
+"#,
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic["code"] == "TP9001"
+                && diagnostic["message"].as_str().is_some_and(|message| {
+                    message.contains("decorated method binding is not modeled")
+                })
+        }),
+        "{diagnostics:#?}"
+    );
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "TP1001"),
+        "{diagnostics:#?}"
+    );
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn custom_new_effects_are_reported_as_unknown() {
     let root = fixture_root().with_extension("lifecycle-custom-new");
     let _ = fs::remove_dir_all(&root);
@@ -1436,6 +1484,34 @@ fn unknown_method_effect_weakens_tracked_resource_arguments() {
         .collect();
     assert_eq!(use_after_close.len(), 1, "{diagnostics:#?}");
     assert_eq!(use_after_close[0]["certainty"], "possible");
+    assert!(diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP9001"));
+    assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unknown_method_effect_is_applied_when_receiver_is_closed() {
+    let root = fixture_root().with_extension("lifecycle-unknown-method-closed-receiver");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("unknown_method.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\na = C()\nb = C()\na.close()\nb.close()\na.external(b)\nb.status()\n",
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let diagnostics = result["diagnostics"].as_array().unwrap();
+    let use_after_close: Vec<_> = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert_eq!(use_after_close.len(), 2, "{diagnostics:#?}");
+    assert_eq!(use_after_close[0]["certainty"], "definite");
+    assert_eq!(use_after_close[1]["certainty"], "possible");
     assert!(diagnostics
         .iter()
         .any(|diagnostic| diagnostic["code"] == "TP9001"));

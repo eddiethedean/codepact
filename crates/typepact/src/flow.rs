@@ -947,7 +947,7 @@ fn consume_expr(
                         } else {
                             *env.objects.entry(object.clone()).or_default() |= CLOSED;
                         }
-                    } else if mask & OPEN != 0 && !contracts.is_empty() {
+                    } else if !contracts.is_empty() {
                         let mut affected = vec![object.clone()];
                         for argument in arguments
                             .iter()
@@ -1377,28 +1377,48 @@ fn execute(
                                         functions.get(&format!("{}::{init_key}", file.module))
                                     });
                                 if let Some(definition) = definition {
-                                    let child = execute_method_body(
-                                        MethodInvocation {
-                                            definition,
-                                            object: &object,
-                                            initial_mask: OPEN,
-                                            arguments,
-                                            keywords,
-                                            parent: env,
-                                            depth,
-                                            call_key: init_key,
-                                        },
-                                        FlowContext {
-                                            contracts,
-                                            functions,
+                                    if !definition.supported_binding {
+                                        let mut affected = vec![object.clone()];
+                                        for argument in arguments
+                                            .iter()
+                                            .chain(keywords.iter().map(|(_, value)| value))
+                                            .filter_map(expr_name)
+                                        {
+                                            if let Some(targets) = env.places.get(argument) {
+                                                affected.extend(targets.iter().cloned());
+                                            }
+                                        }
+                                        weaken(env, affected.into_iter());
+                                        boundary(
                                             result,
-                                        },
-                                    );
-                                    for (changed_object, state) in child.objects {
-                                        env.objects.insert(changed_object, state);
+                                            file,
+                                            *range,
+                                            "decorated method binding is not modeled",
+                                        );
+                                    } else {
+                                        let child = execute_method_body(
+                                            MethodInvocation {
+                                                definition,
+                                                object: &object,
+                                                initial_mask: OPEN,
+                                                arguments,
+                                                keywords,
+                                                parent: env,
+                                                depth,
+                                                call_key: init_key,
+                                            },
+                                            FlowContext {
+                                                contracts,
+                                                functions,
+                                                result,
+                                            },
+                                        );
+                                        for (changed_object, state) in child.objects {
+                                            env.objects.insert(changed_object, state);
+                                        }
+                                        env.close_origins.extend(child.close_origins);
+                                        env.escaped.extend(child.escaped);
                                     }
-                                    env.close_origins.extend(child.close_origins);
-                                    env.escaped.extend(child.escaped);
                                 }
                             }
                             env.places
