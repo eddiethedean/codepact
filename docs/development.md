@@ -56,3 +56,14 @@ Read the Docs uses `.readthedocs.yaml` at the repository root. Connect the GitHu
 - Do not execute inspected Python files as part of analysis.
 
 See [CONTRIBUTING.md](https://github.com/eddiethedean/typepact/blob/main/CONTRIBUTING.md) for repository guidance.
+
+## Measure the release baseline
+
+On macOS or Linux, build an optimized CLI and run the versioned synthetic corpus:
+
+```sh
+cargo build --release --locked
+uv run --locked python scripts/benchmark_inspector.py
+```
+
+The report records median/range for fresh CLI processes and helper imports, corpus size, host information, and maximum child RSS. Process startup and OS cache effects are included. Query-reuse correctness is established separately by the Salsa execution-counter tests. Candidate results and gate decisions are tracked in the [0.1.0 evidence record](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.1.0-evidence.md).

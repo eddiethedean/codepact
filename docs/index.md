@@ -56,6 +56,7 @@ python-api
 rust-api
 architecture
 roadmap
+release-notes
 development
 ```
 

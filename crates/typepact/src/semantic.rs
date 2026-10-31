@@ -885,6 +885,8 @@ fn process_import_from(
 fn register_import(original: &str, local: &str, module: &str, state: &mut FileState) {
     let canonical = match format!("{module}.{original}").as_str() {
         "typing.Annotated" => "typing::Annotated",
+        "typepact.rust" => "typepact::rust",
+        "typepact.contracts" => "typepact::contracts",
         "typepact.resource" => "typepact::resource",
         "typepact.Resource" | "typepact.contracts.Resource" => "typepact::contracts::Resource",
         "typepact.contracts.SharedBorrow" => "typepact::contracts::SharedBorrow",
@@ -1161,10 +1163,22 @@ fn lower_assignment(
         return;
     };
     if !is_alias_candidate(expression, &state.imports) {
+        if matches!(
+            expression.kind,
+            AstExprKind::Subscript(..) | AstExprKind::Tuple(_)
+        ) && contains_typepact_contract(expression, state)
+        {
+            unsupported(
+                result,
+                file,
+                expression.range,
+                "nested TypePact contracts are unsupported in this annotation form",
+            );
+        }
         state.clear_name(name, &file.module, bindings);
         return;
     }
-    let parsed = parse_annotation(expression, &state.imports, file);
+    let parsed = parse_annotation(expression, state, file);
     if report_annotation_problem(result, file, expression.range, &parsed) {
         state.clear_name(name, &file.module, bindings);
         return;
@@ -1450,7 +1464,7 @@ fn lower_function_annotation(
     symbols: &BTreeMap<String, ClassDecl>,
     bindings: &BTreeMap<String, String>,
 ) {
-    let parsed = parse_annotation(expression, &state.imports, file);
+    let parsed = parse_annotation(expression, state, file);
     if report_annotation_problem(result, file, expression.range, &parsed) {
         return;
     }
@@ -1543,9 +1557,10 @@ fn lower_function_annotation(
 
 fn parse_annotation(
     expression: &AstExpr,
-    imports: &BTreeMap<String, String>,
+    state: &FileState,
     file: &SourceFile,
 ) -> ParsedAnnotation {
+    let imports = &state.imports;
     let AstExprKind::Subscript(container, arguments) = &expression.kind else {
         if let Some(path) = expression_path(expression) {
             if let Some(identity) = canonical(expression, imports) {
@@ -1593,12 +1608,15 @@ fn parse_annotation(
                 AstExprKind::Call { .. } | AstExprKind::Other => {
                     Some("computed annotation expressions are unsupported")
                 }
+                AstExprKind::Tuple(_) if contains_typepact_contract(expression, state) => {
+                    Some("nested TypePact contracts are unsupported in this annotation form")
+                }
                 _ => None,
             },
         };
     };
     let Some(identity) = canonical(container, imports) else {
-        return ParsedAnnotation::plain(None);
+        return opaque_annotation(expression, state);
     };
     let base = arguments.first().and_then(expression_path);
     let access = match identity.as_str() {
@@ -1628,7 +1646,7 @@ fn parse_annotation(
         };
     }
     if identity != "typing::Annotated" {
-        return ParsedAnnotation::plain(None);
+        return opaque_annotation(expression, state);
     }
     if arguments.len() < 2 {
         return ParsedAnnotation {
@@ -1783,7 +1801,77 @@ fn canonical(expression: &AstExpr, imports: &BTreeMap<String, String>) -> Option
     }
     let (root, suffix) = path.split_once('.')?;
     let root_identity = imports.get(root).filter(|value| !value.is_empty())?;
-    Some(format!("{root_identity}::{suffix}"))
+    let identity = format!("{root_identity}::{suffix}");
+    Some(match identity.as_str() {
+        "typepact::rust::Borrowed" | "typepact::contracts::Borrowed" => "typepact::Borrowed".into(),
+        "typepact::rust::Owned" | "typepact::contracts::Owned" => "typepact::Owned".into(),
+        "typepact::rust::BorrowedMut" | "typepact::contracts::BorrowedMut" => {
+            "typepact::BorrowedMut".into()
+        }
+        _ => identity,
+    })
+}
+
+fn opaque_annotation(expression: &AstExpr, state: &FileState) -> ParsedAnnotation {
+    let mut parsed = ParsedAnnotation::plain(None);
+    if contains_typepact_contract(expression, state) {
+        parsed.unsupported_reason =
+            Some("nested TypePact contracts are unsupported in this annotation form");
+    }
+    parsed
+}
+
+fn contains_typepact_contract(expression: &AstExpr, state: &FileState) -> bool {
+    if canonical(expression, &state.imports).is_some_and(|identity| {
+        matches!(
+            identity.as_str(),
+            "typepact::Borrowed"
+                | "typepact::Owned"
+                | "typepact::BorrowedMut"
+                | "typepact::contracts::Resource"
+                | "typepact::contracts::SharedBorrow"
+                | "typepact::contracts::OwnedAccess"
+                | "typepact::contracts::ExclusiveBorrow"
+        )
+    }) {
+        return true;
+    }
+    if expression_path(expression).is_some_and(|path| {
+        state.alias_access.contains_key(&path)
+            || state.alias_lifecycle.contains_key(&path)
+            || state
+                .exports
+                .get(&path)
+                .is_some_and(|view| view.closed_by.is_some() || view.access != Access::Unspecified)
+    }) {
+        return true;
+    }
+    match &expression.kind {
+        AstExprKind::Attribute(value, _) => contains_typepact_contract(value, state),
+        AstExprKind::Subscript(container, arguments) => {
+            contains_typepact_contract(container, state)
+                || arguments
+                    .iter()
+                    .any(|argument| contains_typepact_contract(argument, state))
+        }
+        AstExprKind::Call {
+            function,
+            arguments,
+            keywords,
+        } => {
+            contains_typepact_contract(function, state)
+                || arguments
+                    .iter()
+                    .any(|argument| contains_typepact_contract(argument, state))
+                || keywords
+                    .iter()
+                    .any(|(_, value)| contains_typepact_contract(value, state))
+        }
+        AstExprKind::Tuple(values) => values
+            .iter()
+            .any(|value| contains_typepact_contract(value, state)),
+        _ => false,
+    }
 }
 
 fn resolve_symbol(

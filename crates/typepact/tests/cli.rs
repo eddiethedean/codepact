@@ -109,3 +109,34 @@ fn unicode_module_names_follow_the_selected_python_target() {
     }
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn completeness_regressions_have_the_documented_exit_status() {
+    let root = fixture_root().with_extension("completeness");
+    fs::create_dir_all(&root).unwrap();
+    let prefix = "from typepact import rust\nclass C: pass\n";
+    for (index, (body, expected_status)) in [
+        ("def use(value: rust.Owned[C]) -> None: pass\n", 0),
+        ("def use(value: list[rust.Borrowed[C]]): pass\n", 1),
+        (
+            "class Change:\n    global C\n    C = int\ndef use(value: rust.Borrowed[C]): pass\n",
+            1,
+        ),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let name = format!("case_{index}.py");
+        fs::write(root.join(&name), format!("{prefix}{body}")).unwrap();
+        for version in ["3.11", "3.12", "3.13"] {
+            let result = run_for_version(&root, &[&name], version);
+            assert_eq!(
+                result.status.code(),
+                Some(*expected_status),
+                "{}",
+                String::from_utf8_lossy(&result.stdout)
+            );
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}

@@ -56,9 +56,8 @@ def read(conn: Borrowed[Connection]) -> str:
     return "ready"
 
 
-def consume(conn: Owned[Connection]) -> str:
+def consume(conn: Owned[Connection]) -> None:
     conn.close()
-    return "closed"
 ```
 
 Inspect its declarations:
@@ -154,8 +153,6 @@ Relevant unsupported constructs produce incomplete coverage. Current boundaries 
 - Class inheritance and metaclass behavior, other class decorators, and decorated functions.
 - Computed contract expressions, dynamic decorator arguments, and eager named expressions that could rebind module names.
 - Module-level control flow and unsupported nested or generic declarations.
-
-Literal `None` annotations currently produce incomplete coverage, including function returns written as `-> None`.
 
 The inspector has explicit source and work limits, including a 1,000,000-byte total source budget per request. See the [inspector guide](https://github.com/eddiethedean/typepact/blob/main/docs/inspector.md) for the detailed limits and Rust session API.
 

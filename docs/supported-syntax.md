@@ -10,7 +10,8 @@ The inspector handles a deliberately limited set of Python declarations. It pars
 - Function parameter and return annotations that resolve to supported classes or aliases.
 - Lifecycle metadata using `Resource(closed_by="method")` and access metadata using `SharedBorrow()`, `OwnedAccess()`, or `ExclusiveBorrow()`.
 - Direct absolute imports of classes and supported assignment aliases between source files supplied in the same invocation.
-- Imported names and aliases of the supported TypePact symbols.
+- Imported names and aliases of the supported TypePact symbols, including `from typepact import rust` and `from typepact import contracts`.
+- Literal `None` parameter and return annotations, which emit no resource contract.
 
 Class lifecycle and function access declarations compose independently. Compatible declarations are merged; conflicts include source locations and make coverage incomplete.
 

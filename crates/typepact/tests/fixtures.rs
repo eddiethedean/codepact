@@ -1,6 +1,223 @@
 use typepact::{inspect, AnalysisSession, SourceFile};
 
 #[test]
+fn eager_class_global_writes_invalidate_module_bindings() {
+    for suite in [
+        "    global C\n    C = int\n",
+        "    if True:\n        global C\n        C = int\n",
+        "    class Nested:\n        global C\n        C = int\n",
+        "    global C\n    value = (C := int)\n",
+    ] {
+        let source = format!("from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C: pass\nclass Change:\n{suite}def use(value: Borrowed[C]): pass\n");
+        for version in ["3.11", "3.12", "3.13"] {
+            let result = inspect(
+                &[SourceFile::new("global_write.py", "global_write", &source)],
+                version,
+            );
+            assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+            assert!(result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("class-body global")));
+            assert!(!result
+                .contracts
+                .iter()
+                .any(|c| c.display_name == "use.value"));
+        }
+    }
+}
+
+#[test]
+fn deferred_method_globals_do_not_invalidate_module_bindings() {
+    let source = "from typepact.rust import Borrowed\nclass C: pass\nclass Change:\n    def later(self):\n        global C\n        C = int\ndef use(value: Borrowed[C]): pass\n";
+    let result = inspect(
+        &[SourceFile::new("deferred.py", "deferred", source)],
+        "3.11",
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    assert!(result
+        .contracts
+        .iter()
+        .any(|c| c.display_name == "use.value"));
+}
+
+#[test]
+fn nested_contracts_are_visible_unsupported_boundaries() {
+    let prefix = "from typepact import resource\nfrom typepact.rust import Borrowed\nfrom typepact.contracts import Resource\nfrom typing import Annotated\n@resource(closed_by='close')\nclass C: pass\nView = Borrowed[C]\n";
+    for declaration in [
+        "def use(value: list[Borrowed[C]]): pass\n",
+        "def use() -> list[Annotated[C, Resource(closed_by='close')]]: pass\n",
+        "def use(value: dict[str, View]): pass\n",
+        "def use(value: list[C]): pass\n",
+        "Nested = list[Borrowed[C]]\n",
+        "Nested = tuple[View, ...]\n",
+        "def use(value: (Borrowed[C],)): pass\n",
+    ] {
+        for version in ["3.11", "3.12", "3.13"] {
+            let result = inspect(
+                &[SourceFile::new(
+                    "nested.py",
+                    "nested",
+                    format!("{prefix}{declaration}"),
+                )],
+                version,
+            );
+            assert_eq!(
+                result.coverage.status, "incomplete",
+                "{declaration}: {result:#?}"
+            );
+            assert!(
+                result
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.message.contains("nested TypePact contracts")),
+                "{result:#?}"
+            );
+            assert!(!result
+                .contracts
+                .iter()
+                .any(|c| c.display_name.starts_with("use.")));
+        }
+    }
+    let result = inspect(
+        &[SourceFile::new(
+            "plain.py",
+            "plain",
+            "def use(value: list[str]) -> dict[str, int]: pass\n",
+        )],
+        "3.11",
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn typepact_submodule_imports_resolve_metadata_and_access_aliases() {
+    let source = "from typepact import rust as r, contracts as ct\nfrom typing import Annotated\nclass C: pass\nView = Annotated[C, ct.Resource(closed_by='close')]\ndef use(value: r.Borrowed[View]) -> ct.Owned[C]: pass\ndef mutate(value: ct.BorrowedMut[C]) -> None: pass\n";
+    for version in ["3.11", "3.12", "3.13"] {
+        let result = inspect(&[SourceFile::new("modules.py", "modules", source)], version);
+        assert_eq!(
+            result.coverage.status, "complete-for-supported-subset",
+            "{result:#?}"
+        );
+        let shared = result
+            .contracts
+            .iter()
+            .find(|c| c.display_name == "use.value")
+            .unwrap();
+        assert_eq!(shared.access, "shared");
+        assert_eq!(shared.lifecycle.as_ref().unwrap().closed_by, "close");
+        assert!(result
+            .contracts
+            .iter()
+            .any(|c| c.display_name == "use.return" && c.access == "owned"));
+        assert!(result
+            .contracts
+            .iter()
+            .any(|c| c.display_name == "mutate.value" && c.access == "exclusive"));
+    }
+}
+
+#[test]
+fn submodule_import_rebinding_removes_canonical_identity() {
+    let source = "from typepact import rust as r, contracts as ct\nfrom typing import Annotated\nclass C: pass\nr = list\nct = list\ndef use(value: r.Borrowed[C], other: Annotated[C, ct.Resource(closed_by='close')]): pass\n";
+    let result = inspect(&[SourceFile::new("rebound.py", "rebound", source)], "3.11");
+    assert!(
+        result
+            .contracts
+            .iter()
+            .all(|c| c.access == "unspecified" && c.lifecycle.is_none()),
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn submodule_metadata_conflicts_retain_imported_origins() {
+    let provider = SourceFile::new(
+        "provider.py",
+        "provider",
+        "from typepact import rust\nclass C: pass\nView = rust.Borrowed[C]\n",
+    );
+    let consumer = SourceFile::new("consumer.py", "consumer", "from provider import View\nfrom typepact import contracts\nfrom typing import Annotated\ndef use(value: Annotated[View, contracts.OwnedAccess()]): pass\n");
+    let result = inspect(&[consumer, provider], "3.11");
+    let conflict = result
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "TP4002")
+        .unwrap();
+    assert_eq!(conflict.related.len(), 1);
+    assert_eq!(conflict.related[0].file, "provider.py");
+    assert_eq!(conflict.related[0].line, 3);
+}
+
+#[test]
+fn none_annotations_are_ordinary_non_resource_types() {
+    let source = "from typepact.rust import Owned\nclass C: pass\ndef consume(conn: Owned[C], value: None) -> None: pass\nasync def finish(value: None) -> None: pass\n";
+    for version in ["3.11", "3.12", "3.13"] {
+        let result = inspect(&[SourceFile::new("none.py", "none", source)], version);
+        assert_eq!(
+            result.coverage.status, "complete-for-supported-subset",
+            "{result:#?}"
+        );
+        assert!(result.diagnostics.is_empty());
+        assert_eq!(result.contracts.len(), 1);
+        assert_eq!(result.contracts[0].display_name, "consume.conn");
+    }
+    for annotation in ["'None'", "Owned[None]", "(lambda: None)()"] {
+        let source = format!("from typepact.rust import Owned\ndef use() -> {annotation}: pass\n");
+        let result = inspect(&[SourceFile::new("unknown.py", "unknown", source)], "3.11");
+        assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    }
+    let result = inspect(&[SourceFile::new("rebind_none.py", "rebind_none", "from typepact.rust import Owned\nclass C: pass\nC = None\ndef use(value: Owned[C]): pass\n")], "3.11");
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(result.contracts.is_empty());
+}
+
+#[test]
+fn class_global_edits_invalidate_cached_consumers_and_recover() {
+    let before = "from typepact import resource\n@resource(closed_by='close')\nclass C: pass\n";
+    let after = format!("{before}class Change:\n    global C\n    C = int\n");
+    let consumer = SourceFile::new("consumer.py", "consumer", "from provider import C\nfrom typepact import rust\ndef use(value: rust.Borrowed[C]) -> None: pass\n");
+    let mut session = AnalysisSession::default();
+    for source in [before, after.as_str(), before] {
+        let files = [
+            consumer.clone(),
+            SourceFile::new("provider.py", "provider", source),
+        ];
+        let reused = session.inspect(&files, "3.11");
+        assert_eq!(reused, inspect(&files, "3.11"));
+        let emits_consumer = reused
+            .contracts
+            .iter()
+            .any(|c| c.display_name == "use.value");
+        assert_eq!(emits_consumer, source == before, "{reused:#?}");
+    }
+}
+
+#[test]
+fn long_alias_chains_flatten_without_losing_contracts() {
+    let mut source =
+        String::from("from typepact.rust import Borrowed\nclass C: pass\nView0 = Borrowed[C]\n");
+    for index in 1..2000 {
+        source.push_str(&format!("View{index} = View{}\n", index - 1));
+    }
+    source.push_str("C = None\ndef use(value: View1999) -> None: pass\n");
+    let result = inspect(&[SourceFile::new("chain.py", "chain", source)], "3.11");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    assert_eq!(result.contracts.len(), 1);
+    assert_eq!(result.contracts[0].base_symbol, "chain.C");
+    assert_eq!(result.contracts[0].access, "shared");
+}
+
+#[test]
 fn pythonic_and_explicit_access_lower_to_same_fact() {
     let source = r#"from typepact import resource
 from typing import Annotated

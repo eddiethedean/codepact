@@ -14,11 +14,11 @@ Unsupported constructs produce `TP9001` warnings and incomplete coverage. A warn
 
 Complete coverage describes the implemented declaration subset. It does not imply that function bodies were checked for resource safety.
 
-## A return annotation of `None` produces `TP9001`
+## A contract is nested inside a container
 
-Literal `None` annotations on inspected functions are a known 0.1 limitation. This includes `-> None` and parameters annotated with `None`. The diagnostic may describe a computed annotation expression. Keep the limitation visible when evaluating the result; changing an accurate annotation solely to obtain a passing inspection would misrepresent the API.
+TypePact reports incomplete coverage for annotations such as `list[Borrowed[Connection]]`, including nested uses of captured resource aliases. Container/field alias analysis belongs to later phases. Use direct parameter and return contracts within the supported 0.1 subset; keep container declarations accurate and treat the diagnostic as an analysis boundary.
 
-Class method annotations in the quick-start resource are inside an uninspected class body. The current inspector treats them differently from module-level function annotations. See [limitations](limitations.md).
+Literal `None` parameters and returns are ordinary non-resource annotations and do not cause incomplete coverage. A wrapper such as `Owned[None]` still lacks a resolvable resource class. String annotations such as `"None"` and future annotations remain unsupported.
 
 ## An imported class cannot be resolved
 

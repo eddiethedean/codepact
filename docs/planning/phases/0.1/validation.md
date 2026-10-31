@@ -1,6 +1,6 @@
 # 0.1 validation and evidence matrix
 
-Status: candidate matrix pending. Local implementation checks cover targeted parser, alias, import, query reuse, cancellation and budget cases, but V01–V24 have not yet been fully mapped to named fixtures and candidate evidence.
+Status: implementation qualification is tracked in the [0.1.0 evidence record](../../../releases/0.1.0-evidence.md), including the V01–V24 fixture mapping, measured baseline, candidate builds, and explicit remaining maintainer/publication decisions. The evidence record, rather than this plan, determines which gates have actually passed.
 
 ## Required fixture matrix
 

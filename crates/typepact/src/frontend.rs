@@ -1,5 +1,5 @@
 use ruff_python_ast::{
-    visitor::{walk_expr, Visitor},
+    visitor::{walk_expr, walk_stmt, Visitor},
     AnyParameterRef, Expr, PythonVersion, Stmt,
 };
 use ruff_python_parser::{Mode, ParseOptions};
@@ -29,6 +29,7 @@ pub(crate) enum AstExprKind {
     },
     Tuple(Vec<AstExpr>),
     String(String),
+    NoneLiteral,
     Other,
     DepthLimit,
 }
@@ -205,6 +206,58 @@ fn eager_named_expression_issue(statement: &Stmt) -> Option<&'static str> {
     visitor.unsupported_reason()
 }
 
+// Class suites run eagerly, while function bodies have a separate, deferred
+// scope. A global declaration anywhere in an eager suite can redirect writes
+// into the module namespace, which this declaration-only frontend cannot model.
+#[derive(Default)]
+struct ClassGlobalVisitor {
+    depth: usize,
+    nodes: usize,
+    found: bool,
+    exceeded: bool,
+}
+
+impl<'a> Visitor<'a> for ClassGlobalVisitor {
+    fn visit_stmt(&mut self, statement: &'a Stmt) {
+        if self.found || self.exceeded {
+            return;
+        }
+        if self.depth >= ExpressionBudget::MAX_DEPTH || self.nodes >= ExpressionBudget::MAX_NODES {
+            self.exceeded = true;
+            return;
+        }
+        self.nodes += 1;
+        match statement {
+            Stmt::Global(_) => self.found = true,
+            Stmt::FunctionDef(_) => {}
+            _ => {
+                self.depth += 1;
+                walk_stmt(self, statement);
+                self.depth -= 1;
+            }
+        }
+    }
+
+    fn visit_expr(&mut self, _expression: &'a Expr) {}
+}
+
+fn class_body_issue(statement: &Stmt) -> Option<&'static str> {
+    let Stmt::ClassDef(class) = statement else {
+        return None;
+    };
+    let mut visitor = ClassGlobalVisitor::default();
+    for statement in &class.body {
+        visitor.visit_stmt(statement);
+    }
+    if visitor.found {
+        Some("class-body global declarations can rebind module names and are unsupported")
+    } else if visitor.exceeded {
+        Some("class body exceeds the 128-level or 50,000-statement work limit")
+    } else {
+        None
+    }
+}
+
 fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usize) -> AstExpr {
     let range = source_range(node);
     if budget.exceeded
@@ -266,6 +319,7 @@ fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usize) -> AstEx
                 .collect(),
         ),
         Expr::StringLiteral(string) => AstExprKind::String(string.value.to_str().to_owned()),
+        Expr::NoneLiteral(_) => AstExprKind::NoneLiteral,
         _ => AstExprKind::Other,
     };
     AstExpr { range, kind }
@@ -336,7 +390,9 @@ pub(crate) fn parse_frontend(
             });
             break;
         }
-        if let Some(message) = eager_named_expression_issue(statement) {
+        if let Some(message) =
+            class_body_issue(statement).or_else(|| eager_named_expression_issue(statement))
+        {
             declarations.push(Declaration::Unsupported {
                 message,
                 range: source_range(statement),

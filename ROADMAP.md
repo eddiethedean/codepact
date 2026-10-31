@@ -1,6 +1,6 @@
 # TypePact 0.x release roadmap
 
-Planning baseline: 2026-10-30. **The 0.1 analyzer implementation is complete; release qualification remains pending.** The analyzer uses structured Ruff AST declarations and ranges, target-version checks, captured local and exported alias views, and direct absolute imports between supplied modules. A reusable Salsa session tracks per-file parsing, per-module semantic results and semantic-only exports, with cancellation, revisions and bounded work/cache policies. The [Ruff/Salsa migration](docs/planning/analyzer-migration.md) tracks the remaining V01–V24 and release qualification evidence; later phases remain planned.
+Planning baseline: 2026-10-30. **The 0.1 analyzer implementation is complete; release qualification remains pending.** The analyzer uses structured Ruff AST declarations and ranges, target-version checks, captured local and exported alias views, and direct absolute imports between supplied modules. A reusable Salsa session tracks per-file parsing, per-module semantic results and semantic-only exports, with cancellation, revisions and bounded work/cache policies. The [candidate evidence record](docs/releases/0.1.0-evidence.md) maps V01–V24 and tracks release qualification; later phases remain planned.
 
 This document is the authoritative release sequence. The original [feature milestones](docs/planning/roadmap.md) and [implementation phases](docs/planning/implementation.md) remain technical work groupings; they are mapped below rather than treated as version numbers.
 

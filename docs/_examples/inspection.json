@@ -81,7 +81,7 @@
   "coverage": {
     "status": "complete-for-supported-subset",
     "reasons": [],
-    "source_bytes": 313,
+    "source_bytes": 294,
     "declarations": 3
   }
 }

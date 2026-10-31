@@ -7,12 +7,12 @@ TypePact 0.1 is a contract-inspection release. It records supported declarations
 The analyzer currently reports incomplete coverage for constructs including:
 
 - String and forward-reference annotations, including `from __future__ import annotations`.
-- Literal `None` annotations, including function returns written `-> None`.
 - Relative imports, star imports, import re-export chains, ambiguous supplied modules, and module import cycles.
 - Class inheritance, metaclass behavior, non-TypePact class decorators, and decorated functions.
 - Computed contract expressions, dynamic decorator arguments, and unresolved resource bases.
 - Module-level control flow, nested classes, nested or generic function declarations, and other unsupported declaration shapes.
-- Eager named expressions that could rebind module names.
+- Eager named expressions and class-body `global` declarations that could rebind module names.
+- Resource or access contracts nested inside unsupported container annotation forms.
 - Unsupported Python source target versions.
 
 The [supported syntax guide](supported-syntax.md) describes the subset TypePact recognizes. If a construct is outside that subset, a status of 1 and `coverage.status` of `incomplete` are expected outcomes, not proof that the source is invalid Python.

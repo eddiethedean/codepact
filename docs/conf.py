@@ -20,7 +20,7 @@ extensions = [
 root_doc = "index"
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
 language = "en"
-exclude_patterns = ["_build", "planning/**", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "planning/**", "releases/**", "Thumbs.db", ".DS_Store"]
 
 myst_enable_extensions = ["colon_fence"]
 myst_heading_anchors = 3

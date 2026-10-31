@@ -48,7 +48,7 @@ def update(conn: BorrowedMut[Connection]) -> str:
 
 These aliases are `typing.Annotated` aliases. The underlying Python type remains `T`; the access marker is metadata for TypePact. Type checkers do not treat these spellings as Rust ownership or borrowing rules.
 
-The metadata classes and aliases are also exported from `typepact.contracts`.
+The metadata classes and aliases are also exported from `typepact.contracts`. Submodule imports work too: `from typepact import rust as r` allows `r.Borrowed[Connection]`, and `from typepact import contracts as ct` allows `ct.Resource(closed_by="close")` in `Annotated`. Rebinding either imported name removes that API identity.
 
 ## Use `Annotated` directly
 

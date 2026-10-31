@@ -12,6 +12,5 @@ def read(conn: Borrowed[Connection]) -> str:
     return "ready"
 
 
-def consume(conn: Owned[Connection]) -> str:
+def consume(conn: Owned[Connection]) -> None:
     conn.close()
-    return "closed"
