@@ -27,7 +27,6 @@ struct FunctionBody {
     parameters: Vec<String>,
     statements: Vec<FlowStatement>,
     supported_binding: bool,
-    has_parameter_annotations: bool,
 }
 
 struct FlowContext<'a> {
@@ -539,6 +538,11 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         ..State::default()
     };
     child.call_stack.insert(call_key);
+    copy_object_metadata(
+        &mut child,
+        parent,
+        &parent.escaped.iter().cloned().collect(),
+    );
     child
         .shadowed_functions
         .extend(definition.parameters.iter().cloned());
@@ -833,9 +837,7 @@ fn consume_expr(
                                 .get(&method_key)
                                 .filter(|definition| definition.file.module == file.module)
                         });
-                    if definition.is_some_and(|definition| {
-                        !definition.supported_binding || definition.has_parameter_annotations
-                    }) {
+                    if definition.is_some_and(|definition| !definition.supported_binding) {
                         let mut affected = vec![object.clone()];
                         for argument in arguments
                             .iter()
@@ -851,11 +853,7 @@ fn consume_expr(
                             result,
                             file,
                             expr.range,
-                            if definition.is_some_and(|definition| !definition.supported_binding) {
-                                "decorated method binding is not modeled"
-                            } else {
-                                "method parameter annotations are not modeled"
-                            },
+                            "decorated method binding is not modeled",
                         );
                         continue;
                     }
@@ -1079,6 +1077,7 @@ fn consume_expr(
                     ..State::default()
                 };
                 child.call_stack.insert(callee.to_string());
+                copy_object_metadata(&mut child, env, &env.escaped.iter().cloned().collect());
                 child
                     .shadowed_functions
                     .extend(definition.parameters.iter().cloned());
@@ -1402,9 +1401,7 @@ fn execute(
                                         functions.get(&format!("{}::{init_key}", file.module))
                                     });
                                 if let Some(definition) = definition {
-                                    if !definition.supported_binding
-                                        || definition.has_parameter_annotations
-                                    {
+                                    if !definition.supported_binding {
                                         let mut affected = vec![object.clone()];
                                         for argument in arguments
                                             .iter()
@@ -1420,11 +1417,7 @@ fn execute(
                                             result,
                                             file,
                                             *range,
-                                            if !definition.supported_binding {
-                                                "decorated method binding is not modeled"
-                                            } else {
-                                                "method parameter annotations are not modeled"
-                                            },
+                                            "decorated method binding is not modeled",
                                         );
                                     } else {
                                         let child = execute_method_body(
@@ -1695,7 +1688,6 @@ fn check_bodies_impl(
                                 .collect(),
                             statements: body.clone(),
                             supported_binding: true,
-                            has_parameter_annotations: false,
                         },
                     );
                 }
@@ -1720,7 +1712,6 @@ fn check_bodies_impl(
                                 parameters: method.parameters.clone(),
                                 statements: method.body.clone(),
                                 supported_binding: !method.decorated,
-                                has_parameter_annotations: method.has_parameter_annotations,
                             },
                         );
                     }

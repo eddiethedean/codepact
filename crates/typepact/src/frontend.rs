@@ -723,11 +723,21 @@ pub(crate) fn parse_frontend(
         .zip(module.body.iter())
         .filter_map(|(flow, statement)| match statement {
             Stmt::FunctionDef(function)
-                if function.parameters.iter_source_order().any(|parameter| {
-                    matches!(parameter, AnyParameterRef::NonVariadic(parameter) if parameter.default.is_some())
-                }) => Some(FlowStatement::Unsupported {
-                range: source_range(statement),
-            }),
+                if parameters_have_defaults(&function.parameters) =>
+            {
+                Some(FlowStatement::Unsupported {
+                    range: source_range(statement),
+                })
+            }
+            Stmt::ClassDef(class)
+                if class.body.iter().any(|statement| {
+                    matches!(statement, Stmt::FunctionDef(function) if parameters_have_defaults(&function.parameters))
+                }) =>
+            {
+                Some(FlowStatement::Unsupported {
+                    range: source_range(statement),
+                })
+            }
             Stmt::FunctionDef(_)
             | Stmt::ClassDef(_)
             | Stmt::Import(_)
@@ -736,5 +746,11 @@ pub(crate) fn parse_frontend(
             _ => Some(flow),
         })
         .collect(),
+    })
+}
+
+fn parameters_have_defaults(parameters: &ruff_python_ast::Parameters) -> bool {
+    parameters.iter_source_order().any(|parameter| {
+        matches!(parameter, AnyParameterRef::NonVariadic(parameter) if parameter.default.is_some())
     })
 }
