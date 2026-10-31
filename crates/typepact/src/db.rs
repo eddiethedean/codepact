@@ -223,6 +223,7 @@ fn check_flow_query(
     python_version: String,
     inspection_json: String,
 ) -> String {
+    crate::flow::reset_flow_budget();
     db.unwind_if_revision_cancelled();
     let sources: Vec<_> = files
         .iter()

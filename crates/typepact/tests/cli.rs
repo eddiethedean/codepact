@@ -74,6 +74,7 @@ fn check_reports_one_use_after_close_at_the_call_site() {
         result["coverage"]["status"],
         "complete-for-supported-subset"
     );
+
     assert_eq!(
         result["assurance"],
         "lifecycle-checking-for-supported-normal-flow"
@@ -956,5 +957,237 @@ fn completeness_regressions_have_the_documented_exit_status() {
             );
         }
     }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn lifecycle_method_aliases_use_base_identity_and_uncertain_receivers_join_effects() {
+    let root = fixture_root().with_extension("lifecycle-method-views");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("view.py"),
+        "from typing import Annotated\nfrom typepact.contracts import Resource\nclass C:\n    def close(self): pass\n    def status(self): pass\nV = Annotated[C, Resource(closed_by='close')]\nc = V()\nc.status()\n",
+    )
+    .unwrap();
+    let output = run_check(&root);
+    assert_eq!(output.status.code(), Some(0));
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        result["coverage"]["status"],
+        "complete-for-supported-subset"
+    );
+
+    fs::write(
+        root.join("view.py"),
+        "from typing import Annotated\nfrom typepact.contracts import Resource\nclass C:\n    def close(self): pass\n    def status(self): pass\nV = Annotated[C, Resource(closed_by='close')]\nc = V()\nc.close()\nc.status()\n",
+    )
+    .unwrap();
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|diagnostic| diagnostic["code"] == "TP1001")
+            .count(),
+        1,
+        "{:#?}",
+        result["diagnostics"]
+    );
+
+    fs::write(
+        root.join("view.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n    def shutdown(self): self.close()\na = C()\nb = C()\nif flag:\n    x = a\nelse:\n    x = b\nx.shutdown()\na.status()\nb.status()\n",
+    )
+    .unwrap();
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect::<Vec<_>>();
+    assert_eq!(findings.len(), 2, "{:#?}", result["diagnostics"]);
+    assert!(findings
+        .iter()
+        .all(|finding| finding["certainty"] == "possible"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn assignment_evaluates_nested_effects_once_and_function_rebinding_drops_old_body() {
+    let root = fixture_root().with_extension("lifecycle-rebinding");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\ndef shutdown(value):\n    value.close()\ndef noop(value): pass\nshutdown = noop\nc = C()\nresult = noop(c.close())\nshutdown(c)\nc.status()\n",
+    )
+    .unwrap();
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| { diagnostic["message"] == "repeat-close behavior is not modeled" }));
+    let findings = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect::<Vec<_>>();
+    assert_eq!(findings.len(), 1, "{:#?}", result["diagnostics"]);
+    assert_eq!(findings[0]["primary"]["line"], 13);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn helper_resolution_uses_provider_scope_and_borrowed_preconditions() {
+    let root = fixture_root().with_extension("lifecycle-provider-scope");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("provider.py"),
+        r#"from typepact import resource
+from typepact.rust import Borrowed
+@resource(closed_by='close')
+class C:
+    def close(self): pass
+    def status(self): pass
+def finish(value):
+    value.close()
+def shutdown(value):
+    finish(value)
+def inspect(value: Borrowed[C]):
+    pass
+"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("client.py"),
+        r#"from typepact import resource
+from provider import C, inspect, shutdown
+def finish(value):
+    pass
+value = C()
+shutdown(value)
+value.status()
+value.close()
+inspect(value)
+"#,
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings: Vec<_> = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert_eq!(findings.len(), 2, "{:#?}", result["diagnostics"]);
+    assert!(findings
+        .iter()
+        .all(|finding| finding["certainty"] == "definite"));
+    assert_eq!(findings[0]["primary"]["file"], "client.py");
+    assert_eq!(findings[1]["primary"]["file"], "client.py");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn constructor_close_body_and_early_return_effects_reach_callers() {
+    let root = fixture_root().with_extension("lifecycle-body-effects");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("effects.py"),
+        r#"from typepact import resource
+@resource(closed_by='close')
+class B:
+    def close(self): pass
+    def status(self): pass
+@resource(closed_by='close')
+class A:
+    def __init__(self, target):
+        target.close()
+    def close(self, target):
+        target.close()
+    def status(self): pass
+@resource(closed_by='close')
+class Maybe:
+    def close(self): pass
+    def status(self): pass
+    def maybe_close(self, flag):
+        if flag:
+            self.close()
+            return
+first = B()
+a = A(first)
+second = B()
+a.close(second)
+a.status()
+first.status()
+second.status()
+maybe = Maybe()
+maybe.maybe_close(flag)
+maybe.status()
+"#,
+    )
+    .unwrap();
+
+    let output = run_check(&root);
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings: Vec<_> = result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP1001")
+        .collect();
+    assert_eq!(findings.len(), 4, "{:#?}", result["diagnostics"]);
+    assert_eq!(findings[0]["certainty"], "definite");
+    assert_eq!(findings[1]["certainty"], "definite");
+    assert_eq!(findings[2]["certainty"], "definite");
+    assert_eq!(findings[3]["certainty"], "possible");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn flow_work_budget_stops_exponential_helper_expansion() {
+    let root = fixture_root().with_extension("lifecycle-flow-budget");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let mut source = String::from("def f0():\n    pass\n");
+    for level in 1..=6 {
+        source.push_str(&format!("def f{level}():\n"));
+        for _ in 0..10 {
+            source.push_str(&format!("    f{}()\n", level - 1));
+        }
+    }
+    source.push_str("f6()\n");
+    fs::write(root.join("budget.py"), source).unwrap();
+
+    let output = run_check(&root);
+    assert_eq!(output.status.code(), Some(0));
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| {
+                diagnostic["code"] == "TP9001"
+                    && diagnostic["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains("flow work budget exceeded"))
+            }),
+        "{:#?}",
+        result["diagnostics"]
+    );
+    assert_eq!(result["coverage"]["status"], "incomplete");
     fs::remove_dir_all(root).unwrap();
 }

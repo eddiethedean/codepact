@@ -74,6 +74,7 @@ Lifecycle checking has additional conservative flow limits:
 | Possible objects for one local alias at a join | 64 |
 | Tracked resource objects in one function or module body | 4,096 |
 | Nested call/effect evaluation | 8 |
+| Lifecycle statement and expression transfers per analysis request | 100,000 |
 
 When a flow limit is reached, the checker drops the affected exact facts,
 weakens reachable resource state, and reports a TP9001 boundary with incomplete
