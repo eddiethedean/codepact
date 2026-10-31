@@ -1,0 +1,11 @@
+f051b88cb1824b312e7f720ca973de369f1e1464c133d12500f866c8b0d8e160  typepact-0.1.0-py3-none-any.whl
+59502ecea2bfd149c713501bd6ec26720002e01cc280f0de354fcc80130981fd  typepact-0.1.0.tar.gz
+380527086364e4f30b707b624fec24983c2d805f80abd212b597a8df96138344  typepact_cli-0.1.0-py3-none-macosx_10_13_x86_64.whl
+15b4565d810d3b4b8fa01e58598f4a16e486717d5fece86a8d62cb1de40d401a  typepact_cli-0.1.0-py3-none-macosx_11_0_arm64.whl
+418d23fd245d98cebd9a4a90097990024b36bd9255a7d42b1070b60ea3a3aeef  typepact_cli-0.1.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+52f1abd1e76737e3912cd5d486958a6f24ed02a84441e8bb29edc8065b68ab77  typepact_cli-0.1.0-py3-none-manylinux_2_28_aarch64.whl
+8d8991d786b10f3862f449aa4f553dbd3b63ed1e50caf558b33d00dc7258013d  typepact_cli-0.1.0-py3-none-musllinux_1_2_aarch64.whl
+93d1fd4b7fceaeb09165e0c683c62e381b7f2ba7f93f1fd5f969660a08735328  typepact_cli-0.1.0-py3-none-musllinux_1_2_x86_64.whl
+57e0e9d151418524244824114d20f80114fe9a7d4db422c72f1570d0800a3ebf  typepact_cli-0.1.0-py3-none-win_amd64.whl
+098d9a4e3564aa30262656422dbead0b06e3c4ec5b9e1515238f1b5fe4a5380a  typepact_cli-0.1.0-py3-none-win_arm64.whl
+4389a9229101c1cf480ab7904bd03e83a761d8b7866019b4403279afa56c86e5  typepact_cli-0.1.0.tar.gz
