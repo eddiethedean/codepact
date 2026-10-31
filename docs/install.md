@@ -39,6 +39,23 @@ Prebuilt CLI wheels include the executable and do not require a Rust compiler. T
 
 Python 3.11 or newer is required to install either distribution. CLI wheels are available for Linux glibc and musl, macOS, and Windows on x86-64 and ARM64. The helper wheel is platform-independent. See [compatibility](supported-syntax.md#python-version-support) for the analyzer source-target versions.
 
+## Build the lifecycle preview from source
+
+The unreleased `check` command is available on the repository's `main` branch.
+Use Rust 1.96+ and a linker to run it independently of an installed 0.1.0 command:
+
+```sh
+git clone https://github.com/eddiethedean/typepact.git
+cd typepact
+cargo run --locked -- check --root examples
+```
+
+The example intentionally reports a use after close and exits `1`. See the
+[lifecycle tutorial](lifecycle.md) for an isolated example and expected output.
+Package versions still read `0.1.0` in the checkout; the version string alone
+does not identify whether an executable contains the preview. Use the checkout's
+Cargo invocation when following preview instructions.
+
 ## Platform compatibility
 
 | Operating system | x86-64 minimum | ARM64 minimum |

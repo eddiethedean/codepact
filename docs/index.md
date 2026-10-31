@@ -1,8 +1,8 @@
 # TypePact documentation
 
-**Python resource contracts, inspected by Rust.** TypePact records declared resource lifecycle and access intent from Python source and reports normalized contract facts, source locations, provenance, and diagnostics.
+**Declare resource intent in Python. Inspect and check it with Rust.** TypePact reads Python source and reports resource contracts, source locations, provenance, and diagnostics.
 
-Version **0.1.0** provides contract inspection. The working tree also includes an unreleased lifecycle-checking preview through `typepact check`. The analyzer reads source as text and does not import or execute the inspected project. Lifecycle checking covers only its documented synchronous subset and does not enforce ownership at runtime.
+Published version **0.1.0** provides contract inspection. The source checkout also includes an **unreleased phase 0.2 lifecycle preview** through `typepact check`; release qualification is pending. Both commands read source without importing or executing the project.
 
 ```sh
 uv add typepact==0.1.0
@@ -11,11 +11,15 @@ uv run typepact inspect-contracts connection.py
 
 Create `connection.py` with the [quick start](quickstart.md), then read the result using the [JSON reference](output.md).
 
+To try the source preview, follow the [lifecycle tutorial](lifecycle.md). Installing
+the published 0.1.0 packages does not provide `check`.
+
 ## Find your next step
 
 | I want to… | Start here |
 | --- | --- |
 | Declare a resource and inspect it | [Quick start](quickstart.md) |
+| Find a supported use after close | [Lifecycle checking preview](lifecycle.md) |
 | Resolve imports across my own modules | [Multi-file tutorial](project-guide.md) |
 | Use the inspector in a build pipeline | [Automation and CI](automation.md) |
 | Understand an error or incomplete result | [Troubleshooting](troubleshooting.md) |
@@ -31,6 +35,7 @@ Python helpers run on Python 3.11+. The analyzer accepts source targets 3.11–3
 
 install
 quickstart
+lifecycle
 contracts
 project-guide
 automation
@@ -38,7 +43,7 @@ automation
 
 ```{toctree}
 :maxdepth: 1
-:caption: Inspector reference
+:caption: Analyzer reference
 
 cli
 output

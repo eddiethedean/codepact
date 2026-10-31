@@ -1,6 +1,10 @@
-# Supported syntax in 0.1
+# Supported syntax
 
 The inspector handles a deliberately limited set of Python declarations. It parses source with the selected Python grammar, resolves only the supported static relationships, and marks coverage incomplete when a relevant construct falls outside that set.
+
+The declaration sections describe published 0.1.0. The
+[lifecycle preview](lifecycle.md) adds the checking subset below in a source
+checkout. Phase 0.2 release qualification remains pending.
 
 ## Recognized declarations
 
@@ -19,7 +23,27 @@ Class lifecycle and function access declarations compose independently. Compatib
 
 Imports are resolved only among the files explicitly passed to the command. `--root` assigns package-qualified names to files. Without it, each file's stem supplies the logical module name. Every supplied file must have a distinct module name.
 
-The analyzer resolves direct absolute imports when the imported module is supplied. It does not perform filesystem discovery, import installed packages, or execute Python source.
+The inspector resolves direct absolute imports when the imported module is supplied.
+The preview checker discovers `.py` files below its root and applies declaration
+resolution to that snapshot. Neither mode imports installed packages or executes
+Python source. See [CLI input behavior](cli.md).
+
+## Lifecycle preview subset
+
+| Pattern | Checking behavior |
+| --- | --- |
+| Direct construction through a recognized resource view | Creates an open abstract resource on normal continuation |
+| Local alias assignment and rebinding | Tracks shared objects and detached local names |
+| Straight-line synchronous code and ordinary returns | Applies supported effects in source order |
+| `if`/`else` joins | Preserves possible lifecycle states rather than assuming every path closes |
+| Resolved local functions and resource methods | Applies supported body effects to passed resource objects |
+| Close through a Borrowed parameter | Reports TP2001 within supported bodies |
+| Unknown effects, recursive calls, unsupported flow | Reports incomplete coverage where encountered |
+
+This table describes implemented patterns, not completion of every phase 0.2
+validation case. General exception handling, loops, async, fields and containers,
+returned aliases, dynamic dispatch, and full import/re-export semantics remain
+outside the qualified checking subset. Consult [limitations](limitations.md).
 
 ## Python version support
 

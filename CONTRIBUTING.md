@@ -1,15 +1,12 @@
 # Contributing to TypePact
 
-TypePact 0.1 is under active development. Start with the [planning index](docs/planning/README.md), the [inspector guide](docs/inspector.md), and the [phase 0.1 repair plan](docs/planning/phases/0.1/remediation.md).
+Published TypePact 0.1.0 provides contract inspection. Current source development
+includes the phase 0.2 lifecycle preview; release qualification is pending. Start
+with the [development guide](docs/development.md), [phase 0.2 plan](docs/planning/phases/0.2-lifecycle.md),
+and [validation matrix](docs/planning/phases/0.2/validation.md).
 
-The Rust analyzer requires Rust 1.96 or newer. Install the pinned dependency-checking tools once with:
-
-~~~sh
-cargo install cargo-audit --version 0.22.2 --locked
-cargo install cargo-deny --version 0.20.2 --locked
-~~~
-
-Install the locked Python environment and Rust dependency auditors, then run
+The Rust analyzer requires Rust 1.96 or newer. Install the locked Python
+environment and pinned Rust dependency auditors, then run
 the same full gate used by CI:
 
 ~~~sh
@@ -18,6 +15,17 @@ cargo install cargo-audit --version 0.22.2 --locked
 cargo install cargo-deny --version 0.20.2 --locked
 uv run --locked make check
 ~~~
+
+Run the current analyzer directly from the checkout:
+
+~~~sh
+cargo run --locked -- inspect-contracts --root . examples/contracts.py
+cargo run --locked -- check --root examples
+~~~
+
+The lifecycle example intentionally emits TP1001 and exits `1`. To isolate the
+preview and make the example pass, follow the [lifecycle tutorial](docs/lifecycle.md).
+Explicit filenames do not narrow the checker's project-root scan.
 
 The Python package supports Python 3.11 and newer. Its CI matrix runs package
 checks on Python 3.11 through 3.14. To run the strict package typing and lint

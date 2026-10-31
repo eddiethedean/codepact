@@ -1,6 +1,9 @@
 # JSON output reference
 
-The CLI emits one JSON object. The Rust library returns the same `Inspection` data structure. Schema version 0 is provisional and can change during the 0.x releases.
+`inspect-contracts` emits one JSON object. The source preview `check` emits the
+same envelope when `--json` is supplied; readable diagnostics are its default.
+The Rust library returns `Inspection`. Schema version 0 is provisional, and
+checking JSON has not completed phase 0.2 release qualification.
 
 ## Top-level object
 
@@ -9,7 +12,7 @@ The CLI emits one JSON object. The Rust library returns the same `Inspection` da
 | `schema_version` | JSON schema version; currently `0` |
 | `assurance` | `contract-inspection-only` for inspection; `lifecycle-checking-for-supported-normal-flow` for the checking preview |
 | `contracts` | Normalized resource and access declarations |
-| `diagnostics` | Syntax errors, declaration conflicts, and unsupported or unresolved boundaries |
+| `diagnostics` | Syntax errors, declaration conflicts, lifecycle findings in check mode, and unsupported or unresolved boundaries |
 | `coverage` | Coverage status, reasons, source byte count, and emitted declaration count |
 
 The following complete result comes from the [quick-start source](quickstart.md), inspected as `connection.py` with the default Python 3.11 target:
@@ -45,6 +48,19 @@ Each diagnostic has a code, severity, message, primary span, related spans, and 
 | `TP9002` | The Rust `inspect` convenience API reports a cancelled inspection; `inspect_cancellable` returns `AnalysisCancelled` instead |
 
 Diagnostic codes and schema details are provisional during 0.x. Treat `coverage.status` as the machine-readable completeness indicator; unsupported constructs may produce warnings rather than errors.
+
+### Checking certainty
+
+| `certainty` | Interpretation |
+| --- | --- |
+| `definite` | The modeled operation violates the contract on the analyzed incoming states |
+| `possible` | Supported alternatives include a violating state |
+| `unknown` | Analysis encountered an effect or construct outside the modeled subset |
+
+A possible lifecycle finding is a warning. Possible findings and coverage
+boundaries alone can accompany exit `0`; errors cause exit `1`. Certainty refers
+to the model and its supported normal flow, not to verification of runtime cleanup.
+The [lifecycle tutorial](lifecycle.md) explains how to read a checking report.
 
 ## Coverage and locations
 

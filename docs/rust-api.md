@@ -49,6 +49,12 @@ def read(conn: Borrowed[Connection]) -> str: ...
 
 The current unreleased source also exposes `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. They return the same `Inspection` shape with lifecycle findings and `assurance` set to `lifecycle-checking-for-supported-normal-flow`. This path tracks supported local constructions, aliases, branches and synchronous direct calls. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
 
+These methods require a dependency built from the source preview; the crates.io
+0.1.0 installation shown above provides inspection. The host supplies all
+`SourceFile` values for checking: filesystem discovery belongs to the CLI adapter,
+not to `check`. Consult the [lifecycle tutorial](lifecycle.md) for modeled behavior
+and the [output reference](output.md) for certainty and coverage interpretation.
+
 ## Incremental analysis session
 
 Use `AnalysisSession` when inputs change repeatedly. It stores source in a Salsa database, tracks input revisions, and invalidates computations from changed files while retaining reusable work for unchanged files.

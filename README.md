@@ -1,6 +1,6 @@
 # TypePact
 
-**Python resource contracts, inspected by Rust.**
+**Declare resource intent in Python. Inspect and check it with Rust.**
 
 [![PyPI](https://img.shields.io/pypi/v/typepact.svg)](https://pypi.org/project/typepact/)
 [![CLI on PyPI](https://img.shields.io/pypi/v/typepact-cli.svg?label=CLI)](https://pypi.org/project/typepact-cli/)
@@ -9,9 +9,16 @@
 [![Documentation](https://readthedocs.org/projects/typepact/badge/?version=latest)](https://typepact.readthedocs.io/en/latest/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/eddiethedean/typepact/blob/main/LICENSE)
 
-TypePact lets you declare how resources close and how APIs intend to access them, alongside ordinary Python types. A shared Rust inspector resolves those declarations into contract facts with source locations, provenance, and diagnostics.
+TypePact lets you declare how resources close and how APIs intend to access them, alongside ordinary Python types. Its Rust analyzer reads source without importing or executing your project and reports contract facts, source locations, and diagnostics.
 
-**0.1.0 is the first contract-inspection release.** It records declared intent and reports conflicting declarations or unsupported analysis boundaries. Checking resource use across control flow, including use-after-close, is planned for 0.2. APIs and the JSON schema remain provisional during 0.x.
+**Published 0.1.0 provides contract inspection.** The `main` branch also includes an **unreleased lifecycle-checking preview** for phase 0.2. Release qualification is still pending. APIs, diagnostics, and the JSON schema remain provisional during 0.x.
+
+| Task | Command | Availability |
+| --- | --- | --- |
+| Inspect lifecycle and access declarations | `typepact inspect-contracts FILE...` | Published 0.1.0 and source checkout |
+| Find supported uses after close and closes through Borrowed parameters | `typepact check --root DIR` | Source checkout preview |
+
+Start with [installation](#install) for the published release or [try lifecycle checking](#try-lifecycle-checking-from-source) for the preview.
 
 ## Install
 
@@ -37,7 +44,7 @@ uv tool install typepact-cli==0.1.0
 typepact --version
 ```
 
-## Quick start
+## Inspect your first contract
 
 Save this as `connection.py`:
 
@@ -77,6 +84,22 @@ TypePact emits JSON containing these contract views:
 The `resource` decorator preserves the class identity and records lifecycle metadata. The inspector reads the file as text without importing it, evaluating annotations, or invoking decorators. In 0.1, the method bodies above are not checked: declaring `closed_by="close"` does not establish that `close` releases anything.
 
 See the complete [paired example](https://github.com/eddiethedean/typepact/blob/main/examples/contracts.py) and its [JSON snapshot](https://github.com/eddiethedean/typepact/blob/main/tests/snapshots/example-contracts.json).
+
+## Try lifecycle checking from source
+
+Use a checkout and Rust 1.96+ to run the preview; the published 0.1.0 packages do not include `check`:
+
+```sh
+git clone https://github.com/eddiethedean/typepact.git
+cd typepact
+cargo run --locked -- check --root examples
+```
+
+The [lifecycle example](https://github.com/eddiethedean/typepact/blob/main/examples/lifecycle.py) constructs a connection, passes it to a Borrowed helper, closes it, then calls the helper again. The final call produces a definite `TP1001`, includes the close location, and exits with status `1`. This example intentionally contains an error.
+
+The preview follows supported normal synchronous flow, local aliases, direct calls, and `if`/`else` joins. It also reports closing a `Borrowed` parameter as `TP2001`. Possible findings and incomplete coverage are visible warnings that can accompany exit `0`; read the report even when the command succeeds.
+
+Follow the [lifecycle tutorial](https://typepact.readthedocs.io/en/latest/lifecycle.html) for an isolated example, expected output, and a valid counterpart. The preview does not establish leak freedom, cleanup on every exit, general ownership safety, or that the declared close method releases a runtime resource.
 
 ## Annotation forms
 
@@ -121,9 +144,9 @@ For imports between files, pass every module that should participate in resoluti
 uv run typepact inspect-contracts --root src src/models.py src/client.py
 ```
 
-`--root` determines logical paths and package-qualified module names. It does not discover files or follow imports automatically. Without it, each input file's stem supplies its module name. Absolute `from module import Class` imports and direct imports of supported assignment aliases resolve across supplied files.
+For `inspect-contracts`, `--root` determines logical paths and package-qualified module names without discovering files. Without it, each input file's stem supplies its module name. Absolute `from module import Class` imports and direct imports of supported assignment aliases resolve across supplied files. The preview `check` command instead scans `.py` files below its root; explicit filenames add inputs and do not restrict that scan.
 
-### Output and exit codes
+### Inspection output and exit codes
 
 JSON is the default output; `--json` is accepted explicitly. Each result includes:
 
@@ -156,7 +179,7 @@ Relevant unsupported constructs produce incomplete coverage. Current boundaries 
 
 The inspector has explicit source and work limits, including a 1,000,000-byte total source budget per request. See the [inspector guide](https://github.com/eddiethedean/typepact/blob/main/docs/inspector.md) for the detailed limits and Rust session API.
 
-Lifecycle flow checks, cleanup obligations, alias analysis through fields and containers, and enforcement of ownership or exclusive access belong to later phases. The [release roadmap](https://github.com/eddiethedean/typepact/blob/main/ROADMAP.md) describes that progression.
+The source preview adds bounded lifecycle flow checks. Cleanup obligations, precise alias analysis through fields and containers, and enforcement of ownership or exclusive access remain future work. The [release roadmap](https://github.com/eddiethedean/typepact/blob/main/ROADMAP.md) describes that progression.
 
 ## Compatibility
 
@@ -182,7 +205,7 @@ The helper wheel is universal pure Python. CLI wheels contain a standalone execu
 
 The Python helpers supply declarations; the Rust engine performs inspection. Pinned Ruff parser and AST components provide structured syntax and source ranges. Salsa tracks parsing and module semantics so reusable sessions can retain unaffected work across edits.
 
-The Rust library exposes `inspect` for a single request and `AnalysisSession` for repeated updates, removal, reset, cancellation, and revision-tagged results. Both use the same bounded query pipeline as the CLI. See the [library entry point](https://github.com/eddiethedean/typepact/blob/main/crates/typepact/src/lib.rs) and [analyzer design](https://github.com/eddiethedean/typepact/blob/main/docs/planning/analyzer-migration.md).
+The Rust library exposes `inspect` for a single request and `AnalysisSession` for repeated updates, removal, reset, cancellation, and revision-tagged results. The source preview adds `check` and session checking methods. CLI and library calls share the analyzer; the host application supplies the Rust API's source snapshot. See the [Rust API guide](https://typepact.readthedocs.io/en/latest/rust-api.html) and [analyzer design](https://github.com/eddiethedean/typepact/blob/main/docs/planning/analyzer-migration.md).
 
 ## Development
 

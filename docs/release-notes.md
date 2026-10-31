@@ -1,5 +1,27 @@
 # Release notes
 
+## Unreleased — phase 0.2 preview
+
+The source checkout adds `typepact check` for bounded normal synchronous lifecycle
+analysis. The published 0.1.0 packages remain the contract-inspection release;
+qualification gates remain pending in the
+[phase plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2-lifecycle.md).
+
+- Local constructions, aliases, straight-line calls, returns, and `if`/`else` joins.
+- TP1001 use-after-close findings with certainty and related close locations.
+- TP2001 close-through-Borrowed findings in supported bodies.
+- Project-root scanning, readable output, provisional JSON, and Rust checking entry points.
+- Unknown summaries for recursive calls and visible coverage boundaries.
+
+Recent fixes preserve resource metadata across calls, retain uncertain alias
+alternatives, propagate supported method argument effects, evaluate nested
+constructor calls, and keep literal arguments from weakening known resource state.
+Checking also removes inspection-only boundaries for supported module statements.
+
+Start with the [lifecycle tutorial](lifecycle.md). Possible findings and incomplete
+coverage alone can return exit `0`; read the report before accepting a result.
+Ownership enforcement and cleanup on every exit remain outside this preview.
+
 ## 0.1.0
 
 TypePact 0.1.0 introduces resource contract inspection for Python, with pure Python declaration helpers and a native Rust CLI distributed through `typepact-cli`. The helper depends on the exact matching CLI version.

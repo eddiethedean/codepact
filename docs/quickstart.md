@@ -44,14 +44,13 @@ The root is used to name modules; TypePact does not discover files or follow imp
 
 Continue with the [multi-file tutorial](project-guide.md) to resolve declarations across modules, or [automation](automation.md) to check an explicit source set in CI.
 
-## Check a resource lifecycle
+## Try lifecycle checking next
 
-`typepact check` discovers Python files under the project root and reports supported use-after-close cases:
+The source checkout includes an unreleased `typepact check` preview for direct
+construction, local aliases, normal synchronous calls, and `if`/`else` joins.
+The published 0.1.0 packages used above provide inspection only.
 
-```sh
-uv run typepact check --root examples
-```
-
-The first lifecycle checks cover direct construction, local aliases, normal synchronous calls, and `if`/`else` joins. Unknown calls and unsupported control flow appear as coverage warnings. The command does not prove cleanup on exceptional paths or general ownership safety. See the [CLI reference](cli.md) for the supported subset and exit behavior.
-
-The repository's [lifecycle example](../examples/lifecycle.py) demonstrates the post-close diagnostic.
+Follow the [lifecycle tutorial](lifecycle.md) to build the preview, reproduce a
+use after close, read its related close location, and make the example pass.
+Possible findings and coverage warnings can accompany exit `0`; the command does
+not prove cleanup on every exit or general ownership safety.

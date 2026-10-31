@@ -1,6 +1,9 @@
 # Troubleshooting
 
-Start with the process exit status. Exit `1` normally includes a JSON report; exit `2` usually includes an explanation on standard error. For a JSON report, read both `diagnostics` and `coverage`.
+Start with the command and process exit status. Inspection writes JSON by default;
+preview checking writes readable diagnostics unless `--json` is supplied. Exit `2`
+usually includes an explanation on standard error. In a JSON report, read both
+`diagnostics` and `coverage`.
 
 ## The command is unavailable after installation
 
@@ -8,11 +11,37 @@ For a project installation, run `uv run typepact --version` from the project dir
 
 Both distributions require Python 3.11+. A CLI source build requires Rust 1.96+ and a linker; a compatible platform wheel includes the executable. See [installation](install.md) for the platform matrix.
 
+## The command does not recognize `check`
+
+The published 0.1.0 executable provides `inspect-contracts`. Lifecycle checking
+is a source preview. Follow [source installation](install.md#build-the-lifecycle-preview-from-source)
+and use `cargo run --locked -- check --root DIR` from that checkout. Its package
+version still reads `0.1.0`, so the version string alone cannot identify the
+preview. An installed command elsewhere on your PATH may be the published binary.
+
 ## Coverage is incomplete even though there are no errors
 
-Unsupported constructs produce `TP9001` warnings and incomplete coverage. A warning can therefore make the command exit with status `1`. Check `coverage.reasons` as well as diagnostic severity. Typical boundaries include forward annotations, relative imports, decorated functions, and computed contract expressions.
+Unsupported constructs produce `TP9001` warnings and incomplete coverage. This
+causes inspection to exit `1`, but checking can exit `0` when only boundaries or
+possible findings remain. Read `coverage.reasons` and certainty as well as
+severity. Typical declaration boundaries include forward annotations, relative
+imports, decorated functions, and computed contract expressions.
 
 Complete coverage describes the implemented declaration subset. It does not imply that function bodies were checked for resource safety.
+
+## A checking run includes files I did not name
+
+`check` scans all `.py` files below its root; explicit files add inputs rather
+than restricting the scan. Select a narrow root containing the supported project
+slice. See [discovery behavior](cli.md).
+
+## A lifecycle finding says “possible”
+
+A branch or alias can leave more than one lifecycle state. Possible findings are
+warnings and do not alone cause a failing exit. Read the operation and related
+close location, then inspect the paths that reach it. Unknown effects produce
+coverage boundaries rather than a proof of safety. The
+[lifecycle tutorial](lifecycle.md) shows a definite violation and its valid counterpart.
 
 ## A contract is nested inside a container
 
@@ -22,7 +51,10 @@ Literal `None` parameters and returns are ordinary non-resource annotations and 
 
 ## An imported class cannot be resolved
 
-Pass its defining module and the consuming module in the same invocation. Set `--root` so the derived module names agree with the absolute imports. TypePact does not search installed packages or follow imports on disk.
+For inspection, pass the defining module and consuming module in the same
+invocation. Set `--root` so logical names agree with the absolute imports. The
+preview checker discovers files under its root; ensure the provider is inside
+that root. Neither mode searches installed packages or executes Python imports.
 
 Use the [multi-file tutorial](project-guide.md) as a reference. Relative imports, import re-export chains, and supplied-module cycles are unsupported in 0.1 even when all files are supplied.
 

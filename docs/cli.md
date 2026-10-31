@@ -2,6 +2,10 @@
 
 The `typepact` command inspects declarations or checks resource lifecycles in Python source without importing or executing the project.
 
+`inspect-contracts` is available in published 0.1.0. `check` is an unreleased
+source preview. Use the [source installation instructions](install.md#build-the-lifecycle-preview-from-source)
+and [lifecycle tutorial](lifecycle.md) to try it.
+
 ## Commands
 
 ```text
@@ -44,6 +48,16 @@ typepact inspect-contracts --root src src/models.py src/client.py
 With a root, paths below it form the logical module name. For example, `src/my_app/models.py` under `src` becomes `my_app.models`. Without a root, the filename stem is used as the module name. Input files must map to distinct module names.
 
 For `inspect-contracts`, `--root` only names the explicitly supplied modules. `check` discovers `.py` files under the root in sorted order and resolves supported direct absolute imports among them. Relative imports and star imports remain unsupported.
+
+The checker scans the entire root even when filenames are supplied. It skips
+symlinks and directories named `.git`, `.venv`, `venv`, `target`, `build`, `dist`,
+and `__pycache__`. Explicit inputs must remain inside the root after path
+resolution. Duplicate physical inputs are deduplicated; files mapping to the same
+logical module produce an input error. Discovery does not search installed
+packages. An empty root with no Python inputs is an input error.
+
+Use a narrow root for a small supported source set. Passing one entry file does
+not currently provide dependency-only discovery.
 
 ## Exit status
 

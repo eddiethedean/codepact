@@ -1,14 +1,16 @@
 # Architecture
 
-TypePact separates Python declarations, source parsing, and semantic inspection:
+TypePact separates Python declarations, source parsing, declaration inspection,
+and the source preview's lifecycle checking:
 
 1. The `typepact` Python package offers `resource` and `Annotated` metadata. Importing it does not load or launch the analyzer.
 2. The `typepact-cli` package distributes the native Rust `typepact` command.
-3. The Rust library parses supplied source text, resolves the supported declaration relationships, and emits contracts, diagnostics, and coverage.
+3. The Rust library parses supplied source text, resolves supported declaration relationships, and emits contracts, diagnostics, and coverage.
+4. The source preview adds a bounded flow pass over module statements and synchronous bodies to produce lifecycle findings.
 
 ## Source is not executed
 
-The inspector reads UTF-8 source files as text. It does not import the analyzed project, evaluate annotations, invoke decorators, or run build hooks. A declaration therefore contributes only the static facts that TypePact can resolve from its syntax and the other files supplied in the request.
+The analyzer reads UTF-8 source files as text. It does not import the analyzed project, evaluate annotations, invoke decorators, or run build hooks. A declaration therefore contributes only the static facts that TypePact can resolve from its syntax and the other files supplied in the request.
 
 ## Parser and semantic queries
 
@@ -16,8 +18,25 @@ The frontend uses pinned Ruff Python parser and AST components to convert each f
 
 The library uses Salsa to track parsing, module inspection, and export summaries. An `AnalysisSession` can reuse unaffected work when files change. Consumers depend on semantic export summaries, so a provider body edit that does not change a relevant export need not invalidate dependent module results. Session cancellation prevents a stale or partial result from being published.
 
+## Preview lifecycle flow
+
+The checking path starts from declaration inspection and parsed body statements.
+Its flow state separates local names from modeled resource objects, tracks open,
+closed, and unknown state, and joins supported normal branches. Supported calls
+apply body effects to passed objects; recursive calls recover to unknown summaries.
+
+The current source implementation uses a project checking query. The phase 0.2
+plan calls for finer CFG, summary, and body-check queries and qualification of
+their invalidation and reuse behavior. The inspection query cache alone does not
+establish that those checking obligations have been met. See the
+[phase plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2-lifecycle.md).
+
 ## Shared engine
 
-The one-shot Rust `inspect` function, `AnalysisSession`, and CLI use the same query pipeline. The CLI adds file loading, logical module naming, JSON serialization, and process exit status. This keeps command output and library results consistent.
+The one-shot Rust entry points, `AnalysisSession`, and CLI share the analyzer.
+The CLI adds file loading, logical module naming, project-root scanning for
+`check`, text or JSON rendering, and process exit status. Rust callers provide
+their own explicit source snapshot. Inspection and checking carry different
+assurance strings so consumers can identify which analysis produced a result.
 
 See the [Rust API](rust-api.md) for use of the one-shot and incremental interfaces, and the [inspector guide](inspector.md) for implementation details.
