@@ -1,9 +1,10 @@
 use crate::{
-    frontend::{AstExpr, AstExprKind, Declaration, FlowStatement, SourceRange},
+    frontend::{AstExpr, AstExprKind, CallSignature, Declaration, FlowStatement, SourceRange},
     Contract, Diagnostic, Inspection, SourceFile, Span,
 };
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 const OPEN: u8 = 1;
 const CLOSED: u8 = 2;
@@ -25,12 +26,13 @@ struct FunctionBody {
     file: SourceFile,
     name: String,
     parameters: Vec<String>,
+    signature: CallSignature,
+    contracts: Arc<[Contract]>,
     statements: Vec<FlowStatement>,
     supported_binding: bool,
 }
 
 struct FlowContext<'a> {
-    contracts: &'a [Contract],
     functions: &'a FunctionMap,
     result: &'a mut Inspection,
 }
@@ -55,7 +57,7 @@ struct State {
     shadowed_classes: BTreeSet<String>,
     shadowed_functions: BTreeSet<String>,
     objects: BTreeMap<String, u8>,
-    kinds: BTreeMap<String, String>,
+    resources: BTreeMap<String, Contract>,
     borrowed: BTreeSet<String>,
     borrowed_origins: BTreeMap<String, Span>,
     escaped: BTreeSet<String>,
@@ -112,6 +114,114 @@ fn resource_contract_for_class<'a>(
         })
 }
 
+fn resource_method<'a>(
+    resource: &Contract,
+    method: &str,
+    functions: &'a FunctionMap,
+) -> Option<&'a FunctionBody> {
+    let (module, class) = resource.base_symbol.split('#').next()?.rsplit_once('.')?;
+    functions.get(&format!("{module}::@{class}.{method}"))
+}
+
+#[derive(Debug)]
+enum BindingFailure {
+    Invalid,
+    Unknown,
+}
+
+fn bind_arguments<'a>(
+    signature: &CallSignature,
+    arguments: &'a [AstExpr],
+    keywords: &'a [CallKeyword],
+    receiver: bool,
+) -> Result<BTreeMap<String, &'a AstExpr>, BindingFailure> {
+    if keywords.iter().any(|(name, _)| name.is_none())
+        || arguments
+            .iter()
+            .any(|arg| matches!(arg.kind, AstExprKind::Other | AstExprKind::DepthLimit))
+    {
+        return Err(BindingFailure::Unknown);
+    }
+    let positional: Vec<_> = signature
+        .positional_only
+        .iter()
+        .chain(&signature.positional_or_keyword)
+        .collect();
+    if receiver && positional.is_empty() {
+        return Err(if signature.vararg.is_some() {
+            BindingFailure::Unknown
+        } else {
+            BindingFailure::Invalid
+        });
+    }
+    let mut supplied = BTreeSet::new();
+    if receiver {
+        supplied.insert(positional[0].clone());
+    }
+    let mut bindings = BTreeMap::new();
+    let mut unknown = false;
+    for (index, argument) in arguments.iter().enumerate() {
+        if let Some(parameter) = positional.get(index + usize::from(receiver)) {
+            supplied.insert((*parameter).clone());
+            bindings.insert((*parameter).clone(), argument);
+        } else if signature.vararg.is_some() {
+            unknown = true;
+        } else {
+            return Err(BindingFailure::Invalid);
+        }
+    }
+    for (name, argument) in keywords {
+        let name = name.as_ref().expect("expanded keywords handled above");
+        if signature.positional_or_keyword.contains(name) || signature.keyword_only.contains(name) {
+            if !supplied.insert(name.clone()) {
+                return Err(BindingFailure::Invalid);
+            }
+            bindings.insert(name.clone(), argument);
+        } else if signature.kwarg.is_some() {
+            unknown = true;
+        } else {
+            return Err(BindingFailure::Invalid);
+        }
+    }
+    for parameter in positional.into_iter().chain(signature.keyword_only.iter()) {
+        if !supplied.contains(parameter) {
+            if signature.optional.contains(parameter) {
+                // Default objects and variadic containers do not have tracked aliases.
+                unknown |= signature.unknown_defaults.contains(parameter);
+            } else {
+                return Err(BindingFailure::Invalid);
+            }
+        }
+    }
+    if unknown {
+        Err(BindingFailure::Unknown)
+    } else {
+        Ok(bindings)
+    }
+}
+
+fn binding_failure(
+    failure: BindingFailure,
+    env: &mut State,
+    file: &SourceFile,
+    range: SourceRange,
+    result: &mut Inspection,
+) {
+    let message = match failure {
+        BindingFailure::Invalid => {
+            env.alive = false;
+            "invalid call argument binding ends normal lifecycle flow"
+        }
+        BindingFailure::Unknown => {
+            let affected: Vec<_> = env.places.values().flatten().cloned().collect();
+            weaken(env, affected.into_iter());
+            env.escaped.extend(env.places.values().flatten().cloned());
+            "call argument binding is not modeled"
+        }
+    };
+    boundary(result, file, range, message);
+}
+
 fn expression_may_return_resource(expression: &AstExpr) -> bool {
     match &expression.kind {
         AstExprKind::NoneLiteral | AstExprKind::String(_) | AstExprKind::Primitive => false,
@@ -142,61 +252,22 @@ fn call_may_return_resource(
     expression: &AstExpr,
     env: &State,
     file: &SourceFile,
-    contracts: &[Contract],
     functions: &FunctionMap,
 ) -> bool {
     if let Some((receiver, method, _, _)) = called_method(expression) {
-        if let Some(name) = expr_name(receiver) {
-            if let Some(object) = env
-                .places
-                .get(name)
-                .and_then(|objects| objects.iter().next())
-            {
-                let kind = env
-                    .kinds
-                    .get(object)
-                    .map(String::as_str)
-                    .unwrap_or_default();
-                let is_close = contracts.iter().any(|contract| {
-                    contract.display_name == kind
-                        && contract
-                            .lifecycle
-                            .as_ref()
-                            .is_some_and(|lifecycle| lifecycle.closed_by == method)
-                });
-                let method_key = format!("@{kind}.{method}");
-                let definition = contracts
-                    .iter()
-                    .find(|contract| contract.display_name == kind)
-                    .and_then(|contract| {
-                        contract
-                            .base_symbol
-                            .split('#')
-                            .next()
-                            .and_then(|base| base.rsplit_once('.'))
-                    })
-                    .and_then(|(module, base)| {
-                        functions.get(&format!("{module}::@{base}.{method}"))
-                    })
-                    .or_else(|| functions.get(&format!("{}::{method_key}", file.module)))
-                    .or_else(|| {
-                        functions
-                            .get(&method_key)
-                            .filter(|definition| definition.file.module == file.module)
-                    });
-                if is_close {
-                    return definition.is_none_or(|definition| {
-                        !definition.supported_binding
-                            || statements_may_return_resource(&definition.statements)
-                    });
-                }
-                return definition.is_none_or(|definition| {
-                    !definition.supported_binding
-                        || statements_may_return_resource(&definition.statements)
-                });
-            }
-        }
-        return true;
+        return expr_name(receiver)
+            .and_then(|name| env.places.get(name))
+            .is_none_or(|objects| {
+                objects.iter().any(|object| {
+                    env.resources
+                        .get(object)
+                        .and_then(|resource| resource_method(resource, method, functions))
+                        .is_none_or(|definition| {
+                            !definition.supported_binding
+                                || statements_may_return_resource(&definition.statements)
+                        })
+                })
+            });
     }
 
     let AstExprKind::Call { function, .. } = &expression.kind else {
@@ -263,7 +334,7 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     for (object, state) in &right.objects {
         *joined.objects.entry(object.clone()).or_default() |= *state;
     }
-    joined.kinds.extend(right.kinds.clone());
+    joined.resources.extend(right.resources.clone());
     joined.borrowed.extend(right.borrowed.iter().cloned());
     for (object, origin) in &right.borrowed_origins {
         joined
@@ -282,57 +353,20 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     (joined, effects)
 }
 
+fn join_normal_exits(fallthrough: State, returned: Vec<State>) -> State {
+    let mut exits = returned.into_iter();
+    let initial = if fallthrough.alive {
+        fallthrough
+    } else if let Some(exit) = exits.next() {
+        exit
+    } else {
+        return fallthrough;
+    };
+    exits.fold(initial, |joined, exit| merge(&joined, &exit).0)
+}
+
 fn span(file: &SourceFile, range: SourceRange) -> Span {
     crate::source_span(&file.path, &file.source, range)
-}
-
-fn expression_path(expression: &AstExpr) -> Option<String> {
-    match &expression.kind {
-        AstExprKind::Name(name) => Some(name.clone()),
-        AstExprKind::Attribute(value, name) => {
-            Some(format!("{}.{}", expression_path(value)?, name))
-        }
-        _ => None,
-    }
-}
-
-fn resolve_import_path(path: String, imports: &BTreeMap<String, String>) -> String {
-    if let Some((alias, canonical)) = imports
-        .iter()
-        .filter(|(alias, _)| path == ***alias || path.starts_with(&format!("{alias}.")))
-        .max_by_key(|(alias, _)| alias.len())
-    {
-        return format!("{}{}", canonical, &path[alias.len()..]);
-    }
-    path
-}
-
-fn borrowed_resource(annotation: &AstExpr, imports: &BTreeMap<String, String>) -> Option<String> {
-    let AstExprKind::Subscript(container, arguments) = &annotation.kind else {
-        return None;
-    };
-    let container_path = expression_path(container)?;
-    let canonical = resolve_import_path(container_path, imports);
-    if matches!(canonical.as_str(), "typepact.rust.Borrowed" | "Borrowed") {
-        return arguments.first().and_then(expression_path);
-    }
-    if !matches!(canonical.as_str(), "typing.Annotated" | "Annotated") {
-        return None;
-    }
-    let kind = arguments.first().and_then(expression_path)?;
-    let is_shared_borrow = arguments.iter().skip(1).any(|metadata| {
-        let path = match &metadata.kind {
-            AstExprKind::Call { function, .. } => expression_path(function),
-            _ => expression_path(metadata),
-        };
-        path.is_some_and(|path| {
-            matches!(
-                resolve_import_path(path, imports).as_str(),
-                "typepact.contracts.SharedBorrow" | "SharedBorrow"
-            )
-        })
-    });
-    is_shared_borrow.then_some(kind)
 }
 
 fn report(
@@ -474,8 +508,8 @@ fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<St
         if let Some(mask) = parent.objects.get(object) {
             child.objects.insert(object.clone(), *mask);
         }
-        if let Some(kind) = parent.kinds.get(object) {
-            child.kinds.insert(object.clone(), kind.clone());
+        if let Some(resource) = parent.resources.get(object) {
+            child.resources.insert(object.clone(), resource.clone());
         }
         if parent.borrowed.contains(object) {
             child.borrowed.insert(object.clone());
@@ -584,36 +618,15 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         .insert(receiver, BTreeSet::from([object.to_owned()]));
     copy_object_metadata(&mut child, parent, &BTreeSet::from([object.to_owned()]));
     child.objects.insert(object.to_owned(), initial_mask);
-    for (parameter, argument) in definition.parameters.iter().skip(1).zip(arguments) {
+    let bindings = bind_arguments(&definition.signature, arguments, keywords, true)
+        .expect("method arguments were validated before execution");
+    for (parameter, argument) in bindings {
         if let Some(actual) = expr_name(argument) {
             if let Some(targets) = parent.places.get(actual) {
                 child.places.insert(parameter.clone(), targets.clone());
                 copy_object_metadata(&mut child, parent, targets);
                 if parent.unknown_places.contains(actual) {
-                    child.unknown_places.insert(parameter.clone());
-                }
-            }
-        }
-    }
-    for (name, argument) in keywords {
-        let Some(index) = name.as_ref().and_then(|name| {
-            definition
-                .parameters
-                .iter()
-                .position(|parameter| parameter == name)
-        }) else {
-            continue;
-        };
-        if let Some(actual) = expr_name(argument) {
-            if let Some(targets) = parent.places.get(actual) {
-                child
-                    .places
-                    .insert(definition.parameters[index].clone(), targets.clone());
-                copy_object_metadata(&mut child, parent, targets);
-                if parent.unknown_places.contains(actual) {
-                    child
-                        .unknown_places
-                        .insert(definition.parameters[index].clone());
+                    child.unknown_places.insert(parameter);
                 }
             }
         }
@@ -622,21 +635,12 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         &definition.statements,
         &mut child,
         &definition.file,
-        context.contracts,
+        &definition.contracts,
         context.functions,
         context.result,
         depth + 1,
     );
-    let has_normal_exit = child.alive || !returned.is_empty();
-    for exit in returned {
-        for (changed_object, value) in exit.objects {
-            *child.objects.entry(changed_object).or_default() |= value;
-        }
-        child.close_origins.extend(exit.close_origins);
-        child.escaped.extend(exit.escaped);
-    }
-    child.alive = has_normal_exit;
-    child
+    join_normal_exits(child, returned)
 }
 
 fn resolve_imported_contracts(
@@ -701,6 +705,63 @@ fn resolve_imported_contracts(
             )
         })
         .collect()
+}
+
+fn contracts_for_module(
+    file: &SourceFile,
+    files: &[SourceFile],
+    summaries: &BTreeMap<String, crate::db::ParseSummary>,
+    result: &Inspection,
+) -> Vec<Contract> {
+    let mut contracts: Vec<_> = result
+        .contracts
+        .iter()
+        .filter(|contract| {
+            contract.source.file == file.path
+                || (contract.access == "shared"
+                    && contract.lifecycle.is_some()
+                    && contract.display_name.contains('.'))
+        })
+        .cloned()
+        .collect();
+    if let Some(declarations) = summaries
+        .get(&file.path)
+        .and_then(|summary| summary.declarations.as_ref())
+    {
+        for declaration in declarations {
+            if let Declaration::ImportFrom {
+                module,
+                level: 0,
+                names,
+                ..
+            } = declaration
+            {
+                for import in names {
+                    for mut contract in resolve_imported_contracts(
+                        module,
+                        &import.name,
+                        files,
+                        summaries,
+                        result,
+                        &mut BTreeSet::new(),
+                    ) {
+                        contract.display_name =
+                            import.alias.as_deref().unwrap_or(&import.name).to_owned();
+                        contracts.push(contract);
+                    }
+                }
+            }
+        }
+    }
+    contracts.sort_by(|left, right| {
+        left.base_symbol
+            .cmp(&right.base_symbol)
+            .then(left.display_name.cmp(&right.display_name))
+    });
+    contracts.dedup_by(|left, right| {
+        left.base_symbol == right.base_symbol && left.display_name == right.display_name
+    });
+    contracts
 }
 
 fn resolve_imported_function(
@@ -773,6 +834,9 @@ fn evaluate_call_arguments(
         .iter()
         .chain(keywords.iter().map(|(_, value)| value))
     {
+        if !env.alive {
+            break;
+        }
         if !matches!(
             argument.kind,
             AstExprKind::Name(_)
@@ -816,6 +880,9 @@ fn consume_expr(
         return;
     }
     evaluate_call_arguments(expr, env, file, contracts, functions, result, depth);
+    if !env.alive {
+        return;
+    }
     if let Some((receiver, method, arguments, keywords)) = called_method(expr) {
         if let Some(name) = expr_name(receiver) {
             if let Some(targets) = env.places.get(name).cloned() {
@@ -823,191 +890,207 @@ fn consume_expr(
                     let mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
                     mask & (OPEN | UNKNOWN) != 0
                 }) || env.unknown_places.contains(name);
-                for object in &targets {
-                    let mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
-                    let is_close = contracts.iter().any(|contract| {
-                        contract.display_name
-                            == env
-                                .kinds
-                                .get(object)
-                                .map(String::as_str)
-                                .unwrap_or_default()
-                            && contract
-                                .lifecycle
-                                .as_ref()
-                                .is_some_and(|lifecycle| lifecycle.closed_by == method)
-                    });
-                    let kind = env.kinds.get(object).cloned().unwrap_or_default();
-                    let method_key = format!("@{kind}.{method}");
-                    let definition = contracts
+                let incoming = env.clone();
+                let mut normal_outcome: Option<State> = None;
+                if incoming.unknown_places.contains(name) {
+                    let mut unknown = incoming.clone();
+                    let affected: Vec<_> = targets
                         .iter()
-                        .find(|contract| contract.display_name == kind)
-                        .and_then(|contract| {
-                            contract
-                                .base_symbol
-                                .split('#')
-                                .next()
-                                .and_then(|base| base.rsplit_once('.'))
-                        })
-                        .and_then(|(module, base)| {
-                            functions.get(&format!("{module}::@{base}.{method}"))
-                        })
-                        .or_else(|| functions.get(&format!("{}::{method_key}", file.module)))
-                        .or_else(|| {
-                            functions
-                                .get(&method_key)
-                                .filter(|definition| definition.file.module == file.module)
-                        });
-                    if definition.is_some_and(|definition| !definition.supported_binding) {
-                        let mut affected = vec![object.clone()];
-                        for argument in arguments
-                            .iter()
-                            .chain(keywords.iter().map(|(_, value)| value))
-                            .filter_map(expr_name)
-                        {
-                            if let Some(targets) = env.places.get(argument) {
-                                affected.extend(targets.iter().cloned());
+                        .cloned()
+                        .chain(
+                            arguments
+                                .iter()
+                                .chain(keywords.iter().map(|(_, value)| value))
+                                .filter_map(expr_name)
+                                .filter_map(|name| incoming.places.get(name))
+                                .flatten()
+                                .cloned(),
+                        )
+                        .collect();
+                    weaken(&mut unknown, affected.into_iter());
+                    boundary(
+                        result,
+                        file,
+                        expr.range,
+                        "method receiver may have an unknown target",
+                    );
+                    normal_outcome = Some(unknown);
+                }
+                for object in &targets {
+                    let mut alternative = incoming.clone();
+                    alternative
+                        .places
+                        .insert(name.to_owned(), BTreeSet::from([object.clone()]));
+                    alternative.unknown_places.remove(name);
+                    let diagnostic_start = result.diagnostics.len();
+                    (|| {
+                        let env = &mut alternative;
+                        let mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
+                        let resource = env.resources.get(object).cloned();
+                        let is_close = resource
+                            .as_ref()
+                            .and_then(|resource| resource.lifecycle.as_ref())
+                            .is_some_and(|lifecycle| lifecycle.closed_by == method);
+                        let method_key = resource
+                            .as_ref()
+                            .map(|resource| format!("{}::{method}", resource.base_symbol))
+                            .unwrap_or_else(|| method.to_owned());
+                        let definition = resource
+                            .as_ref()
+                            .and_then(|resource| resource_method(resource, method, functions));
+                        if definition.is_some_and(|definition| !definition.supported_binding) {
+                            let mut affected = vec![object.clone()];
+                            for argument in arguments
+                                .iter()
+                                .chain(keywords.iter().map(|(_, value)| value))
+                                .filter_map(expr_name)
+                            {
+                                if let Some(targets) = env.places.get(argument) {
+                                    affected.extend(targets.iter().cloned());
+                                }
                             }
-                        }
-                        weaken(env, affected.into_iter());
-                        boundary(
-                            result,
-                            file,
-                            expr.range,
-                            "decorated method binding is not modeled",
-                        );
-                        continue;
-                    }
-                    if mask & CLOSED != 0 && !is_close {
-                        let certainty = if !has_open_alternative && mask & UNKNOWN == 0 {
-                            "definite"
-                        } else {
-                            "possible"
-                        };
-                        let primary = span(file, expr.range);
-                        let related = env.close_origins.get(object).cloned().into_iter().collect();
-                        report(
-                            result,
-                            "TP1001",
-                            "use of a resource that may be closed",
-                            primary,
-                            related,
-                            certainty,
-                        );
-                    }
-                    if env.borrowed.contains(object)
-                        && contracts.iter().any(|contract| {
-                            contract.display_name
-                                == env
-                                    .kinds
-                                    .get(object)
-                                    .map(String::as_str)
-                                    .unwrap_or_default()
-                                && contract
-                                    .lifecycle
-                                    .as_ref()
-                                    .is_some_and(|lifecycle| lifecycle.closed_by == method)
-                        })
-                    {
-                        report(
-                            result,
-                            "TP2001",
-                            "Borrowed parameter cannot close the resource",
-                            span(file, expr.range),
-                            env.borrowed_origins
-                                .get(object)
-                                .cloned()
-                                .into_iter()
-                                .collect(),
-                            "definite",
-                        );
-                    }
-                    if is_close && mask & CLOSED != 0 {
-                        boundary(
-                            result,
-                            file,
-                            expr.range,
-                            "repeat-close behavior is not modeled",
-                        );
-                    }
-                    if let Some(definition) = definition {
-                        if env.call_stack.contains(&method_key) {
-                            weaken(env, [object.clone()].into_iter());
+                            weaken(env, affected.into_iter());
                             boundary(
                                 result,
                                 file,
                                 expr.range,
-                                "recursive method summary is unknown",
+                                "decorated method binding is not modeled",
                             );
-                            continue;
+                            return;
                         }
-                        let initial_mask = env.objects.get(object).copied().unwrap_or(mask);
-                        let child = execute_method_body(
-                            MethodInvocation {
-                                definition,
-                                object,
-                                initial_mask,
-                                arguments,
-                                keywords,
-                                parent: env,
-                                depth,
-                                call_key: method_key,
-                            },
-                            FlowContext {
-                                contracts,
-                                functions,
-                                result,
-                            },
-                        );
-                        for (changed_object, value) in child.objects {
-                            if targets.len() == 1 && !env.unknown_places.contains(name) {
-                                env.objects.insert(changed_object, value);
-                            } else {
-                                *env.objects.entry(changed_object).or_default() |= value;
+                        if let Some(definition) = definition {
+                            if let Err(failure) =
+                                bind_arguments(&definition.signature, arguments, keywords, true)
+                            {
+                                binding_failure(failure, env, file, expr.range, result);
+                                return;
                             }
                         }
-                        if is_close && child.alive {
+                        if mask & CLOSED != 0 && !is_close {
+                            let certainty = if !has_open_alternative && mask & UNKNOWN == 0 {
+                                "definite"
+                            } else {
+                                "possible"
+                            };
+                            let primary = span(file, expr.range);
+                            let related =
+                                env.close_origins.get(object).cloned().into_iter().collect();
+                            report(
+                                result,
+                                "TP1001",
+                                "use of a resource that may be closed",
+                                primary,
+                                related,
+                                certainty,
+                            );
+                        }
+                        if env.borrowed.contains(object) && is_close {
+                            report(
+                                result,
+                                "TP2001",
+                                "Borrowed parameter cannot close the resource",
+                                span(file, expr.range),
+                                env.borrowed_origins
+                                    .get(object)
+                                    .cloned()
+                                    .into_iter()
+                                    .collect(),
+                                "definite",
+                            );
+                        }
+                        if is_close && mask & CLOSED != 0 {
+                            boundary(
+                                result,
+                                file,
+                                expr.range,
+                                "repeat-close behavior is not modeled",
+                            );
+                        }
+                        if let Some(definition) = definition {
+                            if env.call_stack.contains(&method_key) {
+                                weaken(env, [object.clone()].into_iter());
+                                boundary(
+                                    result,
+                                    file,
+                                    expr.range,
+                                    "recursive method summary is unknown",
+                                );
+                                return;
+                            }
+                            let initial_mask = env.objects.get(object).copied().unwrap_or(mask);
+                            let child = execute_method_body(
+                                MethodInvocation {
+                                    definition,
+                                    object,
+                                    initial_mask,
+                                    arguments,
+                                    keywords,
+                                    parent: env,
+                                    depth,
+                                    call_key: method_key,
+                                },
+                                FlowContext { functions, result },
+                            );
+                            for (changed_object, value) in child.objects {
+                                env.objects.insert(changed_object, value);
+                            }
+                            if is_close && child.alive {
+                                env.close_origins
+                                    .insert(object.clone(), span(file, expr.range));
+                                env.objects.insert(object.clone(), CLOSED);
+                            }
+                            env.resources.extend(child.resources);
+                            env.close_origins.extend(child.close_origins);
+                            env.escaped.extend(child.escaped);
+                            if !child.alive {
+                                env.alive = false;
+                            }
+                        } else if is_close {
                             env.close_origins
                                 .insert(object.clone(), span(file, expr.range));
-                            if targets.len() == 1 && !env.unknown_places.contains(name) {
-                                env.objects.insert(object.clone(), CLOSED);
-                            } else {
-                                *env.objects.entry(object.clone()).or_default() |= CLOSED;
-                            }
-                        }
-                        env.close_origins.extend(child.close_origins);
-                        env.escaped.extend(child.escaped);
-                        if !child.alive {
-                            env.alive = false;
-                        }
-                    } else if is_close {
-                        env.close_origins
-                            .insert(object.clone(), span(file, expr.range));
-                        if targets.len() == 1 && !env.unknown_places.contains(name) {
                             env.objects.insert(object.clone(), CLOSED);
-                        } else {
-                            *env.objects.entry(object.clone()).or_default() |= CLOSED;
+                        } else if !contracts.is_empty() {
+                            let mut affected = vec![object.clone()];
+                            for argument in arguments
+                                .iter()
+                                .chain(keywords.iter().map(|(_, value)| value))
+                                .filter_map(expr_name)
+                            {
+                                if let Some(targets) = env.places.get(argument) {
+                                    affected.extend(targets.iter().cloned());
+                                }
+                            }
+                            weaken(env, affected.into_iter());
+                            boundary(
+                                result,
+                                file,
+                                expr.range,
+                                &format!("unknown method effect for {method}"),
+                            );
                         }
-                    } else if !contracts.is_empty() {
-                        let mut affected = vec![object.clone()];
-                        for argument in arguments
-                            .iter()
-                            .chain(keywords.iter().map(|(_, value)| value))
-                            .filter_map(expr_name)
-                        {
-                            if let Some(targets) = env.places.get(argument) {
-                                affected.extend(targets.iter().cloned());
+                    })();
+                    if targets.len() > 1 || incoming.unknown_places.contains(name) {
+                        for diagnostic in &mut result.diagnostics[diagnostic_start..] {
+                            if diagnostic.code == "TP1001"
+                                && diagnostic.primary != span(file, expr.range)
+                            {
+                                diagnostic.certainty = "possible".into();
+                                diagnostic.severity = "warning".into();
                             }
                         }
-                        weaken(env, affected.into_iter());
-                        boundary(
-                            result,
-                            file,
-                            expr.range,
-                            &format!("unknown method effect for {method}"),
-                        );
+                    }
+                    if alternative.alive {
+                        normal_outcome = Some(match normal_outcome {
+                            Some(previous) => merge(&previous, &alternative).0,
+                            None => alternative,
+                        });
                     }
                 }
+                *env = normal_outcome.unwrap_or_else(|| {
+                    let mut stopped = incoming;
+                    stopped.alive = false;
+                    stopped
+                });
             } else {
                 weaken(
                     env,
@@ -1077,6 +1160,14 @@ fn consume_expr(
                 })
             };
             if let Some(definition) = known_function {
+                let bindings =
+                    match bind_arguments(&definition.signature, arguments, keywords, false) {
+                        Ok(bindings) => bindings,
+                        Err(failure) => {
+                            binding_failure(failure, env, file, expr.range, result);
+                            return;
+                        }
+                    };
                 if env.call_stack.contains(callee) {
                     weaken(
                         env,
@@ -1114,7 +1205,8 @@ fn consume_expr(
                 child
                     .shadowed_classes
                     .extend(assigned_names(&definition.statements));
-                for (parameter, argument) in definition.parameters.iter().zip(arguments) {
+                let call_site = span(file, expr.range);
+                for (parameter, argument) in bindings {
                     if let Some(actual) = expr_name(argument) {
                         if let Some(targets) = env.places.get(actual) {
                             child.places.insert(parameter.clone(), targets.clone());
@@ -1124,95 +1216,27 @@ fn consume_expr(
                             }
                         }
                     }
-                }
-                for (name, argument) in keywords {
-                    let Some(name) = name else {
-                        weaken(
-                            env,
-                            env.places
-                                .values()
-                                .flatten()
-                                .cloned()
-                                .collect::<Vec<_>>()
-                                .into_iter(),
-                        );
-                        continue;
-                    };
-                    if let Some(index) = definition
-                        .parameters
-                        .iter()
-                        .position(|parameter| parameter == name)
-                    {
-                        if let Some(actual) = expr_name(argument) {
-                            if let Some(targets) = env.places.get(actual) {
-                                child
-                                    .places
-                                    .insert(definition.parameters[index].clone(), targets.clone());
-                                copy_object_metadata(&mut child, env, targets);
-                                if env.unknown_places.contains(actual) {
-                                    child
-                                        .unknown_places
-                                        .insert(definition.parameters[index].clone());
-                                }
-                            }
-                        }
-                    }
-                }
-                let call_site = span(file, expr.range);
-                for (parameter, argument) in definition.parameters.iter().zip(arguments) {
                     check_borrowed_precondition(
                         definition,
-                        parameter,
+                        &parameter,
                         argument,
                         env,
                         call_site.clone(),
-                        contracts,
+                        &definition.contracts,
                         result,
                     );
                 }
-                for (name, argument) in keywords {
-                    if let Some(parameter) = name.as_ref().filter(|name| {
-                        definition
-                            .parameters
-                            .iter()
-                            .any(|parameter| parameter == *name)
-                    }) {
-                        check_borrowed_precondition(
-                            definition,
-                            parameter,
-                            argument,
-                            env,
-                            call_site.clone(),
-                            contracts,
-                            result,
-                        );
-                    }
-                }
                 let diagnostic_start = result.diagnostics.len();
-                let mut callee_contracts: Vec<_> = result
-                    .contracts
-                    .iter()
-                    .filter(|contract| contract.source.file == definition.file.path)
-                    .cloned()
-                    .collect();
-                callee_contracts.extend(contracts.iter().cloned());
                 let returned = execute(
                     &definition.statements,
                     &mut child,
                     &definition.file,
-                    &callee_contracts,
+                    &definition.contracts,
                     functions,
                     result,
                     depth + 1,
                 );
-                let has_normal_exit = child.alive || !returned.is_empty();
-                for exit in returned {
-                    for (object, state) in exit.objects {
-                        *child.objects.entry(object).or_default() |= state;
-                    }
-                    child.close_origins.extend(exit.close_origins);
-                    child.escaped.extend(exit.escaped);
-                }
+                let child = join_normal_exits(child, returned);
                 let body_diagnostics = result.diagnostics.split_off(diagnostic_start);
                 for mut diagnostic in body_diagnostics {
                     if diagnostic.code == "TP1001" {
@@ -1237,9 +1261,10 @@ fn consume_expr(
                         env.objects.insert(object.clone(), *value);
                     }
                 }
+                env.resources.extend(child.resources);
                 env.close_origins.extend(child.close_origins);
                 env.escaped.extend(child.escaped);
-                if !has_normal_exit {
+                if !child.alive {
                     env.alive = false;
                 }
             } else {
@@ -1355,21 +1380,13 @@ fn execute(
                             evaluate_call_arguments(
                                 value, env, file, contracts, functions, result, depth,
                             );
-                            let new_definition =
-                                resource_contract_for_class(contracts, class, file)
-                                    .and_then(|contract| {
-                                        contract
-                                            .base_symbol
-                                            .split('#')
-                                            .next()
-                                            .and_then(|base| base.rsplit_once('.'))
-                                    })
-                                    .and_then(|(module, base)| {
-                                        functions.get(&format!("{module}::@{base}.__new__"))
-                                    })
-                                    .or_else(|| {
-                                        functions.get(&format!("{}::@{class}.__new__", file.module))
-                                    });
+                            if !env.alive {
+                                continue;
+                            }
+                            let new_definition = resource_contract_for_class(
+                                contracts, class, file,
+                            )
+                            .and_then(|resource| resource_method(resource, "__new__", functions));
                             if new_definition.is_some() {
                                 weaken(
                                     env,
@@ -1408,29 +1425,22 @@ fn execute(
                                 continue;
                             }
                             env.objects.insert(object.clone(), OPEN);
-                            env.kinds.insert(object.clone(), class.to_owned());
+                            env.resources.insert(
+                                object.clone(),
+                                resource_contract_for_class(contracts, class, file)
+                                    .expect("resolved resource constructor")
+                                    .clone(),
+                            );
                             if let AstExprKind::Call {
                                 arguments,
                                 keywords,
                                 ..
                             } = &value.kind
                             {
-                                let init_key = format!("@{class}.__init__");
-                                let definition =
-                                    resource_contract_for_class(contracts, class, file)
-                                        .and_then(|contract| {
-                                            contract
-                                                .base_symbol
-                                                .split('#')
-                                                .next()
-                                                .and_then(|base| base.rsplit_once('.'))
-                                        })
-                                        .and_then(|(module, base)| {
-                                            functions.get(&format!("{module}::@{base}.__init__"))
-                                        })
-                                        .or_else(|| {
-                                            functions.get(&format!("{}::{init_key}", file.module))
-                                        });
+                                let resource =
+                                    env.resources.get(&object).expect("constructed resource");
+                                let init_key = format!("{}::__init__", resource.base_symbol);
+                                let definition = resource_method(resource, "__init__", functions);
                                 if let Some(definition) = definition {
                                     if !definition.supported_binding {
                                         let mut affected = vec![object.clone()];
@@ -1450,6 +1460,13 @@ fn execute(
                                             *range,
                                             "decorated method binding is not modeled",
                                         );
+                                    } else if let Err(failure) = bind_arguments(
+                                        &definition.signature,
+                                        arguments,
+                                        keywords,
+                                        true,
+                                    ) {
+                                        binding_failure(failure, env, file, *range, result);
                                     } else {
                                         let child = execute_method_body(
                                             MethodInvocation {
@@ -1462,21 +1479,25 @@ fn execute(
                                                 depth,
                                                 call_key: init_key,
                                             },
-                                            FlowContext {
-                                                contracts,
-                                                functions,
-                                                result,
-                                            },
+                                            FlowContext { functions, result },
                                         );
                                         for (changed_object, state) in child.objects {
                                             env.objects.insert(changed_object, state);
                                         }
+                                        env.resources.extend(child.resources);
                                         env.close_origins.extend(child.close_origins);
                                         env.escaped.extend(child.escaped);
                                         if !child.alive {
                                             env.alive = false;
                                         }
                                     }
+                                } else if let Err(failure) = bind_arguments(
+                                    &CallSignature::default(),
+                                    arguments,
+                                    keywords,
+                                    false,
+                                ) {
+                                    binding_failure(failure, env, file, *range, result);
                                 }
                             }
                             env.places
@@ -1503,8 +1524,8 @@ fn execute(
                         || called_method(value).is_some_and(|(receiver, _, _, _)| {
                             expr_name(receiver).is_some_and(|name| env.places.contains_key(name))
                         });
-                    let may_return_resource = passes_resource
-                        && call_may_return_resource(value, env, file, contracts, functions);
+                    let may_return_resource =
+                        passes_resource && call_may_return_resource(value, env, file, functions);
                     if may_return_resource {
                         consume_expr(value, env, file, contracts, functions, result, depth);
                         env.places.remove(name);
@@ -1566,6 +1587,9 @@ fn execute(
                 range,
             } => {
                 consume_expr(test, env, file, contracts, functions, result, depth);
+                if !env.alive {
+                    continue;
+                }
                 if depth >= MAX_CONTROL_FLOW_DEPTH {
                     weaken(
                         env,
@@ -1646,21 +1670,15 @@ fn execute(
                 if let Some(value) = value {
                     consume_expr(value, env, file, contracts, functions, result, depth);
                 }
+                if !env.alive {
+                    continue;
+                }
                 let mut returned = env.clone();
                 returned.alive = true;
                 returned_states.push(returned);
                 env.alive = false;
             }
             FlowStatement::Raise { range } => {
-                weaken(
-                    env,
-                    env.places
-                        .values()
-                        .flatten()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .into_iter(),
-                );
                 boundary(result, file, *range, "raise ends normal lifecycle flow");
                 env.alive = false;
             }
@@ -1712,11 +1730,14 @@ fn check_bodies_impl(
         else {
             continue;
         };
+        let module_contracts: Arc<[Contract]> =
+            contracts_for_module(file, files, summaries, result).into();
         for declaration in declarations {
             match declaration {
                 Declaration::Function {
                     name,
                     parameters,
+                    signature,
                     body,
                     is_async,
                     decorators,
@@ -1734,6 +1755,8 @@ fn check_bodies_impl(
                                 .iter()
                                 .map(|parameter| parameter.name.clone())
                                 .collect(),
+                            signature: signature.clone(),
+                            contracts: Arc::clone(&module_contracts),
                             statements: body.clone(),
                             supported_binding: true,
                         },
@@ -1758,6 +1781,8 @@ fn check_bodies_impl(
                                 file: file.clone(),
                                 name: format!("{name}.{}", method.name),
                                 parameters: method.parameters.clone(),
+                                signature: method.signature.clone(),
+                                contracts: Arc::clone(&module_contracts),
                                 statements: method.body.clone(),
                                 supported_binding: !method.decorated,
                             },
@@ -1825,23 +1850,7 @@ fn check_bodies_impl(
         else {
             continue;
         };
-        let mut contracts: Vec<_> = result
-            .contracts
-            .iter()
-            .filter(|contract| contract.source.file == file.path)
-            .cloned()
-            .collect();
-        contracts.extend(
-            result
-                .contracts
-                .iter()
-                .filter(|contract| {
-                    contract.access == "shared"
-                        && contract.lifecycle.is_some()
-                        && contract.display_name.contains('.')
-                })
-                .cloned(),
-        );
+        let contracts = contracts_for_module(file, files, summaries, result);
         let mut functions: FunctionMap = project_functions
             .iter()
             .filter(|((module, _), _)| module == &file.module)
@@ -1881,87 +1890,7 @@ fn check_bodies_impl(
                             functions.insert(local.to_owned(), function.clone());
                         }
                     }
-                    let imported_methods: Vec<_> = project_functions
-                        .iter()
-                        .filter(|((provider, key), _)| {
-                            let prefix = format!("@{}.", import.name);
-                            provider == module && key.starts_with(&prefix)
-                        })
-                        .map(|((_, key), body)| {
-                            (
-                                format!("@{}{}", local, &key[import.name.len() + 1..]),
-                                body.clone(),
-                            )
-                        })
-                        .collect();
-                    functions.extend(imported_methods);
-                    for mut contract in resolve_imported_contracts(
-                        module,
-                        &import.name,
-                        files,
-                        summaries,
-                        result,
-                        &mut BTreeSet::new(),
-                    ) {
-                        if let Some((owner_module, identity)) = contract
-                            .base_symbol
-                            .split('#')
-                            .next()
-                            .and_then(|qualified| qualified.rsplit_once('.'))
-                        {
-                            let prefix = format!("@{identity}.");
-                            let methods: Vec<_> = project_functions
-                                .iter()
-                                .filter(|((provider, key), _)| {
-                                    provider == owner_module && key.starts_with(&prefix)
-                                })
-                                .map(|((_, key), body)| {
-                                    (
-                                        format!("@{}{}", local, &key[identity.len() + 1..]),
-                                        body.clone(),
-                                    )
-                                })
-                                .collect();
-                            functions.extend(methods);
-                        }
-                        contract.display_name = local.to_owned();
-                        contracts.push(contract);
-                    }
                 }
-            }
-        }
-        contracts.sort_by(|left, right| {
-            left.base_symbol
-                .cmp(&right.base_symbol)
-                .then(left.display_name.cmp(&right.display_name))
-        });
-        contracts.dedup_by(|left, right| {
-            left.base_symbol == right.base_symbol && left.display_name == right.display_name
-        });
-        let mut annotation_imports = BTreeMap::new();
-        for declaration in declarations {
-            match declaration {
-                Declaration::ImportFrom {
-                    module,
-                    level: 0,
-                    names,
-                    ..
-                } => {
-                    for import in names {
-                        annotation_imports.insert(
-                            import.alias.clone().unwrap_or_else(|| import.name.clone()),
-                            format!("{module}.{}", import.name),
-                        );
-                    }
-                }
-                Declaration::Import { names, .. } => {
-                    for import in names {
-                        if let Some(alias) = &import.alias {
-                            annotation_imports.insert(alias.clone(), import.name.clone());
-                        }
-                    }
-                }
-                _ => {}
             }
         }
         for declaration in declarations {
@@ -1987,42 +1916,21 @@ fn check_bodies_impl(
                 .extend(parameters.iter().map(|parameter| parameter.name.clone()));
             env.shadowed_classes.extend(assigned_names(body));
             for parameter in parameters {
-                let Some(annotation) = &parameter.annotation else {
+                if parameter.annotation.is_none() {
                     continue;
-                };
+                }
                 let parameter_name = format!("{name}.{}", parameter.name);
                 let Some(parameter_contract) = result.contracts.iter().find(|contract| {
-                    contract.display_name == parameter_name && contract.lifecycle.is_some()
+                    contract.display_name == parameter_name
+                        && contract.lifecycle.is_some()
+                        && contract.source.file == file.path
                 }) else {
                     continue;
                 };
-                let kind = borrowed_resource(annotation, &annotation_imports)
-                    .filter(|kind| {
-                        contracts.iter().any(|contract| {
-                            contract.display_name == *kind && contract.lifecycle.is_some()
-                        })
-                    })
-                    .or_else(|| {
-                        result
-                            .contracts
-                            .iter()
-                            .find(|contract| {
-                                contract.base_symbol == parameter_contract.base_symbol
-                                    && contract.lifecycle.is_some()
-                                    && !contract.display_name.contains('.')
-                            })
-                            .map(|contract| contract.display_name.clone())
-                    })
-                    .unwrap_or_else(|| parameter_contract.display_name.clone());
-                if !contracts
-                    .iter()
-                    .any(|contract| contract.display_name == kind && contract.lifecycle.is_some())
-                {
-                    continue;
-                }
                 let object = format!("{}:{}:{}", file.path, range.start, parameter.name);
                 env.objects.insert(object.clone(), OPEN);
-                env.kinds.insert(object.clone(), kind.clone());
+                env.resources
+                    .insert(object.clone(), parameter_contract.clone());
                 env.places
                     .insert(parameter.name.clone(), BTreeSet::from([object.clone()]));
                 if parameter_contract.access == "shared" {

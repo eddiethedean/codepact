@@ -48,6 +48,61 @@ pub(crate) struct Parameter {
     pub annotation: Option<AstExpr>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CallSignature {
+    pub positional_only: Vec<String>,
+    pub positional_or_keyword: Vec<String>,
+    pub keyword_only: Vec<String>,
+    pub optional: Vec<String>,
+    pub unknown_defaults: Vec<String>,
+    pub vararg: Option<String>,
+    pub kwarg: Option<String>,
+}
+
+impl CallSignature {
+    fn from_parameters(parameters: &ruff_python_ast::Parameters) -> Self {
+        Self {
+            positional_only: parameters
+                .posonlyargs
+                .iter()
+                .map(|p| p.name().to_string())
+                .collect(),
+            positional_or_keyword: parameters
+                .args
+                .iter()
+                .map(|p| p.name().to_string())
+                .collect(),
+            keyword_only: parameters
+                .kwonlyargs
+                .iter()
+                .map(|p| p.name().to_string())
+                .collect(),
+            optional: parameters
+                .iter_non_variadic_params()
+                .filter(|p| p.default.is_some())
+                .map(|p| p.name().to_string())
+                .collect(),
+            unknown_defaults: parameters
+                .iter_non_variadic_params()
+                .filter(|p| {
+                    p.default.as_ref().is_some_and(|default| {
+                        !matches!(
+                            default.as_ref(),
+                            Expr::BooleanLiteral(_)
+                                | Expr::NumberLiteral(_)
+                                | Expr::StringLiteral(_)
+                                | Expr::NoneLiteral(_)
+                        )
+                    })
+                })
+                .map(|p| p.name().to_string())
+                .collect(),
+            vararg: parameters.vararg.as_ref().map(|p| p.name.to_string()),
+            kwarg: parameters.kwarg.as_ref().map(|p| p.name.to_string()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FlowStatement {
     Pass {
@@ -84,6 +139,7 @@ pub(crate) enum FlowStatement {
 pub(crate) struct MethodBody {
     pub name: String,
     pub parameters: Vec<String>,
+    pub signature: CallSignature,
     pub has_parameter_annotations: bool,
     pub range: SourceRange,
     pub body: Vec<FlowStatement>,
@@ -113,6 +169,7 @@ pub(crate) enum Declaration {
     Function {
         name: String,
         parameters: Vec<Parameter>,
+        signature: CallSignature,
         returns: Option<AstExpr>,
         decorators: Vec<AstExpr>,
         is_async: bool,
@@ -569,6 +626,7 @@ pub(crate) fn parse_frontend(
                         Some(MethodBody {
                             name: method.name.to_string(),
                             parameters,
+                            signature: CallSignature::from_parameters(&method.parameters),
                             has_parameter_annotations: method
                                 .parameters
                                 .iter_source_order()
@@ -614,6 +672,7 @@ pub(crate) fn parse_frontend(
                 declarations.push(Declaration::Function {
                     name: function.name.to_string(),
                     parameters,
+                    signature: CallSignature::from_parameters(&function.parameters),
                     returns: function
                         .returns
                         .as_deref()
@@ -761,7 +820,10 @@ fn class_body_requires_boundary(class: &ruff_python_ast::StmtClassDef) -> bool {
         .iter()
         .enumerate()
         .any(|(index, statement)| match statement {
-            Stmt::FunctionDef(function) => parameters_have_defaults(&function.parameters),
+            Stmt::FunctionDef(function) => {
+                parameters_have_defaults(&function.parameters)
+                    || !function.decorator_list.is_empty()
+            }
             Stmt::Pass(_) => false,
             Stmt::Expr(expression)
                 if index == 0 && matches!(expression.value.as_ref(), Expr::StringLiteral(_)) =>

@@ -36,9 +36,19 @@ coverage. See [CLI input behavior](cli.md).
 | Straight-line synchronous code and ordinary returns | Applies supported effects in source order |
 | `if`/`else` joins | Preserves possible lifecycle states rather than assuming every path closes |
 | Resolved local functions and undecorated resource methods | Applies supported body effects to passed resource objects |
+| Positional-only, positional-or-keyword, and keyword-only parameters | Validates binding before applying a body; a definitely invalid call ends its normal path with a TP9001 boundary |
+| Multiple possible resource receivers | Evaluates each receiver from the same incoming state and joins only normal outcomes |
+| Explicit `raise` | Reports an exception boundary and ends the normal path, including when called from a return value, condition, or argument |
 | Close through a Borrowed parameter | Reports TP2001 within supported bodies |
 | Acyclic named re-exports | Preserves supported resource and callable identities across local modules |
 | Decorated methods, custom `__new__`, unknown effects, recursive calls, unsupported flow | Reports incomplete coverage and weakens affected resource state |
+
+Expanded arguments (`*args` and `**kwargs`), values captured in variadic
+containers, and omitted defaults that may hold resources remain call-binding
+boundaries. Scalar literal defaults can be omitted when applying a body, but
+default expressions at definition time still make coverage incomplete.
+Executable class-body statements and method decorator expressions also create
+definition-time boundaries.
 
 This table describes implemented patterns, not completion of every phase 0.2
 validation case. General exception handling, loops, async, fields and containers,
