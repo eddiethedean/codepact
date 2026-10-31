@@ -31,7 +31,6 @@ autodoc_default_options = {"show-inheritance": True}
 nitpick_ignore = [
     ("py:class", "collections.abc.Callable"),
     ("py:class", "typepact.T"),
-    ("py:obj", "typepact.contracts.T"),
 ]
 
 html_theme = "sphinx_rtd_theme"
@@ -42,3 +41,5 @@ html_theme_options = {
     "sticky_navigation": True,
 }
 html_show_sphinx = False
+html_static_path = ["_static"]
+html_css_files = ["typepact.css"]

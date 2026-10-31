@@ -1,19 +1,41 @@
-# TypePact 0.1 inspector
+# How contract inspection works
 
-TypePact 0.1 keeps the metadata helpers in the pure Python `typepact` distribution, which depends on the matching `typepact-cli==0.1.0` package. Install both with `uv add typepact==0.1.0`; the dependency installs the native `typepact` command in the project environment. Install only the command with `uv tool install typepact-cli==0.1.0`. CLI platform wheels need no Rust compiler; CLI source builds require Rust 1.96+, while helper source builds remain pure Python. The Rust library and optional Cargo installation remain available through `cargo install typepact --version 0.1.0 --locked`. From the project root, inspect the paired example with `typepact inspect-contracts examples/contracts.py --python-version 3.11`.
+The CLI and Rust library share a bounded pipeline for turning Python declarations into contract facts. This page explains how the inspector reaches its result; use the [quick start](quickstart.md) for a runnable introduction.
 
-The JSON envelope has schema version 0 and always identifies its assurance as `contract-inspection-only`. It contains normalized contract facts, declaration provenance, source spans, diagnostics, and coverage. Line and column positions are one-based; columns count UTF-8 bytes. Output is ordered by file, line, column, and symbol. Exit 0 means the supported declarations were inspected; exit 1 means declarations contain errors or unresolved/unsupported constructs; exit 2 means the command could not run. A zero exit does not validate method bodies or guarantee resource safety.
+## Input and parsing
 
-## Accepted source subset
+The CLI loads explicitly supplied UTF-8 files and derives logical module names from their paths. The Rust API accepts equivalent `SourceFile` values directly. Neither interface imports or executes the analyzed Python project.
 
-The inspector recognizes module-level class declarations, literal `@resource(closed_by="method")` declarations imported from `typepact`, function parameter annotations using `typepact.rust.Owned[T]` and `Borrowed[T]`, and `typing.Annotated[T, SharedBorrow()]` or `Annotated[T, OwnedAccess()]`. It also recognizes literal `Annotated[T, Resource(closed_by="method")]` aliases and direct imported-name aliases for supported TypePact symbols. When multiple files are supplied, absolute `from module import Class` imports can resolve classes from another supplied module. Give every input a unique logical module name; use `--root DIR` to derive package-qualified names, and list every module the command should resolve. Resource and access facts compose independently. Ordinary types remain the underlying type for Python type checkers.
+Pinned Ruff parser and AST components parse the selected Python 3.11, 3.12, or 3.13 grammar. The frontend converts supported module-level statements into typed declarations, preserving source ranges for imports, decorators, assignments, parameters, and returns. Syntax failures become diagnostics with incomplete coverage.
 
-Source is read as text. Imports, annotation expressions, decorators, and build hooks from the inspected project are never executed. Dynamic decorator arguments, computed metadata, star imports, nested classes, unresolved contract bases, and unsupported target versions make coverage incomplete. Source is capped at 1 MB per file and per request; requests allow at most 10,000 files, 20,000 module-level statements per file, 50,000 total AST declarations, 50,000 supplied-module import edges, 10,000 emitted contracts, and 128 nested or 50,000 converted expression nodes per statement. Reusable sessions retain at most 1 MB of active source and reset cached Salsa state after 1,000 source changes. This release supports analyzer targets 3.11 through 3.13; helper runtime compatibility is tested from Python 3.11 through 3.14 by the quality workflow.
+The selected source target also controls Unicode identifier validation. This is independent of the Python version used to install the helpers or the interpreter running the application.
 
-The frontend uses pinned Ruff parser/AST components to produce structured module-level declarations, typed expressions, imports, decorators, parameters and return annotations with AST source ranges. Salsa tracks parsing and per-module inspection separately; importers consume semantic-only export summaries. This keeps unchanged dependents reusable after provider body edits while current source spans refresh. A Salsa-backed session exposes updates, removal, reset, revision-tagged results and cancellation. `set_file` reports a `SessionInputError` when its source/file budgets are exceeded. Call `session.cancellation_token()` before `inspect_cancellable` when another thread may need to cancel the running query; cancellation returns `AnalysisCancelled`, publishes no partial result, and leaves the session reusable. `SessionInspection.revision` identifies the input/settings revision without changing the JSON schema. The one-shot API uses the same session queries. Absolute direct imports of classes and assignment aliases resolve when both modules are supplied. Relative imports, import re-export chains, ambiguous modules, and cycles produce incomplete coverage. The selected parser build requires Rust 1.96 and parses against the requested 3.11–3.13 grammar. CLI spans use paths relative to `--root`; without a root, each file's stem supplies its logical module name and file label. Unsupported declarations must produce incomplete coverage. Project discovery, inheritance, field/container alias analysis and control-flow checking remain outside this inspector.
+## Declaration identities and rebinding
 
-## Trust and next phase
+The semantic layer recognizes TypePact APIs through their imported identity. An unrelated local function named `resource` does not become a TypePact decorator merely because its name matches. Imported aliases of supported APIs can retain their canonical meaning until rebound.
 
-Every contract is `declared-unverified`: TypePact records metadata but does not prove that an implementation obeys it. `Owned` and `Borrowed` express intent and do not create uniqueness, borrowing, or runtime enforcement. Phase 0.2 adds control-flow graphs, resource instance tracking, local aliases, method summaries, and the first use-after-close diagnostic.
+Supported assignments capture a class or alias view at the point of declaration. Later rebinding of the original name does not change the class and metadata already captured by an earlier alias. Conversely, new annotations use the bindings that are visible at their own declaration point.
 
-For end-user installation, declarations, and command examples, see the [TypePact documentation](https://typepact.readthedocs.io/en/latest/). The internal planning and qualification notes remain available in the [GitHub repository](https://github.com/eddiethedean/typepact/tree/main/docs/planning).
+Lifecycle and access facts compose independently. Compatible metadata can be inherited from the underlying class or captured alias view; incompatible lifecycle methods or access qualifiers produce `TP4002` with relevant source locations.
+
+## Imports across supplied modules
+
+TypePact plans direct absolute imports between supplied files, analyzes providers before their consumers, and gives consumers semantic export summaries. Classes and supported assignment aliases can carry lifecycle and access metadata across these boundaries.
+
+The inspector does not discover files or search installed packages. Relative imports, import re-export chains, ambiguous module identities, and supplied-module cycles produce incomplete coverage. The [multi-file tutorial](project-guide.md) shows a complete supported example.
+
+## Incremental queries
+
+Salsa tracks parsing and per-module inspection separately. Consumers depend on semantic export summaries, allowing results to remain reusable when a provider edit does not change a relevant export. Source locations can refresh independently of unchanged consumer facts.
+
+`AnalysisSession` maintains the database across calls. Each inspection synchronizes it to the full supplied source snapshot. Results from `inspect_cancellable` include a revision; cancellation returns an error without publishing a partial report. The session remains reusable after cancelled work. The one-shot `inspect` function creates a session and uses the same queries.
+
+Sessions retain at most 1,000,000 bytes of active source and periodically rebuild cached state after 1,000 source mutations. Requests also bound files, statements, expression conversion, import edges, and emitted contracts. See [input and work limits](supported-syntax.md#input-and-work-limits) and the [session API](rust-api.md#session-operations).
+
+## Coverage and assurance
+
+Unsupported declarations are visible in diagnostics and coverage rather than silently treated as resolved. Some boundaries can invalidate bindings conservatively, so later declarations in the same file can also become unresolved. Useful facts may still be emitted alongside incomplete coverage; the result is not a complete analysis of the whole source in that case.
+
+All contracts carry `declared-unverified` trust. The inspector records metadata without proving that the implementation honors it. Function body flow, cleanup obligations, use-after-close, ownership transfer, and exclusive access enforcement remain outside 0.1. See the [JSON reference](output.md), [limitations](limitations.md), and [roadmap](roadmap.md).
+
+Implementation and qualification plans are maintained in the [repository planning directory](https://github.com/eddiethedean/typepact/tree/main/docs/planning).

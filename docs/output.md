@@ -12,40 +12,10 @@ The CLI emits one JSON object. The Rust library returns the same `Inspection` da
 | `diagnostics` | Syntax errors, declaration conflicts, and unsupported or unresolved boundaries |
 | `coverage` | Coverage status, reasons, source byte count, and emitted declaration count |
 
-This abbreviated excerpt uses the repository's example output:
+The following complete result comes from the [quick-start source](quickstart.md), inspected as `connection.py` with the default Python 3.11 target:
 
-```json
-{
-  "schema_version": 0,
-  "assurance": "contract-inspection-only",
-  "contracts": [
-    {
-      "schema_version": 0,
-      "base_symbol": "examples.contracts.Connection",
-      "display_name": "inspect_pythonic.conn",
-      "lifecycle": { "closed_by": "close" },
-      "access": "shared",
-      "source": {
-        "file": "examples/contracts.py",
-        "line": 18,
-        "column": 28,
-        "end_line": 18,
-        "end_column": 57
-      },
-      "provenance": [
-        { "origin": "explicit-access-alias", "trust": "declared-unverified" },
-        { "origin": "python-resource-decorator", "trust": "declared-unverified" }
-      ]
-    }
-  ],
-  "diagnostics": [],
-  "coverage": {
-    "status": "complete-for-supported-subset",
-    "reasons": [],
-    "source_bytes": 630,
-    "declarations": 5
-  }
-}
+```{literalinclude} _examples/inspection.json
+:language: json
 ```
 
 ## Contract fields
@@ -70,7 +40,7 @@ Each diagnostic has a code, severity, message, primary span, related spans, and 
 | `TP4001` | Python syntax could not be parsed |
 | `TP4002` | A contract declaration is invalid or conflicts with another declaration |
 | `TP9001` | An unsupported or unresolved construct prevents complete coverage |
-| `TP9002` | A cancellable Rust session stopped before publishing a result |
+| `TP9002` | The Rust `inspect` convenience API reports a cancelled inspection; `inspect_cancellable` returns `AnalysisCancelled` instead |
 
 Diagnostic codes and schema details are provisional during 0.x. Treat `coverage.status` as the machine-readable completeness indicator; unsupported constructs may produce warnings rather than errors.
 
@@ -80,4 +50,6 @@ Diagnostic codes and schema details are provisional during 0.x. Treat `coverage.
 
 Span line and column values are one-based. Columns count UTF-8 bytes, not Unicode code points or terminal display cells. Paths come from CLI logical paths: relative to `--root` when supplied; otherwise the file label is based on its name.
 
-For the complete example result, see the [snapshot in the repository](https://github.com/eddiethedean/typepact/blob/main/tests/snapshots/example-contracts.json).
+Spans start at `line`/`column` and end just before `end_line`/`end_column`. Convert byte columns appropriately when highlighting text in an editor. The JSON envelope and each contract carry their own `schema_version`; `assurance` and provenance `trust` describe the strength of the recorded facts.
+
+To preserve a report in a script while handling failed inspections, see [automation and CI](automation.md#save-and-consume-json). For help interpreting a finding, see [troubleshooting](troubleshooting.md).

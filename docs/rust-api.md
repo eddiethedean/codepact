@@ -69,3 +69,23 @@ fn inspect_edits() {
 The session also provides `set_file`, `remove_file`, `reset`, `files`, `parse_summary`, and `parse_summary_for`. `set_file` reports file-count or source-size violations as `SessionInputError`. `CancellationToken` can request cancellation from another thread; cancellation publishes no partial result, and the session can be used again after the query stops.
 
 The default one-shot function and incremental session share the same analysis pipeline and input bounds. See the [architecture page](architecture.md) for the computation model.
+
+## Session operations
+
+| Operation | Behavior |
+| --- | --- |
+| `inspect(files, target)` | Synchronizes the full input snapshot and returns `Inspection` |
+| `inspect_cancellable(files, target)` | Returns `Result<SessionInspection, AnalysisCancelled>` with a revision on success |
+| `set_file(path, module, source)` | Updates one stored input; returns `SessionInputError` if its source or file budgets would be exceeded |
+| `remove_file(path)` | Removes a stored input; removing an absent path is a no-op |
+| `reset()` | Clears inputs and memoized state and advances the revision |
+| `parse_summary(path)` | Returns a stored file's parse summary using the default 3.11 target |
+| `parse_summary_for(path, target)` | Returns a stored file's parse summary using the selected target |
+
+`set_file` is useful when working with stored parse summaries. It does not replace the full snapshot argument to inspection: passing an empty file list to either inspection method removes all stored inputs. Keep your source snapshot in the host application and pass it on every inspection.
+
+## Cancellation and results
+
+Obtain `session.cancellation_token()` before starting the inspection, then give the token to the thread responsible for cancelling work. Calling `cancel()` requests cancellation of the associated query. Use `inspect_cancellable` to distinguish cancellation from a completed analysis: it returns `Err(AnalysisCancelled)` without publishing partial output. The convenience `inspect` method represents cancellation as an incomplete report with `TP9002`.
+
+An `Ok` return does not establish successful declaration analysis. Check the returned `inspection.coverage.status` and diagnostics, since syntax errors, unresolved declarations, and work limits can be represented by a completed report. `SessionInspection.revision` describes the source/settings revision, not the JSON schema version.

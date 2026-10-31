@@ -1,0 +1,15 @@
+/* Keep long signatures and tables readable without widening prose paragraphs. */
+.wy-nav-content { max-width: 1080px; }
+.rst-content p, .rst-content > div > p { max-width: 78ch; }
+.wy-side-nav-search { background: #234867; }
+.wy-menu-vertical a { line-height: 1.6; }
+.rst-content h1 { color: #234867; }
+.rst-content pre { line-height: 1.6; }
+.rst-content .admonition { border-radius: 4px; }
+.rst-content table.docutils td { vertical-align: top; }
+.rst-content .wy-table-responsive table td,
+.rst-content .wy-table-responsive table th { white-space: normal; }
+.rst-content a:focus-visible { outline: 2px solid #234867; outline-offset: 3px; }
+@media (max-width: 768px) {
+  .wy-nav-content { padding: 1.5em; }
+}

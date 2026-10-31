@@ -1,0 +1,87 @@
+{
+  "schema_version": 0,
+  "assurance": "contract-inspection-only",
+  "contracts": [
+    {
+      "schema_version": 0,
+      "base_symbol": "connection.Connection",
+      "display_name": "Connection",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "unspecified",
+      "source": {
+        "file": "connection.py",
+        "line": 5,
+        "column": 1,
+        "end_line": 5,
+        "end_column": 29
+      },
+      "provenance": [
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "base_symbol": "connection.Connection",
+      "display_name": "read.conn",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "shared",
+      "source": {
+        "file": "connection.py",
+        "line": 11,
+        "column": 16,
+        "end_line": 11,
+        "end_column": 36
+      },
+      "provenance": [
+        {
+          "origin": "explicit-access-alias",
+          "trust": "declared-unverified"
+        },
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "base_symbol": "connection.Connection",
+      "display_name": "consume.conn",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "owned",
+      "source": {
+        "file": "connection.py",
+        "line": 15,
+        "column": 19,
+        "end_line": 15,
+        "end_column": 36
+      },
+      "provenance": [
+        {
+          "origin": "explicit-access-alias",
+          "trust": "declared-unverified"
+        },
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "coverage": {
+    "status": "complete-for-supported-subset",
+    "reasons": [],
+    "source_bytes": 313,
+    "declarations": 3
+  }
+}

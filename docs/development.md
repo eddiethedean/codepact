@@ -31,6 +31,22 @@ uv run --no-project --with-requirements docs/requirements.txt \
 
 The Read the Docs configuration uses the same requirements file and fails the build on warnings. The generated site is written outside the source tree.
 
+Preview the generated HTML locally:
+
+```sh
+uv run --no-project python -m http.server 8000 --directory target/docs/html
+```
+
+Open `http://localhost:8000` in a browser and check navigation, narrow layouts, code blocks, and API signatures. Stop the server when finished.
+
+## Maintain the documentation
+
+Public documentation starts at `docs/index.md`; repository planning notes remain under `docs/planning` and are linked from the public roadmap. Write guides in MyST Markdown and generated API reference entries in reStructuredText. Use Sphinx document links so the strict build detects missing pages.
+
+The quick start and multi-file tutorial include source files from `docs/_examples`. The JSON reference includes the quick-start inspection result from that directory. When changing the example, regenerate its JSON with the current CLI and keep the logical input name `connection.py` so the displayed paths and symbols remain consistent.
+
+Read the Docs uses `.readthedocs.yaml` at the repository root. Connect the GitHub repository to the `typepact` Read the Docs project and enable the desired branches or release tags there. The checked-in configuration selects the build tools, requirements, and Sphinx entry point. GitHub's docs job runs the same strict local build target on pushes and pull requests.
+
 ## Contribution notes
 
 - Add analyzer fixtures for supported behavior and explicit incomplete-coverage boundaries.

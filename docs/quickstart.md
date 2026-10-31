@@ -2,26 +2,12 @@
 
 This example declares that a `Connection` is closed by `close`, then describes how two functions intend to access it.
 
+From a Python project, install the helpers and command with `uv add typepact==0.1.0`. See [installation](install.md) for standalone CLI use and platform requirements.
+
 Save the code as `connection.py`:
 
-```python
-from typepact import resource
-from typepact.rust import Borrowed, Owned
-
-
-@resource(closed_by="close")
-class Connection:
-    def close(self) -> None:
-        pass
-
-
-def read(conn: Borrowed[Connection]) -> str:
-    return "ready"
-
-
-def consume(conn: Owned[Connection]) -> str:
-    conn.close()
-    return "closed"
+```{literalinclude} _examples/connection.py
+:language: python
 ```
 
 Inspect the declarations:
@@ -30,9 +16,21 @@ Inspect the declarations:
 uv run typepact inspect-contracts connection.py
 ```
 
+A successful run exits with status `0`, has an empty `diagnostics` list, and reports `coverage.status` as `complete-for-supported-subset`.
+
 The JSON result contains a resource contract for `Connection` and access contracts for `read.conn` and `consume.conn`. The first parameter is shared; the second is owned. Both inherit the class lifecycle metadata.
 
 The source is parsed without importing `connection.py`. TypePact records the declared method name, but this release does not check whether `close()` is called on every path or whether the method actually releases a resource.
+
+## Read the result
+
+| Declaration | Lifecycle | Access |
+| --- | --- | --- |
+| `Connection` | Closed by `close` | `unspecified` |
+| `read.conn` | Closed by `close` | `shared` |
+| `consume.conn` | Closed by `close` | `owned` |
+
+All three facts refer to `connection.Connection`. The `source` field locates each declaration, and `provenance` records how its metadata was declared. See the [full output](output.md) for the corresponding JSON.
 
 ## Inspect multiple modules
 
@@ -43,3 +41,5 @@ uv run typepact inspect-contracts --root src src/models.py src/client.py
 ```
 
 The root is used to name modules; TypePact does not discover files or follow imports automatically. For the full option and input behavior, see the [CLI reference](cli.md). For the declarations understood by 0.1, see [supported syntax](supported-syntax.md).
+
+Continue with the [multi-file tutorial](project-guide.md) to resolve declarations across modules, or [automation](automation.md) to check an explicit source set in CI.
