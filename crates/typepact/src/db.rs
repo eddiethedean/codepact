@@ -947,11 +947,18 @@ mod tests {
 
     #[test]
     fn reviewed_exceptional_close_outcomes_flow_through_session_results() {
-        let file = SourceFile::new(
-            "model.py",
-            "model",
-            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n",
-        );
+        let source = "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n";
+        let file = SourceFile::new("model.py", "model", source);
+        let cleanup_exit_line = source
+            .lines()
+            .position(|line| line == "def cleanup():")
+            .unwrap()
+            + 1;
+        let acquisition_line = source
+            .lines()
+            .position(|line| line.trim() == "resource = Connection()")
+            .unwrap()
+            + 1;
 
         for (id, postcondition, expected_certainty, expected_coverage) in [
             (
@@ -1013,6 +1020,19 @@ mod tests {
                 Some(certainty) => {
                     assert_eq!(leaks.len(), 1, "{id}: {checked:#?}");
                     assert_eq!(leaks[0].certainty, certainty, "{id}: {checked:#?}");
+                    assert_eq!(
+                        leaks[0].completion.as_deref(),
+                        Some("fallthrough"),
+                        "{id}: {checked:#?}"
+                    );
+                    assert_eq!(
+                        leaks[0].primary.line, cleanup_exit_line,
+                        "{id}: {checked:#?}"
+                    );
+                    assert_eq!(
+                        leaks[0].related[0].line, acquisition_line,
+                        "{id}: {checked:#?}"
+                    );
                 }
                 None => assert!(leaks.is_empty(), "{id}: {checked:#?}"),
             }
@@ -1034,11 +1054,18 @@ mod tests {
 
     #[test]
     fn reviewed_normal_close_outcomes_flow_through_session_results() {
-        let file = SourceFile::new(
-            "model.py",
-            "model",
-            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n",
-        );
+        let source = "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n";
+        let file = SourceFile::new("model.py", "model", source);
+        let cleanup_exit_line = source
+            .lines()
+            .position(|line| line == "def cleanup():")
+            .unwrap()
+            + 1;
+        let acquisition_line = source
+            .lines()
+            .position(|line| line.trim() == "resource = Connection()")
+            .unwrap()
+            + 1;
 
         for (id, postcondition, expected_certainty, expected_coverage) in [
             (
@@ -1106,6 +1133,19 @@ mod tests {
                 Some(certainty) => {
                     assert_eq!(leaks.len(), 1, "{id}: {checked:#?}");
                     assert_eq!(leaks[0].certainty, certainty, "{id}: {checked:#?}");
+                    assert_eq!(
+                        leaks[0].completion.as_deref(),
+                        Some("fallthrough"),
+                        "{id}: {checked:#?}"
+                    );
+                    assert_eq!(
+                        leaks[0].primary.line, cleanup_exit_line,
+                        "{id}: {checked:#?}"
+                    );
+                    assert_eq!(
+                        leaks[0].related[0].line, acquisition_line,
+                        "{id}: {checked:#?}"
+                    );
                 }
                 None => assert!(leaks.is_empty(), "{id}: {checked:#?}"),
             }
@@ -1127,11 +1167,18 @@ mod tests {
 
     #[test]
     fn reviewed_async_cancelled_close_outcomes_flow_through_session_results() {
-        let file = SourceFile::new(
-            "model.py",
-            "model",
-            "from typepact import resource\n@resource(closed_by='aclose')\nclass Connection:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = Connection()\n    await resource.aclose()\n",
-        );
+        let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass Connection:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = Connection()\n    await resource.aclose()\n";
+        let file = SourceFile::new("model.py", "model", source);
+        let await_line = source
+            .lines()
+            .position(|line| line.trim() == "await resource.aclose()")
+            .unwrap()
+            + 1;
+        let acquisition_line = source
+            .lines()
+            .position(|line| line.trim() == "resource = Connection()")
+            .unwrap()
+            + 1;
 
         for (id, postcondition, expected_certainty, expected_coverage) in [
             (
@@ -1194,6 +1241,11 @@ mod tests {
                     assert_eq!(leaks.len(), 1, "{id}: {checked:#?}");
                     assert_eq!(leaks[0].certainty, certainty, "{id}: {checked:#?}");
                     assert_eq!(leaks[0].completion.as_deref(), Some("cancelled"));
+                    assert_eq!(leaks[0].primary.line, await_line, "{id}: {checked:#?}");
+                    assert_eq!(
+                        leaks[0].related[0].line, acquisition_line,
+                        "{id}: {checked:#?}"
+                    );
                 }
                 None => assert!(leaks.is_empty(), "{id}: {checked:#?}"),
             }
