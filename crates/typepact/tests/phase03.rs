@@ -1655,3 +1655,149 @@ fn v03_15_nonterminating_loop_is_not_a_function_exit_witness() {
         "{result:#?}"
     );
 }
+
+#[test]
+fn v03_01_each_open_obligation_is_reported_at_each_distinct_return_exit() {
+    let result = check_source(&format!(
+        "{RESOURCE}def leak(flag):\n    first = C()\n    second = C()\n    if flag:\n        return\n    first.close()\n    return\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 3, "{result:#?}");
+    assert!(leaks.iter().all(|diagnostic| {
+        diagnostic.certainty == "definite"
+            && diagnostic.message.ends_with("on return")
+            && diagnostic.related.len() == 1
+    }));
+    let acquisition_lines = leaks
+        .iter()
+        .map(|diagnostic| diagnostic.related[0].line)
+        .collect::<Vec<_>>();
+    assert_eq!(acquisition_lines, [7, 8, 8], "{result:#?}");
+}
+
+#[test]
+fn v03_02_only_explicit_owned_parameters_create_incoming_duties() {
+    let result = check_source(&format!(
+        "{RESOURCE}def owns(resource: Owned[C]):\n    pass\ndef borrows(resource: Borrowed[C]):\n    pass\ndef observes(resource: C):\n    pass\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{result:#?}");
+    assert!(leaks[0].message.ends_with("on fallthrough"), "{result:#?}");
+    assert_eq!(leaks[0].related.len(), 1, "{result:#?}");
+    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_03_nested_cleanup_raise_still_runs_outer_cleanup_once() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n@resource(closed_by='close')\nclass Failing:\n    def close(self):\n        raise OSError()\ndef cleanup():\n    outer = C()\n    inner = Failing()\n    try:\n        try:\n            raise ValueError()\n        finally:\n            inner.close()\n    finally:\n        outer.close()\n";
+    let result = check_source(source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{result:#?}");
+    assert!(leaks[0].message.ends_with("on raise"), "{result:#?}");
+    assert_eq!(leaks[0].related.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].related[0].line, 11, "{result:#?}");
+    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_08_ambiguous_return_alias_keeps_the_local_duty_and_unknown_boundary() {
+    let result = check_source(&format!(
+        "{RESOURCE}def escape(flag):\n    resource = C()\n    if flag:\n        result = resource\n    else:\n        result = unknown_factory()\n    return result\n"
+    ));
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "definite"
+                && diagnostic.message.ends_with("on return")
+        }),
+        "{result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001" && diagnostic.message.contains("resource value escapes")
+        }),
+        "{result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_06_check_report_retains_each_return_and_raise_completion() {
+    let report = typepact::check_report(
+        &[SourceFile::new(
+            "phase03.py",
+            "phase03",
+            format!(
+                "{RESOURCE}def leak(flag):\n    resource = C()\n    if flag:\n        return\n    raise RuntimeError()\n"
+            ),
+        )],
+        "3.11",
+    );
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 2, "{report:#?}");
+    let completions = leaks
+        .iter()
+        .map(|diagnostic| diagnostic.completion.as_deref().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        completions,
+        std::collections::BTreeSet::from(["raise", "return"])
+    );
+    assert!(leaks.iter().all(|diagnostic| {
+        diagnostic.certainty == "definite"
+            && diagnostic.related.len() == 1
+            && diagnostic.related[0].line == 7
+    }));
+}
+
+#[test]
+fn v03_14_conditional_loop_cleanup_keeps_the_zero_iteration_witness() {
+    let result = check_source(&format!(
+        "{RESOURCE}def cleanup(flag, close_now):\n    resource = C()\n    while flag:\n        if close_now:\n            resource.close()\n        break\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].certainty, "possible", "{result:#?}");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_18_exception_handler_does_not_swallow_cancellation() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    except Exception:\n        resource.close()\n";
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.completion.as_deref() == Some("cancelled")
+        }),
+        "{report:#?}"
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
