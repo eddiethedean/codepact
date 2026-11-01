@@ -1803,6 +1803,52 @@ fn v03_18_exception_handler_does_not_swallow_cancellation() {
 }
 
 #[test]
+fn v03_02_shorthand_and_verbose_parameter_access_forms_share_duty_semantics() {
+    let source = "from typing import Annotated\nfrom typepact import resource\nfrom typepact.rust import Owned, Borrowed\nfrom typepact.contracts import OwnedAccess, Resource, SharedBorrow\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef owned_short(value: Owned[C]):\n    pass\ndef owned_verbose(value: Annotated[C, OwnedAccess()]):\n    pass\ndef borrowed_short(value: Borrowed[C]):\n    pass\ndef borrowed_verbose(value: Annotated[C, SharedBorrow()]):\n    pass\ndef ordinary(value: C):\n    pass\nclass D:\n    def close(self): pass\nDResource = Annotated[D, Resource(closed_by='close')]\ndef explicit_owned_short(value: Owned[DResource]):\n    pass\ndef explicit_owned_verbose(value: Annotated[DResource, OwnedAccess()]):\n    pass\ndef explicit_borrowed(value: Borrowed[DResource]):\n    pass\n";
+    let result = check_source(source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 4, "{result:#?}");
+    assert!(leaks
+        .iter()
+        .all(|diagnostic| diagnostic.certainty == "definite"
+            && diagnostic.message.ends_with("on fallthrough")));
+    let origins = leaks
+        .iter()
+        .map(|diagnostic| diagnostic.related[0].line)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        origins,
+        std::collections::BTreeSet::from([8, 10, 21, 23]),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_02_borrowed_entry_does_not_hide_a_local_acquisition_duty() {
+    let result = check_source(&format!(
+        "{RESOURCE}def leak(value: Borrowed[C]):\n    local = C()\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{result:#?}");
+    assert!(leaks[0].message.ends_with("on fallthrough"), "{result:#?}");
+    assert_eq!(leaks[0].related.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].related[0].line, 7, "{result:#?}");
+}
+
+#[test]
 fn v03_06_branch_paths_sharing_one_return_are_grouped_per_duty() {
     let result = check_source(&format!(
         "{RESOURCE}def cleanup(flag):\n    first = C()\n    second = C()\n    if flag:\n        first.close()\n    return\n"
