@@ -1,6 +1,6 @@
 # 0.2 lifecycle specification
 
-Status: **Implemented in the unreleased source preview; release and LC01 acceptance remain pending.** This document defines the 0.2 acceptance scope and supported normal-flow model. The [phase plan](../0.2-lifecycle.md) and [validation matrix](validation.md) define the required review and evidence. Preserve the published 0.1 inspector while adding separate checking results and assurance.
+Status: **Implemented and accepted for the 0.2.0 candidate by the accountable maintainer on 2026-11-01.** This document defines the accepted 0.2 scope and supported normal-flow model. The [phase plan](../0.2-lifecycle.md) and [validation matrix](validation.md) define the qualification evidence. The maintainer waived independent review; see the [release evidence](../../../releases/0.2.0-evidence.md). Preserve the published 0.1 inspector while adding separate checking results and assurance.
 
 ## Executable acceptance example
 
@@ -86,7 +86,7 @@ Open construction and closed close postconditions apply only after successful re
 
 ## Discovery and incremental inputs
 
-Proposed CLI: `typepact check --root DIR [--python-version VERSION] FILE...`. Discover local dependencies of entry files; check supported bodies once and executable module statements in dependency order. Never import or execute Python. Arbitrary import-order behavior is outside this model.
+Accepted CLI: `typepact check --root DIR [--python-version VERSION] FILE...`. Discover local dependencies of entry files; check supported bodies once and executable module statements in dependency order. Never import or execute Python. Arbitrary import-order behavior is outside this model.
 
 The adapter records source, module map, missing modules, root/search precedence, target version, models and budgets as explicit session inputs. Sort traversal/output deterministically. Report duplicate logical modules and file/package collisions rather than silently choosing. Keep canonical paths within root, deduplicate symlink targets and bound files/bytes/import edges. Cycles yield bounded incomplete results.
 
@@ -94,20 +94,36 @@ Track CFG, summary and body checks separately from rendering. Summary semantic e
 
 Identify recursive components before summary evaluation. Initially return unknown effects plus a boundary for the component without entering uncontrolled Salsa cycles. Accepting recursive effects requires a separately reviewed finite domain, iteration budget, monotone fixed point and widening tests. Bound CFG size, objects/alias sets, call graph and summary work. Exhaustion weakens facts, exposes incompleteness and preserves session usability. Truncating an alias set must never leave an exact-object claim.
 
-The source preview currently uses provisional flow defaults of 128 nested `if`
-regions, 64 possible objects per local alias at a join, 4,096 tracked objects
-per function or module body, and 8 nested call/effect evaluations. These values
-are implementation limits for exercising bounded recovery, not accepted LC01
-decisions. The [preliminary performance record](performance.md) maps each
-default to its exhaustion fixture and current measurements. Accept the rationale
-and measured impact in LC01 before marking budget qualification complete.
+The accepted 0.2 flow defaults are 128 nested `if` regions, 64 possible objects
+per local alias at a join, 4,096 tracked objects per function or module body, 8
+nested call/effect evaluations, and a 100,000-transfer request budget. These
+are bounded-recovery limits, not performance guarantees. The [performance
+record](performance.md) maps each limit to its exhaustion fixture and measured
+impact. The accountable maintainer accepted these defaults and recorded
+performance limitations on 2026-11-01.
 
 ## Diagnostic and command contract
 
 - TP1001: closed-resource use. All incoming states closed means definite; known open/closed mixture means possible. Unknown state produces a TP9xxx boundary; retain independently known violations without inventing certainty.
-- Proposed TP2001: close-through-Borrowed. Keep TP4xxx declarations and TP9xxx unknown/incomplete families. Freeze exact codes under LC01.
+- TP2001: close-through-Borrowed. Keep TP4xxx declarations and TP9xxx unknown/incomplete families. These exact codes are accepted under LC01.
 - Include primary span, related transition/annotation spans, certainty, explanation and repair guidance. Choose a deterministic bounded set of related origins at joins. Deduplicate by rule/source operation/object context, preserving distinct use sites.
-- Proposed default exits: 1 for definite violations or declaration errors; 0 when neither exists, including possible/boundary-only results; 2 for invalid command/configuration, input failure, cancellation or unrecoverable analysis failure. Ordinary bounded incomplete analysis remains a boundary. Show possible findings and incomplete coverage even on exit 0. Strict policy configuration remains 0.4 work.
+- Accepted default exits: 1 for definite violations or declaration errors; 0 when neither exists, including possible/boundary-only results; 2 for invalid command/configuration, input failure, cancellation or unrecoverable analysis failure. Ordinary bounded incomplete analysis remains a boundary. Show possible findings and incomplete coverage even on exit 0. Strict policy configuration remains 0.4 work.
 - Checking assurance states the normal-flow subset, summary trust and incomplete coverage. A clean result does not establish runtime behavior, leak freedom or lifetime safety.
 
-Preserve inspection schema, exits and inspection-only assurance. A separate structured checking API returns contracts, findings, coverage and revision metadata. Accept its public names/versioning in LC01 before implementation.
+Preserve inspection schema, exits and inspection-only assurance. A separate structured checking API returns contracts, findings, coverage and revision metadata; the candidate names, schema version, and result fields are accepted for 0.2.
+
+## LC01 decision record
+
+The accountable maintainer accepted the following decisions on 2026-11-01 and
+waived the independent-review requirement for this release. V02 fixtures and
+the exact-candidate test run are linked from the [release evidence](../../../releases/0.2.0-evidence.md).
+
+| Decision | Accepted choice and rejected alternative | Fixture evidence | Limitation and reconsideration trigger |
+| --- | --- | --- | --- |
+| Discovery | Resolve deterministic local modules under the explicit root; report collisions and cycles; do not execute Python or search site-packages. This rejects broad environment/import execution semantics. | V02-10–11, V02-18 | Missing, colliding, symlink-escaping, or over-budget imports remain visible boundaries. Revisit if local-module resolution blocks a supported project pattern. |
+| Alias domain | Use construction-context object identities; strong-update exact singleton targets and weak-update uncertain sets. This rejects treating uncertain aliases as exact or merging distinct straight-line constructions. | V02-03–06 | Alias sets above 64 lose precision and report a boundary. Revisit with a richer ownership/alias model. |
+| Summary trust | Infer supported ordinary bodies; apply declared close only on normal return with declared-unverified provenance. This rejects treating metadata as proof of runtime cleanup or purity. | V02-01, V02-07–08, V02-12–13 | Unsupported bodies and unknown calls retain boundaries. Revisit with reviewed external model catalogs or runtime evidence. |
+| Exceptions | Keep normal effects precise and exceptional effects unknown; handlers and `finally` remain incomplete. This rejects inferring cleanup on every exit. | V02-13, V02-17–18 | No general exception-aware cleanup claim. Revisit with the 0.3 exception model. |
+| Recursion | Return unknown effects and bounded incomplete coverage for recursive components. This rejects unbounded recursion and an unreviewed fixed-point claim. | V02-17 | Recursive effects are not proved. Revisit after a finite domain, iteration budget, monotone fixed point, and widening tests exist. |
+| Diagnostics and API | Use TP1001, TP2001, TP4xxx/TP9xxx families, exit codes 1/0/2, and the structured checking result contract described above. This rejects a text-only semantic interface or invented certainty. | V02-01–02, V02-07–08, V02-19–20 | JSON schema version 0 and strict policy controls remain limited; revisit before schema/configuration expansion. |
+| Flow budgets and operations | Accept the listed provisional flow limits with the measured timing/RSS results and limitations in [performance](performance.md). This rejects claiming an absolute latency or retained-memory guarantee. | V02-06, V02-17; boundary and reuse tests cited in [validation](validation.md) | Revisit when representative workload or regression evidence exceeds the recorded profile; limits must continue to weaken facts and expose incompleteness. |

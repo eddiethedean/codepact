@@ -3,8 +3,10 @@
 Status: exact analyzer-source replay from 2026-11-01. The analyzer implementation
 is unchanged from source revision `b7a5236d00cd14c06fe7fd633b6a05d2e64c5856`;
 the current candidate adds a reproducible retained-RSS probe to the benchmark
-example. Reviewer acceptance of the measured regressions and provisional limits
-remains required before G4 or LC01 can pass.
+example. The accountable maintainer accepted the measured regression, retained
+RSS, and provisional limits with the limitations recorded here on 2026-11-01.
+No independent review is required for this release under the documented
+maintainer waiver.
 
 ## Environment and method
 
@@ -47,8 +49,9 @@ correctness fixes, 1,000-resource cold time is
 1.57× higher and edit scenarios are 2.18×–2.47× higher; warm no-op time is
 unchanged. At 250 resources, cold time is 1.88× higher and edit scenarios are
 2.11×–2.43× higher; warm no-op time is slightly lower. The earlier source
-version and these later correctness fixes have not received an independent
-performance review, and no absolute latency threshold has been accepted. A
+version and these later correctness fixes have no absolute latency threshold.
+The accountable maintainer accepted the measured regression with the
+limitations recorded here. A
 release-review profile found full flow-state clones on definite singleton
 method calls; evaluating those calls in place reduced the 1,000-resource cold
 median from 476.1 ms to 62.7 ms and the 250-resource median from 35.8 ms to
@@ -110,6 +113,6 @@ uv run --locked python scripts/benchmark_inspector.py --binary target/release/ty
 The request-wide transfer budget is divided evenly among files. Unused work in
 one file is not reassigned, which keeps edits in earlier files from changing
 unrelated query inputs. Each limit triggers visible incomplete coverage and
-weakens affected state; the tests exercise exhaustion recovery. The limits
-still need an accepted LC01 rationale and measured workload impact. No absolute
-latency threshold has been set from this preliminary corpus.
+weakens affected state; the tests exercise exhaustion recovery. The accountable
+maintainer accepted the limits and measured impact for 0.2 on 2026-11-01. They
+remain provisional implementation budgets, not general performance guarantees.
