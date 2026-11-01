@@ -1,3 +1,6 @@
+use crate::model::{
+    FlowModelCatalog, LifecyclePostcondition, RepeatClosePolicy, ResourceEffectModel,
+};
 use crate::{
     frontend::{
         AstExpr, AstExprKind, CallSignature, Declaration, FlowHandler, FlowStatement, FlowWithItem,
@@ -89,6 +92,7 @@ struct State {
     module_scope: bool,
     scope_module: String,
     target_python_version: String,
+    models: Arc<FlowModelCatalog>,
     coroutines: BTreeMap<String, CoroutineRecord>,
     coroutine_budget_overflow: Option<SourceRange>,
     coroutine_aliases: BTreeMap<String, String>,
@@ -1151,6 +1155,70 @@ fn closed_mask(previous: u8) -> u8 {
     }
 }
 
+fn modeled_close_for_object(
+    state: &State,
+    object: &str,
+    method: &str,
+) -> Option<ResourceEffectModel> {
+    let resource = state.resources.get(object)?;
+    let lifecycle = resource.lifecycle.as_ref()?;
+    if lifecycle.closed_by != method {
+        return None;
+    }
+    state
+        .models
+        .resolve(&resource.base_symbol, method, &state.target_python_version)
+        .cloned()
+}
+
+fn modeled_close_for_call(
+    expression: &AstExpr,
+    state: &State,
+) -> Option<(String, ResourceEffectModel)> {
+    let (receiver, method, _, _) = called_method(expression)?;
+    let receiver = expr_name(receiver)?;
+    if state.unknown_places.contains(receiver) {
+        return None;
+    }
+    let targets = state.places.get(receiver)?;
+    if targets.len() != 1 {
+        return None;
+    }
+    let object = targets.iter().next()?.clone();
+    modeled_close_for_object(state, &object, method).map(|model| (object, model))
+}
+
+fn apply_lifecycle_postcondition(
+    state: &mut State,
+    object: &str,
+    postcondition: LifecyclePostcondition,
+    close_origin: Option<Span>,
+) {
+    let previous = state.objects.get(object).copied().unwrap_or(UNKNOWN);
+    apply_lifecycle_postcondition_from(state, object, previous, postcondition, close_origin);
+}
+
+fn apply_lifecycle_postcondition_from(
+    state: &mut State,
+    object: &str,
+    previous: u8,
+    postcondition: LifecyclePostcondition,
+    close_origin: Option<Span>,
+) {
+    let next = match postcondition {
+        LifecyclePostcondition::Preserve => previous,
+        LifecyclePostcondition::Open => OPEN,
+        LifecyclePostcondition::Closed => CLOSED,
+        LifecyclePostcondition::Unknown => previous | UNKNOWN,
+    };
+    state.objects.insert(object.to_owned(), next);
+    if postcondition == LifecyclePostcondition::Closed {
+        if let Some(origin) = close_origin {
+            state.close_origins.insert(object.to_owned(), origin);
+        }
+    }
+}
+
 type FunctionMap = BTreeMap<String, FunctionBody>;
 
 fn assigned_names(statements: &[FlowStatement]) -> BTreeSet<String> {
@@ -1325,6 +1393,7 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         loop_depth: parent.loop_depth,
         awaiting_coroutine: parent.awaiting_coroutine,
         target_python_version: parent.target_python_version.clone(),
+        models: parent.models.clone(),
         scope_module: definition.file.module.clone(),
         ..State::default()
     };
@@ -2238,7 +2307,13 @@ fn consume_expr(
             .as_ref()
             .map(|record| record.captures.keys().cloned().collect::<Vec<_>>())
             .unwrap_or_default();
-        let resolved = coroutine.is_some() || resolved_await_call(awaited, file, env, functions);
+        let modeled_close = coroutine
+            .as_ref()
+            .map(|record| modeled_close_for_call(&record.invocation, env))
+            .unwrap_or_else(|| modeled_close_for_call(awaited, env));
+        let resolved = coroutine.is_some()
+            || modeled_close.is_some()
+            || resolved_await_call(awaited, file, env, functions);
         if let (Some(id), Some(record)) = (&coroutine_id, &coroutine) {
             if record.consumed {
                 boundary(
@@ -2301,7 +2376,14 @@ fn consume_expr(
                 }
             }
         }
-        if before.alive && (resolved || env.alive) {
+        let modeled_cancelled = modeled_close
+            .as_ref()
+            .and_then(|(_, model)| model.cancelled);
+        let has_modeled_cancellation = modeled_close.is_some();
+        if before.alive
+            && (resolved || env.alive)
+            && (!has_modeled_cancellation || modeled_cancelled.is_some())
+        {
             let mut cancelled = before;
             cancelled.awaiting_coroutine = env.awaiting_coroutine;
             cancelled.alive = true;
@@ -2317,7 +2399,36 @@ fn consume_expr(
                 .flatten()
                 .cloned()
                 .collect::<Vec<_>>();
-            weaken(&mut cancelled, affected.into_iter());
+            let modeled_object = modeled_close.as_ref().map(|(object, _)| object.as_str());
+            let modeled_pre_mask = modeled_close
+                .as_ref()
+                .map(|(object, _)| cancelled.objects.get(object).copied().unwrap_or(UNKNOWN));
+            weaken(
+                &mut cancelled,
+                affected
+                    .into_iter()
+                    .filter(|object| Some(object.as_str()) != modeled_object),
+            );
+            if let (Some((object, _)), Some(previous), Some(postcondition)) =
+                (&modeled_close, modeled_pre_mask, modeled_cancelled)
+            {
+                apply_lifecycle_postcondition_from(
+                    &mut cancelled,
+                    object,
+                    previous,
+                    postcondition,
+                    (postcondition == LifecyclePostcondition::Closed)
+                        .then(|| span(file, expr.range)),
+                );
+                if postcondition == LifecyclePostcondition::Unknown {
+                    boundary(
+                        result,
+                        file,
+                        expr.range,
+                        "modeled cancellation postcondition leaves resource state unknown",
+                    );
+                }
+            }
             for capture in &capture_names {
                 cancelled.places.remove(capture);
                 cancelled.unknown_places.remove(capture);
@@ -2327,12 +2438,14 @@ fn consume_expr(
                 range: expr.range,
                 kind: CompletionKind::Cancelled,
             });
-            boundary(
-                result,
-                file,
-                expr.range,
-                "cancellation may interrupt the awaited operation or its cleanup",
-            );
+            if !has_modeled_cancellation {
+                boundary(
+                    result,
+                    file,
+                    expr.range,
+                    "cancellation may interrupt the awaited operation or its cleanup",
+                );
+            }
         }
         for capture in &capture_names {
             env.places.remove(capture);
@@ -2471,12 +2584,27 @@ fn consume_expr(
                     let diagnostic_start = result.diagnostics.len();
                     (|| {
                         let env = &mut alternative;
-                        let mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
+                        let mut mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
                         let resource = env.resources.get(object).cloned();
                         let is_close = resource
                             .as_ref()
                             .and_then(|resource| resource.lifecycle.as_ref())
                             .is_some_and(|lifecycle| lifecycle.closed_by == method);
+                        let effect_model = resource.as_ref().and_then(|resource| {
+                            let close_method = resource.lifecycle.as_ref()?.closed_by.as_str();
+                            env.models
+                                .resolve(
+                                    &resource.base_symbol,
+                                    close_method,
+                                    &env.target_python_version,
+                                )
+                                .cloned()
+                        });
+                        let close_model = is_close.then(|| effect_model.clone()).flatten();
+                        let post_close_allowed = !is_close
+                            && effect_model
+                                .as_ref()
+                                .is_some_and(|model| model.post_close_methods.contains(method));
                         let method_key = resource
                             .as_ref()
                             .map(|resource| format!("{}::{method}", resource.base_symbol))
@@ -2513,7 +2641,11 @@ fn consume_expr(
                                 return;
                             }
                         }
-                        if definition.is_some_and(|definition| definition.is_async)
+                        let async_model = is_close
+                            && effect_model
+                                .as_ref()
+                                .is_some_and(|model| model.asynchronous);
+                        if (definition.is_some_and(|definition| definition.is_async) || async_model)
                             && !env.awaiting_coroutine
                         {
                             if uncertain_receiver {
@@ -2546,7 +2678,7 @@ fn consume_expr(
                             }
                             return;
                         }
-                        if mask & CLOSED != 0 && !is_close {
+                        if mask & CLOSED != 0 && !is_close && !post_close_allowed {
                             let certainty = if !has_open_alternative && mask & UNKNOWN == 0 {
                                 "definite"
                             } else {
@@ -2579,12 +2711,62 @@ fn consume_expr(
                             );
                         }
                         if is_close && mask & CLOSED != 0 {
-                            boundary(
-                                result,
-                                file,
-                                expr.range,
-                                "repeat-close behavior is not modeled",
-                            );
+                            match close_model
+                                .as_ref()
+                                .map(|model| model.repeat_close)
+                                .unwrap_or(RepeatClosePolicy::Unspecified)
+                            {
+                                RepeatClosePolicy::Idempotent => {}
+                                RepeatClosePolicy::RequiresOpen => {
+                                    let certainty = if mask & (OPEN | UNKNOWN) == 0 {
+                                        "definite"
+                                    } else {
+                                        "possible"
+                                    };
+                                    report(
+                                        result,
+                                        "TP1001",
+                                        "resource close requires an open resource",
+                                        span(file, expr.range),
+                                        env.close_origins
+                                            .get(object)
+                                            .cloned()
+                                            .into_iter()
+                                            .collect(),
+                                        certainty,
+                                    );
+                                    let mut closed_path = env.clone();
+                                    closed_path.objects.insert(object.clone(), CLOSED);
+                                    closed_path.alive = true;
+                                    closed_path.pending_raises.clear();
+                                    env.pending_raises.push(FlowExit {
+                                        state: closed_path,
+                                        range: expr.range,
+                                        kind: CompletionKind::Raise(None),
+                                    });
+                                    let remaining = mask & !CLOSED;
+                                    if remaining == 0 {
+                                        env.alive = false;
+                                        return;
+                                    }
+                                    if remaining & UNKNOWN != 0 {
+                                        boundary(
+                                            result,
+                                            file,
+                                            expr.range,
+                                            "requires-open repeat close has an unknown lifecycle alternative",
+                                        );
+                                    }
+                                    mask = remaining;
+                                    env.objects.insert(object.clone(), remaining);
+                                }
+                                RepeatClosePolicy::Unspecified => boundary(
+                                    result,
+                                    file,
+                                    expr.range,
+                                    "repeat-close behavior is not modeled",
+                                ),
+                            }
                         }
                         if let Some(definition) = definition {
                             if env.call_stack.contains(&method_key) {
@@ -2610,40 +2792,149 @@ fn consume_expr(
                                 },
                                 FlowContext { functions, result },
                             );
-                            let raised = child
+                            let mut raised = child
                                 .pending_raises
                                 .iter()
                                 .map(|exit| project_call_exit(env, exit, expr.range))
                                 .collect::<Vec<_>>();
+                            if let Some(model) = &close_model {
+                                if let Some(postcondition) = model.exceptional {
+                                    if raised.is_empty() {
+                                        let mut exceptional = env.clone();
+                                        exceptional.alive = true;
+                                        exceptional.pending_raises.clear();
+                                        apply_lifecycle_postcondition(
+                                            &mut exceptional,
+                                            object,
+                                            postcondition,
+                                            (postcondition == LifecyclePostcondition::Closed)
+                                                .then(|| span(file, expr.range)),
+                                        );
+                                        raised.push(FlowExit {
+                                            state: exceptional,
+                                            range: expr.range,
+                                            kind: CompletionKind::Raise(None),
+                                        });
+                                    } else {
+                                        for exit in &mut raised {
+                                            apply_lifecycle_postcondition(
+                                                &mut exit.state,
+                                                object,
+                                                postcondition,
+                                                (postcondition == LifecyclePostcondition::Closed)
+                                                    .then(|| span(file, expr.range)),
+                                            );
+                                        }
+                                    }
+                                    if postcondition == LifecyclePostcondition::Unknown {
+                                        boundary(
+                                            result,
+                                            file,
+                                            expr.range,
+                                            "modeled exceptional postcondition leaves resource state unknown",
+                                        );
+                                    }
+                                }
+                            }
                             env.pending_raises.extend(raised);
                             apply_call_effects(env, &child, &BTreeSet::new());
                             if is_close && child.alive {
-                                env.close_origins
-                                    .insert(object.clone(), span(file, expr.range));
-                                env.objects.insert(object.clone(), closed_mask(mask));
+                                if let Some(postcondition) =
+                                    close_model.as_ref().and_then(|model| model.normal)
+                                {
+                                    apply_lifecycle_postcondition(
+                                        env,
+                                        object,
+                                        postcondition,
+                                        (postcondition == LifecyclePostcondition::Closed)
+                                            .then(|| span(file, expr.range)),
+                                    );
+                                    if postcondition == LifecyclePostcondition::Unknown {
+                                        boundary(
+                                            result,
+                                            file,
+                                            expr.range,
+                                            "modeled normal postcondition leaves resource state unknown",
+                                        );
+                                    }
+                                } else if close_model.is_some() {
+                                    env.alive = false;
+                                } else {
+                                    env.close_origins
+                                        .insert(object.clone(), span(file, expr.range));
+                                    env.objects.insert(object.clone(), closed_mask(mask));
+                                }
                             }
                             if !child.alive {
                                 env.alive = false;
                             }
                         } else if is_close {
-                            env.close_origins
-                                .insert(object.clone(), span(file, expr.range));
-                            env.objects.insert(object.clone(), closed_mask(mask));
-                            let mut exceptional = env.clone();
-                            exceptional.alive = true;
-                            exceptional.pending_raises.clear();
-                            exceptional.objects.insert(object.clone(), mask | UNKNOWN);
-                            env.pending_raises.push(FlowExit {
-                                state: exceptional,
-                                range: expr.range,
-                                kind: CompletionKind::Raise(None),
-                            });
-                            boundary(
-                                result,
-                                file,
-                                expr.range,
-                                "close exceptional postcondition is not modeled",
-                            );
+                            if let Some(model) = &close_model {
+                                let exceptional_base = env.clone();
+                                if let Some(postcondition) = model.normal {
+                                    apply_lifecycle_postcondition(
+                                        env,
+                                        object,
+                                        postcondition,
+                                        (postcondition == LifecyclePostcondition::Closed)
+                                            .then(|| span(file, expr.range)),
+                                    );
+                                    if postcondition == LifecyclePostcondition::Unknown {
+                                        boundary(
+                                            result,
+                                            file,
+                                            expr.range,
+                                            "modeled normal postcondition leaves resource state unknown",
+                                        );
+                                    }
+                                } else {
+                                    env.alive = false;
+                                }
+                                if let Some(postcondition) = model.exceptional {
+                                    let mut exceptional = exceptional_base;
+                                    exceptional.alive = true;
+                                    exceptional.pending_raises.clear();
+                                    apply_lifecycle_postcondition(
+                                        &mut exceptional,
+                                        object,
+                                        postcondition,
+                                        (postcondition == LifecyclePostcondition::Closed)
+                                            .then(|| span(file, expr.range)),
+                                    );
+                                    env.pending_raises.push(FlowExit {
+                                        state: exceptional,
+                                        range: expr.range,
+                                        kind: CompletionKind::Raise(None),
+                                    });
+                                    if postcondition == LifecyclePostcondition::Unknown {
+                                        boundary(
+                                            result,
+                                            file,
+                                            expr.range,
+                                            "modeled exceptional postcondition leaves resource state unknown",
+                                        );
+                                    }
+                                }
+                            } else {
+                                env.close_origins
+                                    .insert(object.clone(), span(file, expr.range));
+                                env.objects.insert(object.clone(), closed_mask(mask));
+                                let mut exceptional = env.clone();
+                                exceptional.alive = true;
+                                exceptional.pending_raises.clear();
+                                exceptional.objects.insert(object.clone(), mask | UNKNOWN);
+                                env.pending_raises.push(FlowExit {
+                                    state: exceptional,
+                                    range: expr.range,
+                                    kind: CompletionKind::Raise(None),
+                                });
+                                boundary(
+                                    result,
+                                    file,
+                                    expr.range,
+                                    "close exceptional postcondition is not modeled",
+                                );
+                            }
                         } else {
                             let mut affected = vec![object.clone()];
                             for argument in arguments
@@ -2823,6 +3114,7 @@ fn consume_expr(
                     loop_depth: env.loop_depth,
                     awaiting_coroutine: env.awaiting_coroutine,
                     target_python_version: env.target_python_version.clone(),
+                    models: env.models.clone(),
                     scope_module: definition.file.module.clone(),
                     ..State::default()
                 };
@@ -4936,6 +5228,7 @@ fn check_bodies_impl(
     result: &mut Inspection,
     only_file: Option<&str>,
     python_version: &str,
+    models: &FlowModelCatalog,
 ) {
     let supplied_modules = files
         .iter()
@@ -5286,6 +5579,7 @@ fn check_bodies_impl(
                 alive: true,
                 scope_module: file.module.clone(),
                 target_python_version: python_version.to_owned(),
+                models: Arc::new(models.clone()),
                 function_bindings: final_functions.clone(),
                 function_bindings_complete: true,
                 class_bindings: final_classes.clone(),
@@ -5392,6 +5686,7 @@ fn check_bodies_impl(
                     alive: true,
                     scope_module: file.module.clone(),
                     target_python_version: python_version.to_owned(),
+                    models: Arc::new(models.clone()),
                     function_bindings: final_functions.clone(),
                     function_bindings_complete: true,
                     class_bindings: final_classes.clone(),
@@ -5471,6 +5766,7 @@ fn check_bodies_impl(
             alive: true,
             scope_module: file.module.clone(),
             target_python_version: python_version.to_owned(),
+            models: Arc::new(models.clone()),
             function_bindings_complete: true,
             class_bindings_complete: true,
             module_scope: true,
@@ -5531,8 +5827,16 @@ pub(crate) fn check_file_bodies(
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &mut Inspection,
     python_version: &str,
+    models: &FlowModelCatalog,
 ) {
-    check_bodies_impl(files, summaries, result, Some(target_path), python_version);
+    check_bodies_impl(
+        files,
+        summaries,
+        result,
+        Some(target_path),
+        python_version,
+        models,
+    );
 }
 
 #[cfg(test)]
@@ -5793,5 +6097,274 @@ mod tests {
         assert!(result.diagnostics[0]
             .message
             .contains("object budget exceeded"));
+    }
+
+    fn fixture_close_model(
+        method: &str,
+        repeat_close: RepeatClosePolicy,
+        exceptional: Option<LifecyclePostcondition>,
+        cancelled: Option<LifecyclePostcondition>,
+        asynchronous: bool,
+        post_close_methods: &[&str],
+    ) -> ResourceEffectModel {
+        ResourceEffectModel {
+            id: format!("fixture-{}", method),
+            qualified_symbol: "model.Connection".into(),
+            close_method: method.into(),
+            source_revision: "fixture-v1".into(),
+            source_url: "fixture://model.Connection".into(),
+            supported_python_versions: BTreeSet::from(["3.11".into()]),
+            platform_assumptions: vec!["platform-independent fixture".into()],
+            argument_aliases: Vec::new(),
+            result_alias: None,
+            duty_handoff: "none".into(),
+            suppression: "not-a-context-manager".into(),
+            asynchronous,
+            normal: Some(LifecyclePostcondition::Closed),
+            exceptional,
+            cancelled,
+            repeat_close,
+            post_close_methods: post_close_methods
+                .iter()
+                .map(|method| (*method).to_owned())
+                .collect(),
+            trust: "reviewed-fixture".into(),
+            reviewer: "fixture-test".into(),
+            valid_cases: vec!["normal close applies its postcondition".into()],
+            invalid_cases: vec!["requires-open close rejects a closed resource".into()],
+            unknown_cases: vec!["unknown postcondition weakens the lifecycle".into()],
+        }
+    }
+
+    fn modeled_resource_state(mask: u8, method: &str, model: Option<ResourceEffectModel>) -> State {
+        let file = "model.py";
+        let resource = Contract {
+            schema_version: 1,
+            base_symbol: "model.Connection".into(),
+            display_name: "Connection".into(),
+            lifecycle: Some(Lifecycle {
+                closed_by: method.into(),
+            }),
+            access: "unspecified".into(),
+            source: Span {
+                file: file.into(),
+                line: 1,
+                column: 0,
+                end_line: 1,
+                end_column: 1,
+            },
+            provenance: vec![Provenance {
+                origin: "fixture".into(),
+                trust: "declared-unverified".into(),
+            }],
+        };
+        let mut state = State {
+            alive: true,
+            target_python_version: "3.11".into(),
+            ..State::default()
+        };
+        state
+            .places
+            .insert("resource".into(), BTreeSet::from(["object".into()]));
+        state.objects.insert("object".into(), mask);
+        state.resources.insert("object".into(), resource);
+        state.duty_origins.insert(
+            "object".into(),
+            Span {
+                file: file.into(),
+                line: 2,
+                column: 4,
+                end_line: 2,
+                end_column: 12,
+            },
+        );
+        state.close_origins.insert(
+            "object".into(),
+            Span {
+                file: file.into(),
+                line: 3,
+                column: 4,
+                end_line: 3,
+                end_column: 18,
+            },
+        );
+        if let Some(model) = model {
+            let mut catalog = FlowModelCatalog::default();
+            catalog.insert(model).expect("fixture model is unambiguous");
+            state.models = Arc::new(catalog);
+        }
+        state
+    }
+
+    fn method_call(receiver: &str, method: &str) -> AstExpr {
+        AstExpr {
+            range: SourceRange { start: 0, end: 6 },
+            kind: AstExprKind::Call {
+                function: Box::new(AstExpr {
+                    range: SourceRange { start: 0, end: 6 },
+                    kind: AstExprKind::Attribute(
+                        Box::new(AstExpr {
+                            range: SourceRange {
+                                start: 0,
+                                end: receiver.len(),
+                            },
+                            kind: AstExprKind::Name(receiver.into()),
+                        }),
+                        method.into(),
+                    ),
+                }),
+                arguments: Vec::new(),
+                keywords: Vec::new(),
+            },
+        }
+    }
+
+    fn run_fixture_call(expression: &AstExpr, state: &mut State, result: &mut Inspection) {
+        let file = SourceFile::new("model.py", "model", "resource.close()\n");
+        consume_expr(
+            expression,
+            state,
+            &file,
+            &[],
+            &FunctionMap::new(),
+            result,
+            0,
+        );
+    }
+
+    #[test]
+    fn reviewed_close_models_apply_exceptional_postconditions_per_outcome() {
+        for (postcondition, expected_mask, is_incomplete) in [
+            (LifecyclePostcondition::Closed, CLOSED, false),
+            (LifecyclePostcondition::Open, OPEN, false),
+            (LifecyclePostcondition::Preserve, OPEN, false),
+            (LifecyclePostcondition::Unknown, OPEN | UNKNOWN, true),
+        ] {
+            let model = fixture_close_model(
+                "close",
+                RepeatClosePolicy::Unspecified,
+                Some(postcondition),
+                None,
+                false,
+                &[],
+            );
+            let mut state = modeled_resource_state(OPEN, "close", Some(model));
+            let mut result = inspection();
+
+            run_fixture_call(&method_call("resource", "close"), &mut state, &mut result);
+
+            assert_eq!(state.objects.get("object"), Some(&CLOSED));
+            assert_eq!(state.pending_raises.len(), 1);
+            assert_eq!(
+                state.pending_raises[0].state.objects.get("object"),
+                Some(&expected_mask)
+            );
+            assert_eq!(result.coverage.status == "incomplete", is_incomplete);
+        }
+    }
+
+    #[test]
+    fn reviewed_repeat_close_policies_distinguish_idempotent_and_requires_open() {
+        let idempotent = fixture_close_model(
+            "close",
+            RepeatClosePolicy::Idempotent,
+            None,
+            None,
+            false,
+            &[],
+        );
+        let mut state = modeled_resource_state(CLOSED, "close", Some(idempotent));
+        let mut result = inspection();
+        run_fixture_call(&method_call("resource", "close"), &mut state, &mut result);
+        assert_eq!(state.objects.get("object"), Some(&CLOSED));
+        assert!(result.diagnostics.is_empty(), "{result:#?}");
+        assert_eq!(result.coverage.status, "complete-for-supported-subset");
+
+        let requires_open = fixture_close_model(
+            "close",
+            RepeatClosePolicy::RequiresOpen,
+            None,
+            None,
+            false,
+            &[],
+        );
+        let mut state = modeled_resource_state(CLOSED, "close", Some(requires_open));
+        let mut result = inspection();
+        run_fixture_call(&method_call("resource", "close"), &mut state, &mut result);
+        assert_eq!(state.pending_raises.len(), 1);
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1001"
+                && diagnostic.message == "resource close requires an open resource"
+                && diagnostic.certainty == "definite"
+        }));
+        assert_eq!(result.coverage.status, "complete-for-supported-subset");
+    }
+
+    #[test]
+    fn reviewed_post_close_allowlist_skips_only_the_closed_use_precondition() {
+        let model = fixture_close_model(
+            "close",
+            RepeatClosePolicy::Idempotent,
+            None,
+            None,
+            false,
+            &["status"],
+        );
+        let mut state = modeled_resource_state(CLOSED, "close", Some(model));
+        let mut result = inspection();
+
+        run_fixture_call(&method_call("resource", "status"), &mut state, &mut result);
+
+        assert!(!result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+        assert!(result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001" && diagnostic.message.contains("unknown method effect")
+        }));
+        assert_eq!(state.objects.get("object"), Some(&(CLOSED | UNKNOWN)));
+    }
+
+    #[test]
+    fn reviewed_async_close_applies_its_cancellation_postcondition() {
+        for (postcondition, expected_mask, is_incomplete) in [
+            (LifecyclePostcondition::Closed, CLOSED, false),
+            (LifecyclePostcondition::Open, OPEN, false),
+            (LifecyclePostcondition::Preserve, OPEN, false),
+            (LifecyclePostcondition::Unknown, OPEN | UNKNOWN, true),
+        ] {
+            let model = fixture_close_model(
+                "aclose",
+                RepeatClosePolicy::Unspecified,
+                None,
+                Some(postcondition),
+                true,
+                &[],
+            );
+            let mut state = modeled_resource_state(OPEN, "aclose", Some(model));
+            let mut result = inspection();
+            let call = method_call("resource", "aclose");
+            let awaited = AstExpr {
+                range: call.range,
+                kind: AstExprKind::Await(Box::new(call)),
+            };
+
+            run_fixture_call(&awaited, &mut state, &mut result);
+
+            assert_eq!(state.objects.get("object"), Some(&CLOSED));
+            let cancelled = state
+                .pending_raises
+                .iter()
+                .find(|exit| exit.kind == CompletionKind::Cancelled)
+                .expect("the model declares a cancellation outcome");
+            assert_eq!(cancelled.state.objects.get("object"), Some(&expected_mask));
+            assert_eq!(result.coverage.status == "incomplete", is_incomplete);
+            assert!(!result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001"
+                    && diagnostic
+                        .message
+                        .contains("cancellation may interrupt the awaited operation")
+            }));
+        }
     }
 }

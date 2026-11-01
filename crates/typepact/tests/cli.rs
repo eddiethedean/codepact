@@ -108,7 +108,7 @@ fn phase03_module_qualified_contextlib_model_is_reported_in_text_and_json() {
         report["coverage"]["status"],
         "complete-for-supported-subset"
     );
-    assert_eq!(report["model_catalog_version"], 1);
+    assert_eq!(report["model_catalog_version"], 2);
     assert!(report["available_models"]
         .as_array()
         .unwrap()

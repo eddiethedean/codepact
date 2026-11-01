@@ -113,7 +113,7 @@ pub fn check(files: &[SourceFile], python_version: &str) -> Inspection {
 /// Check resource cleanup duties and return the versioned checker-specific
 /// result schema. `check` remains available for callers that use `Inspection`.
 pub fn check_report(files: &[SourceFile], python_version: &str) -> CheckResult {
-    CheckResult::from_inspection(check(files, python_version), python_version)
+    AnalysisSession::default().check_report(files, python_version)
 }
 
 pub(crate) fn source_limit_inspection(files: &[(String, usize)]) -> Inspection {

@@ -1127,7 +1127,7 @@ fn v03_21_contextlib_model_is_disabled_for_unlisted_python_targets() {
         assert_eq!(result.coverage.status, "incomplete");
         let report = typepact::CheckResult::from_inspection(result, "3.14");
         assert!(report.available_models.is_empty());
-        assert_eq!(report.model_catalog_version, 1);
+        assert_eq!(report.model_catalog_version, 2);
     }
 }
 

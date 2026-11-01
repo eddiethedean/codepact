@@ -188,6 +188,7 @@ fn check_flow_file_query(
     dependencies: Vec<FileInput>,
     python_version: String,
     flow_budget: usize,
+    model_catalog_json: String,
     inspection_json: String,
 ) -> String {
     db.unwind_if_revision_cancelled();
@@ -212,6 +213,8 @@ fn check_flow_file_query(
         .collect();
     let mut inspection: Inspection =
         serde_json::from_str(&inspection_json).expect("flow file input deserializes");
+    let model_catalog: crate::model::FlowModelCatalog =
+        serde_json::from_str(&model_catalog_json).expect("flow model catalog deserializes");
     crate::flow::reset_flow_budget(flow_budget);
     crate::flow::check_file_bodies(
         file.path(db),
@@ -219,6 +222,7 @@ fn check_flow_file_query(
         &summaries,
         &mut inspection,
         &python_version,
+        &model_catalog,
     );
     db.unwind_if_revision_cancelled();
     serde_json::to_string(&inspection).expect("flow file result serializes")
@@ -229,9 +233,12 @@ fn check_flow_query(
     db: &dyn Db,
     files: Vec<FileInput>,
     python_version: String,
+    model_catalog_json: String,
     inspection_json: String,
 ) -> String {
     db.unwind_if_revision_cancelled();
+    let model_catalog: crate::model::FlowModelCatalog =
+        serde_json::from_str(&model_catalog_json).expect("flow model catalog deserializes");
     let sources: Vec<_> = files
         .iter()
         .map(|file| SourceFile::new(file.path(db), file.module(db), file.source(db)))
@@ -313,12 +320,21 @@ fn check_flow_query(
                 declarations: 0,
             },
         };
+        let resource_symbols = flow_input
+            .contracts
+            .iter()
+            .map(|contract| contract.base_symbol.clone())
+            .collect::<BTreeSet<_>>();
+        let applicable_models =
+            serde_json::to_string(&model_catalog.for_resource_symbols(&resource_symbols))
+                .expect("applicable flow models serialize");
         let flow_json = check_flow_file_query(
             db,
             target,
             dependencies,
             python_version.clone(),
             flow_budget,
+            applicable_models,
             serde_json::to_string(&flow_input).expect("flow file input serializes"),
         );
         let flow: Inspection =
@@ -449,11 +465,25 @@ pub struct AnalysisSession {
     files: BTreeMap<String, FileInput>,
     revision: u64,
     target_version: Option<String>,
+    model_catalog: crate::model::FlowModelCatalog,
     mutations_since_reset: usize,
     cancellation: Arc<Mutex<salsa::CancellationToken>>,
 }
 
 impl AnalysisSession {
+    #[cfg(test)]
+    pub(crate) fn set_flow_model_catalog(
+        &mut self,
+        model_catalog: crate::model::FlowModelCatalog,
+    ) -> bool {
+        if self.model_catalog == model_catalog {
+            return false;
+        }
+        self.model_catalog = model_catalog;
+        self.revision = self.revision.saturating_add(1);
+        true
+    }
+
     pub fn set_file(
         &mut self,
         path: String,
@@ -621,7 +651,12 @@ impl AnalysisSession {
         files: &[SourceFile],
         python_version: &str,
     ) -> crate::CheckResult {
-        crate::CheckResult::from_inspection(self.check(files, python_version), python_version)
+        let inspection = self.check(files, python_version);
+        crate::CheckResult::from_inspection_with_models(
+            inspection,
+            python_version,
+            &self.model_catalog,
+        )
     }
 
     /// Check resource cleanup duties and return the versioned result with its
@@ -634,7 +669,11 @@ impl AnalysisSession {
         let checked = self.check_cancellable(files, python_version)?;
         Ok(SessionCheckResult {
             revision: checked.revision,
-            result: crate::CheckResult::from_inspection(checked.inspection, python_version),
+            result: crate::CheckResult::from_inspection_with_models(
+                checked.inspection,
+                python_version,
+                &self.model_catalog,
+            ),
         })
     }
 
@@ -656,11 +695,14 @@ impl AnalysisSession {
         let inspection = inspected.inspection;
         let inspection_json =
             serde_json::to_string(&inspection).expect("inspection result serializes");
+        let model_catalog_json =
+            serde_json::to_string(&self.model_catalog).expect("flow model catalog serializes");
         let result_json = salsa::Cancelled::catch(|| {
             check_flow_query(
                 &self.db,
                 self.files.values().copied().collect(),
                 python_version.to_string(),
+                model_catalog_json,
                 inspection_json,
             )
         });
@@ -811,6 +853,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
         };
@@ -842,6 +885,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
         };
@@ -896,6 +940,116 @@ mod tests {
     }
 
     #[test]
+    fn resource_model_edits_invalidate_reused_cleanup_queries() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let source = "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n    resource.close()\n";
+        let file = SourceFile::new("model.py", "model", source);
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let initial = session.check(&[file.clone(), unrelated.clone()], "3.11");
+        assert!(initial.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message == "repeat-close behavior is not modeled"
+        }));
+
+        let model = crate::model::ResourceEffectModel {
+            id: "fixture-idempotent-close".into(),
+            qualified_symbol: "model.Connection".into(),
+            close_method: "close".into(),
+            source_revision: "fixture-v1".into(),
+            source_url: "fixture://model.Connection".into(),
+            supported_python_versions: BTreeSet::from(["3.11".into()]),
+            platform_assumptions: vec!["platform-independent fixture".into()],
+            argument_aliases: Vec::new(),
+            result_alias: None,
+            duty_handoff: "none".into(),
+            suppression: "not-a-context-manager".into(),
+            asynchronous: false,
+            normal: Some(crate::model::LifecyclePostcondition::Closed),
+            exceptional: None,
+            cancelled: None,
+            repeat_close: crate::model::RepeatClosePolicy::Idempotent,
+            post_close_methods: BTreeSet::new(),
+            trust: "reviewed-fixture".into(),
+            reviewer: "fixture-test".into(),
+            valid_cases: vec!["idempotent repeat close".into()],
+            invalid_cases: vec!["overlapping model version".into()],
+            unknown_cases: vec!["unsupported target version".into()],
+        };
+        let mut catalog = crate::model::FlowModelCatalog::default();
+        catalog.insert(model).unwrap();
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        assert!(session.set_flow_model_catalog(catalog.clone()));
+        let modeled = session.check(&[file.clone(), unrelated.clone()], "3.11");
+        assert!(!modeled.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message == "repeat-close behavior is not modeled"
+        }));
+        assert_eq!(modeled.coverage.status, "complete-for-supported-subset");
+        let modeled_report = session.check_report(&[file.clone(), unrelated.clone()], "3.11");
+        let fixture_metadata = modeled_report
+            .available_models
+            .iter()
+            .find(|model| model.id == "fixture-idempotent-close")
+            .expect("selected fixture model is visible in check metadata");
+        assert!(fixture_metadata.modeled_behavior.contains("Idempotent"));
+        assert!(fixture_metadata
+            .qualification
+            .contains("reviewer=fixture-test"));
+        let executed_flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            executed_flow_queries.len(),
+            1,
+            "only the file with the modeled resource should be rechecked: {executed_flow_queries:#?}"
+        );
+
+        let unsupported = session.check(&[file.clone(), unrelated.clone()], "3.12");
+        assert!(unsupported.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message == "repeat-close behavior is not modeled"
+        }));
+        assert!(!session
+            .check_report(&[file.clone(), unrelated.clone()], "3.12")
+            .available_models
+            .iter()
+            .any(|model| model.id == "fixture-idempotent-close"));
+
+        let mut fresh = AnalysisSession::default();
+        fresh.set_flow_model_catalog(catalog);
+        assert_eq!(
+            modeled,
+            fresh.check(&[file.clone(), unrelated.clone()], "3.11")
+        );
+        assert_eq!(unsupported, fresh.check(&[file, unrelated], "3.12"));
+    }
+
+    #[test]
     fn unrelated_edit_reuses_other_file_lifecycle_checks() {
         let executions = Arc::new(Mutex::new(Vec::<String>::new()));
         let observed = Arc::clone(&executions);
@@ -912,6 +1066,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
         };
@@ -966,6 +1121,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
         };
@@ -1146,6 +1302,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
         };
@@ -1272,6 +1429,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
         };
@@ -1373,6 +1531,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
         };
@@ -1567,6 +1726,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
         };
