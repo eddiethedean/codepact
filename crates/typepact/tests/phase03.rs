@@ -308,6 +308,26 @@ fn v03_09_repeated_owned_argument_positions_share_one_duty() {
 }
 
 #[test]
+fn v03_09_borrowed_helper_does_not_delegate_the_callers_duty() {
+    let result = check_source(&format!(
+        "{RESOURCE}def inspect(resource: Borrowed[C]):\n    resource.close()\ndef cleanup():\n    resource = C()\n    inspect(resource)\n    resource.close()\n"
+    ));
+    let borrowed_closes = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP2001")
+        .collect::<Vec<_>>();
+    assert_eq!(borrowed_closes.len(), 1, "{result:#?}");
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+}
+
+#[test]
 fn v03_09_argument_failure_precedes_owned_helper_entry() {
     let result = check_source(&format!(
         "{RESOURCE}def fail() -> int:\n    raise RuntimeError()\ndef consume(resource: Owned[C], marker: int):\n    resource.close()\ndef cleanup():\n    resource = C()\n    try:\n        consume(resource, fail())\n    except RuntimeError:\n        resource.close()\n"
@@ -688,6 +708,34 @@ fn v03_14_zero_iteration_loop_cannot_prove_cleanup() {
 }
 
 #[test]
+fn v03_14_nested_while_loops_keep_zero_iteration_cleanup_uncertain() {
+    let result = check_source(&format!(
+        "{RESOURCE}def cleanup(outer, inner):\n    resource = C()\n    while outer:\n        while inner:\n            resource.close()\n            break\n        break\n"
+    ));
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
+        }),
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_15_unknown_iterator_effect_does_not_prove_loop_cleanup() {
+    let result = check_source(&format!(
+        "{RESOURCE}def cleanup():\n    resource = C()\n    for item in unresolved_values():\n        resource.close()\n"
+    ));
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
 fn v03_14_finite_for_over_tuple_cleans_each_alias() {
     let result = check_source(&format!(
         "{RESOURCE}def cleanup():\n    first = C()\n    second = C()\n    for resource in (first, second):\n        resource.close()\n"
@@ -905,6 +953,39 @@ fn v03_20_task_scheduling_does_not_infer_completion_or_cleanup() {
 }
 
 #[test]
+fn v03_20_asyncio_handoff_helpers_remain_explicit_boundaries() {
+    for scheduler in [
+        "asyncio.create_task(pending)",
+        "asyncio.gather(pending)",
+        "asyncio.shield(pending)",
+        "asyncio.wait_for(pending, timeout=1)",
+    ] {
+        let source = format!(
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def finish(resource):\n    resource.close()\ndef caller():\n    resource = C()\n    pending = finish(resource)\n    {scheduler}\n"
+        );
+        let result = check_source(&source);
+        assert_eq!(
+            result.coverage.status, "incomplete",
+            "{scheduler}: {result:#?}"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.code == "TP9001" || diagnostic.code == "TP9002" }),
+            "{scheduler}: {result:#?}"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP1002"),
+            "{scheduler}: {result:#?}"
+        );
+    }
+}
+
+#[test]
 fn v03_26_pending_coroutine_budget_widens_captures_and_keeps_the_duty_unknown() {
     let mut source = format!(
         "{RESOURCE}async def hold(resource: Borrowed[C]):\n    pass\ndef leak():\n    resource = C()\n"
@@ -1059,4 +1140,79 @@ fn v03_22_incremental_body_edit_matches_a_fresh_check() {
         let updated = session.check(&files, "3.11");
         assert_eq!(updated, check(&files, "3.11"));
     }
+}
+
+#[test]
+fn v03_10_contextlib_closing_preserves_a_checked_close_raise() {
+    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = C()\n    try:\n        with closing(resource):\n            pass\n    except RuntimeError:\n        pass\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "definite"
+        }),
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_16_unknown_effect_cannot_improve_cleanup_certainty() {
+    let closed = check_source(&format!(
+        "{RESOURCE}def cleanup():\n    resource = C()\n    resource.close()\n"
+    ));
+    let widened = check_source(&format!(
+        "{RESOURCE}def cleanup():\n    resource = C()\n    opaque_effect(resource)\n"
+    ));
+    assert!(
+        !closed
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{closed:#?}"
+    );
+    assert!(
+        widened.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }),
+        "{widened:#?}"
+    );
+    assert_eq!(widened.coverage.status, "incomplete", "{widened:#?}");
+}
+
+#[test]
+fn v03_18_nested_awaited_cleanup_keeps_cancellation_uncertain() {
+    let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    finally:\n        try:\n            await resource.pause()\n        finally:\n            await resource.aclose()\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
+        }),
+        "{result:#?}"
+    );
+    assert!(result
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("cancellation may interrupt the awaited operation")));
+}
+
+#[test]
+fn v03_26_closing_a_capture_does_not_complete_its_pending_coroutine() {
+    let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    await resource.pause()\ndef cleanup():\n    resource = C()\n    pending = use(resource)\n    resource.close()\n";
+    let result = check_source(source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && (diagnostic.message.contains("created coroutine")
+                    || diagnostic.message.contains("captured resource"))
+        }),
+        "{result:#?}"
+    );
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
 }
