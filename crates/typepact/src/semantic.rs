@@ -218,20 +218,29 @@ fn inspect_inner(
                         );
                     }
                 }
-                Declaration::Import { names, range } => {
+                Declaration::Import { names, .. } => {
                     for item in names {
                         let local = item
                             .alias
                             .as_deref()
                             .unwrap_or_else(|| item.name.split('.').next().unwrap_or(&item.name));
                         state.clear_name(local, &file.module, &mut bindings);
+                        if item.name == "contextlib"
+                            && !supplied_modules.contains(&item.name)
+                            && !ambiguous_modules.contains(&item.name)
+                        {
+                            state
+                                .imports
+                                .insert(local.to_owned(), "external:contextlib".into());
+                        } else {
+                            unsupported(
+                                &mut result,
+                                file,
+                                item.range,
+                                "module imports are not resolved in 0.1",
+                            );
+                        }
                     }
-                    unsupported(
-                        &mut result,
-                        file,
-                        *range,
-                        "module imports are not resolved in 0.1",
-                    );
                 }
                 Declaration::Delete { names, range } => {
                     for name in names {
@@ -971,6 +980,14 @@ fn register_supplied_module_import(
     bindings: &mut BTreeMap<String, String>,
     state: &mut FileState,
 ) {
+    if module == "contextlib"
+        && !supplied_modules.contains(module)
+        && !ambiguous_modules.contains(module)
+        && matches!(original, "closing" | "aclosing")
+    {
+        state.callables.insert(local.to_owned());
+        return;
+    }
     if module == "typepact" || module.starts_with("typepact.") {
         return;
     }

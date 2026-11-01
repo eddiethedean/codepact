@@ -20,11 +20,10 @@ class AsyncConnection:
 }
 
 fn sync_client(resources: usize) -> SourceFile {
-    let mut source =
-        String::from("from contextlib import closing\nfrom provider import Connection\n");
+    let mut source = String::from("import contextlib as ctx\nfrom provider import Connection\n");
     for index in 0..resources {
         source.push_str(&format!(
-            "def cleanup_{index}(flag):\n    first = Connection()\n    second = Connection()\n    try:\n        while flag:\n            raise RuntimeError()\n    except RuntimeError:\n        pass\n    else:\n        pass\n    finally:\n        with closing(first), closing(second):\n            pass\n"
+            "def cleanup_{index}(flag):\n    first = Connection()\n    second = Connection()\n    try:\n        while flag:\n            raise RuntimeError()\n    except RuntimeError:\n        pass\n    else:\n        pass\n    finally:\n        with ctx.closing(first), ctx.closing(second):\n            pass\n"
         ));
     }
     SourceFile::new("sync_client.py", "sync_client", source)

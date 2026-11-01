@@ -22,7 +22,10 @@ fn v03_01_local_acquisition_creates_one_exit_duty() {
     assert_eq!(leaks[0].certainty, "definite");
     assert!(leaks[0].message.ends_with("on fallthrough"));
     assert_eq!(leaks[0].related.len(), 1, "{result:#?}");
-    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
 }
 
 #[test]
@@ -291,6 +294,109 @@ fn v03_11_contextlib_closing_and_import_alias_discharge_on_normal_exit() {
         "{result:#?}"
     );
     assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_11_contextlib_module_qualified_import_uses_the_reviewed_model() {
+    let result = check_source(&format!(
+        "{RESOURCE}import contextlib as ctx\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_11_contextlib_reexport_preserves_exact_model_identity() {
+    let bridge = SourceFile::new(
+        "bridge.py",
+        "bridge",
+        "from contextlib import closing as managed\n",
+    );
+    let client = SourceFile::new(
+        "client.py",
+        "client",
+        format!(
+            "from bridge import managed\n{RESOURCE}def cleanup():\n    resource = C()\n    with managed(resource):\n        pass\n"
+        ),
+    );
+    let result = check(&[client, bridge], "3.11");
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_11_contextlib_module_support_does_not_resolve_other_module_imports() {
+    let result = check_source(&format!(
+        "{RESOURCE}import pathlib as paths\ndef cleanup():\n    resource = C()\n    resource.close()\n"
+    ));
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message == "module imports are not resolved in 0.1"
+        }),
+        "{result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete");
+}
+
+#[test]
+fn v03_11_supplied_contextlib_module_cannot_claim_the_stdlib_model() {
+    let local_module = SourceFile::new(
+        "contextlib.py",
+        "contextlib",
+        "def closing(value):\n    return value\n",
+    );
+    for client in [
+        format!(
+            "import contextlib as ctx\n{RESOURCE}def leak():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n"
+        ),
+        format!(
+            "from contextlib import closing as managed\n{RESOURCE}def leak():\n    resource = C()\n    with managed(resource):\n        pass\n"
+        ),
+    ] {
+        let source = client.clone();
+        let client = SourceFile::new("client.py", "client", client);
+        let result = check(&[client, local_module.clone()], "3.11");
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+            }),
+            "{source}\n{result:#?}"
+        );
+        assert_eq!(result.coverage.status, "incomplete");
+    }
+}
+
+#[test]
+fn v03_11_contextlib_lookalike_cannot_discharge_a_duty() {
+    let result = check_source(&format!(
+        "{RESOURCE}from contextlib import closing\ndef closing(value):\n    pass\ndef leak():\n    resource = C()\n    with closing(resource):\n        pass\n"
+    ));
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }),
+        "{result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete");
 }
 
 #[test]
@@ -616,18 +722,22 @@ fn v03_19_async_context_cleanup_keeps_the_cancellation_exit() {
 
 #[test]
 fn v03_21_contextlib_model_is_disabled_for_unlisted_python_targets() {
-    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n";
-    let result = check_source_version(source, "3.14");
-    assert!(
-        result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
-        }),
-        "{result:#?}"
-    );
-    assert_eq!(result.coverage.status, "incomplete");
-    let report = typepact::CheckResult::from_inspection(result, "3.14");
-    assert!(report.available_models.is_empty());
-    assert_eq!(report.model_catalog_version, 1);
+    for source in [
+        "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
+        "import contextlib as ctx\nfrom typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n",
+    ] {
+        let result = check_source_version(source, "3.14");
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+            }),
+            "{result:#?}"
+        );
+        assert_eq!(result.coverage.status, "incomplete");
+        let report = typepact::CheckResult::from_inspection(result, "3.14");
+        assert!(report.available_models.is_empty());
+        assert_eq!(report.model_catalog_version, 1);
+    }
 }
 
 #[test]

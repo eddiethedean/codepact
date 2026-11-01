@@ -23,6 +23,11 @@ Class lifecycle and function access declarations compose independently. Compatib
 
 For `inspect-contracts`, imports resolve only among the explicitly supplied files. For `check`, the checker discovers `.py` files under `--root` and resolves direct absolute imports plus acyclic named re-exports of supported classes, aliases, and synchronous helper functions. `--root` assigns package-qualified names to files; without it, each file's stem supplies the logical module name. Duplicate module names are reported. Neither mode imports packages or executes Python source.
 
+The lifecycle checker also recognizes the exact standard-library identities
+`contextlib.closing` and `contextlib.aclosing` through `import contextlib`,
+`from contextlib import ...`, and supplied-module named re-exports. This narrow
+exception does not resolve arbitrary module imports.
+
 Relative imports, star imports, dynamic imports, import cycles, and ambiguous
 modules remain outside the checking subset or produce visible incomplete
 coverage. See [CLI input behavior](cli.md).
@@ -75,9 +80,11 @@ and release gates.
   `finally` completes. Returning Borrowed, already-closed, or unsupported
   values does not fabricate an ownership handoff.
 - `with contextlib.closing(value)` and `async with
-  contextlib.aclosing(value)` are recognized only for exact supported imports
-  and Python targets 3.11–3.13. They use the checked close-body effects; an
-  unknown manager cannot discharge a duty. Target 3.14 is not yet modeled.
+  contextlib.aclosing(value)` are recognized through exact `from contextlib`
+  imports, `import contextlib` module aliases, and supplied-module named
+  re-exports on Python targets 3.11–3.13. Lookalikes do not match. They use the
+  checked close-body effects; an unknown manager cannot discharge a duty.
+  Target 3.14 is not yet modeled.
 - Resolved local coroutine calls retain captured resource aliases. A direct
   `await` applies the supported body summary; an unawaited coroutine does not
   perform cleanup. Cancellation and task scheduling remain visible boundaries

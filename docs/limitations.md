@@ -52,7 +52,8 @@ provide general lifetime or escape proofs.
 
 The current, unreleased 0.3 worktree implements a bounded exit-flow candidate:
 it tracks `finally`, supported exception handlers, `while`, finite tuple `for`
-loops, Owned return handoff, exact `contextlib.closing`/`aclosing` imports, and
+loops, Owned return handoff, exact imported, module-qualified, and re-exported
+`contextlib.closing`/`aclosing` identities, and
 resolved coroutine calls that are directly awaited. A checked source close
 body contributes explicit raising paths; only its normal completion receives
 the declared close transition. The declaration remains `declared-unverified`.

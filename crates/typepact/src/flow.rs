@@ -1747,6 +1747,7 @@ fn final_function_bindings(
     module: &str,
     functions: &FunctionMap,
     declarations: &[Declaration],
+    supplied_modules: &BTreeSet<String>,
 ) -> BTreeMap<String, String> {
     let prefix = format!("{module}::");
     let mut bindings: BTreeMap<_, _> = functions
@@ -1783,6 +1784,7 @@ fn final_function_bindings(
                 for import in names {
                     let local = import.alias.as_deref().unwrap_or(&import.name);
                     if source == "contextlib"
+                        && !supplied_modules.contains(source)
                         && matches!(import.name.as_str(), "closing" | "aclosing")
                     {
                         bindings.insert(
@@ -1800,7 +1802,7 @@ fn final_function_bindings(
                         .alias
                         .as_deref()
                         .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default());
-                    if import.name == "contextlib" {
+                    if import.name == "contextlib" && !supplied_modules.contains(&import.name) {
                         bindings.insert(local.to_owned(), "external:contextlib".into());
                     } else {
                         bindings.remove(local);
@@ -1832,6 +1834,7 @@ fn final_function_bindings(
 fn external_module_bindings(
     declarations: &[Declaration],
     exports: &BTreeMap<String, BTreeMap<String, String>>,
+    supplied_modules: &BTreeSet<String>,
 ) -> BTreeMap<String, String> {
     let mut bindings = BTreeMap::new();
     for declaration in declarations {
@@ -1845,6 +1848,7 @@ fn external_module_bindings(
                 for import in names {
                     let local = import.alias.as_deref().unwrap_or(&import.name);
                     let external = if module == "contextlib"
+                        && !supplied_modules.contains(module)
                         && matches!(import.name.as_str(), "closing" | "aclosing")
                     {
                         Some(format!("external:contextlib.{}", import.name))
@@ -1867,7 +1871,7 @@ fn external_module_bindings(
                         .alias
                         .as_deref()
                         .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default());
-                    if import.name == "contextlib" {
+                    if import.name == "contextlib" && !supplied_modules.contains(&import.name) {
                         bindings.insert(local.to_owned(), "external:contextlib".into());
                     } else {
                         bindings.remove(local);
@@ -4931,6 +4935,10 @@ fn check_bodies_impl(
     only_file: Option<&str>,
     python_version: &str,
 ) {
+    let supplied_modules = files
+        .iter()
+        .map(|file| file.module.clone())
+        .collect::<BTreeSet<_>>();
     let mut project_functions = ProjectFunctionMap::new();
     let mut historical_functions = FunctionMap::new();
     let mut class_generations = BTreeMap::<(String, String), usize>::new();
@@ -5202,7 +5210,8 @@ fn check_bodies_impl(
             else {
                 continue;
             };
-            let bindings = external_module_bindings(declarations, &external_exports);
+            let bindings =
+                external_module_bindings(declarations, &external_exports, &supplied_modules);
             if external_exports.get(&provider.module) != Some(&bindings) {
                 external_exports.insert(provider.module.clone(), bindings);
                 changed = true;
@@ -5220,8 +5229,12 @@ fn check_bodies_impl(
         else {
             continue;
         };
-        let mut function_bindings =
-            final_function_bindings(&file.module, &qualified_functions, declarations);
+        let mut function_bindings = final_function_bindings(
+            &file.module,
+            &qualified_functions,
+            declarations,
+            &supplied_modules,
+        );
         if let Some(external) = external_exports.get(&file.module) {
             function_bindings.extend(external.clone());
         }
@@ -5251,7 +5264,8 @@ fn check_bodies_impl(
         let contracts = contracts_for_module(file, files, summaries, result);
         let final_classes = final_class_bindings(file, declarations, files, summaries, result);
         let functions = qualified_functions.clone();
-        let mut final_functions = final_function_bindings(&file.module, &functions, declarations);
+        let mut final_functions =
+            final_function_bindings(&file.module, &functions, declarations, &supplied_modules);
         if let Some(external) = external_exports.get(&file.module) {
             final_functions.extend(external.clone());
         }

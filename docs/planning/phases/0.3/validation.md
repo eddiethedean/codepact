@@ -68,15 +68,15 @@ qualification Pass.
 | V03-08 | `tests/phase03.rs`: Borrowed-to-Owned return rejection | Unannotated and unknown returns, fields/containers, and frozen escape-boundary policy |
 | V03-09 | `tests/phase03.rs`: Owned helper transfer, cleanup, and leak deduplication | Close/return/raise outcome map, invalid entry, repeated-object arguments, and borrowing helper cases |
 | V03-10 | `tests/phase03.rs`: multiple closers and failed later entry | Reviewed custom manager aliases, suppression, and normal/raise/cancelled exit postconditions |
-| V03-11 | `tests/phase03.rs`: imported `closing` alias, Borrowed rejection, and async `aclosing`; existing re-export fixture | Re-export/lookalike distinction and exact supported-library revisions |
+| V03-11 | `tests/phase03.rs`: `from` alias, module-qualified import, supplied-module re-export, lookalike and Borrowed rejection; [runtime conformance record](contextlib-conformance.md): six sync/async cases and exact source hashes on CPython 3.11.14–3.13.11 (plus 3.14.3 control) | Static outcome/provenance snapshots, broader manager cases, exact candidate qualification and remaining V03-11 assertions |
 | V03-12 | `tests/phase03.rs`: unknown manager boundary; `tests/cli.rs`: repeat-close boundary | Requires-open/idempotent policies and allowed/forbidden post-close methods |
 | V03-13 | `tests/phase03.rs`: lost-last-alias duty; `tests/cli.rs`: unknown effects after escape | Uncertain receiver sets, callback escape combinations, and alias/object budget counterexamples |
 | V03-14 | `tests/phase03.rs`: while zero-iteration, tuple value capture, unresolved-name boundary, and static tuple for/else/break cases | Continue, nested loops, conditional cleanup, iterator effects, and full target-routing assertions |
 | V03-15 | `tests/phase03.rs`: repeated allocation at one loop site | Last-instance close, iterator failure, and nonterminating-loop counterexamples |
 | V03-16 | `tests/phase03.rs`: static tuple iteration cap and early break; flow budget unit tests | Nested/dimension budgets, usable recovery, generated monotonicity cases, and measured high-budget comparisons |
 | V03-17 | `tests/phase03.rs`: unawaited/awaited async close, cancellation, and coroutine budget | Coroutine aliasing, repeat await, execution/completion facts, and all awaitable boundaries |
-| V03-18 | `tests/phase03.rs`: coroutine creation does not transfer Owned duty; awaited cancellation | Cancellation before entry, during finally, and repeated interruption counterexamples |
-| V03-19 | `tests/phase03.rs`: async context cancellation exit | Async entry failure and known closed/open/unknown cancellation models |
+| V03-18 | `tests/phase03.rs`: coroutine creation does not transfer Owned duty and awaited cancellation stays uncertain; `tests/python/test_contextlib_model_conformance.py`: cancellation enters `aclose`, and repeated cancellation can interrupt it | Static cancellation before entry and across nested awaited cleanup, with caller capture/duty snapshots |
+| V03-19 | `tests/phase03.rs`: async context cancellation exit; `tests/python/test_contextlib_model_conformance.py`: `aclosing` on body cancellation and interrupted cleanup | Async entry failure and known closed/open/unknown model postconditions with exit snapshots |
 | V03-20 | `tests/phase03.rs`: scheduler handoff boundary | TaskGroup, gather, shield, timeout, process/thread, and escaped-capture combinations |
 | V03-21 | `tests/phase03.rs`: contextlib model disabled for unsupported target version | Missing/conflicting version, shadowing, policy edits, and provenance snapshots |
 | V03-22 | `tests/phase03.rs`: changed-body fresh-session parity; `src/db.rs` incremental tests | Model/callee effect edits, all outcomes, moved spans, and query reuse assertions |

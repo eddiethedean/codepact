@@ -726,11 +726,19 @@ pub(crate) fn parse_frontend(
         .body
         .iter()
         .take(crate::DEFAULT_MAX_AST_DECLARATIONS)
-        .filter_map(|statement| match statement {
-            Stmt::ImportFrom(import) if import.level == 0 => {
-                import.module.as_ref().map(ToString::to_string)
-            }
-            _ => None,
+        .flat_map(|statement| match statement {
+            Stmt::ImportFrom(import) if import.level == 0 => import
+                .module
+                .as_ref()
+                .map(ToString::to_string)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            Stmt::Import(import) => import
+                .names
+                .iter()
+                .map(|name| name.name.to_string())
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
         })
         .collect();
     let mut declarations = Vec::new();
