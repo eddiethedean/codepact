@@ -850,6 +850,55 @@ fn v03_05_custom_exception_handler_keeps_the_unmatched_exit_unknown() {
 }
 
 #[test]
+fn v03_05_custom_exception_inheritance_keeps_handler_matching_unknown() {
+    let source = format!(
+        "{RESOURCE}class ParentError(Exception):\n    pass\nclass ChildError(ParentError):\n    pass\ndef cleanup():\n    resource = C()\n    try:\n        raise ChildError()\n    except ParentError:\n        resource.close()\n"
+    );
+    let acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    let raise_line = source
+        .lines()
+        .position(|line| line.trim() == "raise ChildError()")
+        .unwrap()
+        + 1;
+    let result = check_source(&source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic
+                    .message
+                    .contains("exception type may or may not match")
+        }),
+        "custom exception ancestry must remain an explicit boundary: {result:#?}"
+    );
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 2, "{result:#?}");
+    assert!(leaks.iter().all(|diagnostic| {
+        diagnostic.certainty == "possible"
+            && diagnostic.message.ends_with("on raise")
+            && diagnostic.primary.line == raise_line
+            && diagnostic.related[0].line == acquisition_line
+    }));
+    let primary_columns = leaks
+        .iter()
+        .map(|diagnostic| diagnostic.primary.column)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        primary_columns,
+        std::collections::BTreeSet::from([9, 15]),
+        "constructor failure and explicit raise retain separate source witnesses: {result:#?}"
+    );
+}
+
+#[test]
 fn v03_05_handler_order_and_handler_else_raises_still_cross_finally() {
     let result = check_source(&format!(
         "{RESOURCE}def ordered():\n    resource = C()\n    try:\n        raise RuntimeError()\n    except ValueError:\n        pass\n    except RuntimeError:\n        resource.close()\ndef handler_raises():\n    resource = C()\n    try:\n        raise RuntimeError()\n    except RuntimeError:\n        raise ValueError()\n    finally:\n        resource.close()\ndef else_raises():\n    resource = C()\n    try:\n        pass\n    except RuntimeError:\n        pass\n    else:\n        raise RuntimeError()\n    finally:\n        resource.close()\n"
