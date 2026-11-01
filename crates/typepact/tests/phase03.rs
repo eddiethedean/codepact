@@ -1285,6 +1285,31 @@ fn v03_18_cancellation_during_use_enters_finally_and_can_interrupt_awaited_close
 }
 
 #[test]
+fn v03_18_unknown_sync_context_can_suppress_await_cancellation() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    with UnknownManager():\n        await resource.pause()\n        resource.close()\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on cancelled")
+                && diagnostic
+                    .related
+                    .first()
+                    .is_some_and(|span| span.line == 10)
+        }),
+        "the cancellation path remains feasible: {result:#?}"
+    );
+    assert!(result.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "TP1002"
+            && diagnostic.certainty == "possible"
+            && diagnostic.message.ends_with("on fallthrough")
+            && diagnostic.related.first().is_some_and(|span| span.line == 10)
+    }), "the unknown synchronous exit may suppress cancellation and skip the body cleanup: {result:#?}");
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
 fn v03_17_repeated_coroutine_await_is_an_explicit_boundary() {
     let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def finish(resource):\n    await resource.aclose()\nasync def cleanup():\n    resource = C()\n    pending = finish(resource)\n    await pending\n    await pending\n";
     let result = check_source(source);
