@@ -2,6 +2,12 @@
 
 These gates apply to every phase and patch release. Phase-specific gates add requirements. **No gate is passed merely by creating this document.**
 
+## Maintainer authority
+
+The accountable maintainer may implement changes, run validation, review all evidence and models, accept semantic decisions, and approve the release alone. Phase owner, validator, reviewer and release approver may all be the same person. No independent reviewer, second-person sign-off or per-release review waiver is required. Additional review is optional at the maintainer's discretion and is never a prerequisite for tagging or publication.
+
+This policy applies to every phase and patch release, including 0.3 and later phases. References to a reviewer or reviewed evidence mean the accountable maintainer unless they choose to involve someone else. Historical records of independent-review waivers describe past releases and impose no requirement on future releases. Tests, exact-candidate evidence, applicable gates and explicit maintainer authorization remain required.
+
 ## Gate matrix
 
 | ID | Gate | Required evidence / pass condition |

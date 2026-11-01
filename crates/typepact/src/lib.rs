@@ -1,7 +1,8 @@
 //! Bounded, non-executing inspection of TypePact declarations in Python source.
 pub mod db;
 pub use db::{
-    AnalysisCancelled, AnalysisSession, CancellationToken, SessionInputError, SessionInspection,
+    AnalysisCancelled, AnalysisSession, CancellationToken, SessionCheckResult, SessionInputError,
+    SessionInspection,
 };
 mod flow;
 mod frontend;
@@ -11,7 +12,10 @@ mod model;
 mod semantic;
 mod source;
 pub(crate) use model::Access;
-pub use model::{Contract, Coverage, Diagnostic, Inspection, Lifecycle, Provenance, Span};
+pub use model::{
+    CheckDiagnostic, CheckModelMetadata, CheckResult, Contract, Coverage, Diagnostic, Inspection,
+    Lifecycle, Provenance, Span, CHECK_MODEL_CATALOG_VERSION, CHECK_SCHEMA_VERSION,
+};
 pub(crate) use source::span as source_span;
 pub const SCHEMA_VERSION: u8 = 0;
 pub const DEFAULT_MAX_SOURCE_BYTES: usize = 1_000_000;
@@ -101,9 +105,15 @@ pub fn inspect(files: &[SourceFile], python_version: &str) -> Inspection {
     AnalysisSession::default().inspect(files, python_version)
 }
 
-/// Check resource lifecycle uses in the currently supported synchronous subset.
+/// Check resource cleanup duties in the bounded, currently supported subset.
 pub fn check(files: &[SourceFile], python_version: &str) -> Inspection {
     AnalysisSession::default().check(files, python_version)
+}
+
+/// Check resource cleanup duties and return the versioned checker-specific
+/// result schema. `check` remains available for callers that use `Inspection`.
+pub fn check_report(files: &[SourceFile], python_version: &str) -> CheckResult {
+    CheckResult::from_inspection(check(files, python_version), python_version)
 }
 
 pub(crate) fn source_limit_inspection(files: &[(String, usize)]) -> Inspection {

@@ -5,7 +5,66 @@ use std::{
     path::{Component, Path, PathBuf},
     process::ExitCode,
 };
-use typepact::{inspect, is_python_identifier, SourceFile, DEFAULT_MAX_SOURCE_BYTES};
+use typepact::{
+    inspect, is_python_identifier, CheckResult, Inspection, SourceFile, DEFAULT_MAX_SOURCE_BYTES,
+};
+
+fn print_inspection_diagnostics(out: &Inspection) {
+    for diagnostic in &out.diagnostics {
+        println!(
+            "{}:{}:{}: {} {}: {}",
+            diagnostic.primary.file,
+            diagnostic.primary.line,
+            diagnostic.primary.column,
+            diagnostic.severity,
+            diagnostic.code,
+            diagnostic.message
+        );
+        for related in &diagnostic.related {
+            println!(
+                "  related: {}:{}:{}",
+                related.file, related.line, related.column
+            );
+        }
+    }
+    if out.coverage.status != "complete-for-supported-subset" {
+        println!("analysis incomplete: {}", out.coverage.reasons.join("; "));
+    }
+}
+
+fn print_check_diagnostics(out: &CheckResult) {
+    for diagnostic in &out.diagnostics {
+        println!(
+            "{}:{}:{}: {} {}: {}",
+            diagnostic.primary.file,
+            diagnostic.primary.line,
+            diagnostic.primary.column,
+            diagnostic.severity,
+            diagnostic.code,
+            diagnostic.message
+        );
+        for related in &diagnostic.related {
+            println!(
+                "  related: {}:{}:{}",
+                related.file, related.line, related.column
+            );
+        }
+        if let Some(completion) = &diagnostic.completion {
+            println!("  completion: {completion}");
+        }
+        println!("  certainty: {}", diagnostic.certainty);
+        println!("  trust: {}", diagnostic.trust);
+        if let Some(reason) = &diagnostic.coverage_reason {
+            println!("  coverage reason: {reason}");
+        }
+        if let Some(repair) = &diagnostic.repair {
+            println!("  repair: {repair}");
+        }
+    }
+    if out.coverage.status != "complete-for-supported-subset" {
+        println!("analysis incomplete: {}", out.coverage.reasons.join("; "));
+    }
+}
 
 fn discover_python_files(
     root: &Path,
@@ -335,8 +394,13 @@ fn main() -> ExitCode {
                 .contains("module-level control flow and executable statements are unsupported")
         });
     }
+    let check_result = checking.then(|| CheckResult::from_inspection(out.clone(), &python_version));
     if json {
-        match serde_json::to_string_pretty(&out) {
+        let serialized = match &check_result {
+            Some(check_result) => serde_json::to_string_pretty(check_result),
+            None => serde_json::to_string_pretty(&out),
+        };
+        match serialized {
             Ok(serialized) => println!("{serialized}"),
             Err(error) => {
                 eprintln!("serialization failure: {error}");
@@ -344,27 +408,10 @@ fn main() -> ExitCode {
             }
         }
     } else {
-        for diagnostic in &out.diagnostics {
-            println!(
-                "{}:{}:{}: {} {}: {}",
-                diagnostic.primary.file,
-                diagnostic.primary.line,
-                diagnostic.primary.column,
-                diagnostic.severity,
-                diagnostic.code,
-                diagnostic.message
-            );
-            if !diagnostic.related.is_empty() {
-                for related in &diagnostic.related {
-                    println!(
-                        "  related: {}:{}:{}",
-                        related.file, related.line, related.column
-                    );
-                }
-            }
-        }
-        if out.coverage.status != "complete-for-supported-subset" {
-            println!("analysis incomplete: {}", out.coverage.reasons.join("; "));
+        if let Some(check_result) = &check_result {
+            print_check_diagnostics(check_result);
+        } else {
+            print_inspection_diagnostics(&out);
         }
     }
     if out

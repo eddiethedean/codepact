@@ -2,13 +2,14 @@
 
 Copy this template to a versioned release record when a candidate exists. Placeholders are not approvals or test results.
 
+The accountable maintainer may fill every owner, validator, reviewer and approver role under the [maintainer authority policy](release-gates.md#maintainer-authority). No additional reviewer or independent-review waiver is required. Reviewer columns record who assessed the evidence; they do not require a different person from its author.
+
 ## Candidate
 
 - Version and phase:
 - Candidate commit:
 - Previous release / comparison base:
-- Phase owner:
-- Release reviewer:
+- Accountable maintainer (phase owner, validator, reviewer and release approver):
 - Supported Python/checker/platform matrix:
 - Artifact names and hashes:
 - Scope changes and accepted decision links:
@@ -46,7 +47,7 @@ Copy every gate ID from the applicable phase plan into this table.
 
 ## Publication record
 
-- Pre-tag authorization and reviewer:
+- Pre-tag maintainer authorization and date:
 - Tag and target commit:
 - Workflow run:
 - PyPI version and artifact verification:

@@ -6,6 +6,10 @@ TypePact 0.1.0 and 0.2.0 have been published and verified. See the
 [0.2.0 release checklist](release-0.2.0-checklist.md) records its completed
 candidate and verification process.
 
+## Release authority
+
+The accountable maintainer can validate and approve a release alone, including their own implementation, semantic decisions, models and evidence. No independent reviewer, second-person approval or review waiver is required. Additional review is optional. Follow the [maintainer authority policy](release-gates.md#maintainer-authority); required tests, artifact checks and explicit maintainer release authorization still apply.
+
 ## Artifacts
 
 Deliver a pure Python typepact package built with Hatchling and an exact dependency on typepact-cli at the same version (D015). Maturin bin bindings build typepact-cli with the Rust command. Publish eight CLI platform wheels, one universal helper wheel and two complete source archives. Retain the reusable typepact Rust crate and optional Cargo CLI installation. The Ruff/Salsa migration must retain reproducible registry-compatible dependencies and documented Rust prerequisites; qualify these before selecting dependency versions.
@@ -61,7 +65,7 @@ Before tagging a subsequent release:
 - Use the pinned build tools and committed `uv.lock`/`Cargo.lock`. Require the eight CLI platform wheels, one pure helper wheel and both source archives; validate version metadata and dependency pins.
 - Complete exact-candidate release evidence, maintainer approval, local checks, and CI review. The [0.2.0 release checklist](release-0.2.0-checklist.md) records the last release process and can guide later checklists.
 
-Push the version tag to trigger publication. Both PyPI publish jobs use Trusted Publishing: grant job-scoped `id-token: write`, omit username/password inputs, and enable attestations. Keep the `pypi` environment on both jobs. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; typepact publication also depends on successful typepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
+Push the version tag to trigger publication. Both PyPI publish jobs use Trusted Publishing: grant job-scoped `id-token: write`, omit username/password inputs, and enable attestations. Keep the `pypi` environment on both jobs, with no protection rule requiring another person's approval. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; typepact publication also depends on successful typepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
 
 This workflow does not publish anything until a matching tag is pushed. Manual dispatch is build-only. The current Quality workflow is wired into release validation; a successful run on an unrelated revision is not candidate evidence.
 

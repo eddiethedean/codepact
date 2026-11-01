@@ -54,6 +54,20 @@ The host supplies all
 not to `check`. Consult the [lifecycle tutorial](lifecycle.md) for modeled behavior
 and the [output reference](output.md) for certainty and coverage interpretation.
 
+The unreleased 0.3 worktree extends checking to modeled return, raise, loop and
+cleanup exits and uses the provisional assurance string
+`lifecycle-checking-for-supported-exit-flow`. Its cleanup gates remain pending;
+this worktree is not a 0.3 release qualification claim.
+
+The worktree also exposes `check_report(files, target)` and
+`AnalysisSession::check_report`, returning `CheckResult` with
+`check_schema_version: 1`. Its checker diagnostics add completion kind, trust,
+coverage reason and repair guidance while declaration inspection remains schema
+version 0. The result includes the selected Python target and versioned built-in
+model catalog. `AnalysisSession::check_report_cancellable` returns a
+revision-tagged `SessionCheckResult`. `check` continues returning `Inspection`
+for source compatibility. This API is pre-release and does not qualify 0.3.
+
 ## Incremental analysis session
 
 Use `AnalysisSession` when inputs change repeatedly. It stores source in a Salsa database, tracks input revisions, and invalidates computations from changed files while retaining reusable work for unchanged files.
@@ -118,15 +132,21 @@ documents the published crate.
 | `SourceFile { path, module, source }` | One source snapshot item; `SourceFile::new(path, module, source)` accepts values convertible to `String` |
 | `inspect(files, python_version) -> Inspection` | One-shot declaration inspection |
 | `check(files, python_version) -> Inspection` | Lifecycle checking for the supported subset |
+| `check_report(files, python_version) -> CheckResult` | Unreleased 0.3 checker result with its own schema version and cleanup metadata |
 | `AnalysisSession` | Reusable database for full-snapshot updates, inspection, and checking |
+| `AnalysisSession::check_report(files, target)` | Versioned check result for the current full input snapshot |
 | `SessionInspection { revision, inspection }` | Result plus the session revision used for analysis |
+| `SessionCheckResult { revision, result }` | Versioned check result plus the session revision used for analysis |
+| `AnalysisSession::check_report_cancellable(files, target)` | Cancellable, revision-tagged checker result |
 | `AnalysisCancelled` | Error returned by cancellable methods when no complete current result is available |
 | `SessionInputError` | `FileLimitExceeded`, `SourceLimitExceeded`, or `TotalSourceLimitExceeded` from `set_file` |
 | `CancellationToken` | `cancel()` requests cancellation; `is_cancelled()` reports its state |
-| `Span`, `Provenance`, `Lifecycle`, `Contract`, `Diagnostic`, `Coverage`, `Inspection` | Public result model types; fields are public and serializable |
+| `Span`, `Provenance`, `Lifecycle`, `Contract`, `Diagnostic`, `Coverage`, `Inspection` | Inspection result model types; fields are public and serializable |
+| `CheckResult`, `CheckDiagnostic`, `CheckModelMetadata` | Unreleased 0.3 versioned checker result model |
 | `is_python_identifier(value, python_version) -> bool` | Checks an identifier against the selected analyzer target's Unicode rules |
 
-The crate root also exports `SCHEMA_VERSION` and these defaults:
+The crate root also exports `SCHEMA_VERSION`, `CHECK_SCHEMA_VERSION`,
+`CHECK_MODEL_CATALOG_VERSION`, and these defaults:
 `DEFAULT_MAX_SOURCE_BYTES` (1,000,000 bytes per file and request),
 `DEFAULT_MAX_DECLARATIONS` (10,000 contracts),
 `DEFAULT_MAX_INPUT_FILES` (10,000 files),

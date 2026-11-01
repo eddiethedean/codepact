@@ -16,6 +16,8 @@ Completion: the documented Connection example produces exactly the intended post
 
 ## Phase 2: cover real cleanup and adoption
 
+The [refined 0.3 cleanup plan](phases/0.3-cleanup.md), [cleanup specification](phases/0.3/specification.md) and [V03 matrix](phases/0.3/validation.md) define CL01–CL08 and C01–C05/C07/CS01. Cleanup duties, exceptional exits, reviewed contexts, loop fixed points and bounded intratask cancellation belong to 0.3; must-use rules, configuration, baselines, suppressions, broader reporting and pilots belong to [0.4 adoption](phases/0.4-adoption.md).
+
 Add exception edges, finally, context-manager models, early returns and loops. Introduce cleanup obligations and initial must-use checks. Add pyproject configuration, machine output, suppression reasons, baseline support and analysis coverage reporting.
 
 Completion: pilot projects can run in CI with stable exit codes; modeled cleanup works on normal and exceptional paths; unresolved behavior is visible; baseline updates cannot silently hide new rules.

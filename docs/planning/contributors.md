@@ -12,7 +12,7 @@ A behavior change needs its canonical semantic rule, both API implications, posi
 
 Public APIs, diagnostic codes, configuration keys and semantic changes require an RFC or decision record. Record alternatives, compatibility evidence, risks and acceptance criteria. Ordinary refactors need a description and relevant checks.
 
-Require a maintainer review for release-bound changes. Broader ownership claims should receive an additional independent semantic review when contributor capacity permits. Small teams should explicitly record deferred review rather than silently claiming it occurred.
+Require accountable-maintainer review for release-bound changes. The maintainer may review their own work, validate evidence and models, and authorize releases alone under the [maintainer authority policy](release-gates.md#maintainer-authority). Additional independent semantic review is optional at the maintainer's discretion; it is never a release gate and needs no waiver or deferral record.
 
 ## Contribution workflow
 

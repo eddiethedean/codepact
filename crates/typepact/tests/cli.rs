@@ -60,7 +60,8 @@ fn check_reports_one_use_after_close_at_the_call_site() {
         )],
         "3.11",
     );
-    assert_eq!(result, serde_json::to_value(api).unwrap());
+    let report = typepact::CheckResult::from_inspection(api, "3.11");
+    assert_eq!(result, serde_json::to_value(report).unwrap());
     let diagnostics = result["diagnostics"].as_array().unwrap();
     let findings: Vec<_> = diagnostics
         .iter()
@@ -70,14 +71,18 @@ fn check_reports_one_use_after_close_at_the_call_site() {
     assert_eq!(findings[0]["certainty"], "definite");
     assert_eq!(findings[0]["primary"]["line"], 12);
     assert_eq!(findings[0]["related"][0]["line"], 11);
-    assert_eq!(
-        result["coverage"]["status"], "complete-for-supported-subset",
-        "{result:#?}"
-    );
+    assert_eq!(result["coverage"]["status"], "incomplete", "{result:#?}");
+    assert!(result["coverage"]["reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|reason| reason.as_str().is_some_and(|reason| {
+            reason.contains("close exceptional postcondition is not modeled")
+        })));
 
     assert_eq!(
         result["assurance"],
-        "lifecycle-checking-for-supported-normal-flow"
+        "lifecycle-checking-for-supported-exit-flow"
     );
     let valid_source = source.strip_suffix("inspect(conn)\n").unwrap();
     let valid = typepact::check(
@@ -88,8 +93,12 @@ fn check_reports_one_use_after_close_at_the_call_site() {
         )],
         "3.11",
     );
-    assert!(valid.diagnostics.is_empty(), "{valid:#?}");
-    assert_eq!(valid.coverage.status, "complete-for-supported-subset");
+    assert_eq!(valid.diagnostics.len(), 1, "{valid:#?}");
+    assert_eq!(valid.diagnostics[0].code, "TP9001");
+    assert!(valid.diagnostics[0]
+        .message
+        .contains("close exceptional postcondition is not modeled"));
+    assert_eq!(valid.coverage.status, "incomplete");
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -109,11 +118,6 @@ fn constructor_assignment_shadows_the_resource_class_binding() {
         result["coverage"]["status"],
         "complete-for-supported-subset"
     );
-    assert!(!result["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|diagnostic| diagnostic["code"] == "TP1001"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -152,11 +156,6 @@ fn raise_stops_normal_flow_and_does_not_report_unreachable_use() {
         result["coverage"]["status"],
         "complete-for-supported-subset"
     );
-    assert!(!result["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|diagnostic| diagnostic["code"] == "TP1001"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -425,10 +424,7 @@ connection.status()
     assert_eq!(findings.len(), 1, "{diagnostics:#?}");
     assert_eq!(findings[0]["certainty"], "definite");
     assert_eq!(findings[0]["primary"]["file"], "client.py");
-    assert_eq!(
-        result["coverage"]["status"], "complete-for-supported-subset",
-        "{result:#?}"
-    );
+    assert_eq!(result["coverage"]["status"], "incomplete", "{result:#?}");
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -543,7 +539,11 @@ fn check_applies_a_reexported_helper_and_retains_its_provider_location() {
         .collect();
     assert_eq!(
         result,
-        serde_json::to_value(typepact::check(&sources, "3.11")).unwrap()
+        serde_json::to_value(typepact::CheckResult::from_inspection(
+            typepact::check(&sources, "3.11"),
+            "3.11",
+        ))
+        .unwrap()
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -695,24 +695,26 @@ other.status()
     .unwrap();
 
     let output = run_check(&root);
-    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.status.code(), Some(1));
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(result["coverage"]["status"], "incomplete");
-    assert!(result["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|diagnostic| {
-            diagnostic["code"] == "TP9001"
-                && diagnostic["message"]
-                    .as_str()
-                    .is_some_and(|message| message.contains("unknown call effect"))
-        }));
-    assert!(!result["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|diagnostic| diagnostic["code"] == "TP1001"));
+    let findings = result["diagnostics"].as_array().unwrap();
+    assert!(findings.iter().any(|diagnostic| {
+        diagnostic["code"] == "TP1001"
+            && diagnostic["certainty"] == "possible"
+            && diagnostic["primary"]["line"] == 14
+    }));
+    assert!(findings.iter().any(|diagnostic| {
+        diagnostic["code"] == "TP1001"
+            && diagnostic["certainty"] == "definite"
+            && diagnostic["primary"]["line"] == 15
+    }));
+    assert!(findings.iter().any(|diagnostic| {
+        diagnostic["code"] == "TP9001"
+            && diagnostic["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("unknown call effect"))
+    }));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -783,7 +785,7 @@ fn possible_findings_exit_zero_while_invalid_project_input_exits_two() {
 }
 
 #[test]
-fn loops_with_async_and_nested_closures_report_incomplete_coverage() {
+fn loops_and_async_bodies_are_checked_while_unknown_regions_stay_incomplete() {
     let root = fixture_root().with_extension("lifecycle-unsupported-regions");
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
@@ -822,17 +824,15 @@ def closure_use(value: Borrowed[Connection]):
         .iter()
         .any(|diagnostic| {
             diagnostic["code"] == "TP9001"
-                && diagnostic["message"] == "async function body is not checked"
+                && diagnostic["message"] == "context-manager cleanup has no qualified model"
         }));
     assert!(result["diagnostics"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|diagnostic| {
-            diagnostic["code"] == "TP9001"
-                && diagnostic["message"] == "unsupported flow weakens tracked resources"
-        }));
-    assert!(!result["diagnostics"]
+        .any(|diagnostic| diagnostic["code"] == "TP9001"
+            && diagnostic["message"] == "unsupported flow weakens tracked resources"));
+    assert!(result["diagnostics"]
         .as_array()
         .unwrap()
         .iter()
@@ -1334,10 +1334,7 @@ alias_c.status()
     assert!(findings
         .iter()
         .all(|diagnostic| diagnostic["certainty"] == "definite"));
-    assert_eq!(
-        result["coverage"]["status"], "complete-for-supported-subset",
-        "{result:#?}"
-    );
+    assert_eq!(result["coverage"]["status"], "incomplete", "{result:#?}");
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1584,10 +1581,7 @@ fn close_body_runs_before_the_designated_close_transition() {
     assert_eq!(findings.len(), 1, "{:#?}", result["diagnostics"]);
     assert_eq!(findings[0]["primary"]["line"], 9);
     assert_eq!(findings[0]["related"][0]["line"], 8);
-    assert_eq!(
-        result["coverage"]["status"],
-        "complete-for-supported-subset"
-    );
+    assert_eq!(result["coverage"]["status"], "incomplete");
     fs::remove_dir_all(root).unwrap();
 }
 

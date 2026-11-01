@@ -1,6 +1,6 @@
 # TypePact 0.x release roadmap
 
-Planning baseline: 2026-10-31. **TypePact 0.1.0 is published and its qualification gates passed.** The release provides declaration inspection. The current source includes an unreleased lifecycle-checking preview for the upcoming 0.2.0 release; its qualification gates remain pending. See the [0.1.0 release evidence](docs/releases/0.1.0-evidence.md) for the accepted scope and the [0.2 plan](docs/planning/phases/0.2-lifecycle.md) for preview status.
+Planning baseline: 2026-10-31; release status updated from the retained evidence. **TypePact 0.1.0 and 0.2.0 are published and qualified.** The releases provide declaration inspection and bounded lifecycle checking respectively; see the [0.1.0](docs/releases/0.1.0-evidence.md) and [0.2.0 release evidence](docs/releases/0.2.0-evidence.md). The next planned release is 0.3.0; its [refined cleanup plan](docs/planning/phases/0.3-cleanup.md), [proposed semantics](docs/planning/phases/0.3/specification.md) and [V03 matrix](docs/planning/phases/0.3/validation.md) remain pending implementation and qualification.
 
 This document is the authoritative release sequence. The original [feature milestones](docs/planning/roadmap.md) and [implementation phases](docs/planning/implementation.md) remain technical work groupings; they are mapped below rather than treated as version numbers.
 
@@ -41,7 +41,7 @@ The [AI-agent integration plan](docs/planning/ai-agent-integration.md) adds stru
 
 The optional [typepact-pyrefly-cli prototype](docs/planning/typepact-pyrefly-cli.md) combines embedded Pyrefly type checking with TypePact resource checks in a separate package and command. It has independent prerelease versions, PF01–PF05 work packages and PF-V01–PF-V08 gates, and may progress alongside lifecycle work without blocking the main release sequence. Its planned trusted publisher uses `release-pyrefly.yml` and environment `pypi`; embedded-library feasibility and clean packaging must pass before publication.
 
-The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded async cleanup and cancellation foundations in 0.3 (CS01), reporting and an async pilot in 0.4 (CS02), opt-in structured task ownership/borrow checking in 0.5 (CS03), suspension-aware exclusivity and protocol states in 0.6 (CS04), cancellation-preserving outcomes in 0.7 (CS05), qualified models and integration parity in 0.8 (CS06), and a stable-scope audit in 0.9 (CS07). Start with modeled `asyncio.TaskGroup` lifetimes. Multiprocessing and thread handoffs remain conservative escape boundaries until separately qualified; no race, deadlock, Send/Sync or general process-ownership guarantee is added. The synchronous 0.2 preview scope is unchanged.
+The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded async cleanup and cancellation foundations in 0.3 (CS01), reporting and an async pilot in 0.4 (CS02), opt-in structured task ownership/borrow checking in 0.5 (CS03), suspension-aware exclusivity and protocol states in 0.6 (CS04), cancellation-preserving outcomes in 0.7 (CS05), qualified models and integration parity in 0.8 (CS06), and a stable-scope audit in 0.9 (CS07). Start task-lifetime modeling with `asyncio.TaskGroup` in 0.5; 0.3 qualifies intratask cleanup only. Multiprocessing and thread handoffs remain conservative escape boundaries until separately qualified; no race, deadlock, Send/Sync or general process-ownership guarantee is added. The published synchronous 0.2 scope is unchanged.
 
 ## Version policy
 
@@ -55,11 +55,11 @@ The existing workflow publishes only exact stable-format tags such as v0.2.0. Ca
 
 Every phase must pass [G1–G8](docs/planning/release-gates.md) plus its numbered phase gates. Record evidence using the [release evidence template](docs/planning/release-evidence-template.md). Gates start pending. CI success alone does not approve product scope or safety claims.
 
-Each phase owner is assigned before work starts; maintainers record the release decision. No dates or named owners are assumed by this plan. A required gate that fails or lacks evidence holds the release. A scope amendment must explain the change and update affected APIs, limitations, phase documents and user claims.
+Each phase owner is assigned before work starts; the accountable maintainer may serve as phase owner, validator, reviewer and release approver. The maintainer can validate and approve their own work alone; independent review and second-person sign-off are optional, with no waiver required. See the [maintainer authority policy](docs/planning/release-gates.md#maintainer-authority). A required gate that fails or lacks evidence holds the release. A scope amendment must explain the change and update affected APIs, limitations, phase documents and user claims.
 
 ## First executable release
 
-The [0.1 plan](docs/planning/phases/0.1-foundations.md) is complete: its pure Python helper, matching CLI package, Rust crate, eight native CLI wheel targets, source archives, and F01–F08/G1–G8 evidence are recorded in the [release evidence](docs/releases/0.1.0-evidence.md). The [0.1 prototype](docs/planning/phases/0.1/prototype.md) and [validation matrix](docs/planning/phases/0.1/validation.md) remain as historical design and test references. The current release target is 0.2.0; follow the [phase plan](docs/planning/phases/0.2-lifecycle.md) and do not treat the preview as a qualified release.
+The [0.1 plan](docs/planning/phases/0.1-foundations.md) is complete: its pure Python helper, matching CLI package, Rust crate, eight native CLI wheel targets, source archives, and F01–F08/G1–G8 evidence are recorded in the [release evidence](docs/releases/0.1.0-evidence.md). The [0.1 prototype](docs/planning/phases/0.1/prototype.md) and [validation matrix](docs/planning/phases/0.1/validation.md) remain historical references. The [0.2 lifecycle release](docs/releases/0.2.0-evidence.md) is also complete. Follow the [0.3 phase plan](docs/planning/phases/0.3-cleanup.md) for the next release; its proposed cleanup semantics and gates are not shipped behavior.
 
 ## 1.0 boundary
 

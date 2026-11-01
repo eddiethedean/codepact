@@ -27,6 +27,8 @@ D009–D012 establish direction, not implementation completion. [AM01–AM06](an
 
 **D017 — Structured async resource safety first.** Adopt the [concurrency plan](concurrency.md) on 2026-10-31: stage CS01–CS07 through 0.3–0.9, beginning with intratask cancellation/cleanup and reviewed asyncio.TaskGroup lifetime models. Reuse the canonical ownership/borrow/typestate/effect engine. Keep 0.2 synchronous. Process/thread handoffs remain conservative escape boundaries until reviewed models distinguish serialization, handles, start methods and worker failure. No Send/Sync, race-freedom, deadlock-freedom or general cross-process ownership guarantee is introduced; implementation and qualification remain pending.
 
+**D018 — Maintainer-only release validation and approval.** At the maintainer's explicit direction, the accountable maintainer may implement, validate, review and approve every release alone, including semantic decisions, models and performance evidence. No independent reviewer, second-person sign-off, or independent-review waiver is required. Additional review is optional at the maintainer's discretion. This applies to all phase and patch releases; it supersedes any implication that owner, validator, reviewer and approver must be different people. Required tests, exact-candidate gate evidence and explicit maintainer release authorization remain in force. See the [maintainer authority policy](release-gates.md#maintainer-authority).
+
 ## Proposed decisions requiring evidence
 
 | Question | Starting proposal | Evidence needed |

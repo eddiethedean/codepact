@@ -56,10 +56,7 @@ fn valid_keyword_and_positional_bindings_keep_ordered_resource_effects() {
             "definite",
             "{call}: {result:#?}"
         );
-        assert_eq!(
-            result.coverage.status, "complete-for-supported-subset",
-            "{call}: {result:#?}"
-        );
+        assert_eq!(result.coverage.status, "incomplete", "{call}: {result:#?}");
     }
 }
 
@@ -212,7 +209,7 @@ fn receiver_alternatives_execute_from_the_same_incoming_state() {
     let source = receiver_source("        c.close()", "        c.status()", "");
     let result = check_source(&source);
     assert!(findings(&result).is_empty(), "{result:#?}");
-    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+    assert_eq!(result.coverage.status, "incomplete");
 
     let result = check_source(&receiver_source(
         "        c.close()",
@@ -293,7 +290,7 @@ fn redefined_functions_keep_their_own_parameter_contracts() {
         }),
         "{result:#?}"
     );
-    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+    assert_eq!(result.coverage.status, "incomplete");
 
     let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef f(value: Borrowed[C]): pass\ndef f(value: C): value.close()\n";
     let result = check_source(source);
@@ -312,7 +309,7 @@ fn same_module_helpers_resolve_global_classes_without_callers_local_aliases() {
     let result = check_source(source);
     assert_eq!(findings(&result).len(), 1, "{result:#?}");
     assert_eq!(findings(&result)[0].certainty, "definite", "{result:#?}");
-    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+    assert_eq!(result.coverage.status, "incomplete");
 }
 
 #[test]
@@ -482,10 +479,7 @@ fn unknown_effects_do_not_restore_shadowed_builtin_annotation_names() {
 fn modeled_resource_construction_preserves_the_resource_decorator_import() {
     let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nc = C()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nc.close()\nc.status()\n";
     let result = check_source(source);
-    assert_eq!(
-        result.coverage.status, "complete-for-supported-subset",
-        "{result:#?}"
-    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert_eq!(findings(&result).len(), 1, "{result:#?}");
     assert_eq!(findings(&result)[0].certainty, "definite", "{result:#?}");
 }

@@ -213,7 +213,13 @@ fn check_flow_file_query(
     let mut inspection: Inspection =
         serde_json::from_str(&inspection_json).expect("flow file input deserializes");
     crate::flow::reset_flow_budget(flow_budget);
-    crate::flow::check_file_bodies(file.path(db), &sources, &summaries, &mut inspection);
+    crate::flow::check_file_bodies(
+        file.path(db),
+        &sources,
+        &summaries,
+        &mut inspection,
+        &python_version,
+    );
     db.unwind_if_revision_cancelled();
     serde_json::to_string(&inspection).expect("flow file result serializes")
 }
@@ -366,6 +372,12 @@ impl std::error::Error for AnalysisCancelled {}
 pub struct SessionInspection {
     pub revision: u64,
     pub inspection: Inspection,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionCheckResult {
+    pub revision: u64,
+    pub result: crate::CheckResult,
 }
 
 fn rejected_check_input(files: &[SourceFile]) -> Option<Inspection> {
@@ -591,16 +603,39 @@ impl AnalysisSession {
         }
     }
 
-    /// Check lifecycle uses in the bounded synchronous subset.
+    /// Check resource cleanup duties in the bounded supported subset.
     pub fn check(&mut self, files: &[SourceFile], python_version: &str) -> Inspection {
         match self.check_cancellable(files, python_version) {
             Ok(result) => result.inspection,
             Err(_) => {
                 let mut inspection = crate::cancelled_inspection(files);
-                inspection.assurance = "lifecycle-checking-for-supported-normal-flow".into();
+                inspection.assurance = "lifecycle-checking-for-supported-exit-flow".into();
                 inspection
             }
         }
+    }
+
+    /// Check resource cleanup duties using the versioned checker result schema.
+    pub fn check_report(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+    ) -> crate::CheckResult {
+        crate::CheckResult::from_inspection(self.check(files, python_version), python_version)
+    }
+
+    /// Check resource cleanup duties and return the versioned result with its
+    /// exact analyzed session revision. Cancellation publishes no partial result.
+    pub fn check_report_cancellable(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+    ) -> Result<SessionCheckResult, AnalysisCancelled> {
+        let checked = self.check_cancellable(files, python_version)?;
+        Ok(SessionCheckResult {
+            revision: checked.revision,
+            result: crate::CheckResult::from_inspection(checked.inspection, python_version),
+        })
     }
 
     /// Check lifecycle uses and return the exact session revision that was analyzed.
@@ -610,7 +645,7 @@ impl AnalysisSession {
         python_version: &str,
     ) -> Result<SessionInspection, AnalysisCancelled> {
         if let Some(mut inspection) = rejected_check_input(files) {
-            inspection.assurance = "lifecycle-checking-for-supported-normal-flow".into();
+            inspection.assurance = "lifecycle-checking-for-supported-exit-flow".into();
             return Ok(SessionInspection {
                 revision: self.revision,
                 inspection,
@@ -646,7 +681,7 @@ impl AnalysisSession {
                     &right.code,
                 ))
         });
-        result.assurance = "lifecycle-checking-for-supported-normal-flow".into();
+        result.assurance = "lifecycle-checking-for-supported-exit-flow".into();
         Ok(SessionInspection {
             revision,
             inspection: result,
@@ -1544,6 +1579,11 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "TP1001"));
-        assert_eq!(warm.coverage.status, "complete-for-supported-subset");
+        assert_eq!(warm.coverage.status, "incomplete");
+        assert!(warm
+            .coverage
+            .reasons
+            .iter()
+            .all(|reason| !reason.contains("flow work budget exceeded")));
     }
 }

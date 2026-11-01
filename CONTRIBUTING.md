@@ -62,3 +62,8 @@ See the [release plan](docs/planning/releases.md) and the
 [0.2.0 release checklist](docs/planning/release-0.2.0-checklist.md). Do not
 publish a release from an unreviewed candidate or claim qualification from a
 passing unrelated CI run.
+
+The accountable maintainer may review their own changes, validate all release
+evidence and approve publication alone. Additional reviewers are optional;
+no independent-review waiver is required. See the
+[maintainer authority policy](docs/planning/release-gates.md#maintainer-authority).

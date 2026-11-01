@@ -27,7 +27,9 @@ pub(crate) enum AstExprKind {
         arguments: Vec<AstExpr>,
         keywords: Vec<(Option<String>, AstExpr)>,
     },
+    Await(Box<AstExpr>),
     Tuple(Vec<AstExpr>),
+    Boolean(bool),
     String(String),
     Primitive,
     NoneLiteral,
@@ -123,11 +125,39 @@ pub(crate) enum FlowStatement {
         alternate: Vec<FlowStatement>,
         range: SourceRange,
     },
+    Try {
+        body: Vec<FlowStatement>,
+        handlers: Vec<FlowHandler>,
+        alternate: Vec<FlowStatement>,
+        finalbody: Vec<FlowStatement>,
+        range: SourceRange,
+    },
+    Loop {
+        test: Option<AstExpr>,
+        iterator: Option<AstExpr>,
+        target: Option<String>,
+        body: Vec<FlowStatement>,
+        alternate: Vec<FlowStatement>,
+        range: SourceRange,
+    },
+    With {
+        items: Vec<FlowWithItem>,
+        body: Vec<FlowStatement>,
+        asynchronous: bool,
+        range: SourceRange,
+    },
+    Break {
+        range: SourceRange,
+    },
+    Continue {
+        range: SourceRange,
+    },
     Return {
         value: Option<AstExpr>,
         range: SourceRange,
     },
     Raise {
+        exception: Option<AstExpr>,
         range: SourceRange,
     },
     BindFunction {
@@ -139,6 +169,22 @@ pub(crate) enum FlowStatement {
     Unsupported {
         range: SourceRange,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FlowHandler {
+    pub exception: Option<AstExpr>,
+    pub name: Option<String>,
+    pub body: Vec<FlowStatement>,
+    pub range: SourceRange,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FlowWithItem {
+    pub context: AstExpr,
+    pub target: Option<String>,
+    pub unsupported_target: bool,
+    pub range: SourceRange,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -421,6 +467,9 @@ fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usize) -> AstEx
                 })
                 .collect(),
         },
+        Expr::Await(await_) => {
+            AstExprKind::Await(Box::new(expression(&await_.value, budget, depth + 1)))
+        }
         Expr::Tuple(tuple) => AstExprKind::Tuple(
             tuple
                 .elts
@@ -429,7 +478,8 @@ fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usize) -> AstEx
                 .collect(),
         ),
         Expr::StringLiteral(string) => AstExprKind::String(string.value.to_str().to_owned()),
-        Expr::BooleanLiteral(_) | Expr::NumberLiteral(_) => AstExprKind::Primitive,
+        Expr::BooleanLiteral(boolean) => AstExprKind::Boolean(boolean.value),
+        Expr::NumberLiteral(_) => AstExprKind::Primitive,
         Expr::NoneLiteral(_) => AstExprKind::NoneLiteral,
         _ => AstExprKind::Other,
     };
@@ -468,84 +518,181 @@ fn flow_statements_at(
 ) -> Vec<FlowStatement> {
     statements
         .iter()
-        .map(|statement| match statement {
-            Stmt::Assign(assign) if assign.targets.len() == 1 => match &assign.targets[0] {
-                Expr::Name(name) => FlowStatement::Assign {
-                    name: name.id.to_string(),
-                    value: expression(&assign.value, budget, 0),
-                    range: source_range(assign),
-                },
-                _ => FlowStatement::Unsupported {
+        .map(|statement| {
+            if depth >= 128
+                && matches!(
+                    statement,
+                    Stmt::If(_) | Stmt::Try(_) | Stmt::For(_) | Stmt::While(_) | Stmt::With(_)
+                )
+            {
+                return FlowStatement::Unsupported {
                     range: source_range(statement),
-                },
-            },
-            Stmt::AnnAssign(assign) => match assign.target.as_ref() {
-                Expr::Name(name) => assign.value.as_deref().map_or(
-                    FlowStatement::Unsupported {
-                        range: source_range(statement),
-                    },
-                    |value| FlowStatement::Assign {
+                };
+            }
+            match statement {
+                Stmt::Assign(assign) if assign.targets.len() == 1 => match &assign.targets[0] {
+                    Expr::Name(name) => FlowStatement::Assign {
                         name: name.id.to_string(),
-                        value: expression(value, budget, 0),
+                        value: expression(&assign.value, budget, 0),
+                        range: source_range(assign),
+                    },
+                    _ => FlowStatement::Unsupported {
                         range: source_range(statement),
                     },
-                ),
-                _ => FlowStatement::Unsupported {
+                },
+                Stmt::AnnAssign(assign) => match assign.target.as_ref() {
+                    Expr::Name(name) => assign.value.as_deref().map_or(
+                        FlowStatement::Unsupported {
+                            range: source_range(statement),
+                        },
+                        |value| FlowStatement::Assign {
+                            name: name.id.to_string(),
+                            value: expression(value, budget, 0),
+                            range: source_range(statement),
+                        },
+                    ),
+                    _ => FlowStatement::Unsupported {
+                        range: source_range(statement),
+                    },
+                },
+                Stmt::Expr(expr) => FlowStatement::Expression {
+                    value: expression(&expr.value, budget, 0),
                     range: source_range(statement),
                 },
-            },
-            Stmt::Expr(expr) => FlowStatement::Expression {
-                value: expression(&expr.value, budget, 0),
-                range: source_range(statement),
-            },
-            Stmt::If(branch) => {
-                if depth >= 128 {
-                    return FlowStatement::Unsupported {
-                        range: source_range(statement),
-                    };
-                }
-                let mut alternate = Vec::new();
-                if let Some(clause) = branch.elif_else_clauses.last() {
-                    alternate = flow_statements_at(&clause.body, budget, depth + 1);
-                    if branch
-                        .elif_else_clauses
-                        .iter()
-                        .any(|clause| clause.test.is_some())
-                    {
-                        alternate.insert(
-                            0,
-                            FlowStatement::Unsupported {
-                                range: SourceRange {
-                                    start: clause.range.start().to_usize(),
-                                    end: clause.range.end().to_usize(),
+                Stmt::If(branch) => {
+                    if depth >= 128 {
+                        return FlowStatement::Unsupported {
+                            range: source_range(statement),
+                        };
+                    }
+                    let mut alternate = Vec::new();
+                    if let Some(clause) = branch.elif_else_clauses.last() {
+                        alternate = flow_statements_at(&clause.body, budget, depth + 1);
+                        if branch
+                            .elif_else_clauses
+                            .iter()
+                            .any(|clause| clause.test.is_some())
+                        {
+                            alternate.insert(
+                                0,
+                                FlowStatement::Unsupported {
+                                    range: SourceRange {
+                                        start: clause.range.start().to_usize(),
+                                        end: clause.range.end().to_usize(),
+                                    },
                                 },
-                            },
-                        );
+                            );
+                        }
+                    }
+                    FlowStatement::If {
+                        test: expression(&branch.test, budget, 0),
+                        body: flow_statements_at(&branch.body, budget, depth + 1),
+                        alternate,
+                        range: source_range(branch),
                     }
                 }
-                FlowStatement::If {
-                    test: expression(&branch.test, budget, 0),
-                    body: flow_statements_at(&branch.body, budget, depth + 1),
-                    alternate,
-                    range: source_range(branch),
+                Stmt::Try(attempt) if attempt.is_star => FlowStatement::Unsupported {
+                    range: source_range(statement),
+                },
+                Stmt::Try(attempt) => FlowStatement::Try {
+                    body: flow_statements_at(&attempt.body, budget, depth + 1),
+                    handlers: attempt
+                        .handlers
+                        .iter()
+                        .map(|handler| match handler {
+                            ruff_python_ast::ExceptHandler::ExceptHandler(handler) => FlowHandler {
+                                exception: handler
+                                    .type_
+                                    .as_deref()
+                                    .map(|expr| expression(expr, budget, 0)),
+                                name: handler.name.as_ref().map(ToString::to_string),
+                                body: flow_statements_at(&handler.body, budget, depth + 1),
+                                range: source_range(handler),
+                            },
+                        })
+                        .collect(),
+                    alternate: flow_statements_at(&attempt.orelse, budget, depth + 1),
+                    finalbody: flow_statements_at(&attempt.finalbody, budget, depth + 1),
+                    range: source_range(attempt),
+                },
+                Stmt::For(loop_) if loop_.is_async => FlowStatement::Unsupported {
+                    range: source_range(statement),
+                },
+                Stmt::For(loop_) if !matches!(loop_.target.as_ref(), Expr::Name(_)) => {
+                    FlowStatement::Unsupported {
+                        range: source_range(statement),
+                    }
                 }
+                Stmt::For(loop_) => FlowStatement::Loop {
+                    test: None,
+                    iterator: Some(expression(&loop_.iter, budget, 0)),
+                    target: match loop_.target.as_ref() {
+                        Expr::Name(name) => Some(name.id.to_string()),
+                        _ => None,
+                    },
+                    body: flow_statements_at(&loop_.body, budget, depth + 1),
+                    alternate: flow_statements_at(&loop_.orelse, budget, depth + 1),
+                    range: source_range(loop_),
+                },
+                Stmt::While(loop_) => FlowStatement::Loop {
+                    test: Some(expression(&loop_.test, budget, 0)),
+                    iterator: None,
+                    target: None,
+                    body: flow_statements_at(&loop_.body, budget, depth + 1),
+                    alternate: flow_statements_at(&loop_.orelse, budget, depth + 1),
+                    range: source_range(loop_),
+                },
+                Stmt::With(with_) => FlowStatement::With {
+                    items: with_
+                        .items
+                        .iter()
+                        .map(|item| FlowWithItem {
+                            context: expression(&item.context_expr, budget, 0),
+                            unsupported_target: item
+                                .optional_vars
+                                .as_deref()
+                                .is_some_and(|target| !matches!(target, Expr::Name(_))),
+                            target: item
+                                .optional_vars
+                                .as_deref()
+                                .and_then(|target| match target {
+                                    Expr::Name(name) => Some(name.id.to_string()),
+                                    _ => None,
+                                }),
+                            range: source_range(item),
+                        })
+                        .collect(),
+                    body: flow_statements_at(&with_.body, budget, depth + 1),
+                    asynchronous: with_.is_async,
+                    range: source_range(with_),
+                },
+                Stmt::Break(node) => FlowStatement::Break {
+                    range: source_range(node),
+                },
+                Stmt::Continue(node) => FlowStatement::Continue {
+                    range: source_range(node),
+                },
+                Stmt::Return(ret) => FlowStatement::Return {
+                    value: ret
+                        .value
+                        .as_deref()
+                        .map(|value| expression(value, budget, 0)),
+                    range: source_range(statement),
+                },
+                Stmt::Raise(raise) => FlowStatement::Raise {
+                    exception: raise
+                        .exc
+                        .as_deref()
+                        .map(|value| expression(value, budget, 0)),
+                    range: source_range(statement),
+                },
+                Stmt::Pass(_) => FlowStatement::Pass {
+                    range: source_range(statement),
+                },
+                _ => FlowStatement::Unsupported {
+                    range: source_range(statement),
+                },
             }
-            Stmt::Return(ret) => FlowStatement::Return {
-                value: ret
-                    .value
-                    .as_deref()
-                    .map(|value| expression(value, budget, 0)),
-                range: source_range(statement),
-            },
-            Stmt::Raise(_) => FlowStatement::Raise {
-                range: source_range(statement),
-            },
-            Stmt::Pass(_) => FlowStatement::Pass {
-                range: source_range(statement),
-            },
-            _ => FlowStatement::Unsupported {
-                range: source_range(statement),
-            },
         })
         .collect()
 }
@@ -865,18 +1012,24 @@ pub(crate) fn parse_frontend(
                             .unwrap_or_else(|| {
                                 alias.name.split('.').next().unwrap_or_default().to_owned()
                             }),
-                        binding: import.module.as_ref().map(|_| {
+                        binding: import.module.as_ref().map(|source_module| {
                             let local = alias
                                 .asname
                                 .as_ref()
                                 .map(ToString::to_string)
                                 .unwrap_or_else(|| alias.name.to_string());
-                            format!(
-                                "import:{}:{}:{}",
-                                module_name,
-                                source_range(statement).start,
-                                local
-                            )
+                            if source_module.as_str() == "contextlib"
+                                && matches!(alias.name.as_str(), "closing" | "aclosing")
+                            {
+                                format!("external:contextlib.{}", alias.name)
+                            } else {
+                                format!(
+                                    "import:{}:{}:{}",
+                                    module_name,
+                                    source_range(statement).start,
+                                    local
+                                )
+                            }
                         }),
                         range: source_range(statement),
                         class_decorators: Vec::new(),
@@ -895,7 +1048,7 @@ pub(crate) fn parse_frontend(
                         .unwrap_or_else(|| {
                             alias.name.split('.').next().unwrap_or_default().to_owned()
                         }),
-                    binding: None,
+                    binding: Some(format!("external:{}", alias.name)),
                     class_decorators: Vec::new(),
                     range: source_range(statement),
                 })

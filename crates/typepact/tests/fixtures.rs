@@ -663,10 +663,12 @@ fn acyclic_named_reexports_preserve_contract_and_lifecycle_identity() {
     );
     let reordered = check(&[origin, facade, api, consumer], "3.11");
     assert_eq!(result, reordered);
-    assert_eq!(
-        result.coverage.status, "complete-for-supported-subset",
-        "{result:#?}"
-    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(result
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("close exceptional postcondition is not modeled")));
     let contract = result
         .contracts
         .iter()

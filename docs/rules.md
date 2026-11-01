@@ -1,13 +1,16 @@
 # Diagnostic rule catalog
 
-This catalog describes the 0.2.0 inspector and lifecycle checker. Codes and
-message text remain provisional during 0.x. A
+This catalog describes the published 0.2.0 checker and the in-progress 0.3
+cleanup diagnostics. The 0.3 behavior and codes remain provisional until its
+qualification gates pass. A
 diagnostic identifies a modeled problem or boundary; it does not make a runtime
 safety claim.
 
 | Code | Mode | Meaning | First repair to consider |
 | --- | --- | --- | --- |
 | `TP1001` | 0.2.0 | A resource known or possibly closed is used | Move the use before the closing operation, or make the control-flow paths preserve a valid open resource before use. Review certainty and the related close location. |
+| `TP1002` | 0.3 work in progress | A modeled function exit may leave an owned resource cleanup duty outstanding | Close it on every supported exit or return it through an `Owned[T]` contract. Review certainty, the exit and the acquisition location. |
+| `TP1003` | 0.3 work in progress | An `Owned[T]` return is closed or attempts to return a `Borrowed` resource | Return an open owned resource, or change the declared return contract if ownership is not being transferred. |
 | `TP2001` | 0.2.0 | A supported body closes a resource through a `Borrowed` parameter or alias | Keep the borrowed operation non-consuming. If the function truly owns and closes the resource, declare the ownership contract accurately and verify callers. |
 | `TP4001` | Both | The selected Python grammar could not parse the file | Fix the syntax error or select the source target matching the code. |
 | `TP4002` | Both | A declaration is invalid or metadata conflicts | Compare the primary and related spans; make the lifecycle/access declarations for that view consistent. |

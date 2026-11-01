@@ -80,8 +80,9 @@ uv run typepact check --root demo --json
 ```
 
 Read both `diagnostics` and `coverage`. A successful exit can include possible
-findings or incomplete analysis. Checking results use
-`assurance: "lifecycle-checking-for-supported-normal-flow"`; declaration
+findings or incomplete analysis. The published 0.2.0 checker uses
+`assurance: "lifecycle-checking-for-supported-normal-flow"`; the in-progress
+0.3 worktree uses `lifecycle-checking-for-supported-exit-flow`. Declaration
 provenance remains `declared-unverified`. See the [output reference](output.md).
 
 ## Choose a narrow project root
@@ -92,12 +93,15 @@ files, and unsupported code outside the selected root. The default root is the
 current directory. The scan skips symlinks and common build and environment
 directories; see the [CLI reference](cli.md).
 
-The checker does not model loops, exception handlers, `finally`, context managers,
-async suspension, fields and containers, or returned resource aliases precisely.
-Recursive calls produce an unknown summary and incomplete coverage. A clean
-result does not establish leak freedom, cleanup on every exit, ownership safety,
-or correctness of declared resource models. Read the [limitations](limitations.md)
-and [supported syntax](supported-syntax.md) before using results in a workflow.
+These limits describe the published 0.2.0 checker. Its released behavior does not
+model loops, exception handlers, `finally`, context managers, async suspension,
+fields and containers, or returned resource aliases precisely. The in-progress
+0.3 worktree extends bounded exit flow and cleanup; its supported subset and
+remaining boundaries are listed in the [0.3 specification](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/specification.md).
+Recursive calls still recover to an unknown summary. A clean result does not
+establish leak freedom, cleanup on every exit, ownership safety, or correctness
+of declared resource models. Read the [limitations](limitations.md) and
+[supported syntax](supported-syntax.md) before using released results in a workflow.
 
 Phase 0.2 qualification and publication evidence are in the
 [phase plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2-lifecycle.md)
