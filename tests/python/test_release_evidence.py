@@ -23,11 +23,11 @@ def write_candidate(
     )
     (root / "docs/planning/phases/0.2-lifecycle.md").write_text(phase_gates)
     common = "\n".join(
-        f"| G{number} | {'Pending' if pending == f'G{number}' else 'Pass'} | Evidence recorded. | Reviewer |"
+        f"| G{number} | {'Pending' if pending == f'G{number}' else 'Pass'} | Evidence recorded. | `eddiethedean` |"
         for number in range(1, 8)
     )
     phase = "\n".join(
-        f"| L{number:02} | {'Pending' if pending == f'L{number:02}' else 'Pass'} | Fixture and result. | Candidate |"
+        f"| L{number:02} | {'Pending' if pending == f'L{number:02}' else 'Pass'} | Fixture and result. | `eddiethedean` |"
         for number in range(1, 7)
     )
     record = (
@@ -35,6 +35,7 @@ def write_candidate(
         "## Candidate\n\n"
         f"- Version and phase: {VERSION}\n"
         f"- Candidate commit: `{commit}`\n\n"
+        "- Accountable maintainer, author, validator, reviewer and release approver: `eddiethedean`.\n\n"
         "## Common gates\n\n"
         "| Gate | Status | Evidence | Reviewer / date |\n"
         "| --- | --- | --- | --- |\n"
@@ -50,7 +51,7 @@ def write_candidate(
 
 
 class ReleaseEvidenceTest(unittest.TestCase):
-    def test_complete_common_and_phase_gates_pass(self) -> None:
+    def test_maintainer_can_validate_and_approve_every_gate_alone(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             write_candidate(root)

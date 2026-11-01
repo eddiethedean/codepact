@@ -2209,6 +2209,57 @@ mod tests {
     }
 
     #[test]
+    fn moving_acquisition_and_owned_annotation_spans_matches_fresh_cleanup_results() {
+        let resource_header = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n";
+        let source = format!("{resource_header}def cleanup(owner: Owned[C]):\n    local = C()\n");
+        let file = SourceFile::new("phase03.py", "phase03", source.clone());
+        let mut session = AnalysisSession::default();
+        let initial = session.check(std::slice::from_ref(&file), "3.11");
+        let initial_leaks = initial
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert_eq!(initial_leaks.len(), 2, "{initial:#?}");
+        let initial_related_lines = initial_leaks
+            .iter()
+            .map(|diagnostic| diagnostic.related[0].line)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            initial_related_lines,
+            BTreeSet::from([6, 7]),
+            "{initial:#?}"
+        );
+
+        let moved_source = format!(
+            "{resource_header}# moved cleanup declarations\n{}",
+            &source[resource_header.len()..]
+        );
+        let moved_file = SourceFile::new("phase03.py", "phase03", moved_source);
+        let updated = session.check(std::slice::from_ref(&moved_file), "3.11");
+        let updated_leaks = updated
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert_eq!(updated_leaks.len(), 2, "{updated:#?}");
+        let updated_related_lines = updated_leaks
+            .iter()
+            .map(|diagnostic| diagnostic.related[0].line)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            updated_related_lines,
+            BTreeSet::from([7, 8]),
+            "{updated:#?}"
+        );
+        assert_eq!(
+            updated,
+            crate::check(std::slice::from_ref(&moved_file), "3.11"),
+            "the reused-session origin spans and result must match a fresh check"
+        );
+    }
+
+    #[test]
     fn lifecycle_callee_edits_match_a_fresh_check() {
         let mut session = AnalysisSession::default();
         let before = SourceFile::new(
@@ -2775,6 +2826,58 @@ mod tests {
             .revision;
         assert_eq!(initial, unchanged);
         assert!(changed_target > unchanged);
+    }
+
+    #[test]
+    fn cleanup_root_removal_and_readdition_match_fresh_results() {
+        let resource = SourceFile::new(
+            "resource.py",
+            "resource",
+            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef leak():\n    connection = Connection()\n",
+        );
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let mut session = AnalysisSession::default();
+
+        let initial = session
+            .check_cancellable(&[resource.clone(), unrelated.clone()], "3.11")
+            .unwrap();
+        assert!(initial
+            .inspection
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"));
+
+        let removed = session
+            .check_cancellable(std::slice::from_ref(&unrelated), "3.11")
+            .unwrap();
+        assert!(removed.revision > initial.revision);
+        assert!(!removed
+            .inspection
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"));
+        assert_eq!(
+            removed.inspection,
+            crate::check(std::slice::from_ref(&unrelated), "3.11"),
+            "dropping a cleanup root must not retain its prior findings"
+        );
+
+        let restored = session
+            .check_cancellable(&[resource.clone(), unrelated.clone()], "3.11")
+            .unwrap();
+        assert!(restored.revision > removed.revision);
+        assert_eq!(restored.inspection, initial.inspection);
+        assert_eq!(
+            restored.inspection,
+            crate::check(&[resource.clone(), unrelated.clone()], "3.11"),
+            "readding a cleanup root must match a fresh analysis"
+        );
+
+        let unchanged = session
+            .check_cancellable(&[resource, unrelated], "3.11")
+            .unwrap();
+        assert_eq!(unchanged.revision, restored.revision);
+        assert_eq!(unchanged.inspection, restored.inspection);
     }
 
     #[test]

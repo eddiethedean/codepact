@@ -43,6 +43,23 @@ fn v03_01_failed_initialization_creates_no_object_duty() {
 }
 
 #[test]
+fn v03_01_constructor_argument_failure_creates_no_object_duty() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def __init__(self, marker): pass\n    def close(self): pass\ndef fail() -> int:\n    raise RuntimeError()\ndef cleanup():\n    resource = C(fail())\n";
+    let result = check_source(source);
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "argument evaluation raises before the resource is acquired: {result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "a resolved argument failure is fully modeled without acquiring an object: {result:#?}"
+    );
+}
+
+#[test]
 fn v03_01_failed_later_initialization_preserves_earlier_duty_on_raise() {
     let source = format!(
         "{RESOURCE}@resource(closed_by=\"close\")\nclass Broken:\n    def __init__(self):\n        raise RuntimeError\n    def close(self): pass\ndef fail():\n    first = C()\n    second = Broken()\n"
@@ -273,6 +290,34 @@ fn v03_03_raise_in_finally_replaces_the_pending_return_exit() {
     );
     assert_eq!(leak.related.len(), 1, "{result:#?}");
     assert_eq!(leak.related[0].line, RESOURCE.lines().count() + 2);
+}
+
+#[test]
+fn v03_03_finally_replacements_keep_the_actual_exit_and_duty_origin() {
+    let source = format!(
+        "{RESOURCE}def raise_from_finally():\n    resource = C()\n    try:\n        return 1\n    finally:\n        raise RuntimeError()\ndef return_from_finally():\n    resource = C()\n    try:\n        raise ValueError()\n    finally:\n        return 1\n"
+    );
+    let result = check_source(&source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 2, "{result:#?}");
+    for (completion, exit_line, acquisition_line) in [("raise", 11, 7), ("return", 17, 13)] {
+        let leak = leaks
+            .iter()
+            .find(|diagnostic| diagnostic.message.ends_with(&format!("on {completion}")))
+            .unwrap_or_else(|| panic!("missing {completion} finding: {result:#?}"));
+        assert_eq!(leak.certainty, "definite", "{result:#?}");
+        assert_eq!(leak.primary.line, exit_line, "{result:#?}");
+        assert_eq!(leak.related.len(), 1, "{result:#?}");
+        assert_eq!(leak.related[0].line, acquisition_line, "{result:#?}");
+    }
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
 }
 
 #[test]
@@ -978,17 +1023,149 @@ fn v03_14_nested_while_loops_keep_zero_iteration_cleanup_uncertain() {
 
 #[test]
 fn v03_15_unknown_iterator_effect_does_not_prove_loop_cleanup() {
-    let result = check_source(&format!(
+    let source = format!(
         "{RESOURCE}def cleanup():\n    resource = C()\n    for item in unresolved_values():\n        resource.close()\n"
-    ));
+    );
+    let acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    let iterator_line = source
+        .lines()
+        .position(|line| line.contains("for item in unresolved_values()"))
+        .unwrap()
+        + 1;
+    let close_line = source
+        .lines()
+        .position(|line| line.trim() == "resource.close()")
+        .unwrap()
+        + 1;
+    let result = check_source(&source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 2, "{result:#?}");
+    let fallthrough = leaks
+        .iter()
+        .find(|diagnostic| diagnostic.message.ends_with("on fallthrough"))
+        .expect("unknown iterator still has an ordinary exit");
+    assert_eq!(fallthrough.certainty, "possible", "{result:#?}");
+    assert_eq!(fallthrough.related.len(), 2, "{result:#?}");
+    assert_eq!(fallthrough.related[0].line, acquisition_line, "{result:#?}");
+    assert_eq!(fallthrough.related[1].line, close_line, "{result:#?}");
+    let raised = leaks
+        .iter()
+        .find(|diagnostic| diagnostic.message.ends_with("on raise"))
+        .expect("iterator evaluation can raise before the body executes");
+    assert_eq!(raised.certainty, "possible", "{result:#?}");
+    assert_eq!(raised.primary.line, iterator_line, "{result:#?}");
+    assert_eq!(raised.related.len(), 1, "{result:#?}");
+    assert_eq!(raised.related[0].line, acquisition_line, "{result:#?}");
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_13_alias_target_budget_keeps_candidate_duties_possible() {
+    let flag_names = (0..64)
+        .map(|index| format!("flag_{index}"))
+        .collect::<Vec<_>>();
+    let mut source = format!("{RESOURCE}def cleanup({}):\n", flag_names.join(", "));
+    for index in 0..=64 {
+        source.push_str(&format!("    resource_{index} = C()\n"));
+    }
+    source.push_str("    selected = resource_0\n");
+    for index in 0..64 {
+        source.push_str(&format!(
+            "    if flag_{index}:\n        selected = resource_{}\n",
+            index + 1
+        ));
+    }
+    source.push_str("    selected.close()\n");
+
+    let result = check_source(&source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
         result
-            .diagnostics
+            .coverage
+            .reasons
             .iter()
-            .any(|diagnostic| diagnostic.code == "TP1002"),
+            .any(|reason| { reason.contains("alias target budget exceeded for selected") }),
         "{result:#?}"
     );
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(!leaks.is_empty(), "{result:#?}");
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty != "definite"),
+        "an over-budget alias cannot leave any candidate duty definitely open: {result:#?}"
+    );
+}
+
+#[test]
+fn v03_16_alias_budget_inside_a_loop_cannot_prove_candidate_cleanup() {
+    let flag_names = (0..64)
+        .map(|index| format!("flag_{index}"))
+        .collect::<Vec<_>>();
+    let mut source = format!("{RESOURCE}def cleanup({}, again):\n", flag_names.join(", "));
+    for index in 0..=64 {
+        source.push_str(&format!("    resource_{index} = C()\n"));
+    }
+    source.push_str("    selected = resource_0\n");
+    for index in 0..64 {
+        source.push_str(&format!(
+            "    if flag_{index}:\n        selected = resource_{}\n",
+            index + 1
+        ));
+    }
+    source.push_str("    while again:\n        selected.close()\n        break\n");
+
+    let result = check_source(&source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("alias target budget exceeded for selected")),
+        "the loop must retain the widened alias boundary: {result:#?}"
+    );
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(!leaks.is_empty(), "{result:#?}");
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty != "definite"),
+        "a loop over an over-budget alias cannot prove cleanup of any candidate duty: {result:#?}"
+    );
+    let candidate_acquisition_lines = source
+        .lines()
+        .enumerate()
+        .filter_map(|(line, text)| {
+            (text.trim_start().starts_with("resource_") && text.trim_end().ends_with("= C()"))
+                .then_some(line + 1)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let reported_acquisition_lines = leaks
+        .iter()
+        .flat_map(|diagnostic| diagnostic.related.iter().map(|span| span.line))
+        .filter(|line| candidate_acquisition_lines.contains(line))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        reported_acquisition_lines, candidate_acquisition_lines,
+        "every candidate duty remains represented after loop widening: {result:#?}"
+    );
 }
 
 #[test]
@@ -1292,6 +1469,70 @@ fn v03_20_asyncio_handoff_helpers_remain_explicit_boundaries() {
 }
 
 #[test]
+fn v03_20_scheduled_multi_resource_capture_keeps_each_duty_uncertain() {
+    let source = format!(
+        "{RESOURCE}async def finish(first: Owned[C], second: Owned[C]):\n    first.close()\n    second.close()\ndef caller():\n    first = C()\n    second = C()\n    pending = finish(first, second)\n    asyncio.create_task(pending)\n"
+    );
+    let first_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "first = C()")
+        .unwrap()
+        + 1;
+    let second_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "second = C()")
+        .unwrap()
+        + 1;
+    let result = check_source(&source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 4, "{result:#?}");
+    assert!(
+        leaks.iter().all(|diagnostic| {
+            diagnostic.certainty == "possible"
+                && (diagnostic.message.ends_with("on fallthrough")
+                    || diagnostic.message.ends_with("on raise"))
+        }),
+        "scheduler handoff cannot prove task execution or successful cleanup: {result:#?}"
+    );
+    assert_eq!(
+        leaks
+            .iter()
+            .filter(|diagnostic| diagnostic.message.ends_with("on fallthrough"))
+            .count(),
+        2,
+        "both captured duties must be checked on the ordinary exit: {result:#?}"
+    );
+    assert_eq!(
+        leaks
+            .iter()
+            .filter(|diagnostic| diagnostic.message.ends_with("on raise"))
+            .count(),
+        2,
+        "both captured duties must be checked if scheduling raises: {result:#?}"
+    );
+    let acquisition_counts = leaks
+        .iter()
+        .flat_map(|diagnostic| diagnostic.related.iter().map(|span| span.line))
+        .fold(std::collections::BTreeMap::new(), |mut counts, line| {
+            *counts.entry(line).or_insert(0) += 1;
+            counts
+        });
+    assert_eq!(
+        acquisition_counts,
+        std::collections::BTreeMap::from([
+            (first_acquisition_line, 2),
+            (second_acquisition_line, 2),
+        ]),
+        "both captured caller duties remain represented: {result:#?}"
+    );
+}
+
+#[test]
 fn v03_26_pending_coroutine_budget_widens_captures_and_keeps_the_duty_unknown() {
     let mut source = format!(
         "{RESOURCE}async def hold(resource: Borrowed[C]):\n    pass\ndef leak():\n    resource = C()\n"
@@ -1365,19 +1606,26 @@ fn v03_26_pending_coroutine_budget_edit_recovers_with_fresh_result_parity() {
 #[test]
 fn v03_17_awaited_async_cleanup_tracks_cancellation_as_uncertain() {
     let source = "from typepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    await resource.aclose()\n";
-    let result = check_source(source);
-    assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == "TP1002" && diagnostic.certainty == "possible"),
-        "{result:#?}"
-    );
-    assert!(result
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let cancelled = report
+        .diagnostics
+        .iter()
+        .find(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.completion.as_deref() == Some("cancelled")
+        })
+        .expect("cancellation while awaiting close retains an uncertain duty");
+    assert_eq!(cancelled.primary.line, 7, "{report:#?}");
+    assert_eq!(cancelled.related.len(), 1, "{report:#?}");
+    assert_eq!(cancelled.related[0].line, 6, "{report:#?}");
+    assert!(report
         .coverage
         .reasons
         .iter()
-        .any(|reason| { reason.contains("cancellation may interrupt the awaited operation") }));
+        .any(|reason| reason.contains("cancellation may interrupt the awaited operation")));
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
 }
 
 #[test]
@@ -1531,32 +1779,86 @@ fn v03_19_unknown_async_context_keeps_exit_cancellation_visible() {
 #[test]
 fn v03_19_unknown_async_exit_can_suppress_body_cancellation() {
     let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        await resource.pause()\n        resource.close()\n";
-    let result = check_source(source);
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 4, "{report:#?}");
     assert!(
-        result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "TP1002"
-                && diagnostic.certainty == "possible"
-                && diagnostic.message.ends_with("on cancelled")
-                && diagnostic
-                    .related
-                    .first()
-                    .is_some_and(|span| span.line == 10)
-        }),
-        "the unsuppressed cancellation path remains feasible: {result:#?}"
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "unknown entry/exit effects retain possible duties: {report:#?}"
     );
-    assert!(
-        result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "TP1002"
-                && diagnostic.certainty == "possible"
-                && diagnostic.message.ends_with("on fallthrough")
-                && diagnostic
-                    .related
-                    .first()
-                    .is_some_and(|span| span.line == 10)
-        }),
-        "the unknown async exit may suppress cancellation and skip the body cleanup: {result:#?}"
+    let completions = leaks
+        .iter()
+        .filter_map(|diagnostic| diagnostic.completion.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        completions,
+        std::collections::BTreeSet::from([
+            "cancelled".to_owned(),
+            "fallthrough".to_owned(),
+            "raise".to_owned(),
+        ]),
+        "{report:#?}"
     );
-    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    let fallthrough = leaks
+        .iter()
+        .find(|diagnostic| diagnostic.completion.as_deref() == Some("fallthrough"))
+        .expect("unknown async exit may suppress cancellation and skip body cleanup");
+    assert_eq!(fallthrough.primary.line, 9, "{report:#?}");
+    assert_eq!(
+        fallthrough
+            .related
+            .iter()
+            .map(|span| span.line)
+            .collect::<Vec<_>>(),
+        [10, 13],
+        "{report:#?}"
+    );
+    let raised = leaks
+        .iter()
+        .find(|diagnostic| diagnostic.completion.as_deref() == Some("raise"))
+        .expect("manager construction can fail before the body");
+    assert_eq!(raised.primary.line, 11, "{report:#?}");
+    assert_eq!(
+        raised
+            .related
+            .iter()
+            .map(|span| span.line)
+            .collect::<Vec<_>>(),
+        [10, 13],
+        "{report:#?}"
+    );
+    let cancelled = leaks
+        .iter()
+        .filter(|diagnostic| diagnostic.completion.as_deref() == Some("cancelled"))
+        .collect::<Vec<_>>();
+    assert_eq!(cancelled.len(), 2, "{report:#?}");
+    let entry_cancel = cancelled
+        .iter()
+        .find(|diagnostic| diagnostic.primary.line == 11)
+        .expect("entry/exit suspension may be cancelled");
+    assert_eq!(
+        entry_cancel
+            .related
+            .iter()
+            .map(|span| span.line)
+            .collect::<Vec<_>>(),
+        [10, 13],
+        "{report:#?}"
+    );
+    let body_cancel = cancelled
+        .iter()
+        .find(|diagnostic| diagnostic.primary.line == 12)
+        .expect("body await may be cancelled before the later close");
+    assert_eq!(body_cancel.related.len(), 1, "{report:#?}");
+    assert_eq!(body_cancel.related[0].line, 10, "{report:#?}");
 }
 
 #[test]
@@ -1955,15 +2257,20 @@ fn v03_09_owned_helper_raise_reports_one_callee_obligation() {
 #[test]
 fn v03_10_contextlib_close_raise_replaces_body_raise_without_discharging() {
     let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise OSError()\ndef cleanup():\n    resource = C()\n    try:\n        with closing(resource):\n            raise ValueError()\n    except OSError:\n        pass\n";
-    let result = check_source(source);
-    assert!(
-        result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "TP1002"
-                && diagnostic.certainty == "definite"
-                && diagnostic.message.ends_with("on fallthrough")
-        }),
-        "{result:#?}"
-    );
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{report:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(leaks[0].completion.as_deref(), Some("fallthrough"));
+    assert_eq!(leaks[0].primary.line, 7, "{report:#?}");
+    assert_eq!(leaks[0].related.len(), 1, "{report:#?}");
+    assert_eq!(leaks[0].related[0].line, 8, "{report:#?}");
+    assert_eq!(report.coverage.status, "complete-for-supported-subset");
 }
 
 #[test]
@@ -2177,6 +2484,49 @@ fn v03_13_callback_escape_keeps_captured_cleanup_unknown() {
 }
 
 #[test]
+fn v03_13_multiple_callback_alias_escapes_keep_each_duty_uncertain() {
+    let source = format!(
+        "{RESOURCE}def leak(register):\n    first = C()\n    second = C()\n    first_alias = first\n    second_alias = second\n    register(lambda: first_alias.close())\n    register(lambda: second_alias.close())\n"
+    );
+    let first_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "first = C()")
+        .unwrap()
+        + 1;
+    let second_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "second = C()")
+        .unwrap()
+        + 1;
+    let result = check_source(&source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(!leaks.is_empty(), "{result:#?}");
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty != "definite"),
+        "escaped callbacks cannot prove when or whether captured cleanup runs: {result:#?}"
+    );
+    let acquisition_lines = leaks
+        .iter()
+        .flat_map(|diagnostic| diagnostic.related.iter().map(|span| span.line))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(
+        acquisition_lines.contains(&first_acquisition_line),
+        "{result:#?}"
+    );
+    assert!(
+        acquisition_lines.contains(&second_acquisition_line),
+        "{result:#?}"
+    );
+}
+
+#[test]
 fn v03_15_nonterminating_loop_is_not_a_function_exit_witness() {
     let result = check_source(&format!(
         "{RESOURCE}def never_returns():\n    resource = C()\n    while True:\n        pass\n"
@@ -2383,6 +2733,30 @@ fn v03_02_borrowed_entry_does_not_hide_a_local_acquisition_duty() {
 }
 
 #[test]
+fn v03_02_borrowed_alias_cannot_be_closed_directly_or_through_a_wrapper() {
+    let result = check_source(&format!(
+        "{RESOURCE}from contextlib import closing\ndef direct(resource: Borrowed[C]):\n    alias = resource\n    alias.close()\ndef wrapped(resource: Borrowed[C]):\n    alias = resource\n    with closing(alias):\n        pass\n"
+    ));
+    let borrowed_closes = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP2001")
+        .collect::<Vec<_>>();
+    assert_eq!(borrowed_closes.len(), 2, "{result:#?}");
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "borrowed aliases create no owner duty: {result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
 fn v03_06_branch_paths_sharing_one_return_are_grouped_per_duty() {
     let result = check_source(&format!(
         "{RESOURCE}def cleanup(flag):\n    first = C()\n    second = C()\n    if flag:\n        first.close()\n    return\n"
@@ -2415,6 +2789,53 @@ fn v03_06_branch_paths_sharing_one_return_are_grouped_per_duty() {
                 && diagnostic.related[0].line == 8
         }),
         "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_06_branch_paths_sharing_one_raise_are_grouped_per_duty() {
+    let source = format!(
+        "{RESOURCE}def cleanup(flag):\n    first = C()\n    second = C()\n    if flag:\n        first.close()\n    else:\n        second.close()\n    raise RuntimeError()\n"
+    );
+    let result = check_source(&source);
+    let raise_line = source
+        .lines()
+        .position(|line| line.trim() == "raise RuntimeError()")
+        .unwrap()
+        + 1;
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 2, "{result:#?}");
+    assert!(
+        leaks.iter().all(|diagnostic| {
+            diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on raise")
+                && diagnostic.primary.line == raise_line
+                && diagnostic.related.len() == 2
+        }),
+        "{result:#?}"
+    );
+    let related_lines = leaks
+        .iter()
+        .map(|diagnostic| {
+            diagnostic
+                .related
+                .iter()
+                .map(|span| span.line)
+                .collect::<Vec<_>>()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        related_lines,
+        std::collections::BTreeSet::from([vec![7, 10], vec![8, 12]]),
+        "each abstract duty keeps only its own acquisition and close witnesses: {result:#?}"
     );
     assert_eq!(
         result.coverage.status, "complete-for-supported-subset",
