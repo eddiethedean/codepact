@@ -1801,3 +1801,181 @@ fn v03_18_exception_handler_does_not_swallow_cancellation() {
     );
     assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
 }
+
+#[test]
+fn v03_06_branch_paths_sharing_one_return_are_grouped_per_duty() {
+    let result = check_source(&format!(
+        "{RESOURCE}def cleanup(flag):\n    first = C()\n    second = C()\n    if flag:\n        first.close()\n    return\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 2, "{result:#?}");
+    assert!(
+        leaks.iter().all(|diagnostic| {
+            diagnostic.message.ends_with("on return") && diagnostic.primary.line == 11
+        }),
+        "{result:#?}"
+    );
+    assert!(
+        leaks.iter().any(|diagnostic| {
+            diagnostic.certainty == "possible"
+                && diagnostic.related.len() == 2
+                && diagnostic.related[0].line == 7
+                && diagnostic.related[1].line == 10
+        }),
+        "{result:#?}"
+    );
+    assert!(
+        leaks.iter().any(|diagnostic| {
+            diagnostic.certainty == "definite"
+                && diagnostic.related.len() == 1
+                && diagnostic.related[0].line == 8
+        }),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_16_generated_finite_branch_paths_match_the_exit_oracle() {
+    // Enumerate every assignment to the generated branch predicates. Each
+    // true branch closes the resource, so exactly one path remains open: the
+    // all-false assignment. All paths share the same fallthrough exit.
+    for branch_count in 1..=5 {
+        let arguments = (0..branch_count)
+            .map(|index| format!("flag_{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut source = format!("{RESOURCE}def cleanup({arguments}):\n    resource = C()\n");
+        let mut indentation = 4;
+        for index in 0..branch_count {
+            let current_indent = " ".repeat(indentation);
+            let body_indent = " ".repeat(indentation + 4);
+            source.push_str(&format!(
+                "{current_indent}if flag_{index}:\n{body_indent}resource.close()\n"
+            ));
+            if index + 1 < branch_count {
+                source.push_str(&format!("{current_indent}else:\n"));
+                indentation += 4;
+            }
+        }
+
+        let path_count = 1usize << branch_count;
+        let closed_paths = (0..path_count)
+            .filter(|assignment| *assignment != 0)
+            .count();
+        let open_paths = path_count - closed_paths;
+        assert_eq!((closed_paths, open_paths), (path_count - 1, 1));
+
+        let result = check_source(&source);
+        let leaks = result
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert_eq!(leaks.len(), 1, "branches={branch_count}: {result:#?}");
+        assert_eq!(
+            leaks[0].certainty, "possible",
+            "branches={branch_count}: {result:#?}"
+        );
+        assert!(
+            leaks[0].message.ends_with("on fallthrough"),
+            "branches={branch_count}: {result:#?}"
+        );
+        assert_eq!(
+            leaks[0].related[0].line, 7,
+            "branches={branch_count}: {result:#?}"
+        );
+        assert_eq!(
+            result.coverage.status, "complete-for-supported-subset",
+            "branches={branch_count}: {result:#?}"
+        );
+
+        let unknown_effect = source.replacen("resource.close()", "opaque_effect(resource)", 1);
+        let widened = check_source(&unknown_effect);
+        let widened_leak = widened
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "TP1002")
+            .expect("widening one mutually-exclusive close must retain the duty");
+        assert_eq!(
+            widened_leak.certainty, "possible",
+            "branches={branch_count}: {widened:#?}"
+        );
+        assert_eq!(
+            widened.coverage.status, "incomplete",
+            "branches={branch_count}: {widened:#?}"
+        );
+    }
+}
+
+#[test]
+fn v03_16_generated_static_loop_paths_preserve_zero_and_repeated_iteration_cases() {
+    // A finite static tuple has a known number of iterations. At length zero,
+    // no cleanup runs. For positive lengths, the stable flag has an open path
+    // and a close path; repeated closes stay incomplete without a model.
+    for iteration_count in 0..=4 {
+        let items = (0..iteration_count)
+            .map(|index| index.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let iterable = if iteration_count == 1 {
+            format!("({items},)")
+        } else {
+            format!("({items})")
+        };
+        let source = format!(
+            "{RESOURCE}def cleanup(flag):\n    resource = C()\n    for item in {iterable}:\n        if flag:\n            resource.close()\n"
+        );
+        let known_closed_paths = usize::from(iteration_count == 1);
+        let unknown_paths = usize::from(iteration_count > 1);
+        let open_paths = 1;
+        let expected_certainty = if known_closed_paths + unknown_paths == 0 {
+            "definite"
+        } else {
+            "possible"
+        };
+
+        let result = check_source(&source);
+        let leaks = result
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert_eq!(leaks.len(), 1, "iterations={iteration_count}: {result:#?}");
+        assert_eq!(
+            leaks[0].certainty,
+            expected_certainty,
+            "iterations={iteration_count}, open_paths={open_paths}, known_closed_paths={known_closed_paths}, unknown_paths={unknown_paths}: {result:#?}"
+        );
+        assert!(
+            leaks[0].message.ends_with("on fallthrough"),
+            "iterations={iteration_count}: {result:#?}"
+        );
+        if iteration_count <= 1 {
+            assert_eq!(
+                result.coverage.status, "complete-for-supported-subset",
+                "iterations={iteration_count}: {result:#?}"
+            );
+        } else {
+            assert_eq!(
+                result.coverage.status, "incomplete",
+                "iterations={iteration_count}: {result:#?}"
+            );
+            assert!(
+                result
+                    .coverage
+                    .reasons
+                    .iter()
+                    .any(|reason| reason.contains("repeat-close behavior is not modeled")),
+                "iterations={iteration_count}: {result:#?}"
+            );
+        }
+    }
+}

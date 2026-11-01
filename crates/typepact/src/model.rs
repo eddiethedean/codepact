@@ -289,6 +289,18 @@ mod flow_model_tests {
             Some("stable-close")
         );
     }
+
+    #[test]
+    fn resource_close_models_cannot_claim_context_suppression() {
+        let mut catalog = FlowModelCatalog::default();
+        let mut close_model = model("close-with-suppression", &["3.11"]);
+        close_model.suppression = "suppress-body-exception".into();
+
+        assert!(catalog.insert(close_model).is_err());
+        assert!(catalog
+            .resolve("fixture.Connection", "close", "3.11")
+            .is_none());
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
