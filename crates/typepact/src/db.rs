@@ -87,10 +87,11 @@ fn inspect_module_query(
     let summary = parse_file(db, file, python_version.clone());
     let context: crate::semantic::ModuleContext =
         serde_json::from_str(&context_json).expect("module context serializes");
-    let analysis =
+    let analysis = crate::source::with_indexed_sources([source.source.as_str()], || {
         crate::semantic::inspect_module(&source, &python_version, summary, &context, || {
             db.unwind_if_revision_cancelled();
-        });
+        })
+    });
     serde_json::to_string(&analysis).expect("module analysis serializes")
 }
 
@@ -216,13 +217,18 @@ fn check_flow_file_query(
     let model_catalog: crate::model::FlowModelCatalog =
         serde_json::from_str(&model_catalog_json).expect("flow model catalog deserializes");
     crate::flow::reset_flow_budget(flow_budget);
-    crate::flow::check_file_bodies(
-        file.path(db),
-        &sources,
-        &summaries,
-        &mut inspection,
-        &python_version,
-        &model_catalog,
+    crate::source::with_indexed_sources(
+        sources.iter().map(|source| source.source.as_str()),
+        || {
+            crate::flow::check_file_bodies(
+                file.path(db),
+                &sources,
+                &summaries,
+                &mut inspection,
+                &python_version,
+                &model_catalog,
+            );
+        },
     );
     db.unwind_if_revision_cancelled();
     serde_json::to_string(&inspection).expect("flow file result serializes")

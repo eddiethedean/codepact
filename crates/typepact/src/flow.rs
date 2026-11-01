@@ -1466,26 +1466,53 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
     normal
 }
 
+fn apply_call_object_effects(
+    parent: &mut State,
+    child: &State,
+    extra_objects: &BTreeSet<String>,
+    object: &str,
+) {
+    if let Some(mask) = child.objects.get(object) {
+        parent.objects.insert(object.to_owned(), *mask);
+    }
+    if let Some(resource) = child.resources.get(object) {
+        parent.resources.insert(object.to_owned(), resource.clone());
+    }
+    if let Some(origin) = child.close_origins.get(object) {
+        parent
+            .close_origins
+            .insert(object.to_owned(), origin.clone());
+    }
+    if !parent.duty_origins.contains_key(object) && extra_objects.contains(object) {
+        if let Some(origin) = child.duty_origins.get(object) {
+            parent
+                .duty_origins
+                .insert(object.to_owned(), origin.clone());
+        }
+    }
+    if child.escaped.contains(object) {
+        parent.escaped.insert(object.to_owned());
+    }
+}
+
 fn apply_call_effects(parent: &mut State, child: &State, extra_objects: &BTreeSet<String>) {
-    let mut transferred = parent.objects.keys().cloned().collect::<BTreeSet<_>>();
-    transferred.extend(extra_objects.iter().cloned());
-    for object in transferred {
-        if let Some(mask) = child.objects.get(&object) {
-            parent.objects.insert(object.clone(), *mask);
-        }
-        if let Some(resource) = child.resources.get(&object) {
-            parent.resources.insert(object.clone(), resource.clone());
-        }
-        if let Some(origin) = child.close_origins.get(&object) {
-            parent.close_origins.insert(object.clone(), origin.clone());
-        }
-        if !parent.duty_origins.contains_key(&object) && extra_objects.contains(&object) {
-            if let Some(origin) = child.duty_origins.get(&object) {
-                parent.duty_origins.insert(object.clone(), origin.clone());
-            }
-        }
-        if child.escaped.contains(&object) {
-            parent.escaped.insert(object);
+    // A call child contains the caller-reachable arguments and escaped objects,
+    // plus resources created locally by that function. Transfer only keys that
+    // already belong to the caller or cross the boundary as an explicit result.
+    // Walking every caller object and cloning its Contract made repeated helper
+    // calls quadratic for large resource sets.
+    let candidates = child
+        .objects
+        .keys()
+        .chain(child.resources.keys())
+        .chain(child.close_origins.keys())
+        .chain(child.escaped.iter())
+        .map(String::as_str)
+        .chain(extra_objects.iter().map(String::as_str))
+        .collect::<BTreeSet<_>>();
+    for object in candidates {
+        if parent.objects.contains_key(object) || extra_objects.contains(object) {
+            apply_call_object_effects(parent, child, extra_objects, object);
         }
     }
     parent.pending_return_targets = child.pending_return_targets.clone();

@@ -334,6 +334,23 @@ fn v03_09_owned_helper_transfers_and_discharges_the_callers_duty_once() {
 }
 
 #[test]
+fn v03_09_resolved_helper_transfer_preserves_unrelated_caller_duties() {
+    let result = check_source(&format!(
+        "{RESOURCE}def finish(resource: Owned[C]):\n    resource.close()\ndef caller():\n    first = C()\n    second = C()\n    finish(first)\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{result:#?}");
+    assert!(leaks[0].message.ends_with("on fallthrough"), "{result:#?}");
+    assert_eq!(leaks[0].related[0].line, 10, "{result:#?}");
+    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
 fn v03_09_owned_helper_return_restores_the_same_duty_identity() {
     let result = check_source(&format!(
         "{RESOURCE}def forward(resource: Owned[C]) -> Owned[C]:\n    return resource\ndef cleanup():\n    resource = C()\n    returned = forward(resource)\n    returned.close()\n"
