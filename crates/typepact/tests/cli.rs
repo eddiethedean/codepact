@@ -84,6 +84,71 @@ fn phase03_text_and_json_reports_agree_on_cleanup_diagnostics() {
 }
 
 #[test]
+fn phase03_interfaces_agree_for_possible_and_unknown_cleanup_results() {
+    let root = fixture_root().with_extension("phase03-nondefinite-report-parity");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+
+    for (name, source, expected_code, expected_certainty) in [
+        (
+            "possible",
+            "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    await resource.aclose()\n",
+            "TP1002",
+            "possible",
+        ),
+        (
+            "unknown",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    opaque_effect(resource)\n",
+            "TP9001",
+            "unknown",
+        ),
+    ] {
+        fs::write(root.join("main.py"), source).unwrap();
+
+        let text = run_check_text(&root);
+        assert_eq!(text.status.code(), Some(0), "{name}");
+        let text = String::from_utf8_lossy(&text.stdout);
+        assert!(text.contains(expected_code), "{name}: {text}");
+        assert!(
+            text.contains(&format!("certainty: {expected_certainty}")),
+            "{name}: {text}"
+        );
+        assert!(text.contains("analysis incomplete:"), "{name}: {text}");
+
+        let json = run_check(&root);
+        assert_eq!(json.status.code(), Some(0), "{name}");
+        let report: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+        assert_eq!(report["coverage"]["status"], "incomplete", "{name}");
+        assert!(report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| {
+                diagnostic["code"] == expected_code
+                    && diagnostic["certainty"] == expected_certainty
+            }),
+            "{name}: {report:#?}"
+        );
+
+        let rust_result = typepact::check_report(
+            &[typepact::SourceFile::new("main.py", "main", source)],
+            "3.11",
+        );
+        assert_eq!(report, serde_json::to_value(rust_result).unwrap(), "{name}");
+    }
+
+    let invalid = std::process::Command::new(env!("CARGO_BIN_EXE_typepact"))
+        .current_dir(&root)
+        .args(["check", "--root"])
+        .arg(&root)
+        .arg("--invalid-option")
+        .output()
+        .expect("CLI starts");
+    assert_eq!(invalid.status.code(), Some(2));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn phase03_module_qualified_contextlib_model_is_reported_in_text_and_json() {
     let root = fixture_root().with_extension("phase03-contextlib-model");
     let _ = fs::remove_dir_all(&root);

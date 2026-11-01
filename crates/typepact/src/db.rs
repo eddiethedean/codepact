@@ -1918,6 +1918,44 @@ mod tests {
     }
 
     #[test]
+    fn cancelled_cleanup_check_discards_the_result_and_recovers() {
+        let mut session = AnalysisSession::default();
+        let token = session.cancellation_token();
+        token.cancel();
+        let leaking = SourceFile::new(
+            "module.py",
+            "module",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n",
+        );
+        assert!(matches!(
+            session.check_report_cancellable(std::slice::from_ref(&leaking), "3.11"),
+            Err(AnalysisCancelled)
+        ));
+
+        let cleaned = SourceFile::new(
+            "module.py",
+            "module",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    resource.close()\n",
+        );
+        let recovered = session
+            .check_report_cancellable(std::slice::from_ref(&cleaned), "3.11")
+            .expect("the checker session recovers after request cancellation");
+        let fresh = AnalysisSession::default()
+            .check_report_cancellable(std::slice::from_ref(&cleaned), "3.11")
+            .unwrap();
+        assert_eq!(recovered.result, fresh.result);
+        assert_eq!(
+            recovered.result.coverage.status,
+            "complete-for-supported-subset"
+        );
+        assert!(!recovered
+            .result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"));
+    }
+
+    #[test]
     fn cancellation_token_survives_automatic_session_cache_reset() {
         let mut session = AnalysisSession::default();
         session
