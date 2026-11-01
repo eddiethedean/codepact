@@ -1216,3 +1216,97 @@ fn v03_26_closing_a_capture_does_not_complete_its_pending_coroutine() {
         "{result:#?}"
     );
 }
+
+#[test]
+fn v03_09_owned_helper_raise_reports_one_callee_obligation() {
+    let result = check_source(&format!(
+        "{RESOURCE}def fail(resource: Owned[C]):\n    raise RuntimeError()\ndef caller():\n    resource = C()\n    try:\n        fail(resource)\n    except RuntimeError:\n        pass\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert!(leaks[0].message.ends_with("on raise"), "{result:#?}");
+    assert_eq!(leaks[0].primary.line, 7, "{result:#?}");
+}
+
+#[test]
+fn v03_10_contextlib_close_raise_replaces_body_raise_without_discharging() {
+    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise OSError()\ndef cleanup():\n    resource = C()\n    try:\n        with closing(resource):\n            raise ValueError()\n    except OSError:\n        pass\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "definite"
+                && diagnostic.message.ends_with("on fallthrough")
+        }),
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_10_unknown_suppression_cannot_hide_the_resource_exit() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager():\n        raise RuntimeError()\n";
+    let result = check_source(source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }),
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_20_taskgroup_and_executor_handoffs_remain_unknown() {
+    let task_group = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def finish(resource):\n    resource.close()\nasync def caller():\n    resource = C()\n    pending = finish(resource)\n    async with asyncio.TaskGroup() as group:\n        group.create_task(pending)\n";
+    let task_group_result = check_source(task_group);
+    assert_eq!(task_group_result.coverage.status, "incomplete");
+    assert!(
+        task_group_result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }),
+        "{task_group_result:#?}"
+    );
+
+    for executor in ["ThreadPoolExecutor", "ProcessPoolExecutor"] {
+        let source = format!(
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef consume(resource):\n    resource.close()\ndef caller():\n    resource = C()\n    pool = {executor}()\n    pool.submit(consume, resource)\n"
+        );
+        let result = check_source(&source);
+        assert_eq!(
+            result.coverage.status, "incomplete",
+            "{executor}: {result:#?}"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| { diagnostic.code == "TP9001" || diagnostic.code == "TP9002" }),
+            "{executor}: {result:#?}"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP1002"),
+            "{executor}: {result:#?}"
+        );
+    }
+}
+
+#[test]
+fn v03_24_custom_awaitable_does_not_infer_coroutine_execution() {
+    let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nclass CustomAwaitable:\n    def __await__(self): pass\nasync def cleanup():\n    resource = C()\n    await CustomAwaitable()\n";
+    let result = check_source(source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code == "TP9001" || diagnostic.code == "TP9002" }),
+        "{result:#?}"
+    );
+}
