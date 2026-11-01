@@ -1807,6 +1807,43 @@ fn v03_26_closing_a_capture_does_not_complete_its_pending_coroutine() {
 }
 
 #[test]
+fn v03_26_pending_capture_across_async_context_exit_keeps_cancellation_visible() {
+    let source = "from contextlib import aclosing\nfrom typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n    pending = use(resource)\n    async with aclosing(resource):\n        await pending\n";
+    let result = check_source(source);
+
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic
+                    .message
+                    .contains("created coroutine is not awaited")
+                && diagnostic.primary.line == 12
+        }),
+        "cancellation before async-context body entry must retain the pending capture: {result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on cancelled")
+                && diagnostic.primary.line == 13
+                && diagnostic
+                    .related
+                    .first()
+                    .is_some_and(|span| span.line == 11)
+        }),
+        "interrupted aclosing must leave the captured resource duty possible: {result:#?}"
+    );
+    assert!(
+        !result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "definite"
+        }),
+        "a pending capture and interruptible async cleanup cannot establish a definite leak: {result:#?}"
+    );
+}
+
+#[test]
 fn v03_26_unknown_actor_across_suspension_keeps_cleanup_uncertain() {
     let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    opaque_effect(resource)\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n    unrelated = C()\n    try:\n        await use(resource)\n    finally:\n        resource.close()\n";
     let result = check_source(source);
