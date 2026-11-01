@@ -43,6 +43,32 @@ fn v03_01_failed_initialization_creates_no_object_duty() {
 }
 
 #[test]
+fn v03_01_failed_later_initialization_preserves_earlier_duty_on_raise() {
+    let source = format!(
+        "{RESOURCE}@resource(closed_by=\"close\")\nclass Broken:\n    def __init__(self):\n        raise RuntimeError\n    def close(self): pass\ndef fail():\n    first = C()\n    second = Broken()\n"
+    );
+    let first_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "first = C()")
+        .unwrap()
+        + 1;
+    let result = check_source(&source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{result:#?}");
+    assert!(leaks[0].message.ends_with("on raise"), "{result:#?}");
+    assert_eq!(
+        leaks[0].related[0].line, first_acquisition_line,
+        "{result:#?}"
+    );
+    assert!(result.coverage.status.starts_with("incomplete"));
+}
+
+#[test]
 fn v03_07_owned_return_identity_survives_aliasing_and_finally() {
     let result = check_source(&format!(
         "{RESOURCE}def make() -> Owned[C]:\n    resource = C()\n    alias = resource\n    try:\n        return alias\n    finally:\n        alias = None\ndef forward() -> Owned[C]:\n    return make()\ndef caller() -> Owned[C]:\n    return forward()\n"
