@@ -7,7 +7,7 @@ obligations. Release qualification is pending; this section describes candidate
 behavior and must not be read as a published support claim. See the [phase
 plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3-cleanup.md), [supported subset and
 limitations](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/specification.md), [validation
-matrix](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/validation.md), and [candidate tutorial](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md).
+matrix](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/validation.md), [candidate evidence record](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.3.0-evidence.md), and [candidate tutorial](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md).
 
 ### Candidate behavior
 
