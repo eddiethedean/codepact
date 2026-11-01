@@ -1619,6 +1619,45 @@ fn v03_16_context_exit_partition_budget_keeps_duties_unknown() {
 }
 
 #[test]
+fn v03_26_coroutine_and_async_exit_budgets_keep_cleanup_unknown_together() {
+    let managers = ["UnknownManager()"; 8].join(", ");
+    let mut source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def hold(resource: Borrowed[C]):\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n".to_owned();
+    for index in 0..129 {
+        source.push_str(&format!("    pending_{index} = hold(resource)\n"));
+    }
+    source.push_str(&format!("    async with {managers}:\n        pass\n"));
+
+    let result = check_source(&source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("pending coroutine budget exceeded") }),
+        "the lost capture must remain visible: {result:#?}"
+    );
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("context-manager exit partition budget exceeded") }),
+        "the context unwind truncation must remain visible: {result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
+        }),
+        "the combined boundary must retain an uncertain duty: {result:#?}"
+    );
+    assert!(!result
+        .diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.code == "TP1002" && diagnostic.certainty == "definite" }));
+}
+
+#[test]
 fn v03_16_owned_parameter_budget_reports_untracked_duties_as_incomplete() {
     let parameters = (0..=4_096)
         .map(|index| format!("resource_{index}: Owned[C]"))

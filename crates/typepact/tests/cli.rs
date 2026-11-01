@@ -165,11 +165,8 @@ fn phase03_module_qualified_contextlib_model_is_reported_in_text_and_json() {
     let root = fixture_root().with_extension("phase03-contextlib-model");
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
-    fs::write(
-        root.join("main.py"),
-        "import contextlib as ctx\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n",
-    )
-    .unwrap();
+    let source = "import contextlib as ctx\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n";
+    fs::write(root.join("main.py"), source).unwrap();
 
     let text = run_check_text(&root);
     assert_eq!(text.status.code(), Some(0));
@@ -193,6 +190,11 @@ fn phase03_module_qualified_contextlib_model_is_reported_in_text_and_json() {
         .any(|model| {
             model["id"] == "TPM-CTX-001" && model["source_revisions"].as_array().unwrap().len() == 3
         }));
+    let rust_result = typepact::check_report(
+        &[typepact::SourceFile::new("main.py", "main", source)],
+        "3.11",
+    );
+    assert_eq!(report, serde_json::to_value(rust_result).unwrap());
     fs::remove_dir_all(root).unwrap();
 }
 
