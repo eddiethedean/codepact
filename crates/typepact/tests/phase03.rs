@@ -1820,6 +1820,45 @@ fn v03_14_continue_and_break_run_finally_cleanup_before_loop_exit() {
 }
 
 #[test]
+fn v03_14_break_and_continue_from_finally_replace_exits_and_route_loop_else() {
+    let source = format!(
+        "{RESOURCE}def break_from_finally():\n    resource = C()\n    for item in (None,):\n        try:\n            raise RuntimeError()\n        finally:\n            break\n    else:\n        resource.close()\ndef continue_from_finally():\n    resource = C()\n    for item in (None,):\n        try:\n            raise RuntimeError()\n        finally:\n            continue\n    else:\n        resource.close()\n"
+    );
+    let report = typepact::check_report(
+        &[SourceFile::new("phase03.py", "phase03", source.clone())],
+        "3.11",
+    );
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{report:#?}");
+    let break_function_line = source
+        .lines()
+        .position(|line| line.trim() == "def break_from_finally():")
+        .unwrap()
+        + 1;
+    let break_resource_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    assert_eq!(leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(leaks[0].completion.as_deref(), Some("fallthrough"));
+    assert_eq!(
+        leaks[0].primary.line, break_function_line,
+        "fallthrough after the replaced raise is attributed to its function: {report:#?}"
+    );
+    assert_eq!(leaks[0].primary.end_line, 14, "{report:#?}");
+    assert_eq!(leaks[0].related[0].line, break_resource_line, "{report:#?}");
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
+    );
+}
+
+#[test]
 fn v03_16_static_for_iteration_budget_widens_instead_of_claiming_cleanup() {
     let items = std::iter::repeat_n("None", 17)
         .collect::<Vec<_>>()
