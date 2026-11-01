@@ -1,4 +1,4 @@
-use typepact::{check, Inspection, SourceFile};
+use typepact::{check, AnalysisSession, Inspection, SourceFile};
 
 const RESOURCE: &str = "from typepact import resource\nfrom typepact.rust import Borrowed, Owned\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\n";
 
@@ -101,6 +101,53 @@ fn v03_08_borrowed_to_owned_return_is_rejected_without_inventing_a_handoff() {
 }
 
 #[test]
+fn v03_08_unannotated_owned_return_keeps_an_unknown_escape_duty() {
+    let result = check_source(&format!(
+        "{RESOURCE}def escape():\n    resource = C()\n    return resource\n"
+    ));
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic
+                    .message
+                    .contains("returned without an Owned contract")
+        }),
+        "{result:#?}"
+    );
+    assert!(!result
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP1003"));
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_08_field_and_container_storage_keep_unknown_escape_duties() {
+    for (name, body) in [
+        ("field", "holder = Holder()\n    holder.resource = resource"),
+        ("container", "container = [resource]"),
+    ] {
+        let result = check_source(&format!(
+            "{RESOURCE}class Holder:\n    pass\ndef escape():\n    resource = C()\n    {body}\n"
+        ));
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001" && diagnostic.certainty == "unknown"
+            }),
+            "{name}: {result:#?}"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP1002"),
+            "{name}: {result:#?}"
+        );
+        assert_eq!(result.coverage.status, "incomplete", "{name}: {result:#?}");
+    }
+}
+
+#[test]
 fn v03_02_lost_last_alias_does_not_discard_the_local_duty() {
     let result = check_source(&format!(
         "{RESOURCE}def leak():\n    resource = C()\n    alias = resource\n    resource = None\n    alias = None\n"
@@ -145,6 +192,8 @@ fn v03_03_finally_replacement_cancels_owned_return_handoff() {
     assert_eq!(leaks.len(), 1, "{result:#?}");
     assert_eq!(leaks[0].certainty, "definite");
     assert!(leaks[0].message.ends_with("on return"));
+    assert_eq!(leaks[0].primary.line, 11, "{result:#?}");
+    assert_eq!(leaks[0].related[0].line, 7, "{result:#?}");
 }
 
 #[test]
@@ -164,6 +213,7 @@ fn v03_03_raise_in_finally_replaces_the_pending_return_exit() {
         "{result:#?}"
     );
     assert_eq!(leak.related.len(), 1, "{result:#?}");
+    assert_eq!(leak.related[0].line, RESOURCE.lines().count() + 2);
 }
 
 #[test]
@@ -230,7 +280,20 @@ fn v03_06_distinct_return_and_raise_exits_keep_separate_findings() {
     assert!(leaks
         .iter()
         .any(|diagnostic| diagnostic.message.ends_with("on raise")));
-    assert!(leaks.iter().all(|diagnostic| diagnostic.related.len() == 1));
+    let mut exits = leaks
+        .iter()
+        .map(|diagnostic| diagnostic.primary.line)
+        .collect::<Vec<_>>();
+    exits.sort_unstable();
+    assert_eq!(exits, [9, 10], "{result:#?}");
+    assert!(
+        leaks.iter().all(|diagnostic| {
+            diagnostic.certainty == "definite"
+                && diagnostic.related.len() == 1
+                && diagnostic.related[0].line == 7
+        }),
+        "{result:#?}"
+    );
 }
 
 #[test]
@@ -396,6 +459,45 @@ fn v03_05_shadowed_builtin_exception_constructor_keeps_a_boundary() {
         "{result:#?}"
     );
     assert_eq!(result.coverage.status, "incomplete");
+}
+
+#[test]
+fn v03_05_custom_exception_handler_keeps_the_unmatched_exit_unknown() {
+    let result = check_source(&format!(
+        "{RESOURCE}class CleanupError(Exception):\n    pass\ndef fail():\n    raise CleanupError()\ndef cleanup():\n    resource = C()\n    try:\n        fail()\n    except CleanupError:\n        resource.close()\n"
+    ));
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP9001"),
+        "{result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }),
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_05_handler_order_and_handler_else_raises_still_cross_finally() {
+    let result = check_source(&format!(
+        "{RESOURCE}def ordered():\n    resource = C()\n    try:\n        raise RuntimeError()\n    except ValueError:\n        pass\n    except RuntimeError:\n        resource.close()\ndef handler_raises():\n    resource = C()\n    try:\n        raise RuntimeError()\n    except RuntimeError:\n        raise ValueError()\n    finally:\n        resource.close()\ndef else_raises():\n    resource = C()\n    try:\n        pass\n    except RuntimeError:\n        pass\n    else:\n        raise RuntimeError()\n    finally:\n        resource.close()\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
 }
 
 #[test]
@@ -896,6 +998,36 @@ fn v03_16_break_before_static_for_budget_does_not_create_a_truncation_boundary()
 }
 
 #[test]
+fn v03_16_loop_fixed_point_budget_keeps_cleanup_incomplete() {
+    let mut source = format!("{RESOURCE}def cleanup():\n    value_0 = C()\n");
+    for index in 1..=20 {
+        source.push_str(&format!("    value_{index} = None\n"));
+    }
+    source.push_str("    while keep_running:\n");
+    for index in (1..=20).rev() {
+        source.push_str(&format!("        value_{index} = value_{}\n", index - 1));
+    }
+    source.push_str("    value_20.close()\n");
+
+    let result = check_source(&source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("loop fixed-point budget exceeded") }),
+        "{result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }),
+        "{result:#?}"
+    );
+}
+
+#[test]
 fn v03_17_unawaited_async_cleanup_does_not_discharge_a_duty() {
     let source = "from typepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def leak():\n    resource = C()\n    resource.aclose()\n";
     let result = check_source(source);
@@ -1033,6 +1165,50 @@ fn v03_26_pending_coroutine_budget_widens_captures_and_keeps_the_duty_unknown() 
 }
 
 #[test]
+fn v03_26_pending_coroutine_budget_edit_recovers_with_fresh_result_parity() {
+    let mut source = format!(
+        "{RESOURCE}async def hold(resource: Borrowed[C]):\n    pass\ndef cleanup():\n    resource = C()\n"
+    );
+    for index in 0..129 {
+        source.push_str(&format!("    pending_{index} = hold(resource)\n"));
+    }
+    let over_budget = SourceFile::new("phase03.py", "phase03", source);
+    let mut session = AnalysisSession::default();
+    let first = session.check(std::slice::from_ref(&over_budget), "3.11");
+    assert_eq!(first.coverage.status, "incomplete", "{first:#?}");
+    assert!(first.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "TP9001"
+            && diagnostic
+                .message
+                .contains("pending coroutine budget exceeded")
+    }));
+
+    let recovered_file = SourceFile::new(
+        "phase03.py",
+        "phase03",
+        format!("{RESOURCE}def cleanup():\n    resource = C()\n    resource.close()\n"),
+    );
+    let recovered = session.check(std::slice::from_ref(&recovered_file), "3.11");
+    assert_eq!(
+        recovered,
+        check(std::slice::from_ref(&recovered_file), "3.11")
+    );
+    assert_eq!(
+        recovered.coverage.status, "complete-for-supported-subset",
+        "{recovered:#?}"
+    );
+    assert!(!recovered.diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("pending coroutine budget exceeded")
+    }));
+    assert!(!recovered
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP1002"));
+}
+
+#[test]
 fn v03_17_awaited_async_cleanup_tracks_cancellation_as_uncertain() {
     let source = "from typepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    await resource.aclose()\n";
     let result = check_source(source);
@@ -1098,6 +1274,33 @@ fn v03_17_repeated_coroutine_await_is_an_explicit_boundary() {
 }
 
 #[test]
+fn v03_17_ambiguous_coroutine_join_keeps_captured_duties_unknown() {
+    let source = format!(
+        "{RESOURCE}async def finish(resource: Owned[C]):\n    resource.close()\nasync def cleanup(flag):\n    first = C()\n    second = C()\n    if flag:\n        pending = finish(first)\n    else:\n        pending = finish(second)\n    await pending\n"
+    );
+    let result = check_source(&source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && (diagnostic
+                    .message
+                    .contains("await target is not a resolved direct coroutine")
+                    || diagnostic
+                        .message
+                        .contains("coroutine execution or captures differ"))
+        }),
+        "{result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }),
+        "{result:#?}"
+    );
+}
+
+#[test]
 fn v03_19_async_context_cleanup_keeps_the_cancellation_exit() {
     let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    async with aclosing(resource):\n        pass\n";
     let result = check_source(source);
@@ -1149,6 +1352,19 @@ fn v03_21_contextlib_model_is_disabled_for_unlisted_python_targets() {
         assert!(report.available_models.is_empty());
         assert_eq!(report.model_catalog_version, 2);
     }
+}
+
+#[test]
+fn v03_21_missing_python_version_input_disables_contextlib_models() {
+    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n";
+    let result = check_source_version(source, "");
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.code == "TP1002" && diagnostic.certainty != "definite" }));
+    let report = typepact::CheckResult::from_inspection(result, "");
+    assert!(report.available_models.is_empty());
 }
 
 #[test]
@@ -1233,6 +1449,35 @@ fn v03_26_closing_a_capture_does_not_complete_its_pending_coroutine() {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_26_unknown_actor_across_suspension_keeps_cleanup_uncertain() {
+    let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    opaque_effect(resource)\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n    unrelated = C()\n    try:\n        await use(resource)\n    finally:\n        resource.close()\n";
+    let result = check_source(source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.related.iter().any(|span| span.line == 11)
+        }),
+        "{result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "definite"
+                && diagnostic.related.iter().any(|span| span.line == 12)
+        }),
+        "the unknown actor affects the coroutine capture, not the unrelated duty: {result:#?}"
+    );
+    assert!(
+        result.coverage.reasons.iter().any(|reason| {
+            reason.contains("opaque") || reason.contains("cancellation may interrupt")
+        }),
         "{result:#?}"
     );
 }
@@ -1329,6 +1574,37 @@ fn v03_24_custom_awaitable_does_not_infer_coroutine_execution() {
             .any(|diagnostic| { diagnostic.code == "TP9001" || diagnostic.code == "TP9002" }),
         "{result:#?}"
     );
+}
+
+#[test]
+fn v03_24_generator_and_except_star_flow_remain_visible_boundaries() {
+    for (name, source) in [
+        (
+            "generator",
+            format!("{RESOURCE}def cleanup():\n    resource = C()\n    yield resource\n"),
+        ),
+        (
+            "except-star",
+            format!("{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        raise ExceptionGroup('failure', [RuntimeError()])\n    except* RuntimeError:\n        resource.close()\n"),
+        ),
+    ] {
+        let result = check_source(&source);
+        assert_eq!(result.coverage.status, "incomplete", "{name}: {result:#?}");
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP9001"),
+            "{name}: {result:#?}"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP1002"),
+            "{name}: {result:#?}"
+        );
+    }
 }
 
 #[test]

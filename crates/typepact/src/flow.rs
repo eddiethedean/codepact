@@ -1542,6 +1542,44 @@ fn resolved_await_call(
     })
 }
 
+fn await_call_captures(awaited: &AstExpr, state: &State) -> Option<(BTreeSet<String>, bool)> {
+    let AstExprKind::Call {
+        function,
+        arguments,
+        keywords,
+    } = &awaited.kind
+    else {
+        return None;
+    };
+    let mut targets = BTreeSet::new();
+    let mut unknown = false;
+    let mut capture = |expression: &AstExpr| match &expression.kind {
+        AstExprKind::Name(name) => {
+            if let Some(objects) = state.places.get(name) {
+                targets.extend(objects.iter().cloned());
+            }
+            unknown |= state.unknown_places.contains(name);
+        }
+        AstExprKind::String(_)
+        | AstExprKind::Boolean(_)
+        | AstExprKind::NoneLiteral
+        | AstExprKind::Primitive => {}
+        _ => unknown = true,
+    };
+    match &function.kind {
+        AstExprKind::Attribute(receiver, _) => capture(receiver),
+        AstExprKind::Name(_) => {}
+        _ => capture(function),
+    }
+    for argument in arguments {
+        capture(argument);
+    }
+    for (_, argument) in keywords {
+        capture(argument);
+    }
+    Some((targets, unknown))
+}
+
 fn resolve_imported_contracts(
     module: &str,
     name: &str,
@@ -2384,6 +2422,17 @@ fn consume_expr(
             && (resolved || env.alive)
             && (!has_modeled_cancellation || modeled_cancelled.is_some())
         {
+            let body_affected = env
+                .objects
+                .iter()
+                .filter(|&(object, mask)| {
+                    before
+                        .objects
+                        .get(object)
+                        .is_some_and(|previous| previous != mask)
+                })
+                .map(|(object, _)| object.clone())
+                .collect::<BTreeSet<_>>();
             let mut cancelled = before;
             cancelled.awaiting_coroutine = env.awaiting_coroutine;
             cancelled.alive = true;
@@ -2393,22 +2442,60 @@ fn consume_expr(
                     record.consumed = true;
                 }
             }
-            let affected = cancelled
-                .places
-                .values()
-                .flatten()
-                .cloned()
-                .collect::<Vec<_>>();
+            let direct_captures = if coroutine.is_none() && modeled_close.is_none() && resolved {
+                await_call_captures(awaited, &cancelled)
+            } else {
+                None
+            };
+            let affected = if let Some(coroutine) = &coroutine {
+                let mut affected = coroutine
+                    .captures
+                    .values()
+                    .flat_map(|place| place.targets.iter().cloned())
+                    .collect::<BTreeSet<_>>();
+                if coroutine.captures.values().any(|place| place.unknown) {
+                    affected.extend(cancelled.objects.keys().cloned());
+                }
+                affected.extend(body_affected.iter().cloned());
+                affected
+            } else if let Some((object, _)) = &modeled_close {
+                let mut affected = BTreeSet::from([object.clone()]);
+                affected.extend(body_affected.iter().cloned());
+                affected
+            } else if let Some((targets, unknown)) = &direct_captures {
+                let mut affected = targets.clone();
+                if *unknown {
+                    affected.extend(cancelled.objects.keys().cloned());
+                }
+                affected.extend(body_affected.iter().cloned());
+                affected
+            } else {
+                cancelled
+                    .places
+                    .values()
+                    .flatten()
+                    .cloned()
+                    .collect::<BTreeSet<_>>()
+            };
             let modeled_object = modeled_close.as_ref().map(|(object, _)| object.as_str());
             let modeled_pre_mask = modeled_close
                 .as_ref()
                 .map(|(object, _)| cancelled.objects.get(object).copied().unwrap_or(UNKNOWN));
-            weaken(
-                &mut cancelled,
-                affected
+            if coroutine.is_some() || direct_captures.is_some() {
+                for object in affected
                     .into_iter()
-                    .filter(|object| Some(object.as_str()) != modeled_object),
-            );
+                    .filter(|object| Some(object.as_str()) != modeled_object)
+                {
+                    *cancelled.objects.entry(object).or_default() |= UNKNOWN;
+                }
+            } else if modeled_close.is_none() {
+                weaken(
+                    &mut cancelled,
+                    affected
+                        .into_iter()
+                        .filter(|object| Some(object.as_str()) != modeled_object),
+                );
+            }
             if let (Some((object, _)), Some(previous), Some(postcondition)) =
                 (&modeled_close, modeled_pre_mask, modeled_cancelled)
             {
@@ -3623,7 +3710,7 @@ fn execute_finally_for_exit(
     outcomes.append(finally_outcomes);
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ExceptionMatch {
     No,
     Possible,
@@ -3669,6 +3756,9 @@ fn known_builtin_exception(name: &str) -> bool {
             | "BytesWarning"
             | "ChildProcessError"
             | "ConnectionError"
+            | "ConnectionAbortedError"
+            | "ConnectionRefusedError"
+            | "ConnectionResetError"
             | "DeprecationWarning"
             | "EOFError"
             | "EncodingWarning"
@@ -3724,6 +3814,75 @@ fn known_builtin_exception(name: &str) -> bool {
     )
 }
 
+fn known_exception_for_match(name: &str) -> bool {
+    known_builtin_exception(name) || name == "CancelledError"
+}
+
+fn builtin_exception_parents(name: &str) -> Option<&'static [&'static str]> {
+    Some(match name {
+        "CancelledError" => &["BaseException"],
+        "BaseException" => &[],
+        "Exception" => &["BaseException"],
+        "ArithmeticError" | "AssertionError" | "AttributeError" | "BufferError" | "EOFError"
+        | "ImportError" | "LookupError" | "MemoryError" | "NameError" | "ReferenceError"
+        | "RuntimeError" | "StopAsyncIteration" | "StopIteration" | "SyntaxError"
+        | "SystemError" | "TypeError" | "ValueError" | "Warning" => &["Exception"],
+        "BlockingIOError" | "ChildProcessError" | "ConnectionError" | "FileExistsError"
+        | "FileNotFoundError" | "InterruptedError" | "IsADirectoryError" | "NotADirectoryError"
+        | "PermissionError" | "ProcessLookupError" | "TimeoutError" => &["OSError"],
+        "BrokenPipeError"
+        | "ConnectionAbortedError"
+        | "ConnectionRefusedError"
+        | "ConnectionResetError" => &["ConnectionError"],
+        "FloatingPointError" | "OverflowError" | "ZeroDivisionError" => &["ArithmeticError"],
+        "BytesWarning"
+        | "DeprecationWarning"
+        | "EncodingWarning"
+        | "FutureWarning"
+        | "ImportWarning"
+        | "PendingDeprecationWarning"
+        | "ResourceWarning"
+        | "RuntimeWarning"
+        | "SyntaxWarning"
+        | "UnicodeWarning"
+        | "UserWarning" => &["Warning"],
+        "GeneratorExit" | "KeyboardInterrupt" | "SystemExit" => &["BaseException"],
+        "ModuleNotFoundError" => &["ImportError"],
+        "IndexError" | "KeyError" => &["LookupError"],
+        "NotImplementedError" | "RecursionError" => &["RuntimeError"],
+        "IndentationError" => &["SyntaxError"],
+        "TabError" => &["IndentationError"],
+        "UnboundLocalError" => &["NameError"],
+        "UnicodeDecodeError" | "UnicodeEncodeError" | "UnicodeTranslateError" => &["UnicodeError"],
+        "UnicodeError" => &["ValueError"],
+        "OSError" => &["Exception"],
+        name if known_builtin_exception(name) => return None,
+        _ => return None,
+    })
+}
+
+fn builtin_exception_match(exception: &str, caught: &str) -> Option<bool> {
+    if !known_exception_for_match(exception) || !known_exception_for_match(caught) {
+        return None;
+    }
+    if exception == caught {
+        return Some(true);
+    }
+    let mut pending = vec![exception];
+    let mut visited = BTreeSet::new();
+    while let Some(current) = pending.pop() {
+        if !visited.insert(current) {
+            continue;
+        }
+        let parents = builtin_exception_parents(current)?;
+        if parents.contains(&caught) {
+            return Some(true);
+        }
+        pending.extend(parents.iter().copied());
+    }
+    Some(false)
+}
+
 fn is_unshadowed_builtin_exception(name: &str, state: &State) -> bool {
     known_builtin_exception(name)
         && !state.shadowed_classes.contains(name)
@@ -3747,21 +3906,10 @@ fn exception_handler_match(exception: Option<&str>, handler: Option<&AstExpr>) -
         if caught == "BaseException" {
             return ExceptionMatch::Definite;
         }
-        if exception == Some(caught) {
-            if known_builtin_exception(caught) {
-                return ExceptionMatch::Definite;
-            }
-            possible = true;
-            continue;
-        }
-        if caught == "Exception" {
-            match exception {
-                Some("CancelledError" | "KeyboardInterrupt" | "SystemExit" | "GeneratorExit") => {}
-                Some(name) if known_builtin_exception(name) => return ExceptionMatch::Definite,
-                Some(_) | None => possible = true,
-            }
-        } else {
-            possible = true;
+        match exception.and_then(|exception| builtin_exception_match(exception, caught)) {
+            Some(true) => return ExceptionMatch::Definite,
+            Some(false) => {}
+            None => possible = true,
         }
     }
     if possible {
@@ -5857,6 +6005,121 @@ mod tests {
                 declarations: 0,
             },
         }
+    }
+
+    fn source_with_flow_budget(source: &str, budget: usize) -> Inspection {
+        let file = SourceFile::new("module.py", "module", source);
+        let parsed = crate::frontend::parse_frontend(source, "module", "3.11")
+            .expect("the bounded reference fixture parses");
+        let decorator_span = parsed
+            .declarations
+            .iter()
+            .find_map(|declaration| match declaration {
+                Declaration::Class {
+                    name, decorators, ..
+                } if name == "C" => decorators.first().map(|decorator| decorator.range),
+                _ => None,
+            })
+            .map(|range| span(&file, range))
+            .expect("the resource class has a source decorator");
+        let summaries = BTreeMap::from([(
+            file.path.clone(),
+            crate::db::ParseSummary {
+                ok: true,
+                error: None,
+                error_offset: None,
+                declarations: Some(parsed.declarations),
+                module_body: parsed.module_body,
+                absolute_imports: parsed.absolute_imports,
+            },
+        )]);
+        let mut result = inspection();
+        result.contracts.push(Contract {
+            schema_version: 1,
+            base_symbol: "module.C".into(),
+            display_name: "C".into(),
+            lifecycle: Some(Lifecycle {
+                closed_by: "close".into(),
+            }),
+            access: "unspecified".into(),
+            source: decorator_span,
+            provenance: vec![Provenance {
+                origin: "fixture".into(),
+                trust: "declared-unverified".into(),
+            }],
+        });
+        reset_flow_budget(budget);
+        check_file_bodies(
+            &file.path,
+            std::slice::from_ref(&file),
+            &summaries,
+            &mut result,
+            "3.11",
+            &FlowModelCatalog::default(),
+        );
+        result
+    }
+
+    #[test]
+    fn low_flow_budget_preserves_a_visible_duty_against_a_finite_high_budget_reference() {
+        let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    resource.close()\n";
+        let reference = source_with_flow_budget(source, 100);
+        assert_eq!(
+            reference.coverage.status, "complete-for-supported-subset",
+            "{reference:#?}"
+        );
+        assert!(!reference
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"));
+
+        let bounded = source_with_flow_budget(source, 2);
+        assert_eq!(bounded.coverage.status, "incomplete", "{bounded:#?}");
+        assert!(
+            bounded
+                .coverage
+                .reasons
+                .iter()
+                .any(|reason| { reason.contains("lifecycle flow work budget exceeded") }),
+            "{bounded:#?}"
+        );
+        assert!(
+            bounded.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+            }),
+            "the exhausted budget cannot claim the duty was discharged: {bounded:#?}"
+        );
+    }
+
+    #[test]
+    fn exception_matching_uses_known_builtin_ancestry_and_keeps_custom_types_unknown() {
+        let handler = |name: &str| AstExpr {
+            range: SourceRange {
+                start: 0,
+                end: name.len(),
+            },
+            kind: AstExprKind::Name(name.into()),
+        };
+        assert_eq!(
+            exception_handler_match(Some("RuntimeError"), Some(&handler("ValueError"))),
+            ExceptionMatch::No
+        );
+        assert_eq!(
+            exception_handler_match(Some("UnicodeDecodeError"), Some(&handler("ValueError"))),
+            ExceptionMatch::Definite
+        );
+        assert_eq!(
+            exception_handler_match(Some("CancelledError"), Some(&handler("Exception"))),
+            ExceptionMatch::No
+        );
+        assert_eq!(
+            exception_handler_match(Some("CleanupError"), Some(&handler("BaseException"))),
+            ExceptionMatch::Definite
+        );
+        assert_eq!(
+            exception_handler_match(Some("CleanupError"), Some(&handler("CleanupError"))),
+            ExceptionMatch::Possible
+        );
     }
 
     #[test]

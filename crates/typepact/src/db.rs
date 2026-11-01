@@ -1361,6 +1361,393 @@ mod tests {
     }
 
     #[test]
+    fn resource_normal_outcome_edits_refresh_only_affected_flow_and_match_fresh() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let file = SourceFile::new(
+            "model.py",
+            "model",
+            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n",
+        );
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let baseline = session.check(&[file.clone(), unrelated.clone()], "3.11");
+        assert!(
+            !baseline
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP1002"),
+            "{baseline:#?}"
+        );
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let make_catalog = |normal| {
+            let mut catalog = crate::model::FlowModelCatalog::default();
+            catalog
+                .insert(crate::model::ResourceEffectModel {
+                    id: "fixture-normal-outcome".into(),
+                    qualified_symbol: "model.Connection".into(),
+                    close_method: "close".into(),
+                    source_revision: format!("normal-{normal:?}"),
+                    source_url: "fixture://model.Connection.close".into(),
+                    supported_python_versions: BTreeSet::from(["3.11".into()]),
+                    platform_assumptions: vec!["platform-independent fixture".into()],
+                    argument_aliases: Vec::new(),
+                    result_alias: None,
+                    duty_handoff: "none".into(),
+                    suppression: "not-a-context-manager".into(),
+                    asynchronous: false,
+                    normal: Some(normal),
+                    exceptional: None,
+                    cancelled: None,
+                    repeat_close: crate::model::RepeatClosePolicy::Unspecified,
+                    post_close_methods: BTreeSet::new(),
+                    trust: "reviewed-fixture".into(),
+                    reviewer: "fixture-test".into(),
+                    valid_cases: vec!["normal postcondition applies".into()],
+                    invalid_cases: vec!["open postcondition retains a duty".into()],
+                    unknown_cases: vec!["unknown postcondition weakens certainty".into()],
+                })
+                .unwrap();
+            catalog
+        };
+
+        for (postcondition, expected_certainty, expected_coverage) in [
+            (
+                crate::model::LifecyclePostcondition::Closed,
+                None,
+                "complete-for-supported-subset",
+            ),
+            (
+                crate::model::LifecyclePostcondition::Open,
+                Some("definite"),
+                "complete-for-supported-subset",
+            ),
+            (
+                crate::model::LifecyclePostcondition::Unknown,
+                Some("possible"),
+                "incomplete",
+            ),
+        ] {
+            let catalog = make_catalog(postcondition);
+            executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
+            assert!(session.set_flow_model_catalog(catalog.clone()));
+            let result = session.check(&[file.clone(), unrelated.clone()], "3.11");
+            let leaks = result
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            match expected_certainty {
+                Some(certainty) => {
+                    assert_eq!(leaks.len(), 1, "{postcondition:?}: {result:#?}");
+                    assert_eq!(leaks[0].certainty, certainty, "{postcondition:?}");
+                }
+                None => assert!(leaks.is_empty(), "{postcondition:?}: {result:#?}"),
+            }
+            assert_eq!(
+                result.coverage.status, expected_coverage,
+                "{postcondition:?}: {result:#?}"
+            );
+            let flow_queries = executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(
+                flow_queries.len(),
+                1,
+                "{postcondition:?} edit should recheck only the modeled file: {flow_queries:#?}"
+            );
+
+            let mut fresh = AnalysisSession::default();
+            fresh.set_flow_model_catalog(catalog);
+            assert_eq!(
+                result,
+                fresh.check(&[file.clone(), unrelated.clone()], "3.11"),
+                "{postcondition:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn resource_exceptional_outcome_edits_refresh_only_affected_flow_and_match_fresh() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let file = SourceFile::new(
+            "model.py",
+            "model",
+            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n",
+        );
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let _baseline = session.check(&[file.clone(), unrelated.clone()], "3.11");
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let make_catalog = |exceptional| {
+            let mut catalog = crate::model::FlowModelCatalog::default();
+            catalog
+                .insert(crate::model::ResourceEffectModel {
+                    id: "fixture-exceptional-outcome".into(),
+                    qualified_symbol: "model.Connection".into(),
+                    close_method: "close".into(),
+                    source_revision: format!("exceptional-{exceptional:?}"),
+                    source_url: "fixture://model.Connection.close".into(),
+                    supported_python_versions: BTreeSet::from(["3.11".into()]),
+                    platform_assumptions: vec!["platform-independent fixture".into()],
+                    argument_aliases: Vec::new(),
+                    result_alias: None,
+                    duty_handoff: "none".into(),
+                    suppression: "not-a-context-manager".into(),
+                    asynchronous: false,
+                    normal: Some(crate::model::LifecyclePostcondition::Closed),
+                    exceptional: Some(exceptional),
+                    cancelled: None,
+                    repeat_close: crate::model::RepeatClosePolicy::Unspecified,
+                    post_close_methods: BTreeSet::new(),
+                    trust: "reviewed-fixture".into(),
+                    reviewer: "fixture-test".into(),
+                    valid_cases: vec!["exceptional postcondition applies".into()],
+                    invalid_cases: vec!["open exceptional state retains a duty".into()],
+                    unknown_cases: vec!["unknown exceptional state retains a boundary".into()],
+                })
+                .unwrap();
+            catalog
+        };
+
+        for (postcondition, expected_certainty, expected_coverage) in [
+            (
+                crate::model::LifecyclePostcondition::Closed,
+                None,
+                "complete-for-supported-subset",
+            ),
+            (
+                crate::model::LifecyclePostcondition::Open,
+                Some("definite"),
+                "complete-for-supported-subset",
+            ),
+            (
+                crate::model::LifecyclePostcondition::Unknown,
+                Some("possible"),
+                "incomplete",
+            ),
+        ] {
+            let catalog = make_catalog(postcondition);
+            executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
+            assert!(session.set_flow_model_catalog(catalog.clone()));
+            let result = session.check(&[file.clone(), unrelated.clone()], "3.11");
+            let leaks = result
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            match expected_certainty {
+                Some(certainty) => {
+                    assert_eq!(leaks.len(), 1, "{postcondition:?}: {result:#?}");
+                    assert_eq!(leaks[0].certainty, certainty, "{postcondition:?}");
+                }
+                None => assert!(leaks.is_empty(), "{postcondition:?}: {result:#?}"),
+            }
+            assert_eq!(
+                result.coverage.status, expected_coverage,
+                "{postcondition:?}: {result:#?}"
+            );
+            let flow_queries = executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(
+                flow_queries.len(),
+                1,
+                "{postcondition:?} edit should recheck only the modeled file: {flow_queries:#?}"
+            );
+
+            let mut fresh = AnalysisSession::default();
+            fresh.set_flow_model_catalog(catalog);
+            assert_eq!(
+                result,
+                fresh.check(&[file.clone(), unrelated.clone()], "3.11"),
+                "{postcondition:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn async_cancelled_outcome_edits_refresh_only_affected_flow_and_match_fresh() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let file = SourceFile::new(
+            "model.py",
+            "model",
+            "from typepact import resource\n@resource(closed_by='aclose')\nclass Connection:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = Connection()\n    await resource.aclose()\n",
+        );
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let baseline = session.check(&[file.clone(), unrelated.clone()], "3.11");
+        assert!(baseline.coverage.status == "incomplete", "{baseline:#?}");
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let make_catalog = |cancelled| {
+            let mut catalog = crate::model::FlowModelCatalog::default();
+            catalog
+                .insert(crate::model::ResourceEffectModel {
+                    id: "fixture-async-cancelled-outcome".into(),
+                    qualified_symbol: "model.Connection".into(),
+                    close_method: "aclose".into(),
+                    source_revision: format!("cancelled-{cancelled:?}"),
+                    source_url: "fixture://model.Connection.aclose".into(),
+                    supported_python_versions: BTreeSet::from(["3.11".into()]),
+                    platform_assumptions: vec!["platform-independent fixture".into()],
+                    argument_aliases: Vec::new(),
+                    result_alias: None,
+                    duty_handoff: "none".into(),
+                    suppression: "not-a-context-manager".into(),
+                    asynchronous: true,
+                    normal: Some(crate::model::LifecyclePostcondition::Closed),
+                    exceptional: None,
+                    cancelled: Some(cancelled),
+                    repeat_close: crate::model::RepeatClosePolicy::Unspecified,
+                    post_close_methods: BTreeSet::new(),
+                    trust: "reviewed-fixture".into(),
+                    reviewer: "fixture-test".into(),
+                    valid_cases: vec!["cancelled postcondition applies".into()],
+                    invalid_cases: vec!["open cancellation retains a duty".into()],
+                    unknown_cases: vec!["unknown cancellation retains a boundary".into()],
+                })
+                .unwrap();
+            catalog
+        };
+
+        for (postcondition, expected_certainty, expected_coverage) in [
+            (
+                crate::model::LifecyclePostcondition::Closed,
+                None,
+                "complete-for-supported-subset",
+            ),
+            (
+                crate::model::LifecyclePostcondition::Open,
+                Some("definite"),
+                "complete-for-supported-subset",
+            ),
+            (
+                crate::model::LifecyclePostcondition::Unknown,
+                Some("possible"),
+                "incomplete",
+            ),
+        ] {
+            let catalog = make_catalog(postcondition);
+            executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
+            assert!(session.set_flow_model_catalog(catalog.clone()));
+            let result = session.check_report(&[file.clone(), unrelated.clone()], "3.11");
+            let leaks = result
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            match expected_certainty {
+                Some(certainty) => {
+                    assert_eq!(leaks.len(), 1, "{postcondition:?}: {result:#?}");
+                    assert_eq!(leaks[0].certainty, certainty, "{postcondition:?}");
+                    assert_eq!(leaks[0].completion.as_deref(), Some("cancelled"));
+                }
+                None => assert!(leaks.is_empty(), "{postcondition:?}: {result:#?}"),
+            }
+            assert_eq!(
+                result.coverage.status, expected_coverage,
+                "{postcondition:?}: {result:#?}"
+            );
+            let flow_queries = executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(
+                flow_queries.len(),
+                1,
+                "{postcondition:?} edit should recheck only the modeled file: {flow_queries:#?}"
+            );
+
+            let mut fresh = AnalysisSession::default();
+            fresh.set_flow_model_catalog(catalog);
+            assert_eq!(
+                result,
+                fresh.check_report(&[file.clone(), unrelated.clone()], "3.11"),
+                "{postcondition:?}"
+            );
+        }
+    }
+
+    #[test]
     fn unrelated_edit_reuses_other_file_lifecycle_checks() {
         let executions = Arc::new(Mutex::new(Vec::<String>::new()));
         let observed = Arc::clone(&executions);
@@ -1684,6 +2071,86 @@ mod tests {
     }
 
     #[test]
+    fn moving_a_conditional_cleanup_refreshes_its_related_span() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let source = |blank: bool| {
+            SourceFile::new(
+                "phase03.py",
+                "phase03",
+                format!(
+                    "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup(flag):\n    resource = C()\n    if flag:\n{}        resource.close()\n",
+                    if blank { "\n" } else { "" }
+                ),
+            )
+        };
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let first_source = source(false);
+        let first = session.check(&[first_source.clone(), unrelated.clone()], "3.11");
+        let first_leak = first
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "TP1002")
+            .expect("a conditional cleanup leaves a possible duty");
+        assert_eq!(first_leak.certainty, "possible", "{first:#?}");
+        let first_close = first_leak
+            .related
+            .iter()
+            .find(|span| span.line == 8)
+            .expect("the leak retains the conditional close origin")
+            .clone();
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+
+        let edited_source = source(true);
+        let updated = session.check(&[edited_source.clone(), unrelated.clone()], "3.11");
+        let moved_leak = updated
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "TP1002")
+            .expect("the edited conditional cleanup still leaves a possible duty");
+        let moved_close = moved_leak
+            .related
+            .iter()
+            .find(|span| span.line == first_close.line + 1)
+            .expect("the related cleanup span moves with the edited body");
+        assert_eq!(moved_leak.certainty, first_leak.certainty);
+        assert_eq!(moved_close.column, first_close.column);
+        assert_eq!(updated, crate::check(&[edited_source, unrelated], "3.11"));
+        let flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            flow_queries.len(),
+            1,
+            "only the edited cleanup file should refresh: {flow_queries:#?}"
+        );
+    }
+
+    #[test]
     fn lifecycle_callee_edits_match_a_fresh_check() {
         let mut session = AnalysisSession::default();
         let before = SourceFile::new(
@@ -1709,6 +2176,257 @@ mod tests {
             .iter()
             .any(|diagnostic| diagnostic.code == "TP1001"));
         assert_eq!(updated, crate::check(&[after], "3.11"));
+    }
+
+    #[test]
+    fn owned_return_contract_edits_refresh_callers_and_match_fresh() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let phase = |owned: bool| {
+            SourceFile::new(
+                "phase03.py",
+                "phase03",
+                format!(
+                    "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef make(){}:\n    return C()\ndef leak():\n    value = make()\n",
+                    if owned { " -> Owned[C]" } else { "" },
+                ),
+            )
+        };
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let first_phase = phase(true);
+        let first = session.check(&[first_phase.clone(), unrelated.clone()], "3.11");
+        assert!(
+            first
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP1002"
+                    && diagnostic.primary.file == "phase03.py"),
+            "{first:#?}"
+        );
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+
+        let edited_phase = phase(false);
+        let updated = session.check(&[edited_phase.clone(), unrelated.clone()], "3.11");
+        assert!(
+            updated.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001"
+                    && diagnostic.primary.file == "phase03.py"
+                    && diagnostic.message.contains("return")
+            }),
+            "{updated:#?}"
+        );
+        assert_eq!(updated.coverage.status, "incomplete", "{updated:#?}");
+        assert_eq!(updated, crate::check(&[edited_phase, unrelated], "3.11"));
+        let flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            flow_queries.len(),
+            1,
+            "the edited flow file should refresh while the unrelated file reuses its query: {flow_queries:#?}"
+        );
+    }
+
+    #[test]
+    fn async_callee_suspension_edits_refresh_callers_and_match_fresh() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let phase = |body: &str| {
+            SourceFile::new(
+                "phase03.py",
+                "phase03",
+                format!(
+                    "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    {body}\nasync def cleanup():\n    resource = C()\n    try:\n        await use(resource)\n    finally:\n        resource.close()\n"
+                ),
+            )
+        };
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let first_phase = phase("pass");
+        let first = session.check(&[first_phase.clone(), unrelated.clone()], "3.11");
+        assert!(
+            first.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002"
+                    && diagnostic.certainty == "possible"
+                    && diagnostic.primary.file == "phase03.py"
+            }),
+            "{first:#?}"
+        );
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+
+        let edited_phase = phase("await resource.pause()");
+        let updated = session.check(&[edited_phase.clone(), unrelated.clone()], "3.11");
+        assert!(
+            updated.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002"
+                    && diagnostic.certainty == "possible"
+                    && diagnostic.primary.file == "phase03.py"
+            }),
+            "{updated:#?}"
+        );
+        assert_eq!(updated.coverage.status, "incomplete", "{updated:#?}");
+        assert_ne!(
+            updated, first,
+            "the callee's new suspension must affect the result"
+        );
+        assert_eq!(updated, crate::check(&[edited_phase, unrelated], "3.11"));
+        let flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            flow_queries.len(),
+            1,
+            "the edited flow file should refresh while the unrelated file reuses its query: {flow_queries:#?}"
+        );
+    }
+
+    #[test]
+    fn async_coroutine_capture_edits_preserve_unrelated_duties_and_match_fresh() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let phase = |captured: &str| {
+            SourceFile::new(
+                "phase03.py",
+                "phase03",
+                format!(
+                    "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def close_owned(resource: Owned[C]):\n    resource.close()\nasync def cleanup():\n    first = C()\n    second = C()\n    await close_owned({captured})\n"
+                ),
+            )
+        };
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let first_phase = phase("first");
+        let first = session.check(&[first_phase.clone(), unrelated.clone()], "3.11");
+        let first_leaks = first
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert_eq!(first_leaks.len(), 3, "{first:#?}");
+        assert!(first_leaks.iter().any(|diagnostic| {
+            diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on cancelled")
+                && diagnostic.related.iter().any(|span| span.line == 9)
+        }), "the captured first resource remains caller-owned if cancellation precedes entry: {first:#?}");
+        assert!(
+            first_leaks.iter().any(|diagnostic| {
+                diagnostic.certainty == "definite"
+                    && diagnostic.related.iter().any(|span| span.line == 10)
+            }),
+            "the unrelated second resource remains a definite duty: {first:#?}"
+        );
+        assert!(
+            first_leaks.iter().any(|diagnostic| {
+                diagnostic.certainty == "definite"
+                    && diagnostic.message.ends_with("on cancelled")
+                    && diagnostic.related.iter().any(|span| span.line == 10)
+            }),
+            "the unrelated second resource stays definite on cancellation: {first:#?}"
+        );
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+
+        let edited_phase = phase("second");
+        let updated = session.check(&[edited_phase.clone(), unrelated.clone()], "3.11");
+        let updated_leaks = updated
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert_eq!(updated_leaks.len(), 3, "{updated:#?}");
+        assert!(
+            updated_leaks.iter().any(|diagnostic| {
+                diagnostic.certainty == "definite"
+                    && diagnostic.related.iter().any(|span| span.line == 9)
+            }),
+            "the uncaptured first resource remains definitely open: {updated:#?}"
+        );
+        assert!(
+            updated_leaks.iter().any(|diagnostic| {
+                diagnostic.certainty == "possible"
+                    && diagnostic.message.ends_with("on cancelled")
+                    && diagnostic.related.iter().any(|span| span.line == 10)
+            }),
+            "only the captured second resource is uncertain before coroutine entry: {updated:#?}"
+        );
+        assert_eq!(updated, crate::check(&[edited_phase, unrelated], "3.11"));
+        let flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            flow_queries.len(),
+            1,
+            "the edited phase file should refresh while the unrelated file reuses its query: {flow_queries:#?}"
+        );
     }
 
     #[test]

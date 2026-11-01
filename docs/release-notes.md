@@ -16,11 +16,15 @@ matrix](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/
   cleanup duty at their supported boundary; aliases share one duty.
 - `try`/`except`/`else`/`finally`, bounded `while`/`for` loops, early exits,
   reviewed context cleanup, and cleanup failures retain path-specific
-  uncertainty.
+  uncertainty. Built-in exception handlers use a bounded ancestry table;
+  custom exception relationships remain explicit boundaries unless exact
+  identity is known.
 - Source-only models recognize exact `contextlib.closing` and
   `contextlib.aclosing` identities for selected Python targets 3.11–3.13.
 - Bounded direct coroutine awaits include suspension and cancellation outcomes.
   Possible cleanup interruption and incomplete coverage remain visible.
+  Resolved coroutine cancellation preserves unrelated local duties while
+  weakening captured or execution-affected resources.
 - A separate versioned check-result schema carries completion kind, certainty,
   trust, repair guidance, model metadata, and coverage information.
 

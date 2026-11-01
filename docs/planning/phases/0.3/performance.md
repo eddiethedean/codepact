@@ -1,9 +1,7 @@
 # 0.3 candidate performance record
 
-Status: **Measured on the runtime candidate below; maintainer acceptance and release qualification are pending.**
-This record measures candidate commit
-[`c97a7b58a6cd34e41816f61bdb8d1aa8180c34b1`](https://github.com/eddiethedean/typepact/commit/c97a7b58a6cd34e41816f61bdb8d1aa8180c34b1)
-on 2026-11-01. The current test candidate adds internal model-ID validation and regression tests; its analyzed flow paths and the benchmark workloads are unchanged. The workloads use an empty built-in resource-effect catalog, so the new validation path is not exercised. These values are not new measurements on the current test candidate. No performance gate is marked passed by these measurements.
+Status: **Measured on the current phase 0.3 implementation candidate; maintainer performance acceptance and release qualification are pending.**
+Measurements were collected on 2026-11-01 after the exception-routing and cancellation-state fixes documented in the [validation matrix](validation.md). The benchmark source and workloads were unchanged. The current values below replace the earlier candidate measurements; they do not pass a performance or qualification gate.
 
 ## Environment and method
 
@@ -21,9 +19,9 @@ Milliseconds, seven repeats. N is the number of generated functions; cold is a n
 
 | N | Sync cold | Sync warm | Sync source bytes | Async cold | Async warm | Async source bytes |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 0.416 | 0.008 | 525 | 0.239 | 0.010 | 310 |
-| 16 | 2.081 | 0.005 | 4,716 | 0.799 | 0.020 | 1,576 |
-| 64 | 12.412 | 0.004 | 18,156 | 4.769 | 0.054 | 5,656 |
+| 1 | 0.362 | 0.008 | 525 | 0.257 | 0.005 | 310 |
+| 16 | 1.601 | 0.004 | 4,716 | 0.638 | 0.017 | 1,576 |
+| 64 | 13.377 | 0.004 | 18,156 | 5.065 | 0.062 | 5,656 |
 
 These measurements show execution cost for the selected scenarios. They do not qualify manager behavior, cancellation semantics or other Python programs; those require the V03 matrix and reviewed runtime/model evidence.
 
@@ -33,19 +31,19 @@ Milliseconds, median (minimum–maximum), same 1/250/1,000-resource corpus and h
 
 | Resources | Cold session | Warm no-op | Unrelated body edit | Imported effect edit | Location-only edit |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 0.389 (0.259–2.175) | 0.010 (0.009–0.014) | 0.247 (0.243–0.280) | 0.251 (0.242–0.297) | 0.219 (0.217–0.227) |
-| 250 | 12.620 (12.311–17.628) | 0.356 (0.355–0.369) | 10.586 (10.561–10.645) | 12.136 (11.827–12.275) | 10.475 (10.455–10.595) |
-| 1,000 | 144.656 (143.602–147.377) | 1.386 (1.380–1.441) | 124.099 (123.238–125.453) | 129.563 (128.829–130.065) | 122.982 (122.545–123.818) |
+| 1 | 0.299 (0.275–1.988) | 0.010 (0.009–0.017) | 0.267 (0.134–0.287) | 0.115 (0.111–0.148) | 0.105 (0.101–0.113) |
+| 250 | 13.037 (12.942–13.958) | 0.364 (0.362–0.373) | 10.991 (10.951–11.106) | 12.601 (12.563–12.774) | 11.058 (10.917–11.163) |
+| 1,000 | 150.509 (149.464–152.534) | 1.458 (1.447–1.501) | 128.478 (127.004–130.606) | 134.056 (129.320–135.526) | 125.995 (123.736–129.068) |
 
-The 1,000-resource source corpus is 78,891 bytes. One `/usr/bin/time -l` sample measured maximum resident set at 49,184,768 bytes (46.91 MiB). A retained-session probe, with diagnostics dropped, measured baseline RSS of 1,968 KiB and retained RSS of 22,176 KiB, an increase of 20,208 KiB (19.73 MiB). These are coarse process measurements, not allocated-byte counts or memory budgets.
+The 1,000-resource source corpus is 78,891 bytes. One `/usr/bin/time -l` sample measured maximum resident set at 49,152,000 bytes (46.88 MiB). A retained-session probe, with diagnostics dropped, measured baseline RSS of 1,952 KiB and retained RSS of 22,000 KiB, an increase of 20,048 KiB (19.58 MiB). These are coarse process measurements, not allocated-byte counts or memory budgets.
 
-Compared with the 0.2 accepted baseline, the 1,000-resource cold median is 2.31× higher; unrelated body, imported-effect and location edits are 2.98×, 2.75× and 3.00× higher. Warm no-op is 0.961× the 0.2 time (1.386 ms vs 1.442 ms). At 250 resources, cold time is 1.46× and the edit scenarios are 1.70×–1.88× higher. Compared with the prior measured 0.3 candidate at [`85e0c7d2dfe5aea3f078f4bf560131a6738e7491`](https://github.com/eddiethedean/typepact/commit/85e0c7d2dfe5aea3f078f4bf560131a6738e7491), the current 1,000-resource cold/edit medians are about 3%–4% lower and warm no-op is 10.7% lower. The candidate remains about 65% faster cold and 67%–69% faster on edits than base commit [`6a29c07b7d36e48841a976c79d4b482747be52bd`](https://github.com/eddiethedean/typepact/commit/6a29c07b7d36e48841a976c79d4b482747be52bd), which measured 414.084 ms cold at 1,000 resources. The improvement over the phase base does not remove the regression against the released 0.2 baseline.
+Compared with the accepted 0.2 baseline, the 1,000-resource cold median is 2.40× higher; unrelated body, imported-effect and location edits are 3.09×, 2.85× and 3.08× higher. Warm no-op is 1.01× the 0.2 time (1.458 ms vs 1.442 ms). At 250 resources, cold time is 1.51× and the edit scenarios are 1.77×–1.99× higher. This regression remains material and requires the maintainer's explicit acceptance or further optimization before release qualification.
 
 The phase plan defines no absolute latency threshold. The maintainer must decide whether this regression is acceptable or whether further optimization is required before release qualification. No independent reviewer is needed.
 
 ## Inspector and query reuse
 
-The inspector comparison ran `scripts/benchmark_inspector.py --binary target/release/typepact --repeats 7 --classes 1000`: small CLI 2.751 ms median (2.573–469.877), 1,000 classes 84.601 ms (83.183–85.014), helper import 23.869 ms (22.938–32.537), maximum child RSS 20.39 MiB. The small CLI range includes process-launch outliers. This is a separate workload from lifecycle checking.
+The inspector comparison ran `scripts/benchmark_inspector.py --binary target/release/typepact --repeats 7 --classes 1000`: small CLI 2.782 ms median (2.650–441.385), 1,000 classes 84.480 ms (83.157–86.170), helper import 23.753 ms (23.636–26.305), maximum child RSS 20.39 MiB. The small CLI range includes process-launch outliers. This is a separate workload from lifecycle checking.
 
 Query tests assert reuse independently of timing: `unchanged_session_check_reuses_the_check_query`, `unrelated_edit_reuses_other_file_lifecycle_checks`, `imported_effect_edits_refresh_callers_but_reuse_unrelated_checks`, `moving_an_imported_close_refreshes_the_related_lifecycle_span`, `resource_model_edits_invalidate_reused_cleanup_queries`, `reviewed_exceptional_close_outcomes_flow_through_session_results`, and `v03_22_incremental_body_edit_matches_a_fresh_check`.
 
