@@ -271,6 +271,43 @@ fn v03_09_owned_helper_transfers_and_discharges_the_callers_duty_once() {
 }
 
 #[test]
+fn v03_09_owned_helper_return_restores_the_same_duty_identity() {
+    let result = check_source(&format!(
+        "{RESOURCE}def forward(resource: Owned[C]) -> Owned[C]:\n    return resource\ndef cleanup():\n    resource = C()\n    returned = forward(resource)\n    returned.close()\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_09_repeated_owned_argument_positions_share_one_duty() {
+    let source = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef consume(first: Owned[C], second: Owned[C]):\n    first.close()\n    second.status()\ndef cleanup():\n    resource = C()\n    consume(resource, resource)\n";
+    let result = check_source(source);
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1001")
+            .count(),
+        1,
+        "{result:#?}"
+    );
+    let helper_leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(helper_leaks.len(), 1, "{result:#?}");
+    assert_eq!(helper_leaks[0].primary.line, 7, "{result:#?}");
+}
+
+#[test]
 fn v03_09_argument_failure_precedes_owned_helper_entry() {
     let result = check_source(&format!(
         "{RESOURCE}def fail() -> int:\n    raise RuntimeError()\ndef consume(resource: Owned[C], marker: int):\n    resource.close()\ndef cleanup():\n    resource = C()\n    try:\n        consume(resource, fail())\n    except RuntimeError:\n        resource.close()\n"
@@ -915,6 +952,23 @@ fn v03_17_awaited_async_cleanup_tracks_cancellation_as_uncertain() {
 #[test]
 fn v03_17_awaited_local_coroutine_alias_keeps_cancellation_uncertain() {
     let source = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def finish(resource: Owned[C]):\n    await resource.aclose()\nasync def cleanup():\n    resource = C()\n    pending = finish(resource)\n    alias = pending\n    await alias\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
+        }),
+        "{result:#?}"
+    );
+    assert!(result
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| { reason.contains("cancellation may interrupt the awaited operation") }));
+}
+
+#[test]
+fn v03_18_cancellation_during_use_enters_finally_and_can_interrupt_awaited_close() {
+    let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    finally:\n        await resource.aclose()\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
