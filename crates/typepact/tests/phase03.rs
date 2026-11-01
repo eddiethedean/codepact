@@ -86,6 +86,29 @@ fn v03_01_failed_later_initialization_preserves_earlier_duty_on_raise() {
 }
 
 #[test]
+fn v03_01_custom_new_boundary_preserves_the_prior_duty_as_possible() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass Stable:\n    def close(self): pass\n@resource(closed_by='close')\nclass Broken:\n    def __new__(cls):\n        raise RuntimeError()\n    def close(self): pass\ndef fail():\n    first = Stable()\n    second = Broken()\n";
+    let result = check_source(source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].certainty, "possible", "{result:#?}");
+    assert!(leaks[0].message.ends_with("on fallthrough"), "{result:#?}");
+    assert_eq!(leaks[0].related[0].line, 11, "{result:#?}");
+    assert!(result.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "TP9001"
+            && diagnostic
+                .message
+                .contains("custom __new__ allocation effects")
+            && diagnostic.primary.line == 12
+    }));
+    assert!(result.coverage.status.starts_with("incomplete"));
+}
+
+#[test]
 fn v03_07_owned_return_identity_survives_aliasing_and_finally() {
     let result = check_source(&format!(
         "{RESOURCE}def make() -> Owned[C]:\n    resource = C()\n    alias = resource\n    try:\n        return alias\n    finally:\n        alias = None\ndef forward() -> Owned[C]:\n    return make()\ndef caller() -> Owned[C]:\n    return forward()\n"
@@ -364,6 +387,82 @@ fn v03_03_finally_replacements_keep_the_actual_exit_and_duty_origin() {
 }
 
 #[test]
+fn v03_03_nested_finally_replacement_stack_keeps_each_actual_exit() {
+    let source = format!(
+        "{RESOURCE}def nested(flag, replace):\n    first = C()\n    second = C()\n    try:\n        try:\n            return 1\n        finally:\n            if flag:\n                raise RuntimeError()\n    finally:\n        if replace:\n            return 2\n"
+    );
+    let source_line = |needle: &str| {
+        source
+            .lines()
+            .position(|line| line.trim() == needle)
+            .unwrap()
+            + 1
+    };
+    let inner_return_line = source_line("return 1");
+    let inner_raise_line = source_line("raise RuntimeError()");
+    let outer_return_line = source_line("return 2");
+    let first_acquisition_line = source_line("first = C()");
+    let second_acquisition_line = source_line("second = C()");
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        leaks.len(),
+        6,
+        "each duty is reported at each actual nested exit: {report:#?}"
+    );
+    assert!(leaks
+        .iter()
+        .all(|diagnostic| diagnostic.certainty == "definite"));
+    let by_exit = leaks.iter().fold(
+        std::collections::BTreeMap::<(String, &str), usize>::new(),
+        |mut counts, diagnostic| {
+            *counts
+                .entry((
+                    diagnostic
+                        .completion
+                        .as_deref()
+                        .unwrap_or_default()
+                        .to_owned(),
+                    if diagnostic.primary.line == inner_return_line {
+                        "inner-return"
+                    } else if diagnostic.primary.line == inner_raise_line {
+                        "inner-raise"
+                    } else if diagnostic.primary.line == outer_return_line {
+                        "outer-return"
+                    } else {
+                        panic!("unexpected actual exit span: {report:#?}")
+                    },
+                ))
+                .or_default() += 1;
+            counts
+        },
+    );
+    assert_eq!(
+        by_exit,
+        std::collections::BTreeMap::from([
+            (("raise".to_owned(), "inner-raise"), 2),
+            (("return".to_owned(), "inner-return"), 2),
+            (("return".to_owned(), "outer-return"), 2),
+        ]),
+        "the nested pending completion is replaced only on the outer return path: {report:#?}"
+    );
+    let acquisition_lines = leaks
+        .iter()
+        .map(|diagnostic| diagnostic.related[0].line)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        acquisition_lines,
+        std::collections::BTreeSet::from([first_acquisition_line, second_acquisition_line])
+    );
+    assert_eq!(report.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
 fn v03_03_cleanup_after_unconditional_return_is_unreachable() {
     let result = check_source(&format!(
         "{RESOURCE}def leak():\n    resource = C()\n    return\n    resource.close()\n"
@@ -461,6 +560,37 @@ fn v03_07_closing_a_pending_owned_return_is_a_contract_violation() {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_07_context_manager_cleanup_invalidates_owned_return() {
+    let result = check_source(&format!(
+        "{RESOURCE}from contextlib import closing\ndef invalid() -> Owned[C]:\n    resource = C()\n    with closing(resource):\n        return resource\n"
+    ));
+    let violations = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1003")
+        .collect::<Vec<_>>();
+    assert_eq!(violations.len(), 1, "{result:#?}");
+    assert_eq!(violations[0].certainty, "definite", "{result:#?}");
+    assert!(
+        violations[0]
+            .message
+            .contains("must return an open resource"),
+        "{result:#?}"
+    );
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "the wrapper closes the duty before return handoff: {result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
         "{result:#?}"
     );
 }
@@ -734,6 +864,39 @@ fn v03_05_handler_order_and_handler_else_raises_still_cross_finally() {
     assert_eq!(
         result.coverage.status, "complete-for-supported-subset",
         "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_05_unmatched_raise_replaced_by_finally_raise_keeps_actual_exit() {
+    let source = format!(
+        "{RESOURCE}def leak():\n    resource = C()\n    try:\n        raise RuntimeError()\n    except ValueError:\n        pass\n    finally:\n        raise OSError()\n"
+    );
+    let acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    let replacement_raise_line = source
+        .lines()
+        .position(|line| line.trim() == "raise OSError()")
+        .unwrap()
+        + 1;
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{report:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(leaks[0].completion.as_deref(), Some("raise"), "{report:#?}");
+    assert_eq!(leaks[0].primary.line, replacement_raise_line, "{report:#?}");
+    assert_eq!(leaks[0].related[0].line, acquisition_line, "{report:#?}");
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
     );
 }
 
@@ -1381,6 +1544,42 @@ fn v03_14_loop_else_runs_on_finite_exhaustion() {
         "{result:#?}"
     );
     assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_14_generated_break_and_continue_paths_route_loop_else_correctly() {
+    let source = format!(
+        "{RESOURCE}def break_cleanup(flag):\n    resource = C()\n    for item in (None,):\n        if flag:\n            break\n    else:\n        resource.close()\ndef continue_cleanup(flag):\n    resource = C()\n    for item in (None,):\n        if flag:\n            continue\n    else:\n        resource.close()\n"
+    );
+    let break_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    let break_close_line = source
+        .lines()
+        .position(|line| line.trim() == "resource.close()")
+        .unwrap()
+        + 1;
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{report:#?}");
+    assert_eq!(leaks[0].certainty, "possible", "{report:#?}");
+    assert_eq!(leaks[0].completion.as_deref(), Some("fallthrough"));
+    assert_eq!(
+        leaks[0].related[0].line, break_acquisition_line,
+        "{report:#?}"
+    );
+    assert_eq!(leaks[0].related[1].line, break_close_line, "{report:#?}");
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
+    );
 }
 
 #[test]

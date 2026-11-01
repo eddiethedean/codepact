@@ -946,6 +946,89 @@ mod tests {
     }
 
     #[test]
+    fn cleanup_body_edits_refresh_only_the_changed_flow_query_and_match_fresh() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let source = |body: &str| {
+            SourceFile::new(
+                "phase03.py",
+                "phase03",
+                format!(
+                    "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    {body}\n"
+                ),
+            )
+        };
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let initial_file = source("pass");
+        let initial = session.check(&[initial_file.clone(), unrelated.clone()], "3.11");
+        assert!(initial.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "definite"
+        }));
+
+        for (body, expected_completion) in [
+            ("resource.close()", None),
+            ("raise RuntimeError()", Some("raise")),
+        ] {
+            executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
+            let edited_file = source(body);
+            let updated = session.check(&[edited_file.clone(), unrelated.clone()], "3.11");
+            assert_eq!(
+                updated,
+                crate::check(&[edited_file, unrelated.clone()], "3.11"),
+                "body {body:?} must match a fresh analysis"
+            );
+            let leaks = updated
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            match expected_completion {
+                Some(completion) => {
+                    assert_eq!(leaks.len(), 1, "{body:?}: {updated:#?}");
+                    assert_eq!(leaks[0].certainty, "definite", "{body:?}: {updated:#?}");
+                    assert!(
+                        leaks[0].message.ends_with(&format!("on {completion}")),
+                        "{body:?}: {updated:#?}"
+                    );
+                }
+                None => assert!(leaks.is_empty(), "{body:?}: {updated:#?}"),
+            }
+            let flow_queries = executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(
+                flow_queries.len(),
+                1,
+                "only the edited cleanup file should refresh for {body:?}: {flow_queries:#?}"
+            );
+        }
+    }
+
+    #[test]
     fn reviewed_exceptional_close_outcomes_flow_through_session_results() {
         let source = "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n";
         let file = SourceFile::new("model.py", "model", source);
