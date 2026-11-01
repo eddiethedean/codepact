@@ -243,6 +243,35 @@ fn v03_08_borrowed_to_owned_return_is_rejected_without_inventing_a_handoff() {
 }
 
 #[test]
+fn v03_08_borrowed_alias_cannot_satisfy_an_owned_return_contract() {
+    let source = format!(
+        "{RESOURCE}def invalid(resource: Borrowed[C]) -> Owned[C]:\n    alias = resource\n    return alias\n"
+    );
+    let return_line = source
+        .lines()
+        .position(|line| line.trim() == "return alias")
+        .unwrap()
+        + 1;
+    let result = check_source(&source);
+    let violations = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1003")
+        .collect::<Vec<_>>();
+    assert_eq!(violations.len(), 1, "{result:#?}");
+    assert_eq!(violations[0].certainty, "definite", "{result:#?}");
+    assert_eq!(violations[0].primary.line, return_line, "{result:#?}");
+    assert!(violations[0].message.contains("Borrowed"), "{result:#?}");
+    assert!(!result.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "TP1002" || diagnostic.code == "TP9001"
+    }), "a resolved borrowed alias is a contract violation, not a leak or unknown escape: {result:#?}");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
 fn v03_08_unannotated_owned_return_keeps_an_unknown_escape_duty() {
     let result = check_source(&format!(
         "{RESOURCE}def escape():\n    resource = C()\n    return resource\n"
@@ -588,6 +617,22 @@ fn v03_07_context_manager_cleanup_invalidates_owned_return() {
             .iter()
             .any(|diagnostic| diagnostic.code == "TP1002"),
         "the wrapper closes the duty before return handoff: {result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_07_finally_close_then_replacement_return_hands_off_only_the_open_result() {
+    let source = format!(
+        "{RESOURCE}def make() -> Owned[C]:\n    abandoned = C()\n    forwarded = C()\n    try:\n        return abandoned\n    finally:\n        abandoned.close()\n        return forwarded\n"
+    );
+    let result = check_source(&source);
+    assert!(
+        result.diagnostics.is_empty(),
+        "the replaced result is cleaned before the open replacement is handed off: {result:#?}"
     );
     assert_eq!(
         result.coverage.status, "complete-for-supported-subset",
