@@ -2,7 +2,7 @@
 
 Status: **Measured; maintainer acceptance and release qualification are pending.**
 This record measures implementation commit
-[`0eb94cf142093c4aa82c657ed8523150c38247a0`](https://github.com/eddiethedean/typepact/commit/0eb94cf142093c4aa82c657ed8523150c38247a0)
+[`85e0c7d2dfe5aea3f078f4bf560131a6738e7491`](https://github.com/eddiethedean/typepact/commit/85e0c7d2dfe5aea3f078f4bf560131a6738e7491)
 on 2026-11-01. No performance gate is marked passed by these measurements.
 
 ## Environment and method
@@ -21,9 +21,9 @@ Milliseconds, seven repeats. N is the number of generated functions; cold is a n
 
 | N | Sync cold | Sync warm | Sync source bytes | Async cold | Async warm | Async source bytes |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 0.376 | 0.008 | 525 | 0.262 | 0.010 | 310 |
-| 16 | 2.131 | 0.005 | 4,716 | 0.782 | 0.019 | 1,576 |
-| 64 | 13.061 | 0.004 | 18,156 | 4.784 | 0.055 | 5,656 |
+| 1 | 0.427 | 0.008 | 525 | 0.253 | 0.010 | 310 |
+| 16 | 2.041 | 0.005 | 4,716 | 0.750 | 0.019 | 1,576 |
+| 64 | 12.860 | 0.004 | 18,156 | 4.762 | 0.055 | 5,656 |
 
 These measurements show execution cost for the selected scenarios. They do not qualify manager behavior, cancellation semantics or other Python programs; those require the V03 matrix and reviewed runtime/model evidence.
 
@@ -33,19 +33,19 @@ Milliseconds, median (minimum–maximum), same 1/250/1,000-resource corpus and h
 
 | Resources | Cold session | Warm no-op | Unrelated body edit | Imported effect edit | Location-only edit |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 0.294 (0.259–1.800) | 0.009 (0.009–0.012) | 0.253 (0.247–0.299) | 0.113 (0.101–0.174) | 0.097 (0.091–0.103) |
-| 250 | 12.960 (12.464–13.958) | 0.382 (0.381–0.392) | 10.719 (10.605–10.852) | 12.384 (12.326–12.448) | 10.614 (10.594–10.720) |
-| 1,000 | 150.896 (150.433–151.783) | 1.528 (1.524–1.568) | 128.256 (127.504–128.651) | 132.921 (131.438–134.595) | 127.215 (126.445–127.941) |
+| 1 | 0.307 (0.273–2.052) | 0.005 (0.005–0.013) | 0.129 (0.112–0.181) | 0.115 (0.108–0.127) | 0.100 (0.098–0.107) |
+| 250 | 13.124 (12.861–19.237) | 0.396 (0.393–0.407) | 11.043 (10.689–11.166) | 12.666 (12.508–13.057) | 10.829 (10.756–10.875) |
+| 1,000 | 150.425 (147.786–160.226) | 1.552 (1.530–1.582) | 128.200 (126.623–128.328) | 133.420 (133.237–134.020) | 126.979 (125.813–128.036) |
 
-The 1,000-resource source corpus is 78,891 bytes. Three `/usr/bin/time -l` samples measured maximum resident set between 40,075,264 and 51,838,976 bytes (about 38.2–49.4 MiB). Two retained-session probes, with diagnostics dropped, measured RSS increases of 19,584–19,648 KiB (about 19.1–19.2 MiB). These are coarse process measurements, not allocated-byte counts or memory budgets.
+The 1,000-resource source corpus is 78,891 bytes. One `/usr/bin/time -l` sample measured maximum resident set at 39,780,352 bytes (37.94 MiB). A retained-session probe, with diagnostics dropped, measured an RSS increase of 19,488 KiB (19.03 MiB). These are coarse process measurements, not allocated-byte counts or memory budgets.
 
-Compared with the 0.2 accepted baseline, the 1,000-resource cold median is 2.41× higher; unrelated body and location edits are 3.08× and 3.11× higher, and imported-effect edits are 2.82× higher. Warm no-op remains similar (1.528 ms vs 1.442 ms). These measurements are within about 1% of the previous 0.3 candidate for the 1,000-resource timing scenarios. The candidate remains about 64% faster cold and 66–68% faster on edits than base commit [`6a29c07b7d36e48841a976c79d4b482747be52bd`](https://github.com/eddiethedean/typepact/commit/6a29c07b7d36e48841a976c79d4b482747be52bd), which measured 414.084 ms cold at 1,000 resources. The improvement over the phase base does not remove the regression against the released 0.2 baseline.
+Compared with the 0.2 accepted baseline, the 1,000-resource cold median is 2.40× higher; unrelated body and location edits are 3.08× and 3.10× higher, and imported-effect edits are 2.84× higher. Warm no-op remains similar (1.552 ms vs 1.442 ms). Cold and edit timings are within 0.4% of the previous 0.3 candidate; warm no-op is 1.6% higher. The candidate remains about 64% faster cold and 66–68% faster on edits than base commit [`6a29c07b7d36e48841a976c79d4b482747be52bd`](https://github.com/eddiethedean/typepact/commit/6a29c07b7d36e48841a976c79d4b482747be52bd), which measured 414.084 ms cold at 1,000 resources. The improvement over the phase base does not remove the regression against the released 0.2 baseline.
 
 The phase plan defines no absolute latency threshold. The maintainer must decide whether this regression is acceptable or whether further optimization is required before release qualification. No independent reviewer is needed.
 
 ## Inspector and query reuse
 
-The inspector comparison ran `scripts/benchmark_inspector.py --binary target/release/typepact --repeats 7 --classes 1000`: small CLI 2.964 ms median (2.544–339.179), 1,000 classes 83.908 ms (82.219–85.196), helper import 21.193 ms (20.177–21.959), maximum child RSS 18.45 MiB. The small CLI range includes process-launch outliers. This is a separate workload from lifecycle checking.
+The inspector comparison ran `scripts/benchmark_inspector.py --binary target/release/typepact --repeats 7 --classes 1000`: small CLI 2.938 ms median (2.600–454.391), 1,000 classes 84.383 ms (83.697–85.226), helper import 24.171 ms (23.905–25.316), maximum child RSS 20.42 MiB. The small CLI range includes process-launch outliers. This is a separate workload from lifecycle checking.
 
 Query tests assert reuse independently of timing: `unchanged_session_check_reuses_the_check_query`, `unrelated_edit_reuses_other_file_lifecycle_checks`, `imported_effect_edits_refresh_callers_but_reuse_unrelated_checks`, `moving_an_imported_close_refreshes_the_related_lifecycle_span`, and `v03_22_incremental_body_edit_matches_a_fresh_check`.
 
