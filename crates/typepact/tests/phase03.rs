@@ -152,6 +152,49 @@ fn v03_07_finally_replacement_only_hands_off_the_final_owned_result() {
 }
 
 #[test]
+fn v03_07_branching_finally_replacement_keeps_abandoned_and_raised_duties() {
+    let source = format!(
+        "{RESOURCE}def make(flag) -> Owned[C]:\n    abandoned = C()\n    replacement = C()\n    try:\n        return abandoned\n    finally:\n        if flag:\n            return replacement\n        else:\n            raise RuntimeError()\n"
+    );
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 3, "{report:#?}");
+    assert!(leaks
+        .iter()
+        .all(|diagnostic| diagnostic.certainty == "definite"));
+    let completions = leaks.iter().fold(
+        std::collections::BTreeMap::<&str, usize>::new(),
+        |mut counts, diagnostic| {
+            *counts
+                .entry(diagnostic.completion.as_deref().unwrap_or_default())
+                .or_default() += 1;
+            counts
+        },
+    );
+    assert_eq!(
+        completions,
+        std::collections::BTreeMap::from([("raise", 2), ("return", 1)]),
+        "{report:#?}"
+    );
+    let return_leak = leaks
+        .iter()
+        .find(|diagnostic| diagnostic.completion.as_deref() == Some("return"))
+        .expect("the final return abandons the pending resource");
+    assert_eq!(return_leak.related[0].line, 7, "{report:#?}");
+    let raise_origins = leaks
+        .iter()
+        .filter(|diagnostic| diagnostic.completion.as_deref() == Some("raise"))
+        .flat_map(|diagnostic| diagnostic.related.iter().map(|span| span.line))
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(raise_origins, std::collections::BTreeSet::from([7, 8]));
+}
+
+#[test]
 fn v03_08_borrowed_to_owned_return_is_rejected_without_inventing_a_handoff() {
     let result = check_source(&format!(
         "{RESOURCE}def invalid(resource: Borrowed[C]) -> Owned[C]:\n    return resource\n"
@@ -2741,18 +2784,20 @@ fn v03_02_only_explicit_owned_parameters_create_incoming_duties() {
 #[test]
 fn v03_03_nested_cleanup_raise_still_runs_outer_cleanup_once() {
     let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n@resource(closed_by='close')\nclass Failing:\n    def close(self):\n        raise OSError()\ndef cleanup():\n    outer = C()\n    inner = Failing()\n    try:\n        try:\n            raise ValueError()\n        finally:\n            inner.close()\n    finally:\n        outer.close()\n";
-    let result = check_source(source);
-    let leaks = result
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
         .diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.code == "TP1002")
         .collect::<Vec<_>>();
-    assert_eq!(leaks.len(), 1, "{result:#?}");
-    assert_eq!(leaks[0].certainty, "definite", "{result:#?}");
-    assert!(leaks[0].message.ends_with("on raise"), "{result:#?}");
-    assert_eq!(leaks[0].related.len(), 1, "{result:#?}");
-    assert_eq!(leaks[0].related[0].line, 11, "{result:#?}");
-    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+    assert_eq!(leaks.len(), 1, "{report:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(leaks[0].completion.as_deref(), Some("raise"));
+    assert_eq!(leaks[0].primary.line, 16, "{report:#?}");
+    assert_eq!(leaks[0].related.len(), 1, "{report:#?}");
+    assert_eq!(leaks[0].related[0].line, 11, "{report:#?}");
+    assert_eq!(report.coverage.status, "complete-for-supported-subset");
 }
 
 #[test]
@@ -2841,6 +2886,38 @@ fn v03_18_exception_handler_does_not_swallow_cancellation() {
         }),
         "{report:#?}"
     );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
+
+#[test]
+fn v03_18_base_exception_handler_catches_cancellation_but_keeps_state_unknown() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    except BaseException:\n        resource.close()\n    else:\n        resource.close()\n";
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{report:#?}");
+    assert_eq!(leaks[0].certainty, "possible", "{report:#?}");
+    assert_eq!(leaks[0].completion.as_deref(), Some("fallthrough"));
+    assert_eq!(leaks[0].primary.line, 6, "{report:#?}");
+    assert_eq!(
+        leaks[0]
+            .related
+            .iter()
+            .map(|span| span.line)
+            .collect::<Vec<_>>(),
+        [7, 11],
+        "caught cancellation continues, but suspension leaves the resource state uncertain: {report:#?}"
+    );
+    assert!(report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "TP9001"
+            && diagnostic
+                .message
+                .contains("cancellation may interrupt the awaited operation")
+    }));
     assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
 }
 
