@@ -970,6 +970,24 @@ fn v03_10_multiple_contextlib_closers_unwind_all_successfully_entered_managers()
 }
 
 #[test]
+fn v03_10_reviewed_context_cleanup_runs_on_return_break_and_continue() {
+    let result = check_source(&format!(
+        "{RESOURCE}from contextlib import closing\ndef return_cleanup():\n    resource = C()\n    with closing(resource):\n        return\ndef break_cleanup():\n    resource = C()\n    for unused in (None,):\n        with closing(resource):\n            break\ndef continue_cleanup():\n    resource = C()\n    for unused in (None,):\n        with closing(resource):\n            continue\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "all three control transfers unwind the reviewed manager: {result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
 fn v03_11_closing_a_borrowed_value_is_still_rejected() {
     let result = check_source(&format!(
         "{RESOURCE}from contextlib import closing\ndef helper(resource: Borrowed[C]):\n    with closing(resource):\n        pass\n"
