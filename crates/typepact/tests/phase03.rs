@@ -76,6 +76,39 @@ fn v03_07_return_expression_failure_keeps_the_owned_duty_on_raise() {
 }
 
 #[test]
+fn v03_07_finally_replacement_only_hands_off_the_final_owned_result() {
+    let result = check_source(&format!(
+        "{RESOURCE}def make() -> Owned[C]:\n    abandoned = C()\n    forwarded = C()\n    try:\n        return abandoned\n    finally:\n        return forwarded\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        leaks.len(),
+        1,
+        "the replaced result must remain open: {result:#?}"
+    );
+    assert_eq!(leaks[0].certainty, "definite", "{result:#?}");
+    assert!(leaks[0].message.ends_with("on return"), "{result:#?}");
+    assert_eq!(
+        leaks[0].primary.line,
+        RESOURCE.lines().count() + 7,
+        "the surviving return is the actual function exit: {result:#?}"
+    );
+    assert_eq!(
+        leaks[0].related[0].line,
+        RESOURCE.lines().count() + 2,
+        "the finding belongs to the abandoned acquisition: {result:#?}"
+    );
+    assert!(!result
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP1003"));
+}
+
+#[test]
 fn v03_08_borrowed_to_owned_return_is_rejected_without_inventing_a_handoff() {
     let result = check_source(&format!(
         "{RESOURCE}def invalid(resource: Borrowed[C]) -> Owned[C]:\n    return resource\n"
@@ -1526,6 +1559,108 @@ fn v03_19_nested_async_contexts_unwind_and_preserve_cancellation() {
         "the outer unknown exit may suppress cancellation after inner cleanup is interrupted: {result:#?}"
     );
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_16_context_exit_partition_budget_keeps_duties_unknown() {
+    let managers = ["UnknownManager()"; 8].join(", ");
+    let source = format!(
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with {managers}:\n        pass\n"
+    );
+    let result = check_source(&source);
+
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("context-manager exit partition budget exceeded") }),
+        "the dedicated path bound must report visible incomplete coverage: {result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
+        }),
+        "widening must preserve the outstanding duty as possible: {result:#?}"
+    );
+    assert!(
+        !result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "definite"
+        }),
+        "truncated cleanup paths cannot establish a definite result: {result:#?}"
+    );
+}
+
+#[test]
+fn v03_16_owned_parameter_budget_reports_untracked_duties_as_incomplete() {
+    let parameters = (0..=4_096)
+        .map(|index| format!("resource_{index}: Owned[C]"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let source = format!("{RESOURCE}def cleanup({parameters}):\n    pass\n");
+    let result = check_source(&source);
+
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("tracked resource object budget exceeded") }),
+        "the untracked Owned input needs a visible budget boundary: {result:#?}"
+    );
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .count(),
+        4_096,
+        "all obligations within the budget remain individually visible: {result:#?}"
+    );
+}
+
+#[test]
+fn v03_16_context_exit_partition_budget_edit_recovers_with_fresh_result_parity() {
+    let managers = ["UnknownManager()"; 8].join(", ");
+    let over_budget = SourceFile::new(
+        "phase03.py",
+        "phase03",
+        format!(
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with {managers}:\n        pass\n"
+        ),
+    );
+    let mut session = AnalysisSession::default();
+    let first = session.check(std::slice::from_ref(&over_budget), "3.11");
+    assert!(
+        first
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("context-manager exit partition budget exceeded") }),
+        "the first revision must expose the exhausted partition budget: {first:#?}"
+    );
+
+    let recovered_file = SourceFile::new(
+        "phase03.py",
+        "phase03",
+        "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
+    );
+    let recovered = session.check(std::slice::from_ref(&recovered_file), "3.11");
+    assert_eq!(
+        recovered,
+        check(std::slice::from_ref(&recovered_file), "3.11")
+    );
+    assert_eq!(
+        recovered.coverage.status, "complete-for-supported-subset",
+        "a later revision must not retain the prior budget boundary: {recovered:#?}"
+    );
+    assert!(!recovered
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| { reason.contains("context-manager exit partition budget exceeded") }));
 }
 
 #[test]

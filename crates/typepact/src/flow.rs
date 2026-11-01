@@ -19,6 +19,7 @@ const MAX_CALL_DEPTH: usize = 8;
 const MAX_CONTROL_FLOW_DEPTH: usize = 64;
 const MAX_ALIAS_TARGETS: usize = 64;
 const MAX_FLOW_OBJECTS: usize = 4_096;
+const MAX_EXIT_PARTITIONS: usize = 256;
 const MAX_STATIC_FOR_ITERATIONS: usize = 16;
 const MAX_PENDING_COROUTINES: usize = 128;
 pub(crate) const MAX_FLOW_STEPS: usize = 100_000;
@@ -4579,6 +4580,67 @@ fn execute_with(
         completion: Option<(CompletionKind, SourceRange)>,
     }
 
+    fn partition_kind(path: &Path) -> u8 {
+        match path.completion.as_ref().map(|(kind, _)| kind) {
+            None | Some(CompletionKind::Fallthrough) => 0,
+            Some(CompletionKind::Return(_)) => 1,
+            Some(CompletionKind::Raise(_)) => 2,
+            Some(CompletionKind::Cancelled) => 3,
+            Some(CompletionKind::Break) => 4,
+            Some(CompletionKind::Continue) => 5,
+        }
+    }
+
+    fn merge_overflow_path(previous: &mut Path, incoming: Path) {
+        previous.state = merge(&previous.state, &incoming.state).0;
+        previous.state.alive = true;
+        match (&mut previous.completion, incoming.completion) {
+            (
+                Some((CompletionKind::Raise(previous), _)),
+                Some((CompletionKind::Raise(incoming), _)),
+            ) if previous != &incoming => {
+                *previous = None;
+            }
+            (
+                Some((CompletionKind::Return(previous), _)),
+                Some((CompletionKind::Return(incoming), _)),
+            ) if previous != &incoming => {
+                *previous = None;
+            }
+            _ => {}
+        }
+    }
+
+    fn schedule_path(
+        pending: &mut Vec<(Path, usize)>,
+        generated_partitions: &mut usize,
+        overflow: &mut BTreeMap<u8, Path>,
+        path: Path,
+        remaining: usize,
+        file: &SourceFile,
+        result: &mut Inspection,
+        range: SourceRange,
+    ) {
+        if *generated_partitions < MAX_EXIT_PARTITIONS {
+            *generated_partitions += 1;
+            pending.push((path, remaining));
+            return;
+        }
+
+        boundary(
+            result,
+            file,
+            range,
+            "context-manager exit partition budget exceeded; remaining cleanup outcomes are unknown",
+        );
+        let kind = partition_kind(&path);
+        if let Some(previous) = overflow.get_mut(&kind) {
+            merge_overflow_path(previous, path);
+        } else {
+            overflow.insert(kind, path);
+        }
+    }
+
     fn unwind(
         path: Path,
         cleanups: &[ContextCleanupFrame],
@@ -4587,9 +4649,28 @@ fn execute_with(
         contracts: &[Contract],
         functions: &FunctionMap,
         result: &mut Inspection,
+        generated_partitions: &mut usize,
+        overflow: &mut BTreeMap<u8, Path>,
     ) -> Vec<Path> {
-        let mut pending = vec![(path, remaining)];
+        let mut pending = Vec::new();
         let mut completed = Vec::new();
+        if remaining == 0 {
+            return vec![path];
+        }
+        let initial_cleanup_range = match &cleanups[remaining - 1] {
+            ContextCleanupFrame::Modeled(cleanup) => cleanup.range,
+            ContextCleanupFrame::Unknown { range, .. } => *range,
+        };
+        schedule_path(
+            &mut pending,
+            generated_partitions,
+            overflow,
+            path,
+            remaining,
+            file,
+            result,
+            initial_cleanup_range,
+        );
         while let Some((mut path, remaining)) = pending.pop() {
             if remaining == 0 {
                 completed.push(path);
@@ -4619,24 +4700,45 @@ fn execute_with(
                     let raises = take_pending_raises(&mut path.state);
                     let had_raises = !raises.is_empty();
                     for raised in raises {
-                        pending.push((
+                        schedule_path(
+                            &mut pending,
+                            generated_partitions,
+                            overflow,
                             Path {
                                 state: raised.state,
                                 completion: Some((raised.kind, raised.range)),
                             },
                             remaining - 1,
-                        ));
+                            file,
+                            result,
+                            cleanup_range,
+                        );
                     }
                     if path.state.alive {
-                        pending.push((path, remaining - 1));
+                        schedule_path(
+                            &mut pending,
+                            generated_partitions,
+                            overflow,
+                            path,
+                            remaining - 1,
+                            file,
+                            result,
+                            cleanup_range,
+                        );
                     } else if !had_raises {
-                        pending.push((
+                        schedule_path(
+                            &mut pending,
+                            generated_partitions,
+                            overflow,
                             Path {
                                 state: path.state,
                                 completion: Some((CompletionKind::Raise(None), cleanup.range)),
                             },
                             remaining - 1,
-                        ));
+                            file,
+                            result,
+                            cleanup_range,
+                        );
                     }
                 }
                 ContextCleanupFrame::Unknown {
@@ -4651,25 +4753,55 @@ fn execute_with(
                     ) {
                         let mut suppressed = path.clone();
                         suppressed.completion = None;
-                        pending.push((suppressed, remaining - 1));
+                        schedule_path(
+                            &mut pending,
+                            generated_partitions,
+                            overflow,
+                            suppressed,
+                            remaining - 1,
+                            file,
+                            result,
+                            cleanup_range,
+                        );
                     }
-                    pending.push((
+                    schedule_path(
+                        &mut pending,
+                        generated_partitions,
+                        overflow,
                         Path {
                             state: path.state.clone(),
                             completion: Some((CompletionKind::Raise(None), range)),
                         },
                         remaining - 1,
-                    ));
+                        file,
+                        result,
+                        cleanup_range,
+                    );
                     if asynchronous {
-                        pending.push((
+                        schedule_path(
+                            &mut pending,
+                            generated_partitions,
+                            overflow,
                             Path {
                                 state: path.state.clone(),
                                 completion: Some((CompletionKind::Cancelled, range)),
                             },
                             remaining - 1,
-                        ));
+                            file,
+                            result,
+                            cleanup_range,
+                        );
                     }
-                    pending.push((path, remaining - 1));
+                    schedule_path(
+                        &mut pending,
+                        generated_partitions,
+                        overflow,
+                        path,
+                        remaining - 1,
+                        file,
+                        result,
+                        cleanup_range,
+                    );
                 }
             }
         }
@@ -4885,26 +5017,44 @@ fn execute_with(
 
     let mut outcomes = FlowResult::default();
     let mut normal_states = Vec::new();
+    let mut unwound_paths = Vec::new();
+    let mut generated_partitions = 0;
+    let mut overflow_paths = BTreeMap::new();
     for (path, remaining) in paths {
-        for mut path in unwind(
-            path, &cleanups, remaining, file, contracts, functions, result,
-        ) {
-            if !uncertain.is_empty() {
-                let mut affected = uncertain.clone();
-                affected.extend(path.state.places.values().flatten().cloned());
-                weaken(&mut path.state, affected.into_iter());
-            }
-            path.state.alive = true;
-            match path.completion {
-                None => normal_states.push(path.state),
-                Some((kind, range)) => {
-                    let exit = FlowExit {
-                        state: path.state,
-                        range,
-                        kind,
-                    };
-                    push_exit(&mut outcomes, exit);
-                }
+        unwound_paths.extend(unwind(
+            path,
+            &cleanups,
+            remaining,
+            file,
+            contracts,
+            functions,
+            result,
+            &mut generated_partitions,
+            &mut overflow_paths,
+        ));
+    }
+    for (_, mut path) in overflow_paths {
+        let affected = path.state.objects.keys().cloned().collect::<Vec<_>>();
+        weaken(&mut path.state, affected.into_iter());
+        path.state.alive = true;
+        unwound_paths.push(path);
+    }
+    for mut path in unwound_paths {
+        if !uncertain.is_empty() {
+            let mut affected = uncertain.clone();
+            affected.extend(path.state.places.values().flatten().cloned());
+            weaken(&mut path.state, affected.into_iter());
+        }
+        path.state.alive = true;
+        match path.completion {
+            None => normal_states.push(path.state),
+            Some((kind, range)) => {
+                let exit = FlowExit {
+                    state: path.state,
+                    range,
+                    kind,
+                };
+                push_exit(&mut outcomes, exit);
             }
         }
     }
@@ -5891,6 +6041,16 @@ fn check_bodies_impl(
                     continue;
                 };
                 let object = format!("{}:{}:{}", file.path, range.start, parameter.name);
+                if !env.objects.contains_key(&object) && env.objects.len() >= MAX_FLOW_OBJECTS {
+                    env.unknown_places.insert(parameter.name.clone());
+                    boundary(
+                        result,
+                        file,
+                        *range,
+                        "tracked resource object budget exceeded; lifecycle state is unknown",
+                    );
+                    continue;
+                }
                 env.objects.insert(object.clone(), OPEN);
                 env.resources
                     .insert(object.clone(), parameter_contract.clone());
