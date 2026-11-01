@@ -1,9 +1,9 @@
 # 0.3 candidate performance record
 
-Status: **Measured for the current candidate; maintainer acceptance and release qualification are pending.**
+Status: **Measured on the runtime candidate below; maintainer acceptance and release qualification are pending.**
 This record measures candidate commit
 [`c97a7b58a6cd34e41816f61bdb8d1aa8180c34b1`](https://github.com/eddiethedean/typepact/commit/c97a7b58a6cd34e41816f61bdb8d1aa8180c34b1)
-on 2026-11-01. No performance gate is marked passed by these measurements.
+on 2026-11-01. The current test candidate adds internal model-ID validation and regression tests; its analyzed flow paths and the benchmark workloads are unchanged. The workloads use an empty built-in resource-effect catalog, so the new validation path is not exercised. These values are not new measurements on the current test candidate. No performance gate is marked passed by these measurements.
 
 ## Environment and method
 
