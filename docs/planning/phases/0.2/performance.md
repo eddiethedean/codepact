@@ -1,7 +1,10 @@
 # 0.2 lifecycle performance baseline
 
-Status: local working-tree replay from 2026-10-31. Exact-candidate replay and
-reviewer acceptance remain required before G4 or LC01 can pass.
+Status: exact-source-candidate replay from 2026-10-31 on
+`b7a5236d00cd14c06fe7fd633b6a05d2e64c5856`. The subsequent release-record
+follow-up contains documentation only; no analyzer source changed. Reviewer
+acceptance of the measured regressions and provisional limits remains required
+before G4 or LC01 can pass.
 
 ## Environment and method
 
@@ -13,9 +16,9 @@ reviewer acceptance remain required before G4 or LC01 can pass.
 - Corpus: two source files, one provider and one client. The client constructs N distinct resources and calls a helper that closes each before use. The 1, 250 and 1,000 object corpora contain 294, 19,641 and 78,891 source bytes.
 - The benchmark asserts the expected definite or possible finding count before reporting timings. It includes in-process Salsa session time, not process startup.
 
-These measurements describe the current source tree and are not an accepted
-release result until replayed on the exact 0.2.0 candidate. They do not establish
-performance on other platforms or corpora.
+These measurements replay the exact analyzer source candidate. They do not
+establish performance on other platforms or corpora, and they are not accepted
+release thresholds until reviewed.
 
 ## Lifecycle session timings
 
@@ -24,11 +27,11 @@ flow-state optimization:
 
 | Resources | Cold session | Warm no-op | Unrelated body edit | Imported effect edit | Location-only edit |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 0.258 (0.213–2.073) | 0.009 (0.009–0.012) | 0.086 (0.080–0.347) | 0.099 (0.092–0.111) | 0.083 (0.079–0.182) |
-| 250 | 8.962 (8.067–10.917) | 0.365 (0.364–0.379) | 5.852 (5.683–6.320) | 7.527 (7.269–7.879) | 5.836 (5.630–6.096) |
-| 1,000 | 64.934 (63.714–67.133) | 1.420 (1.406–1.486) | 45.853 (45.317–46.105) | 51.633 (50.960–51.800) | 42.326 (42.126–44.541) |
+| 1 | 0.118 (0.102–1.640) | 0.005 (0.004–0.006) | 0.082 (0.080–0.110) | 0.091 (0.084–0.098) | 0.082 (0.075–0.083) |
+| 250 | 8.142 (7.962–8.457) | 0.381 (0.369–0.398) | 5.940 (5.836–6.153) | 7.432 (7.222–7.503) | 5.778 (5.712–6.094) |
+| 1,000 | 66.165 (65.294–69.273) | 1.461 (1.457–1.505) | 43.048 (42.357–43.673) | 49.312 (48.225–50.414) | 42.699 (41.773–43.591) |
 
-The 1,000-resource benchmark process reached 41.29 MiB maximum resident set
+The 1,000-resource benchmark process reached 40.16 MiB maximum resident set
 size (`/usr/bin/time -l`), across its seven repeats of each scenario. This is a
 process high-water measurement, not retained-session memory; retained memory
 remains unmeasured.
@@ -42,8 +45,8 @@ version and these later correctness fixes have not received an independent
 performance review, and no absolute latency threshold has been accepted. A
 release-review profile found full flow-state clones on definite singleton
 method calls; evaluating those calls in place reduced the 1,000-resource cold
-median from 476.1 ms to 64.9 ms and the 250-resource median from 35.8 ms to
-9.0 ms. The remaining difference from the earlier provisional result is
+median from 476.1 ms to 66.2 ms and the 250-resource median from 35.8 ms to
+8.1 ms. The remaining difference from the earlier provisional result is
 recorded for reviewer assessment rather than treated as a passed threshold.
 
 ## Query reuse evidence
@@ -65,15 +68,15 @@ See `db::tests::unchanged_session_check_reuses_the_check_query`,
 
 ## Inspector comparison with 0.1.0
 
-The existing declaration-inspection corpus v1 was run with the same optimized
-binary method on this host. Current medians were 2.904 ms for the small CLI,
-81.319 ms for 1,000 classes / 2,000 contracts, and 20.952 ms for helper import;
-maximum child RSS was 18.59 MiB. The recorded 0.1.0 medians were 2.732 ms,
-82.965 ms and 22.348 ms, with 18.61 MiB maximum child RSS. The synthetic CLI
-measurement is effectively unchanged. The small-process ranges include slow
-launch outliers (296 ms now and 460 ms in 0.1.0); its median shift is smaller
-than the observed launch variation. These results do not compare lifecycle
-checking with inspection.
+The existing declaration-inspection corpus v1 was replayed with the candidate
+binary on this host. Current medians were 3.079 ms for the small CLI, 83.944 ms
+for 1,000 classes / 2,000 contracts, and 20.802 ms for helper import; maximum
+child RSS was 18.58 MiB. The recorded 0.1.0 medians were 2.732 ms, 82.965 ms
+and 22.348 ms, with 18.61 MiB maximum child RSS. The synthetic CLI measurement
+is effectively unchanged. The small-process ranges include slow launch outliers
+(282 ms now and 460 ms in 0.1.0); its median shift is smaller than the observed
+launch variation. These results do not compare lifecycle checking with
+inspection.
 
 Reproduce with:
 
