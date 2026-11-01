@@ -836,11 +836,12 @@ fn report(
     related: Vec<Span>,
     certainty: &str,
 ) {
-    if let Some(existing) = result
-        .diagnostics
-        .iter_mut()
-        .find(|diagnostic| diagnostic.code == code && diagnostic.primary == primary)
-    {
+    if let Some(existing) = result.diagnostics.iter_mut().find(|diagnostic| {
+        diagnostic.code == code
+            && diagnostic.primary == primary
+            && (code != "TP1002"
+                || (diagnostic.message == message && diagnostic.related.first() == related.first()))
+    }) {
         // The same source operation can be reached along several exits. Keep a
         // definite finding only when every analyzed path makes it definite.
         if existing.certainty != certainty {
@@ -1006,11 +1007,12 @@ fn report_cleanup_exit(
         if let Some(close) = exit.state.close_origins.get(object) {
             related.push(close.clone());
         }
-        if let Some(existing) = result
-            .diagnostics
-            .iter_mut()
-            .find(|diagnostic| diagnostic.code == "TP1002" && diagnostic.primary == exit_span)
-        {
+        if let Some(existing) = result.diagnostics.iter_mut().find(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.primary == exit_span
+                && diagnostic.message.ends_with(&format!("on {exit_kind}"))
+                && diagnostic.related.first() == Some(origin)
+        }) {
             for span in related {
                 if !existing.related.contains(&span) {
                     existing.related.push(span);

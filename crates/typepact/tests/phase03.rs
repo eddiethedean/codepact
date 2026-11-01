@@ -61,6 +61,21 @@ fn v03_07_direct_owned_factory_return_hands_the_same_duty_to_its_caller() {
 }
 
 #[test]
+fn v03_07_return_expression_failure_keeps_the_owned_duty_on_raise() {
+    let result = check_source(&format!(
+        "{RESOURCE}def fail(resource: Owned[C]) -> Owned[C]:\n    raise RuntimeError()\ndef make() -> Owned[C]:\n    resource = C()\n    return fail(resource)\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert!(leaks[0].message.ends_with("on raise"), "{result:#?}");
+    assert_eq!(leaks[0].certainty, "definite");
+}
+
+#[test]
 fn v03_08_borrowed_to_owned_return_is_rejected_without_inventing_a_handoff() {
     let result = check_source(&format!(
         "{RESOURCE}def invalid(resource: Borrowed[C]) -> Owned[C]:\n    return resource\n"
@@ -99,6 +114,25 @@ fn v03_02_lost_last_alias_does_not_discard_the_local_duty() {
 }
 
 #[test]
+fn v03_13_uncertain_alias_close_cannot_discharge_every_candidate() {
+    let result = check_source(&format!(
+        "{RESOURCE}def leak(flag):\n    first = C()\n    second = C()\n    if flag:\n        alias = first\n    else:\n        alias = second\n    alias.close()\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 2, "{result:#?}");
+    assert!(leaks
+        .iter()
+        .all(|diagnostic| diagnostic.certainty == "possible"));
+    assert!(leaks
+        .iter()
+        .all(|diagnostic| diagnostic.message.ends_with("on fallthrough")));
+}
+
+#[test]
 fn v03_03_finally_replacement_cancels_owned_return_handoff() {
     let result = check_source(&format!(
         "{RESOURCE}def invalid() -> Owned[C]:\n    resource = C()\n    try:\n        return resource\n    finally:\n        return None\n"
@@ -114,6 +148,39 @@ fn v03_03_finally_replacement_cancels_owned_return_handoff() {
 }
 
 #[test]
+fn v03_03_raise_in_finally_replaces_the_pending_return_exit() {
+    let result = check_source(&format!(
+        "{RESOURCE}def leak():\n    resource = C()\n    try:\n        return\n    finally:\n        raise RuntimeError()\n"
+    ));
+    let leak = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP1002")
+        .expect("replacing raise retains the cleanup duty");
+    assert!(leak.message.ends_with("on raise"), "{result:#?}");
+    assert_eq!(
+        leak.primary.line,
+        RESOURCE.lines().count() + 6,
+        "{result:#?}"
+    );
+    assert_eq!(leak.related.len(), 1, "{result:#?}");
+}
+
+#[test]
+fn v03_03_cleanup_after_unconditional_return_is_unreachable() {
+    let result = check_source(&format!(
+        "{RESOURCE}def leak():\n    resource = C()\n    return\n    resource.close()\n"
+    ));
+    let leak = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP1002")
+        .expect("unreachable cleanup cannot discharge the duty");
+    assert_eq!(leak.certainty, "definite", "{result:#?}");
+    assert!(leak.message.ends_with("on return"), "{result:#?}");
+}
+
+#[test]
 fn v03_03_finally_close_tracks_resource_after_alias_rebinding() {
     let result = check_source(&format!(
         "{RESOURCE}def cleanup():\n    resource = C()\n    alias = resource\n    try:\n        return\n    finally:\n        alias.close()\n        resource = None\n"
@@ -126,6 +193,44 @@ fn v03_03_finally_close_tracks_resource_after_alias_rebinding() {
         "{result:#?}"
     );
     assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_03_nested_finally_runs_cleanup_through_the_pending_raise() {
+    let result = check_source(&format!(
+        "{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        try:\n            raise RuntimeError()\n        finally:\n            alias = resource\n            alias.close()\n    finally:\n        pass\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_06_distinct_return_and_raise_exits_keep_separate_findings() {
+    let result = check_source(&format!(
+        "{RESOURCE}def leak(flag):\n    resource = C()\n    if flag:\n        return\n    raise RuntimeError()\n"
+    ));
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 2, "{result:#?}");
+    assert!(leaks
+        .iter()
+        .any(|diagnostic| diagnostic.message.ends_with("on return")));
+    assert!(leaks
+        .iter()
+        .any(|diagnostic| diagnostic.message.ends_with("on raise")));
+    assert!(leaks.iter().all(|diagnostic| diagnostic.related.len() == 1));
 }
 
 #[test]
@@ -163,6 +268,24 @@ fn v03_09_owned_helper_transfers_and_discharges_the_callers_duty_once() {
         "{result:#?}"
     );
     assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_09_argument_failure_precedes_owned_helper_entry() {
+    let result = check_source(&format!(
+        "{RESOURCE}def fail() -> int:\n    raise RuntimeError()\ndef consume(resource: Owned[C], marker: int):\n    resource.close()\ndef cleanup():\n    resource = C()\n    try:\n        consume(resource, fail())\n    except RuntimeError:\n        resource.close()\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
 }
 
 #[test]
@@ -301,6 +424,42 @@ fn v03_11_contextlib_module_qualified_import_uses_the_reviewed_model() {
     let result = check_source(&format!(
         "{RESOURCE}import contextlib as ctx\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n"
     ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_11_contextlib_closing_aliases_the_entered_resource() {
+    let result = check_source(
+        "import contextlib as ctx\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource) as entered:\n        entered.status()\n",
+    );
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| matches!(diagnostic.code.as_str(), "TP1001" | "TP1002")),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_11_contextlib_closing_preserves_body_exception_routing() {
+    let result = check_source(
+        "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    primary = C()\n    handler_resource = C()\n    try:\n        with closing(primary):\n            raise ValueError()\n    except ValueError:\n        handler_resource.close()\n",
+    );
     assert!(
         !result
             .diagnostics
@@ -459,6 +618,24 @@ fn v03_10_failed_later_context_entry_still_unwinds_earlier_managers() {
 }
 
 #[test]
+fn v03_10_failed_later_context_argument_unwinds_earlier_manager() {
+    let result = check_source(&format!(
+        "{RESOURCE}from contextlib import closing\ndef fail() -> C:\n    raise RuntimeError()\ndef cleanup():\n    first = C()\n    try:\n        with closing(first), closing(fail()):\n            pass\n    except RuntimeError:\n        pass\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
 fn v03_14_zero_iteration_loop_cannot_prove_cleanup() {
     let result = check_source(&format!(
         "{RESOURCE}def cleanup(flag):\n    resource = C()\n    while flag:\n        resource.close()\n"
@@ -568,6 +745,38 @@ fn v03_15_repeated_loop_acquisition_retains_unknown_multiplicity() {
     assert!(result.coverage.reasons.iter().any(|reason| {
         reason.contains("repeated loop allocation is summarized with unknown multiplicity")
     }));
+}
+
+#[test]
+fn v03_15_closing_the_latest_loop_allocation_keeps_older_duties() {
+    let result = check_source(&format!(
+        "{RESOURCE}def cleanup(flag):\n    while flag:\n        resource = C()\n    resource.close()\n"
+    ));
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }),
+        "{result:#?}"
+    );
+    assert!(result.coverage.status.starts_with("incomplete"));
+}
+
+#[test]
+fn v03_14_continue_and_break_run_finally_cleanup_before_loop_exit() {
+    let result = check_source(&format!(
+        "{RESOURCE}def continue_cleanup():\n    resource = C()\n    for item in (None,):\n        try:\n            continue\n        finally:\n            resource.close()\ndef break_cleanup():\n    resource = C()\n    while True:\n        try:\n            break\n        finally:\n            resource.close()\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
 }
 
 #[test]
@@ -704,8 +913,55 @@ fn v03_17_awaited_async_cleanup_tracks_cancellation_as_uncertain() {
 }
 
 #[test]
+fn v03_17_awaited_local_coroutine_alias_keeps_cancellation_uncertain() {
+    let source = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def finish(resource: Owned[C]):\n    await resource.aclose()\nasync def cleanup():\n    resource = C()\n    pending = finish(resource)\n    alias = pending\n    await alias\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
+        }),
+        "{result:#?}"
+    );
+    assert!(result
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| { reason.contains("cancellation may interrupt the awaited operation") }));
+}
+
+#[test]
+fn v03_17_repeated_coroutine_await_is_an_explicit_boundary() {
+    let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def finish(resource):\n    await resource.aclose()\nasync def cleanup():\n    resource = C()\n    pending = finish(resource)\n    await pending\n    await pending\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001" && diagnostic.message.contains("awaited more than once")
+        }),
+        "{result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete");
+}
+
+#[test]
 fn v03_19_async_context_cleanup_keeps_the_cancellation_exit() {
     let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    async with aclosing(resource):\n        pass\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
+        }),
+        "{result:#?}"
+    );
+    assert!(result
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| { reason.contains("cancellation may interrupt the awaited operation") }));
+}
+
+#[test]
+fn v03_19_async_context_entry_failure_unwinds_prior_manager() {
+    let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\ndef fail() -> C:\n    raise RuntimeError()\nasync def cleanup():\n    resource = C()\n    try:\n        async with aclosing(resource), aclosing(fail()):\n            pass\n    except RuntimeError:\n        pass\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {

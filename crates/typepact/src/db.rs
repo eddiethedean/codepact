@@ -864,6 +864,38 @@ mod tests {
     }
 
     #[test]
+    fn contextlib_model_selection_refreshes_when_target_version_changes() {
+        let file = SourceFile::new(
+            "module.py",
+            "module",
+            "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
+        );
+        let mut session = AnalysisSession::default();
+        let supported = session
+            .check_report_cancellable(std::slice::from_ref(&file), "3.11")
+            .expect("supported-target check completes");
+        assert!(supported.result.diagnostics.is_empty(), "{supported:#?}");
+        assert_eq!(supported.result.available_models.len(), 2, "{supported:#?}");
+        assert_eq!(
+            supported.result.coverage.status,
+            "complete-for-supported-subset"
+        );
+
+        let unsupported = session
+            .check_report_cancellable(std::slice::from_ref(&file), "3.14")
+            .expect("unsupported-target check completes with a boundary");
+        assert!(unsupported.revision > supported.revision);
+        assert!(unsupported.result.available_models.is_empty());
+        assert!(unsupported.result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }));
+        assert_eq!(unsupported.result.coverage.status, "incomplete");
+
+        let fresh = AnalysisSession::default().check_report(&[file], "3.14");
+        assert_eq!(unsupported.result, fresh);
+    }
+
+    #[test]
     fn unrelated_edit_reuses_other_file_lifecycle_checks() {
         let executions = Arc::new(Mutex::new(Vec::<String>::new()));
         let observed = Arc::clone(&executions);

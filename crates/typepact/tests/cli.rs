@@ -84,6 +84,42 @@ fn phase03_text_and_json_reports_agree_on_cleanup_diagnostics() {
 }
 
 #[test]
+fn phase03_module_qualified_contextlib_model_is_reported_in_text_and_json() {
+    let root = fixture_root().with_extension("phase03-contextlib-model");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "import contextlib as ctx\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n",
+    )
+    .unwrap();
+
+    let text = run_check_text(&root);
+    assert_eq!(text.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(!text.contains("TP1002"), "{text}");
+    assert!(text.is_empty(), "{text}");
+
+    let json = run_check(&root);
+    assert_eq!(json.status.code(), Some(0));
+    let report: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(report["diagnostics"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        report["coverage"]["status"],
+        "complete-for-supported-subset"
+    );
+    assert_eq!(report["model_catalog_version"], 1);
+    assert!(report["available_models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|model| {
+            model["id"] == "TPM-CTX-001" && model["source_revisions"].as_array().unwrap().len() == 3
+        }));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn check_reports_one_use_after_close_at_the_call_site() {
     let root = fixture_root().with_extension("lifecycle");
     let _ = fs::remove_dir_all(&root);
