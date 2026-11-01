@@ -1,6 +1,6 @@
 # Automation and CI
 
-Use `inspect-contracts` as a declaration check for an explicit set of supported source files. Pin version 0.1.0, the currently published release, so the helper and analyzer stay aligned. Version 0.2.0 is being prepared; its lifecycle checker is still a source preview.
+Use `inspect-contracts` as a declaration check for an explicit set of supported source files. Pin version 0.2.0, the current release, so the helper and analyzer stay aligned. The same package provides bounded lifecycle checking with `check`.
 
 ## Run in a uv project
 
@@ -37,7 +37,7 @@ jobs:
           python-version: '3.11'
       - name: Inspect declarations
         run: >-
-          uv tool run --from typepact-cli==0.1.0 typepact inspect-contracts
+          uv tool run --from typepact-cli==0.2.0 typepact inspect-contracts
           --python-version 3.11 --root src src/models.py src/client.py
 ```
 
@@ -61,21 +61,18 @@ See the [JSON reference](output.md) for field definitions and the [troubleshooti
 For a complete example that captures exit status and defines a strict coverage
 policy, see [report handling](ci-reporting.md).
 
-## Evaluate the lifecycle preview
+## Check lifecycle behavior
 
-The upcoming 0.2.0 release adds `check`; the command is currently available only
-from source. For a repeatable evaluation, pin the preview commit and use a
-narrow root for the project to be analyzed:
+Install the current release and use a narrow root for the project to be
+analyzed:
 
 ```sh
-cargo run --locked -- check --root path/to/source --json > checking.json
+uv add typepact==0.2.0
+uv run --locked typepact check --root path/to/source --json > checking.json
 ```
 
-Run this from a TypePact checkout with Rust 1.96+; replace the input path with your
-project's source directory. The [availability guide](availability.md#try-the-020-source-preview)
-contains a pinned source commit. Record the SHA if you evaluate a newer revision.
-The published `typepact-cli==0.1.0` installation above does not provide this
-command.
+Replace the input path with your project's source directory. To test unreleased
+changes, build from a TypePact checkout with Rust 1.96+ and record its Git SHA.
 
 Checking differs from inspection: possible findings and incomplete coverage alone
 return `0`. A report consumer must inspect certainty and coverage, preserve exit
@@ -83,4 +80,4 @@ return `0`. A report consumer must inspect certainty and coverage, preserve exit
 Checking JSON is provisional. Configuration files, strict policy switches,
 baselines, and suppressions are not available. Use the [CI report example](ci-reporting.md)
 to define and test your own report policy. Start with the
-[lifecycle tutorial](lifecycle.md) before adopting this preview in a build.
+[lifecycle tutorial](lifecycle.md) before adopting checking in a build.

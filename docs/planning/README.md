@@ -11,7 +11,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [Architecture](architecture.md) | Components, dependencies, execution and packaging |
 | [Analyzer migration](analyzer-migration.md) | Ruff AST, declaration identities, Salsa query graph and AM01–AM06 acceptance |
 | [0.1 implementation repair](phases/0.1/remediation.md) | Archived file-level repair plan; see the release evidence for completed work |
-| [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, implemented preview scope, V02 matrix and preliminary performance record |
+| [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, released scope, V02 matrix and performance record |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
@@ -38,11 +38,11 @@ Documents use “must” for a proposed acceptance requirement, not a claim of p
 
 ## Repository baseline
 
-A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The 0.1.0 release evidence records passing G1–G8 and F01–F08 gates, the V01–V24 mapping, cross-platform build results, registry verification, and the maintainer release decision. The current 0.2.0 lifecycle preview is still being qualified; see its phase plan and validation matrix.
+A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The 0.1.0 release evidence records passing G1–G8 and F01–F08 gates, the V01–V24 mapping, cross-platform build results, registry verification, and the maintainer release decision. The 0.2.0 lifecycle checker is published and qualified; see its phase plan, validation matrix, and release evidence.
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The 0.1.0 release is complete; gates for 0.2.0 and later releases remain pending until candidate evidence and a maintainer decision are recorded. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The 0.1.0 and 0.2.0 releases are complete; later release gates remain pending until candidate evidence and a maintainer decision are recorded. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 

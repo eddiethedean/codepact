@@ -1,23 +1,28 @@
 # Troubleshooting
 
 Start with the command and process exit status. Inspection writes JSON by default;
-preview checking writes readable diagnostics unless `--json` is supplied. Exit `2`
+checking writes readable diagnostics unless `--json` is supplied. Exit `2`
 usually includes an explanation on standard error. In a JSON report, read both
 `diagnostics` and `coverage`.
 
 ## The command is unavailable after installation
 
-For a project installation, run `uv run typepact --version` from the project directory. For a standalone installation of the currently published release, use `uv tool install typepact-cli==0.1.0` and check that the uv tool directory is on your shell's PATH. After 0.2.0 is published, use its version in the install command.
+For a project installation, run `uv run typepact --version` from the project directory. For a standalone installation, use `uv tool install typepact-cli==0.2.0` and check that the uv tool directory is on your shell's PATH.
 
 Both distributions require Python 3.11+. A CLI source build requires Rust 1.96+ and a linker; a compatible platform wheel includes the executable. If installation reports that no compatible wheel exists, confirm the operating system, architecture, and libc against the [platform matrix](availability.md#platform-and-runtime-evidence). See [installation](install.md) for source-build requirements.
 
 ## The command does not recognize `check`
 
-The published 0.1.0 executable provides `inspect-contracts`. Lifecycle checking
-is a source preview. Follow [source installation](install.md#build-the-lifecycle-preview-from-source)
-and use `cargo run --locked -- check --root DIR` from that checkout. Its package
-version still reads `0.1.0`, so the version string alone cannot identify the
-preview. An installed command elsewhere on your PATH may be the published binary.
+The 0.1.0 executable provides `inspect-contracts` only. Install the current
+0.2.0 package to use lifecycle checking:
+
+```sh
+uv add typepact==0.2.0
+uv run typepact check --root DIR
+```
+
+An older command earlier on your `PATH` may shadow the project installation;
+check `uv run typepact --version` and the resolved executable path.
 
 ## Coverage is incomplete even though there are no errors
 
@@ -52,7 +57,7 @@ in [CI report handling](ci-reporting.md).
 
 ## A contract is nested inside a container
 
-TypePact reports incomplete coverage for annotations such as `list[Borrowed[Connection]]`, including nested uses of captured resource aliases. Container/field alias analysis belongs to later phases. Use direct parameter and return contracts within the supported 0.1 subset; keep container declarations accurate and treat the diagnostic as an analysis boundary.
+TypePact reports incomplete coverage for annotations such as `list[Borrowed[Connection]]`, including nested uses of captured resource aliases. Container/field alias analysis belongs to later phases. Use direct parameter and return contracts within the supported subset; keep container declarations accurate and treat the diagnostic as an analysis boundary.
 
 Literal `None` parameters and returns are ordinary non-resource annotations and do not cause incomplete coverage. A wrapper such as `Owned[None]` still lacks a resolvable resource class. String annotations such as `"None"` and future annotations remain unsupported.
 
@@ -60,7 +65,7 @@ Literal `None` parameters and returns are ordinary non-resource annotations and 
 
 For inspection, pass the defining module and consuming module in the same
 invocation. Set `--root` so logical names agree with the absolute imports. The
-preview checker discovers files under its root; ensure the provider is inside
+checker discovers files under its root; ensure the provider is inside
 that root. Neither mode searches installed packages or executes Python imports.
 
 Use the [multi-file tutorial](project-guide.md) as a reference. Relative imports, import re-export chains, and supplied-module cycles are unsupported in 0.1 even when all files are supplied.

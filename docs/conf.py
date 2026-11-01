@@ -34,7 +34,7 @@ nitpick_ignore = [
 ]
 
 html_theme = "sphinx_rtd_theme"
-html_title = "TypePact documentation — 0.2.0 preparation"
+html_title = "TypePact documentation — 0.2.0"
 html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 3,

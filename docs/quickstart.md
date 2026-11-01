@@ -2,7 +2,7 @@
 
 This example declares that a `Connection` is closed by `close`, then describes how two functions intend to access it.
 
-From a Python project, install the helpers and command with `uv add typepact==0.1.0`. This is the latest published release while 0.2.0 is being prepared. See [installation](install.md) for pip, standalone CLI, and platform requirements.
+From a Python project, install the helpers and command with `uv add typepact==0.2.0`. See [installation](install.md) for pip, standalone CLI, and platform requirements.
 
 Save the code as `connection.py`:
 
@@ -20,7 +20,7 @@ A successful run exits with status `0`, has an empty `diagnostics` list, and rep
 
 The JSON result contains a resource contract for `Connection` and access contracts for `read.conn` and `consume.conn`. The first parameter is shared; the second is owned. Both inherit the class lifecycle metadata.
 
-The source is parsed without importing `connection.py`. TypePact records the declared method name, but the published 0.1.0 release does not check whether `close()` is called on every path or whether the method actually releases a resource.
+The source is parsed without importing `connection.py`. TypePact records the declared method name; the lifecycle checker can analyze supported calls to it, but does not verify that the method actually releases a runtime resource.
 
 The inspector also catches inconsistent declarations. For example, if a view
 uses `Resource(closed_by="release")` while its class declares
@@ -46,17 +46,16 @@ Pass all source files that should participate in direct import resolution. Use `
 uv run typepact inspect-contracts --root src src/models.py src/client.py
 ```
 
-The root is used to name modules; TypePact does not discover files or follow imports automatically. For the full option and input behavior, see the [CLI reference](cli.md). For the declarations understood by 0.1, see [supported syntax](supported-syntax.md).
+The root is used to name modules; TypePact does not discover files or follow imports automatically. For the full option and input behavior, see the [CLI reference](cli.md). For supported declarations and lifecycle flow, see [supported syntax](supported-syntax.md).
 
 Continue with the [multi-file tutorial](project-guide.md) to resolve declarations across modules, or [automation](automation.md) to check an explicit source set in CI.
 
 ## Try lifecycle checking next
 
-The source checkout includes an unreleased `typepact check` preview for direct
-construction, local aliases, normal synchronous calls, and `if`/`else` joins.
-The published 0.1.0 packages used above provide inspection only.
+The 0.2.0 release also includes `typepact check` for direct construction, local
+aliases, normal synchronous calls, and `if`/`else` joins.
 
-Follow the [lifecycle tutorial](lifecycle.md) to build the preview, reproduce a
-use after close, read its related close location, and make the example pass.
+Follow the [lifecycle tutorial](lifecycle.md) to reproduce a use after close,
+read its related close location, and make the example pass.
 Possible findings and coverage warnings can accompany exit `0`; the command does
 not prove cleanup on every exit or general ownership safety.

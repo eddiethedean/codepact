@@ -1,8 +1,8 @@
 # Support and maintenance
 
-TypePact is an early 0.x project. Version 0.1.0 is published; 0.2.0 is being
-prepared and its lifecycle checker remains a source preview until release
-qualification is complete.
+TypePact is an early 0.x project. Version 0.2.0 is published with bounded
+lifecycle checking. APIs, diagnostics, and schema remain provisional during the
+0.x series.
 
 ## Ask for help or report a bug
 
@@ -23,8 +23,9 @@ Do not post vulnerability details in a public issue; follow the
 The repository does not publish a response-time SLA, a long-term-support
 window, guaranteed backports, or named module owners. Compatibility evidence
 and release scope are recorded per version. The 0.1.0 support matrix and checks
-are in the [release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.1.0-evidence.md); 0.2.0 must complete
-its own qualification before it is described as released.
+are in its [release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.1.0-evidence.md).
+The 0.2.0 scope, support matrix, and qualification are in the
+[0.2.0 release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md).
 
 Because the APIs, diagnostics, and JSON schema are provisional during 0.x,
 consumers should pin versions and review the release notes before upgrading.

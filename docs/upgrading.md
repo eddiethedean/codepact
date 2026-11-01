@@ -1,40 +1,38 @@
 # Upgrade from 0.1.0 to 0.2.0
 
-Version 0.1.0 is the published contract-inspection release. Version 0.2.0 is
-being prepared and adds lifecycle checking. The `check` command is currently
-available only in the source preview; install the 0.2.0 packages only after the
-release is published.
+Version 0.2.0 is published on PyPI and crates.io. It adds bounded lifecycle
+checking while retaining declaration inspection. The Python helper pins the
+matching `typepact-cli` version.
 
-## Before 0.2.0 is published
+## Upgrade the Python packages
 
-Keep using the released packages for inspection:
-
-```sh
-uv add typepact==0.1.0
-uv run typepact inspect-contracts app.py
-```
-
-To evaluate lifecycle checking, build the [pinned source preview](availability.md#try-the-020-source-preview).
-The checkout currently reports version `0.1.0`, so record its Git commit rather
-than relying on `typepact --version` to identify preview behavior.
-
-## After 0.2.0 is published
-
-Update the helper and CLI together; `typepact` pins `typepact-cli` to the same
-version:
+Update your project dependency and lockfile:
 
 ```sh
 uv add typepact==0.2.0
+uv sync --locked
 uv run typepact --version
 uv run typepact inspect-contracts app.py
 uv run typepact check --root src
 ```
 
-Keep `inspect-contracts` for declaration inspection. `check` adds bounded
-lifecycle analysis, reads all supported `.py` files under its root, and reports
-use after close and close-through-`Borrowed` findings. Review the
-[0.2.0 release notes](release-notes.md), [availability table](availability.md),
-and [limitations](limitations.md) before enabling it in a required build gate.
+The 0.2.0 release supports both `inspect-contracts` and `check`. Checking reads
+all supported `.py` files below its root and reports use-after-close and
+close-through-`Borrowed` findings. Review the [release notes](release-notes.md),
+[availability table](availability.md), and [limitations](limitations.md) before
+enabling it in a required build gate.
+
+## Upgrade the Rust dependency
+
+Update the crate and rebuild:
+
+```sh
+cargo add typepact@0.2.0
+cargo build --locked
+```
+
+The `check` and session-checking APIs are available in this published version.
+See the [Rust API reference](rust-api.md) for signatures and result handling.
 
 ## Review behavior before changing CI
 

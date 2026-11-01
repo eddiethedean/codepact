@@ -1,17 +1,16 @@
 # Evaluate TypePact in an existing project
 
 Start with a small, reviewable source slice. TypePact does not import your
-application or discover dependencies from installed packages. Its inspection
-and lifecycle commands have different input rules, so choose the command based
-on the release you can install.
+application or discover dependencies from installed packages. Inspection takes
+explicit files; lifecycle checking scans Python files below a selected root.
 
 ## 1. Check the published release against declarations
 
-The currently published 0.1.0 release inspects declarations in explicitly named
-files. Install it and pass the files that define and use your resource type:
+The current 0.2.0 release inspects declarations in explicitly named files.
+Install it and pass the files that define and use your resource type:
 
 ```sh
-uv add typepact==0.1.0
+uv add typepact==0.2.0
 uv run typepact inspect-contracts --root src src/data/connection.py src/data/client.py
 ```
 
@@ -20,17 +19,14 @@ absolute imports resolve as expected. Read both `diagnostics` and
 `coverage.reasons`; an unresolved import or unsupported declaration is a visible
 boundary, not evidence that the declaration is safe.
 
-## 2. Check whether lifecycle preview fits
+## 2. Check whether lifecycle analysis fits
 
-The upcoming 0.2.0 release is still being qualified. Its source preview can find
-supported use-after-close operations and closes through `Borrowed` parameters.
-Try it on a narrow directory that contains only the relevant Python modules:
+The 0.2.0 lifecycle checker finds supported use-after-close operations and
+closes through `Borrowed` parameters. Try it on a narrow directory that contains
+only the relevant Python modules:
 
 ```sh
-git clone https://github.com/eddiethedean/typepact.git
-cd typepact
-git checkout cf2fb90989d3ed01b7ca9edb56cc5ff8bd7122c4
-cargo run --locked -- check --root /path/to/pilot
+uv run typepact check --root /path/to/pilot
 ```
 
 The checker scans every `.py` file under the selected root. A filename argument
@@ -56,7 +52,7 @@ Do not use an incomplete result as a clean bill of health.
 
 ## Fit checklist
 
-The current preview is most useful when the pilot uses direct resource
+The checker is most useful when the pilot uses direct resource
 construction, local aliases, ordinary synchronous calls, local helpers, and
 `if`/`else` branches. Common blockers include future/string annotations, relative
 imports, dynamic dispatch, loops, exception handlers, context managers, async

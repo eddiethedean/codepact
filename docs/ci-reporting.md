@@ -4,12 +4,12 @@ TypePact does not include a built-in strict-coverage switch, baseline file, or
 suppression configuration. CI consumers should define how they treat command
 status, diagnostics, and coverage instead of relying on exit status alone.
 
-## Published 0.1.0 inspection
+## Inspect declarations
 
 Pin the package version used by automation:
 
 ```sh
-uv tool run --from typepact-cli==0.1.0 \
+uv tool run --from typepact-cli==0.2.0 \
   typepact inspect-contracts --root src --json src/app.py src/resources.py \
   > typepact-inspection.json
 ```
@@ -18,15 +18,11 @@ Inspection returns status `1` for declaration errors or incomplete coverage.
 Treat status `2` as an invocation or input failure. See the
 [CLI reference](cli.md#exit-status) for the exact meanings.
 
-## Lifecycle-checking preview
+## Check lifecycle behavior
 
-The `check` command belongs to the upcoming 0.2.0 release and is currently
-available only from source. The preview returns status `1` for definite
-lifecycle violations or declaration errors. Possible findings and incomplete
-coverage alone can return `0`. If evaluating the preview in a CI job, follow the
-[pinned source instructions](availability.md#try-the-020-source-preview) and
-record the source commit. Do not mistake a successful status for complete
-coverage.
+The published 0.2.0 `check` command returns status `1` for definite lifecycle
+violations or declaration errors. Possible findings and incomplete coverage
+alone can return `0`. Do not mistake a successful status for complete coverage.
 
 ## Example policy: fail on any finding or boundary
 

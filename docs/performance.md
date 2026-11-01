@@ -23,8 +23,12 @@ measurement method. Salsa query reuse is tested separately; cold timings do not
 measure incremental editor latency. These figures describe one host and are not
 performance guarantees.
 
-No comparable 0.2.0 release baseline has been accepted yet. Do not apply the
-0.1.0 numbers to lifecycle checking or another platform.
+The 0.2.0 lifecycle timings, retained-session RSS, and accepted flow limits are
+recorded in the [phase performance record](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2/performance.md)
+and [release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md). The maintainer accepted the
+measured regression with its limitations; these results describe one host and
+are not performance guarantees. Do not apply the 0.1.0 numbers to lifecycle
+checking or another platform.
 
 ## Practical guidance
 
