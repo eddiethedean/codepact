@@ -71,11 +71,15 @@ For `check`, status `1` means a definite lifecycle violation or declaration erro
 
 ## Unreleased 0.3 worktree
 
-The in-progress worktree extends `check` to bounded cleanup obligations across
-returns, raises, loops, `finally`, modeled `contextlib.closing`/`aclosing`, and
-resolved local coroutine calls that are awaited once. It prints completion,
-certainty, trust, coverage reason and repair guidance. With `--json`, it emits
-the separately versioned `check_schema_version: 1` result described in the
-[output reference](output.md); `inspect-contracts` keeps its inspection schema.
-These semantics and the new check result remain unqualified until the 0.3 matrix
-and release gates pass. See the [0.3 cleanup plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3-cleanup.md).
+The current worktree extends `check` to bounded cleanup obligations across
+returns, raises, supported exception handlers, loops, `finally`, exact
+`contextlib.closing`/`aclosing` imports, and resolved local coroutine calls
+that are directly awaited once. Finite tuple loops are unrolled up to 16 items;
+each flow state retains up to 128 pending coroutine records. It prints
+completion, certainty, trust, coverage reason and repair guidance. With
+`--json`, it emits the separately versioned `check_schema_version: 1` result
+described in the [output reference](output.md); `inspect-contracts` keeps its
+inspection schema. These behaviors and the new check result remain unqualified
+until the maintainer completes the 0.3 matrix and release gates. See the [0.3
+cleanup plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3-cleanup.md).
+It does not provide a general lifetime, escape, or task-completion proof.

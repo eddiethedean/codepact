@@ -16,6 +16,8 @@ const MAX_CALL_DEPTH: usize = 8;
 const MAX_CONTROL_FLOW_DEPTH: usize = 64;
 const MAX_ALIAS_TARGETS: usize = 64;
 const MAX_FLOW_OBJECTS: usize = 4_096;
+const MAX_STATIC_FOR_ITERATIONS: usize = 16;
+const MAX_PENDING_COROUTINES: usize = 128;
 pub(crate) const MAX_FLOW_STEPS: usize = 100_000;
 thread_local! {
     static FLOW_STEPS: Cell<usize> = const { Cell::new(0) };
@@ -62,7 +64,7 @@ struct MethodInvocation<'a> {
 
 type ProjectFunctionMap = BTreeMap<(String, String), FunctionBody>;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 struct State {
     places: BTreeMap<String, BTreeSet<String>>,
     unknown_places: BTreeSet<String>,
@@ -88,6 +90,7 @@ struct State {
     scope_module: String,
     target_python_version: String,
     coroutines: BTreeMap<String, CoroutineRecord>,
+    coroutine_budget_overflow: Option<SourceRange>,
     coroutine_aliases: BTreeMap<String, String>,
     unknown_coroutine_aliases: BTreeSet<String>,
     pending_coroutine_result: Option<String>,
@@ -99,7 +102,7 @@ struct State {
     alive: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct CoroutineRecord {
     invocation: AstExpr,
     captures: BTreeMap<String, CapturedCoroutinePlace>,
@@ -108,13 +111,13 @@ struct CoroutineRecord {
     ambiguous: bool,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 struct CapturedCoroutinePlace {
     targets: BTreeSet<String>,
     unknown: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 enum CompletionKind {
     Fallthrough,
     Return(Option<AstExpr>),
@@ -124,7 +127,7 @@ enum CompletionKind {
     Continue,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct FlowExit {
     state: State,
     range: SourceRange,
@@ -529,6 +532,9 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
         } else {
             None
         };
+    joined.coroutine_budget_overflow = left
+        .coroutine_budget_overflow
+        .or(right.coroutine_budget_overflow);
     joined
         .unknown_coroutine_aliases
         .extend(right.unknown_coroutine_aliases.iter().cloned());
@@ -588,6 +594,39 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
             }
             (None, None) => unreachable!(),
         }
+    }
+    while joined.coroutines.len() > MAX_PENDING_COROUTINES {
+        let Some(id) = joined
+            .coroutines
+            .iter()
+            .min_by_key(|(id, record)| (!record.consumed, record.range.start, *id))
+            .map(|(id, _)| id.clone())
+        else {
+            break;
+        };
+        let Some(record) = joined.coroutines.remove(&id) else {
+            continue;
+        };
+        let mut affected = BTreeSet::new();
+        for place in record.captures.values() {
+            affected.extend(place.targets.iter().cloned());
+            if place.unknown {
+                affected.extend(joined.objects.keys().cloned());
+            }
+        }
+        for object in affected {
+            *joined.objects.entry(object).or_default() |= UNKNOWN;
+        }
+        for (alias, coroutine) in &joined.coroutine_aliases {
+            if coroutine == &id {
+                joined.unknown_coroutine_aliases.insert(alias.clone());
+            }
+        }
+        joined
+            .coroutine_aliases
+            .retain(|_, coroutine| coroutine != &id);
+        joined.coroutine_budget_overflow =
+            Some(joined.coroutine_budget_overflow.unwrap_or(record.range));
     }
     joined.pending_raises = merge_pending_raises(&left.pending_raises, &right.pending_raises);
     let binding_names: BTreeSet<_> = left
@@ -748,6 +787,10 @@ fn project_call_exit(parent: &State, child: &FlowExit, call_range: SourceRange) 
     state.alive = true;
     state.pending_raises.clear();
     state.pending_return_targets = None;
+    state.coroutine_budget_overflow = child
+        .state
+        .coroutine_budget_overflow
+        .or(parent.coroutine_budget_overflow);
     for object in parent.objects.keys() {
         if let Some(mask) = child.state.objects.get(object) {
             state.objects.insert(object.clone(), *mask);
@@ -837,41 +880,30 @@ fn report_cleanup_exit(
     let mut returned_owned = BTreeSet::new();
     let mut escaped_return = BTreeSet::new();
     if let CompletionKind::Return(value) = &exit.kind {
-        if let Some(name) = value.as_ref().and_then(expr_name) {
-            if !exit.state.unknown_places.contains(name) {
-                if return_access == Some("owned") {
-                    returned_owned.extend(
-                        exit.state
-                            .places
-                            .get(name)
-                            .into_iter()
-                            .flatten()
-                            .filter(|object| {
-                                exit.state.objects.get(*object).copied().unwrap_or(UNKNOWN) == OPEN
-                                    && !exit.state.borrowed.contains(*object)
-                            })
-                            .cloned(),
-                    );
-                } else {
-                    escaped_return
-                        .extend(exit.state.places.get(name).into_iter().flatten().cloned());
-                }
-            }
-        }
-        if let Some(targets) = &exit.state.pending_return_targets {
-            if return_access == Some("owned") {
-                returned_owned.extend(
-                    targets
-                        .iter()
-                        .filter(|object| {
-                            exit.state.objects.get(*object).copied().unwrap_or(UNKNOWN) == OPEN
-                                && !exit.state.borrowed.contains(*object)
-                        })
-                        .cloned(),
-                );
-            } else {
-                escaped_return.extend(targets.iter().cloned());
-            }
+        let targets = exit
+            .state
+            .pending_return_targets
+            .clone()
+            .or_else(|| {
+                value
+                    .as_ref()
+                    .and_then(expr_name)
+                    .filter(|name| !exit.state.unknown_places.contains(*name))
+                    .and_then(|name| exit.state.places.get(name).cloned())
+            })
+            .unwrap_or_default();
+        if return_access == Some("owned") {
+            returned_owned.extend(
+                targets
+                    .iter()
+                    .filter(|object| {
+                        exit.state.objects.get(*object).copied().unwrap_or(UNKNOWN) == OPEN
+                            && !exit.state.borrowed.contains(*object)
+                    })
+                    .cloned(),
+            );
+        } else {
+            escaped_return.extend(targets);
         }
     }
     if !escaped_return.is_empty() {
@@ -886,18 +918,14 @@ fn report_cleanup_exit(
         let returned_targets = exit
             .state
             .pending_return_targets
-            .iter()
-            .flatten()
-            .cloned()
-            .chain(match &exit.kind {
+            .clone()
+            .or_else(|| match &exit.kind {
                 CompletionKind::Return(Some(value)) => expr_name(value)
                     .filter(|name| !exit.state.unknown_places.contains(*name))
-                    .into_iter()
-                    .flat_map(|name| exit.state.places.get(name).into_iter().flatten().cloned())
-                    .collect::<Vec<_>>(),
-                _ => Vec::new(),
+                    .and_then(|name| exit.state.places.get(name).cloned()),
+                _ => None,
             })
-            .collect::<BTreeSet<_>>();
+            .unwrap_or_default();
         for object in &returned_targets {
             let mask = exit.state.objects.get(object).copied().unwrap_or(UNKNOWN);
             if exit.state.borrowed.contains(object) {
@@ -1390,6 +1418,9 @@ fn apply_call_effects(parent: &mut State, child: &State, extra_objects: &BTreeSe
         }
     }
     parent.pending_return_targets = child.pending_return_targets.clone();
+    parent.coroutine_budget_overflow = child
+        .coroutine_budget_overflow
+        .or(parent.coroutine_budget_overflow);
 }
 
 fn resolved_await_call(
@@ -2133,6 +2164,24 @@ fn register_pending_coroutine(
             expression.range,
             "repeated coroutine creation at one source site has unknown instance multiplicity",
         );
+    } else if env.coroutines.len() >= MAX_PENDING_COROUTINES {
+        let mut affected = BTreeSet::new();
+        for place in record.captures.values() {
+            affected.extend(place.targets.iter().cloned());
+            if place.unknown {
+                affected.extend(env.objects.keys().cloned());
+            }
+        }
+        for object in affected {
+            *env.objects.entry(object).or_default() |= UNKNOWN;
+        }
+        env.coroutine_budget_overflow = Some(expression.range);
+        boundary(
+            result,
+            file,
+            expression.range,
+            "pending coroutine budget exceeded; captured resource effects are unknown",
+        );
     } else {
         env.coroutines.insert(id.clone(), record);
     }
@@ -2140,6 +2189,14 @@ fn register_pending_coroutine(
 }
 
 fn report_unawaited_coroutines(state: &State, file: &SourceFile, result: &mut Inspection) {
+    if let Some(range) = state.coroutine_budget_overflow {
+        boundary(
+            result,
+            file,
+            range,
+            "pending coroutine budget exceeded; captured resource effects are unknown",
+        );
+    }
     for coroutine in state
         .coroutines
         .values()
@@ -2316,6 +2373,35 @@ fn consume_expr(
     evaluate_call_arguments(expr, env, file, contracts, functions, result, depth);
     if !env.alive {
         return;
+    }
+    if let AstExprKind::Call {
+        function,
+        arguments,
+        keywords,
+    } = &expr.kind
+    {
+        if expr_name(function).is_some_and(|name| is_unshadowed_builtin_exception(name, env)) {
+            let modeled_arguments = keywords.is_empty()
+                && arguments.iter().all(|argument| {
+                    matches!(
+                        argument.kind,
+                        AstExprKind::String(_)
+                            | AstExprKind::Boolean(_)
+                            | AstExprKind::Primitive
+                            | AstExprKind::NoneLiteral
+                    )
+                });
+            if !modeled_arguments {
+                boundary(
+                    result,
+                    file,
+                    expr.range,
+                    "computed built-in exception constructor arguments are not modeled",
+                );
+                queue_raise(env, expr.range, None);
+            }
+            return;
+        }
     }
     if let Some((receiver, method, arguments, keywords)) = called_method(expr) {
         if let Some(name) = expr_name(receiver) {
@@ -2529,27 +2615,6 @@ fn consume_expr(
                                 env.close_origins
                                     .insert(object.clone(), span(file, expr.range));
                                 env.objects.insert(object.clone(), closed_mask(mask));
-                            }
-                            if is_close {
-                                let mut exceptional = env.clone();
-                                exceptional.alive = true;
-                                exceptional.pending_raises.clear();
-                                exceptional.objects.insert(
-                                    object.clone(),
-                                    mask | env.objects.get(object).copied().unwrap_or(UNKNOWN)
-                                        | UNKNOWN,
-                                );
-                                env.pending_raises.push(FlowExit {
-                                    state: exceptional,
-                                    range: expr.range,
-                                    kind: CompletionKind::Raise(None),
-                                });
-                                boundary(
-                                    result,
-                                    file,
-                                    expr.range,
-                                    "close exceptional postcondition is not modeled",
-                                );
                             }
                             if !child.alive {
                                 env.alive = false;
@@ -2770,6 +2835,7 @@ fn consume_expr(
                     .shadowed_classes
                     .extend(assigned_names(&definition.statements));
                 let call_site = span(file, expr.range);
+                let mut owned_entry_objects = BTreeSet::new();
                 for (parameter, argument) in bindings {
                     if let Some(actual) = expr_name(argument) {
                         if let Some(targets) = env.places.get(actual) {
@@ -2778,6 +2844,7 @@ fn consume_expr(
                             if let Some(contract) = definition.parameter_contracts.get(&parameter) {
                                 for object in targets {
                                     if contract.access == "owned" {
+                                        owned_entry_objects.insert(object.clone());
                                         child
                                             .duty_origins
                                             .entry(object.clone())
@@ -2818,24 +2885,36 @@ fn consume_expr(
                 let mut owned_return_targets = BTreeSet::new();
                 if definition.return_access.as_deref() == Some("owned") {
                     for exit in &returned.returns {
-                        let CompletionKind::Return(value) = &exit.kind else {
+                        let CompletionKind::Return(_) = &exit.kind else {
                             continue;
                         };
-                        if let Some(name) = value.as_ref().and_then(expr_name) {
-                            if !exit.state.unknown_places.contains(name) {
-                                owned_return_targets.extend(
-                                    exit.state.places.get(name).into_iter().flatten().cloned(),
-                                );
-                            }
-                        }
-                        owned_return_targets
-                            .extend(exit.state.pending_return_targets.iter().flatten().cloned());
+                        let targets = exit
+                            .state
+                            .pending_return_targets
+                            .clone()
+                            .or_else(|| match &exit.kind {
+                                CompletionKind::Return(Some(value)) => expr_name(value)
+                                    .filter(|name| !exit.state.unknown_places.contains(*name))
+                                    .and_then(|name| exit.state.places.get(name).cloned()),
+                                _ => None,
+                            })
+                            .unwrap_or_default();
+                        owned_return_targets.extend(targets.into_iter().filter(|object| {
+                            exit.state.objects.get(object).copied().unwrap_or(UNKNOWN) == OPEN
+                                && !exit.state.borrowed.contains(object)
+                        }));
                     }
                 }
                 let propagated_raises = returned
                     .raises
                     .iter()
                     .map(|exit| project_call_exit(env, exit, expr.range))
+                    .map(|mut exit| {
+                        for object in &owned_entry_objects {
+                            exit.state.duty_origins.remove(object);
+                        }
+                        exit
+                    })
                     .collect::<Vec<_>>();
                 env.pending_raises.extend(propagated_raises);
                 let child = join_normal_exits(
@@ -2847,8 +2926,13 @@ fn consume_expr(
                         .collect(),
                 );
                 let mut child = child;
-                if !owned_return_targets.is_empty() {
-                    child.pending_return_targets = Some(owned_return_targets.clone());
+                child.pending_return_targets =
+                    (!owned_return_targets.is_empty()).then(|| owned_return_targets.clone());
+                for object in &owned_entry_objects {
+                    env.duty_origins.remove(object);
+                    if !owned_return_targets.contains(object) {
+                        child.duty_origins.remove(object);
+                    }
                 }
                 let body_diagnostics = result.diagnostics.split_off(diagnostic_start);
                 for mut diagnostic in body_diagnostics {
@@ -3219,6 +3303,8 @@ fn execute_finally_for_exit(
     depth: usize,
     outcomes: &mut FlowResult,
 ) {
+    let pending_return_targets = exit.state.pending_return_targets.clone();
+    let preserves_return_value = matches!(exit.kind, CompletionKind::Return(_));
     let mut state = exit.state;
     state.alive = true;
     let finally_outcomes = execute(
@@ -3231,6 +3317,9 @@ fn execute_finally_for_exit(
         depth + 1,
     );
     if state.alive {
+        if preserves_return_value {
+            state.pending_return_targets = pending_return_targets;
+        }
         push_exit(outcomes, FlowExit { state, ..exit });
     }
     outcomes.append(finally_outcomes);
@@ -3337,6 +3426,17 @@ fn known_builtin_exception(name: &str) -> bool {
     )
 }
 
+fn is_unshadowed_builtin_exception(name: &str, state: &State) -> bool {
+    known_builtin_exception(name)
+        && !state.shadowed_classes.contains(name)
+        && !state.shadowed_functions.contains(name)
+        && !state.function_bindings.contains_key(name)
+        && !state.class_bindings.contains_key(name)
+        && !state.imported_classes.contains_key(name)
+        && !state.module_function_bindings.contains_key(name)
+        && !state.module_class_bindings.contains_key(name)
+}
+
 fn exception_handler_match(exception: Option<&str>, handler: Option<&AstExpr>) -> ExceptionMatch {
     let Some(handler) = handler else {
         return ExceptionMatch::Definite;
@@ -3441,12 +3541,35 @@ fn execute_try(
         let exception_name = raised_exception_name(&raised);
         let mut may_remain_unhandled = true;
         let mut uncertain_match = false;
+        let mut unmatched_state = raised.state.clone();
         for handler in handlers {
             if !may_remain_unhandled {
                 break;
             }
+            let mut dispatch_state = unmatched_state.clone();
+            dispatch_state.alive = true;
+            dispatch_state.pending_raises.clear();
+            if let Some(exception_type) = &handler.exception {
+                consume_expr(
+                    exception_type,
+                    &mut dispatch_state,
+                    file,
+                    contracts,
+                    functions,
+                    result,
+                    0,
+                );
+                pending
+                    .raises
+                    .extend(take_pending_raises(&mut dispatch_state));
+            }
+            if !dispatch_state.alive {
+                may_remain_unhandled = false;
+                break;
+            }
             let matching = exception_handler_match(exception_name, handler.exception.as_ref());
             if matching == ExceptionMatch::No {
+                unmatched_state = dispatch_state;
                 continue;
             }
             if matching == ExceptionMatch::Possible {
@@ -3458,8 +3581,7 @@ fn execute_try(
                     "exception type may or may not match this handler",
                 );
             }
-            let mut handler_state = raised.state.clone();
-            handler_state.alive = true;
+            let mut handler_state = dispatch_state.clone();
             handler_state.control_depth = handler_state.control_depth.saturating_add(1);
             if let Some(name) = &handler.name {
                 handler_state.places.remove(name);
@@ -3481,6 +3603,9 @@ fn execute_try(
                 normal_states.push(handler_state);
             }
             may_remain_unhandled = matching != ExceptionMatch::Definite;
+            if may_remain_unhandled {
+                unmatched_state = dispatch_state;
+            }
         }
         if may_remain_unhandled {
             if exception_name.is_none() {
@@ -3492,6 +3617,7 @@ fn execute_try(
                 );
             }
             let mut raised = raised;
+            raised.state = unmatched_state;
             if uncertain_match {
                 let duties = raised
                     .state
@@ -3558,6 +3684,34 @@ fn execute_loop(
     result: &mut Inspection,
     depth: usize,
 ) -> FlowResult {
+    if let (Some(iterator), Some(target)) = (iterator, target) {
+        if let AstExprKind::Tuple(items) = &iterator.kind {
+            if items.iter().all(|item| match &item.kind {
+                AstExprKind::Name(name) => {
+                    !env.unknown_places.contains(name)
+                        && (env.places.contains_key(name)
+                            || env.coroutine_aliases.contains_key(name)
+                            || env.shadowed_classes.contains(name)
+                            || env.shadowed_functions.contains(name)
+                            || env.function_bindings.contains_key(name)
+                            || env.class_bindings.contains_key(name)
+                            || env.module_function_bindings.contains_key(name)
+                            || env.module_class_bindings.contains_key(name)
+                            || env.imported_classes.contains_key(name))
+                }
+                AstExprKind::Boolean(_)
+                | AstExprKind::String(_)
+                | AstExprKind::Primitive
+                | AstExprKind::NoneLiteral => true,
+                _ => false,
+            }) {
+                return execute_static_for_loop(
+                    items, target, body, alternate, range, env, file, contracts, functions, result,
+                    depth,
+                );
+            }
+        }
+    }
     if depth >= MAX_CONTROL_FLOW_DEPTH || env.control_depth >= MAX_CONTROL_FLOW_DEPTH {
         weaken(
             env,
@@ -3670,11 +3824,7 @@ fn execute_loop(
             break;
         };
         let next = merge(&entry, &back_edge).0;
-        if next.objects == head.objects
-            && next.places == head.places
-            && next.unknown_places == head.unknown_places
-            && next.escaped == head.escaped
-        {
+        if next == head {
             head = next;
             converged = true;
             break;
@@ -3734,6 +3884,177 @@ fn execute_loop(
     }
     outcomes.breaks.clear();
     outcomes.continues.clear();
+    outcomes
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_static_for_loop(
+    items: &[AstExpr],
+    target: &str,
+    body: &[FlowStatement],
+    alternate: &[FlowStatement],
+    range: SourceRange,
+    env: &mut State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+    depth: usize,
+) -> FlowResult {
+    let captured_places = items
+        .iter()
+        .map(|item| match &item.kind {
+            AstExprKind::Name(source) => env.places.get(source).cloned(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let captured_coroutines = items
+        .iter()
+        .map(|item| match &item.kind {
+            AstExprKind::Name(source) => env.coroutine_aliases.get(source).cloned(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if depth >= MAX_CONTROL_FLOW_DEPTH || env.control_depth >= MAX_CONTROL_FLOW_DEPTH {
+        weaken(
+            env,
+            env.places
+                .values()
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter(),
+        );
+        boundary(result, file, range, "loop nesting budget exceeded");
+        return FlowResult::default();
+    }
+
+    let mut outcomes = FlowResult::default();
+    let mut current = Some(env.clone());
+    let mut breaks = Vec::new();
+    let mut iterations = 0;
+    for (index, item) in items.iter().take(MAX_STATIC_FOR_ITERATIONS).enumerate() {
+        let Some(mut iteration) = current.take() else {
+            break;
+        };
+        iterations += 1;
+        if matches!(&item.kind, AstExprKind::Name(_)) {
+            if let Some(targets) = captured_places[index].clone() {
+                iteration.places.insert(target.to_owned(), targets);
+                iteration.unknown_places.remove(target);
+            } else {
+                iteration.places.remove(target);
+                iteration.unknown_places.remove(target);
+            }
+            if let Some(coroutine) = &captured_coroutines[index] {
+                if iteration
+                    .coroutines
+                    .get(coroutine)
+                    .is_some_and(|record| !record.consumed)
+                {
+                    boundary(
+                        result,
+                        file,
+                        item.range,
+                        "for-loop tuple contains a pending coroutine alias",
+                    );
+                    iteration
+                        .unknown_coroutine_aliases
+                        .insert(target.to_owned());
+                } else {
+                    iteration
+                        .coroutine_aliases
+                        .insert(target.to_owned(), coroutine.clone());
+                    iteration.unknown_coroutine_aliases.remove(target);
+                }
+            } else {
+                iteration.coroutine_aliases.remove(target);
+                iteration.unknown_coroutine_aliases.remove(target);
+            }
+        } else {
+            iteration.places.remove(target);
+            iteration.unknown_places.remove(target);
+            iteration.coroutine_aliases.remove(target);
+            iteration.unknown_coroutine_aliases.remove(target);
+        }
+        iteration.shadowed_functions.insert(target.to_owned());
+        iteration.shadowed_classes.insert(target.to_owned());
+        iteration.control_depth = iteration.control_depth.saturating_add(1);
+        iteration.loop_depth = iteration.loop_depth.saturating_add(1);
+
+        let iteration_outcomes = execute(
+            body,
+            &mut iteration,
+            file,
+            contracts,
+            functions,
+            result,
+            depth + 1,
+        );
+        outcomes.returns.extend(iteration_outcomes.returns);
+        outcomes.raises.extend(iteration_outcomes.raises);
+        let mut next_states = Vec::new();
+        if iteration.alive {
+            iteration.control_depth = env.control_depth;
+            iteration.loop_depth = env.loop_depth;
+            next_states.push(iteration);
+        }
+        for mut exit in iteration_outcomes.continues {
+            exit.state.control_depth = env.control_depth;
+            exit.state.loop_depth = env.loop_depth;
+            next_states.push(exit.state);
+        }
+        breaks.extend(iteration_outcomes.breaks.into_iter().map(|mut exit| {
+            exit.state.control_depth = env.control_depth;
+            exit.state.loop_depth = env.loop_depth;
+            exit.state
+        }));
+        current = join_states(next_states);
+    }
+
+    if items.len() > iterations && iterations == MAX_STATIC_FOR_ITERATIONS && current.is_some() {
+        if let Some(state) = &mut current {
+            weaken(
+                state,
+                state
+                    .duty_origins
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            );
+        }
+        boundary(
+            result,
+            file,
+            range,
+            "static for-loop iteration budget exceeded",
+        );
+    }
+
+    let mut normal_states = breaks;
+    if let Some(mut natural_exit) = current {
+        natural_exit.alive = true;
+        let alternate_outcomes = execute(
+            alternate,
+            &mut natural_exit,
+            file,
+            contracts,
+            functions,
+            result,
+            depth + 1,
+        );
+        outcomes.append(alternate_outcomes);
+        if natural_exit.alive {
+            normal_states.push(natural_exit);
+        }
+    }
+    if let Some(mut joined) = join_states(normal_states) {
+        joined.alive = true;
+        *env = joined;
+    } else {
+        env.alive = false;
+    }
     outcomes
 }
 
@@ -4356,7 +4677,13 @@ fn execute_non_if_statement(
             {
                 consume_expr(value, env, file, contracts, functions, result, 0);
                 if let Some(coroutine) = env.pending_coroutine_result.take() {
-                    env.coroutine_aliases.insert(name.clone(), coroutine);
+                    if env.coroutines.contains_key(&coroutine) {
+                        env.coroutine_aliases.insert(name.clone(), coroutine);
+                        env.unknown_coroutine_aliases.remove(name);
+                    } else {
+                        env.coroutine_aliases.remove(name);
+                        env.unknown_coroutine_aliases.insert(name.clone());
+                    }
                     env.places.remove(name);
                     env.unknown_places.remove(name);
                     env.shadowed_functions.insert(name.clone());
@@ -4414,7 +4741,13 @@ fn execute_non_if_statement(
                     consume_expr(value, env, file, contracts, functions, result, 0);
                 }
                 if let Some(coroutine) = env.pending_coroutine_result.take() {
-                    env.coroutine_aliases.insert(name.clone(), coroutine);
+                    if env.coroutines.contains_key(&coroutine) {
+                        env.coroutine_aliases.insert(name.clone(), coroutine);
+                        env.unknown_coroutine_aliases.remove(name);
+                    } else {
+                        env.coroutine_aliases.remove(name);
+                        env.unknown_coroutine_aliases.insert(name.clone());
+                    }
                     env.places.remove(name);
                     env.unknown_places.remove(name);
                     env.shadowed_classes.insert(name.clone());
@@ -4480,6 +4813,10 @@ fn execute_non_if_statement(
                         result,
                     );
                     env.pending_return_targets = env.places.get(&temporary).cloned();
+                } else if let Some(name) = expr_name(value).filter(|name| {
+                    env.places.contains_key(*name) && !env.unknown_places.contains(*name)
+                }) {
+                    env.pending_return_targets = env.places.get(name).cloned();
                 } else {
                     consume_expr(value, env, file, contracts, functions, result, 0);
                 }

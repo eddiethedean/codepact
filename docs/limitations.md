@@ -50,6 +50,22 @@ normal state transition even when its illustrative body is empty. It does not
 certify that the runtime method releases a resource. Borrowed checks do not
 provide general lifetime or escape proofs.
 
+The current, unreleased 0.3 worktree implements a bounded exit-flow candidate:
+it tracks `finally`, supported exception handlers, `while`, finite tuple `for`
+loops, Owned return handoff, exact `contextlib.closing`/`aclosing` imports, and
+resolved coroutine calls that are directly awaited. A checked source close
+body contributes explicit raising paths; only its normal completion receives
+the declared close transition. The declaration remains `declared-unverified`.
+Loop fixed-point analysis and static tuple iteration are capped at 16 passes
+and 16 items respectively; each flow state retains at most 128 pending
+coroutine records. Unknown iterators, external close effects,
+unrecognized managers, repeated coroutine creation/await, task scheduling,
+unsupported escapes and exhausted budgets can leave coverage incomplete.
+Async-generator finalization and general task lifetime analysis remain outside
+this candidate. See [supported syntax](supported-syntax.md#unreleased-03-candidate-behavior)
+and the [0.3 validation map](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/validation.md);
+this candidate description does not qualify the release.
+
 ## Provisional interfaces
 
 The Python helper API, CLI options, diagnostic set, and JSON schema may change during the 0.x series. JSON currently reports schema version 0. Diagnostic wording can improve, and new diagnostics can affect CI workflows. Pin compatible package versions and review release notes when upgrading.

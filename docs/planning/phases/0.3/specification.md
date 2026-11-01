@@ -1,6 +1,6 @@
 # 0.3 cleanup specification
 
-Status: **Implementation in progress; semantics and qualification pending.** This is the review oracle for [CL01–CL08 and C01–C05/C07/CS01](../0.3-cleanup.md). The [V03 matrix](validation.md) defines required evidence. Preserve the [0.2 released semantics](../0.2/specification.md) except where this proposal explicitly extends them.
+Status: **Bounded implementation is in the candidate; maintainer semantic acceptance and release qualification remain pending.** This is the review oracle for [CL01–CL08 and C01–C05/C07/CS01](../0.3-cleanup.md). The [V03 matrix](validation.md) defines required evidence. Preserve the [0.2 released semantics](../0.2/specification.md) except where this proposal explicitly extends them.
 
 ## Supported slice
 
@@ -41,7 +41,7 @@ def read(connection: Borrowed[Connection]):
     connection.status()  # No duty inherited; closing here is TP2001.
 ```
 
-`safe` discharges on successful close; a potentially failing close with no exceptional postcondition leaves incomplete exceptional coverage. A boundary-free all-exit example needs a reviewed close model with defined outcomes. The method name or `pass` body alone does not prove runtime cleanup. Equivalent `Annotated`/explicit metadata must lower to the same duty/effect semantics.
+`safe` discharges on successful close. A resolved, supported close body contributes its checked raising paths: `pass` has no modeled raising path, while an explicit raise preserves the pre-transition open duty. An unknown method or unsupported operation retains incomplete coverage. The declaration remains `declared-unverified`; it does not prove runtime cleanup. Equivalent `Annotated`/explicit metadata must lower to the same duty/effect semantics.
 
 ## Resource and obligation domain
 
@@ -97,12 +97,12 @@ Do not treat `except Exception` as a universal cancellation/process-control hand
 | --- | --- |
 | Normal successful close | Closed/discharged, with declared-unverified or reviewed-model provenance as applicable |
 | Raise with a reviewed closed postcondition | Closed/discharged even though control remains exceptional |
-| Raise with a reviewed open postcondition | Open/pending; diagnose at a modeled escaping exit |
-| Raise without a postcondition | Unknown lifecycle/unresolved duty and a boundary |
+| Raise from a checked source close body | Preserve the lifecycle state at that raise; the declared normal transition is not applied to the exceptional edge |
+| Raise from an unresolved/external close | Unknown lifecycle/unresolved duty and a boundary |
 | Cancelled awaited close | Use its explicit cancellation postcondition; otherwise unknown/unresolved with a boundary |
 | Async close coroutine merely created | No close execution or discharge; retain its capture |
 
-Checking a local close body preserves effects before the declared successful transition. A declaration does not imply a no-raise or atomic cleanup policy. Repeat close is accepted only with a supported idempotency policy; a requires-open policy can reject it, and no policy retains the 0.2 unknown boundary. A model may permit named post-close operations without restoring open state or creating/discharging a duty; other accesses keep existing preconditions.
+Checking a local close body preserves its effects and explicit exceptional paths before applying the declared successful transition. A declaration does not imply a no-raise or atomic cleanup policy. An external or unresolved close has no inferred exceptional state. Repeat close is accepted only with a supported idempotency policy; a requires-open policy can reject it, and no policy retains the 0.2 unknown boundary. A model may permit named post-close operations without restoring open state or creating/discharging a duty; other accesses keep existing preconditions.
 
 No automatic fix may add close, suppress cancellation, shield, move ownership or insert task joins based solely on an outstanding duty. Explain the failing exit and model assumption; rechecking must retain unknown coverage.
 
@@ -110,21 +110,21 @@ No automatic fix may add close, suppress cancellation, shield, move ownership or
 
 Separate context-manager identity, entered resource identity and cleanup responsibility. A reviewed model supplies enter success/failure, result aliases, exit effects for normal/exceptional/cancelled outcomes, suppression and trust. Failure to enter does not invoke that manager's exit; previously entered managers still unwind. Multiple managers enter in order and exit in reverse order. Unknown suppression keeps both propagation and continuation feasible.
 
-Minimum catalog: source-only, version-bounded summaries for `contextlib.closing` and `contextlib.aclosing`. They delegate to the wrapped object's resolved `close`/`aclose` effect and retain its failure/cancellation uncertainty; the wrapper supplies no stronger postcondition. The [contextlib reference](https://docs.python.org/3.13/library/contextlib.html#contextlib.closing) provides the starting behavior; exact source revisions and supported Python versions need review and conformance evidence. Async-generator finalization remains outside this slice even when a wrapper is recognized.
+Minimum catalog: source-only, version-bounded summaries for `contextlib.closing` and `contextlib.aclosing`. They delegate to the wrapped object's resolved `close`/`aclose` effects, including checked exceptional paths and cancellation; the wrapper supplies no stronger postcondition. The [contextlib reference](https://docs.python.org/3.13/library/contextlib.html#contextlib.closing) provides the starting behavior; exact source revisions and supported Python versions still need conformance evidence. Async-generator finalization remains outside this slice even when a wrapper is recognized.
 
 Unknown/shadowed/lookalike managers retain incomplete coverage and cannot discharge a duty. `__del__`, garbage collection and process exit are never deterministic cleanup. Borrowing a resource into a wrapper that closes it is still TP2001. Inferring arbitrary `@contextmanager`/`@asynccontextmanager` generator implementations is deferred.
 
 ## Loops and bounded analysis
 
-For supported `while` and `for`, evaluate condition/iterator effects, include zero iterations when feasible, route break/continue and preserve loop-else behavior. Unknown iterator operations keep exceptional/effect boundaries. Compute a monotone fixed point over aliases, lifecycle and duty states; widening may lose precision but cannot turn pending/unknown into discharged. Nontermination alone is not a function-exit leak witness.
+For supported `while` and `for`, evaluate condition/iterator effects, include zero iterations when feasible, route break/continue and preserve loop-else behavior. Finite tuples of resolved names and scalar literals are unrolled exactly up to 16 items, using values captured before the first body iteration; unresolved names and larger static tuples retain incomplete coverage. Other iterator operations keep exceptional/effect boundaries. Compute a monotone fixed point over aliases, lifecycle and duty states; widening may lose precision but cannot turn pending/unknown into discharged. Nontermination alone is not a function-exit leak witness.
 
 Allocation identity must distinguish repeated outstanding resources. Use bounded recent-instance identities plus a summary carrying conservative outstanding multiplicity; closing the most recent object cannot discharge earlier instances merged at the same allocation site. A different finite representation is acceptable only with equivalent counterexamples. Include acquire/close each iteration, overwrite without close, break before cleanup, cleanup on continue and cleanup after the loop.
 
-Retain the 0.2 limits as initial inputs, not accepted 0.3 budgets. CL01/CL05 must measure and select maximum loop iterations, exit partitions, live obligations, pending coroutines/captures and total work. On exhaustion, widen affected state/duties to unknown, add a reason and keep the session usable. No truncated graph may establish successful cleanup. Recursive-call components retain conservative bounded recovery; no new recursive fixed-point support is promised.
+The candidate retains the 0.2 flow limits and uses up to 16 loop fixed-point passes, exactly unrolls up to 16 entries for supported static tuples, and retains at most 128 pending coroutine records. These values are implementation defaults, not accepted release budgets. CL01/CL05/CL06 still need to measure and accept maximum loop iterations, exit partitions, live obligations, pending coroutines/captures and total work. On exhaustion, widen affected state/duties to unknown, add a reason and keep the session usable. No truncated graph may establish successful cleanup. Recursive-call components retain conservative bounded recovery; no new recursive fixed-point support is promised.
 
 ## Intratask async and CS01
 
-Use separate coroutine creation, execution, suspension and completion facts. Calling `async def` evaluates arguments and retains captures but applies no body/close postcondition; direct `await` applies the resolved execution summary. Copying a coroutine alias does not create independent execution or cleanup. Repeat await/unknown awaitable behavior is a boundary unless modeled.
+Use separate coroutine creation, execution, suspension and completion facts. Calling `async def` evaluates arguments and retains captures but applies no body/close postcondition; direct `await` applies the resolved execution summary. Copying a coroutine alias does not create independent execution or cleanup. Repeat await/unknown awaitable behavior is a boundary unless modeled. At most 128 coroutine records are retained per flow state; budget exhaustion weakens captured resources and records an incomplete-coverage reason.
 
 At each modeled suspension include normal continuation, raise and cancellation, including during `__aenter__`, `__aexit__` and awaited close. Entry failure/cancellation cannot assume the body ran or exit was installed. Preserve cancellation through cleanup unless a reviewed handler/model changes it. The [asyncio reference](https://docs.python.org/3.13/library/asyncio-task.html#task-cancellation) is the starting point; qualify exact Python versions rather than importing all asyncio behavior into this subset.
 

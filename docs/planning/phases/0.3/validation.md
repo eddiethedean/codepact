@@ -1,6 +1,6 @@
 # 0.3 validation matrix
 
-Status: **Planned; all V03 rows pending.** IDs are independent of V01/V02. The [specification](specification.md) is the proposed oracle; the [phase plan](../0.3-cleanup.md) defines CL01–CL08 and C01–C05/C07/CS01. No fixture path or test result is claimed until implementation maps it below.
+Status: **Automated implementation coverage is mapped below; release qualification is pending.** IDs are independent of V01/V02. The [specification](specification.md) is the candidate oracle; the [phase plan](../0.3-cleanup.md) defines CL01–CL08 and C01–C05/C07/CS01. Test presence is implementation evidence only: a mapped row is not a passed qualification gate.
 
 ## Required matrix
 
@@ -48,6 +48,43 @@ Cross every supported cleanup construct with each feasible outcome below. Mark a
 | Await/finally/async with | Creation without execution, pre-entry cancellation, normal/raise/cancelled suspension, entry failure, interrupted/repeated cancellation during exit |
 | Owned handoff | Evaluation failure, accepted entry, normal owning return, replacement exit, closed returned value and unknown escape |
 
+## Current automated coverage map
+
+The paths below identify exercised candidate behavior. Coverage is partial for
+every row: the required matrix above still calls for additional cases, outcome
+and span assertions, fixture-model provenance, differential/session checks or
+runtime conformance evidence where applicable. None of these entries is a
+qualification Pass.
+
+| ID | Current automated paths | Remaining qualification evidence |
+| --- | --- | --- |
+| V03-01 | `tests/phase03.rs`: local acquisition and failed initialization | Distinct exits, failing acquisition variants, spans and exact finding grouping |
+| V03-02 | `tests/phase03.rs`: lost alias and unqualified parameter; `tests/cli.rs`: Borrowed-close diagnostics | Owned/Borrowed forms, aliases, shorthand/verbose declarations and local-duty independence |
+| V03-03 | `tests/phase03.rs`: finally cleanup after alias rebinding and replacement return | Nested finally, raise/return replacements, unreachable cleanup and ordered exit snapshots |
+| V03-04 | `tests/phase03.rs`: raising source close preserves open duty | Reviewed closed/unknown exceptional postconditions and fixture-model provenance |
+| V03-05 | `tests/phase03.rs`: exact and shadowed built-in constructor routing, matched handler, else success, handled raise skipping else, and handler-type expression effects | Handler order, unmatched custom classes, handler/else expression failure paths, and outgoing finally snapshots |
+| V03-06 | `tests/phase03.rs`: return replacement and closed Owned return; CLI text/JSON parity | Exact counts, related spans, nested cleanup raises, and deduplication across all completion kinds |
+| V03-07 | `tests/phase03.rs`: direct, aliased, forwarded, finally-cleaned, and closed Owned returns | Return-expression failure and all replacement/abandonment combinations |
+| V03-08 | `tests/phase03.rs`: Borrowed-to-Owned return rejection | Unannotated and unknown returns, fields/containers, and frozen escape-boundary policy |
+| V03-09 | `tests/phase03.rs`: Owned helper transfer, cleanup, and leak deduplication | Close/return/raise outcome map, invalid entry, repeated-object arguments, and borrowing helper cases |
+| V03-10 | `tests/phase03.rs`: multiple closers and failed later entry | Reviewed custom manager aliases, suppression, and normal/raise/cancelled exit postconditions |
+| V03-11 | `tests/phase03.rs`: imported `closing` alias, Borrowed rejection, and async `aclosing`; existing re-export fixture | Re-export/lookalike distinction and exact supported-library revisions |
+| V03-12 | `tests/phase03.rs`: unknown manager boundary; `tests/cli.rs`: repeat-close boundary | Requires-open/idempotent policies and allowed/forbidden post-close methods |
+| V03-13 | `tests/phase03.rs`: lost-last-alias duty; `tests/cli.rs`: unknown effects after escape | Uncertain receiver sets, callback escape combinations, and alias/object budget counterexamples |
+| V03-14 | `tests/phase03.rs`: while zero-iteration, tuple value capture, unresolved-name boundary, and static tuple for/else/break cases | Continue, nested loops, conditional cleanup, iterator effects, and full target-routing assertions |
+| V03-15 | `tests/phase03.rs`: repeated allocation at one loop site | Last-instance close, iterator failure, and nonterminating-loop counterexamples |
+| V03-16 | `tests/phase03.rs`: static tuple iteration cap and early break; flow budget unit tests | Nested/dimension budgets, usable recovery, generated monotonicity cases, and measured high-budget comparisons |
+| V03-17 | `tests/phase03.rs`: unawaited/awaited async close, cancellation, and coroutine budget | Coroutine aliasing, repeat await, execution/completion facts, and all awaitable boundaries |
+| V03-18 | `tests/phase03.rs`: coroutine creation does not transfer Owned duty; awaited cancellation | Cancellation before entry, during finally, and repeated interruption counterexamples |
+| V03-19 | `tests/phase03.rs`: async context cancellation exit | Async entry failure and known closed/open/unknown cancellation models |
+| V03-20 | `tests/phase03.rs`: scheduler handoff boundary | TaskGroup, gather, shield, timeout, process/thread, and escaped-capture combinations |
+| V03-21 | `tests/phase03.rs`: contextlib model disabled for unsupported target version | Missing/conflicting version, shadowing, policy edits, and provenance snapshots |
+| V03-22 | `tests/phase03.rs`: changed-body fresh-session parity; `src/db.rs` incremental tests | Model/callee effect edits, all outcomes, moved spans, and query reuse assertions |
+| V03-23 | Existing `src/db.rs` mutation, cancellation, and recovery tests | Full V03 edit matrix, root/target/budget changes, and related-location snapshots |
+| V03-24 | Existing CLI tests: no target execution, unsupported syntax/import behavior | Broader generator, except-star, custom-awaitable, recursion, and deterministic-boundary matrix |
+| V03-25 | `tests/cli.rs`: text/JSON cleanup parity plus existing CLI/schema/exit tests | Cross-interface semantic/trust/coverage parity and inherited helper/inspector contracts |
+| V03-26 | `tests/phase03.rs`: coroutine-record cap weakens captured state | Async-unwind/capture budgets, unknown actor across suspension, and bounded recovery matrix |
+
 ## Assertions and automation plan
 
 Add frontend/CFG snapshots for each completion reason, loop backedge and cleanup stack. Assert lifecycle, duty presence/status/holder, capture identity, result aliases and provenance independently of golden text. Cross-interface comparisons remove source-only origins but retain effects, trust, certainty and coverage; locations have separate snapshots.
@@ -60,7 +97,7 @@ Keep upstream model-conformance runtime tests isolated from static analysis fixt
 
 ## Qualification record
 
-For each V03 row record the implemented fixture/test path, revision, invocation, expected/actual outputs, log/snapshot link, accountable maintainer and Pending/Pass/Fail. The maintainer may run, validate and review every row alone; no separate validator or reviewer is required. No V03 row is currently automated by this plan. Link failures to owned issues and rerun affected evidence after code/model/settings changes. Inherited V02 tests must be retained or explicitly updated with a reviewed explanation where 0.3 replaces a former unsupported boundary.
+For each V03 row record the implemented fixture/test path, revision, invocation, expected/actual outputs, log/snapshot link, accountable maintainer and Pending/Pass/Fail. The maintainer may run, validate and review every row alone; no separate validator or reviewer is required. The coverage map above links current automated tests but does not mark any row qualified. Link failures to owned issues and rerun affected evidence after code/model/settings changes. Inherited V02 tests must be retained or explicitly updated with a reviewed explanation where 0.3 replaces a former unsupported boundary.
 
 Measure fixed small/medium cleanup corpora, nested exceptions/loops, multiple managers and direct-await cancellation cases. Record cold/warm time, effect/model/location edit time, peak and retained memory, query counts, selected numerical budgets, corpus hashes and toolchain/host. Compare unchanged lifecycle/inspection cases against the [0.2 baseline](../0.2/performance.md), investigate regressions and record accepted limits in a new phase performance record during qualification. A completed budget table is not an absolute latency guarantee.
 

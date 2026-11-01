@@ -35,6 +35,54 @@ fn run_check(root: &PathBuf) -> Output {
         .expect("CLI starts")
 }
 
+fn run_check_text(root: &PathBuf) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_typepact"))
+        .current_dir(root)
+        .args(["check", "--root"])
+        .arg(root)
+        .output()
+        .expect("CLI starts")
+}
+
+#[test]
+fn phase03_text_and_json_reports_agree_on_cleanup_diagnostics() {
+    let root = fixture_root().with_extension("phase03-report-parity");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef leak():\n    resource = C()\n",
+    )
+    .unwrap();
+
+    let text = run_check_text(&root);
+    assert_eq!(text.status.code(), Some(1));
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(text.contains("error TP1002"), "{text}");
+    assert!(text.contains("completion: fallthrough"), "{text}");
+    assert!(text.contains("certainty: definite"), "{text}");
+    assert!(text.contains("trust: declared-unverified"), "{text}");
+
+    let json = run_check(&root);
+    assert_eq!(json.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    let finding = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|diagnostic| diagnostic["code"] == "TP1002")
+        .unwrap();
+    assert_eq!(finding["completion"], "fallthrough");
+    assert_eq!(finding["certainty"], "definite");
+    assert_eq!(finding["trust"], "declared-unverified");
+    assert_eq!(report["check_schema_version"], 1);
+    assert_eq!(
+        report["coverage"]["status"],
+        "complete-for-supported-subset"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn check_reports_one_use_after_close_at_the_call_site() {
     let root = fixture_root().with_extension("lifecycle");
@@ -71,14 +119,10 @@ fn check_reports_one_use_after_close_at_the_call_site() {
     assert_eq!(findings[0]["certainty"], "definite");
     assert_eq!(findings[0]["primary"]["line"], 12);
     assert_eq!(findings[0]["related"][0]["line"], 11);
-    assert_eq!(result["coverage"]["status"], "incomplete", "{result:#?}");
-    assert!(result["coverage"]["reasons"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|reason| reason.as_str().is_some_and(|reason| {
-            reason.contains("close exceptional postcondition is not modeled")
-        })));
+    assert_eq!(
+        result["coverage"]["status"], "complete-for-supported-subset",
+        "{result:#?}"
+    );
 
     assert_eq!(
         result["assurance"],
@@ -93,12 +137,8 @@ fn check_reports_one_use_after_close_at_the_call_site() {
         )],
         "3.11",
     );
-    assert_eq!(valid.diagnostics.len(), 1, "{valid:#?}");
-    assert_eq!(valid.diagnostics[0].code, "TP9001");
-    assert!(valid.diagnostics[0]
-        .message
-        .contains("close exceptional postcondition is not modeled"));
-    assert_eq!(valid.coverage.status, "incomplete");
+    assert!(valid.diagnostics.is_empty(), "{valid:#?}");
+    assert_eq!(valid.coverage.status, "complete-for-supported-subset");
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -152,10 +192,15 @@ fn raise_stops_normal_flow_and_does_not_report_unreachable_use() {
     .unwrap();
 
     let result: serde_json::Value = serde_json::from_slice(&run_check(&root).stdout).unwrap();
-    assert_ne!(
+    assert_eq!(
         result["coverage"]["status"],
         "complete-for-supported-subset"
     );
+    assert!(!result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP1001"));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -424,7 +469,10 @@ connection.status()
     assert_eq!(findings.len(), 1, "{diagnostics:#?}");
     assert_eq!(findings[0]["certainty"], "definite");
     assert_eq!(findings[0]["primary"]["file"], "client.py");
-    assert_eq!(result["coverage"]["status"], "incomplete", "{result:#?}");
+    assert_eq!(
+        result["coverage"]["status"], "complete-for-supported-subset",
+        "{result:#?}"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -701,7 +749,7 @@ other.status()
     let findings = result["diagnostics"].as_array().unwrap();
     assert!(findings.iter().any(|diagnostic| {
         diagnostic["code"] == "TP1001"
-            && diagnostic["certainty"] == "possible"
+            && diagnostic["certainty"] == "definite"
             && diagnostic["primary"]["line"] == 14
     }));
     assert!(findings.iter().any(|diagnostic| {
@@ -1527,7 +1575,7 @@ fn escaped_resource_state_reaches_zero_argument_callees() {
 }
 
 #[test]
-fn assignment_of_a_resource_returning_close_method_stays_unknown() {
+fn assignment_of_a_resource_returning_close_method_keeps_identity_and_flags_unowned_escape() {
     let root = fixture_root().with_extension("lifecycle-close-return");
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
@@ -1550,7 +1598,7 @@ fn assignment_of_a_resource_returning_close_method_stays_unknown() {
         diagnostics.iter().any(|diagnostic| {
             diagnostic["code"] == "TP9001"
                 && diagnostic["message"].as_str().is_some_and(|message| {
-                    message.contains("resource-valued call result is not tracked")
+                    message.contains("resource returned without an Owned contract")
                 })
         }),
         "{diagnostics:#?}"
@@ -1581,7 +1629,10 @@ fn close_body_runs_before_the_designated_close_transition() {
     assert_eq!(findings.len(), 1, "{:#?}", result["diagnostics"]);
     assert_eq!(findings[0]["primary"]["line"], 9);
     assert_eq!(findings[0]["related"][0]["line"], 8);
-    assert_eq!(result["coverage"]["status"], "incomplete");
+    assert_eq!(
+        result["coverage"]["status"],
+        "complete-for-supported-subset"
+    );
     fs::remove_dir_all(root).unwrap();
 }
 

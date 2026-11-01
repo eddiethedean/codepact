@@ -56,7 +56,10 @@ fn valid_keyword_and_positional_bindings_keep_ordered_resource_effects() {
             "definite",
             "{call}: {result:#?}"
         );
-        assert_eq!(result.coverage.status, "incomplete", "{call}: {result:#?}");
+        assert_eq!(
+            result.coverage.status, "complete-for-supported-subset",
+            "{call}: {result:#?}"
+        );
     }
 }
 
@@ -234,18 +237,21 @@ fn receiver_alternatives_execute_from_the_same_incoming_state() {
 
 #[test]
 fn raising_receiver_alternatives_are_excluded_from_normal_continuations() {
-    for (first, second) in [
+    for (first, second, expected_coverage) in [
         (
             "        raise RuntimeError()",
             "        raise RuntimeError()",
+            "complete-for-supported-subset",
         ),
         (
             "        c.close()\n        raise RuntimeError()",
             "        c.status()",
+            "incomplete",
         ),
         (
             "        c.status()",
             "        c.close()\n        raise RuntimeError()",
+            "incomplete",
         ),
     ] {
         let suffix = if first.contains("raise") && second.contains("raise") {
@@ -255,21 +261,33 @@ fn raising_receiver_alternatives_are_excluded_from_normal_continuations() {
         };
         let result = check_source(&receiver_source(first, second, suffix));
         assert!(findings(&result).is_empty(), "{result:#?}");
-        assert_eq!(result.coverage.status, "incomplete");
+        assert_eq!(result.coverage.status, expected_coverage, "{result:#?}");
     }
 }
 
 #[test]
 fn raising_expressions_stop_returns_conditions_arguments_and_initializers() {
-    for body in [
-        "def wrapper(): return fail()\nwrapper()\nc.close()\nc.status()\n",
-        "if fail():\n    c.close()\nc.close()\nc.status()\n",
-        "def use(first, second): pass\nc.close()\nuse(fail(), c.status())\n",
-        "@resource(closed_by='close')\nclass Worker:\n    def __init__(self, first, second): second.status()\n    def close(self): pass\nc.close()\nw = Worker(fail(), c)\n",
+    for (body, expected_coverage) in [
+        (
+            "def wrapper(): return fail()\nwrapper()\nc.close()\nc.status()\n",
+            "incomplete",
+        ),
+        (
+            "if fail():\n    c.close()\nc.close()\nc.status()\n",
+            "complete-for-supported-subset",
+        ),
+        (
+            "def use(first, second): pass\nc.close()\nuse(fail(), c.status())\n",
+            "complete-for-supported-subset",
+        ),
+        (
+            "@resource(closed_by='close')\nclass Worker:\n    def __init__(self, first, second): second.status()\n    def close(self): pass\nc.close()\nw = Worker(fail(), c)\n",
+            "incomplete",
+        ),
     ] {
         let result = check_source(&format!("{RESOURCE}def fail(): raise RuntimeError()\nc = C()\n{body}"));
         assert!(findings(&result).is_empty(), "{result:#?}");
-        assert_eq!(result.coverage.status, "incomplete");
+        assert_eq!(result.coverage.status, expected_coverage, "{result:#?}");
     }
 }
 
@@ -290,7 +308,7 @@ fn redefined_functions_keep_their_own_parameter_contracts() {
         }),
         "{result:#?}"
     );
-    assert_eq!(result.coverage.status, "incomplete");
+    assert_eq!(result.coverage.status, "complete-for-supported-subset");
 
     let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef f(value: Borrowed[C]): pass\ndef f(value: C): value.close()\n";
     let result = check_source(source);
@@ -479,7 +497,10 @@ fn unknown_effects_do_not_restore_shadowed_builtin_annotation_names() {
 fn modeled_resource_construction_preserves_the_resource_decorator_import() {
     let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nc = C()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nc.close()\nc.status()\n";
     let result = check_source(source);
-    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
     assert_eq!(findings(&result).len(), 1, "{result:#?}");
     assert_eq!(findings(&result)[0].certainty, "definite", "{result:#?}");
 }

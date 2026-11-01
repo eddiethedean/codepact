@@ -1579,7 +1579,7 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "TP1001"));
-        assert_eq!(warm.coverage.status, "incomplete");
+        assert_eq!(warm.coverage.status, "complete-for-supported-subset");
         assert!(warm
             .coverage
             .reasons

@@ -50,11 +50,43 @@ default expressions at definition time still make coverage incomplete.
 Executable class-body statements and method decorator expressions also create
 definition-time boundaries.
 
-This table describes implemented patterns, not completion of every phase 0.2
-validation case. General exception handling, loops, async, fields and containers,
-returned aliases, dynamic dispatch, relative and star imports, import cycles, and
-ambiguous modules remain outside the qualified checking subset. Consult
-[limitations](limitations.md).
+This table describes the published 0.2.0 checking subset, not completion of
+every phase 0.2 validation case. General exception handling, loops, async,
+fields and containers, returned aliases, dynamic dispatch, relative and star
+imports, import cycles, and ambiguous modules remain outside the released
+subset. Consult [limitations](limitations.md).
+
+## Unreleased 0.3 candidate behavior
+
+The current worktree extends cleanup checking across supported synchronous exit
+paths. These behaviors are implemented and covered by candidate tests, but are
+not release-qualified until the maintainer completes the [V03 matrix](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/validation.md)
+and release gates.
+
+- `try`/`except`/`else`/`finally`, explicit returns and raises, and ordinary
+  `while` flow retain cleanup duties across modeled exits. Unsupported or
+  uncertain effects keep coverage incomplete.
+- `for` over a finite tuple of resolved names and scalar literals is unrolled
+  exactly up to 16 items, using the tuple values captured before the first
+  iteration. Unresolved names, other iterators and larger tuples keep an
+  incomplete-coverage boundary. Other supported loop paths use up to 16
+  fixed-point passes; widening cannot establish cleanup.
+- A direct `Owned[T]` return hands an open local duty to the caller after
+  `finally` completes. Returning Borrowed, already-closed, or unsupported
+  values does not fabricate an ownership handoff.
+- `with contextlib.closing(value)` and `async with
+  contextlib.aclosing(value)` are recognized only for exact supported imports
+  and Python targets 3.11–3.13. They use the checked close-body effects; an
+  unknown manager cannot discharge a duty. Target 3.14 is not yet modeled.
+- Resolved local coroutine calls retain captured resource aliases. A direct
+  `await` applies the supported body summary; an unawaited coroutine does not
+  perform cleanup. Cancellation and task scheduling remain visible boundaries
+  where the checker cannot prove cleanup.
+
+The close declaration supplies a normal state transition with
+`declared-unverified` provenance; it is not runtime proof. A checked source
+close body contributes its explicit raising paths before that normal
+transition. External or unresolved close behavior remains incomplete.
 
 ## Python version support
 
@@ -85,6 +117,12 @@ Lifecycle checking has additional conservative flow limits:
 | Tracked resource objects in one function or module body | 4,096 |
 | Nested call/effect evaluation | 8 |
 | Lifecycle statement and expression transfers per analysis request | 100,000 |
+
+The 0.3 candidate also caps loop fixed-point analysis at 16 passes, exact
+static tuple iteration at 16 items, and pending coroutine records at 128 per
+flow state. Exceeding a bound widens affected state and reports incomplete
+coverage. These 0.3 values are candidate defaults, not accepted release
+budgets; see the [phase plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3-cleanup.md).
 
 When a flow limit is reached, the checker drops the affected exact facts,
 weakens reachable resource state, and reports a TP9001 boundary with incomplete

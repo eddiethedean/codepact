@@ -83,7 +83,11 @@ Read both `diagnostics` and `coverage`. A successful exit can include possible
 findings or incomplete analysis. The published 0.2.0 checker uses
 `assurance: "lifecycle-checking-for-supported-normal-flow"`; the in-progress
 0.3 worktree uses `lifecycle-checking-for-supported-exit-flow`. Declaration
-provenance remains `declared-unverified`. See the [output reference](output.md).
+provenance remains `declared-unverified`. Candidate 0.3 additionally bounds
+loop fixed-point analysis to 16 passes, finite tuple loops to 16 items, and
+pending coroutine records to 128 per flow state. These are implementation
+defaults awaiting qualification. See the
+[output reference](output.md).
 
 ## Choose a narrow project root
 
@@ -96,8 +100,10 @@ directories; see the [CLI reference](cli.md).
 These limits describe the published 0.2.0 checker. Its released behavior does not
 model loops, exception handlers, `finally`, context managers, async suspension,
 fields and containers, or returned resource aliases precisely. The in-progress
-0.3 worktree extends bounded exit flow and cleanup; its supported subset and
-remaining boundaries are listed in the [0.3 specification](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/specification.md).
+0.3 worktree extends bounded exit flow and cleanup; exact finite tuple loops,
+resolved local close bodies, and directly awaited coroutine calls are included
+in the candidate subset. Its remaining boundaries are listed in the [0.3
+specification](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/specification.md).
 Recursive calls still recover to an unknown summary. A clean result does not
 establish leak freedom, cleanup on every exit, ownership safety, or correctness
 of declared resource models. Read the [limitations](limitations.md) and
