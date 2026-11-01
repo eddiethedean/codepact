@@ -2340,6 +2340,119 @@ fn v03_19_unknown_async_exit_can_suppress_body_cancellation() {
 }
 
 #[test]
+fn v03_19_unknown_async_context_keeps_duties_across_return_break_and_continue() {
+    let source = format!(
+        "{RESOURCE}class UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def return_path():\n    resource = C()\n    async with UnknownManager():\n        return\nasync def break_path():\n    resource = C()\n    for item in (None,):\n        async with UnknownManager():\n            break\nasync def continue_path():\n    resource = C()\n    for item in (None,):\n        async with UnknownManager():\n            continue\n"
+    );
+    let acquisition_lines = source
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| (line.trim() == "resource = C()").then_some(index + 1))
+        .collect::<std::collections::BTreeSet<_>>();
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 9, "{report:#?}");
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "an unknown async manager cannot prove cleanup on any transfer: {report:#?}"
+    );
+    let completions = leaks.iter().fold(
+        std::collections::BTreeMap::<&str, Vec<_>>::new(),
+        |mut grouped, diagnostic| {
+            grouped
+                .entry(diagnostic.completion.as_deref().unwrap_or_default())
+                .or_default()
+                .push(*diagnostic);
+            grouped
+        },
+    );
+    assert_eq!(
+        completions.get("return").map(Vec::len),
+        Some(1),
+        "{report:#?}"
+    );
+    assert_eq!(
+        completions.get("fallthrough").map(Vec::len),
+        Some(2),
+        "break and continue reach the enclosing async function exit: {report:#?}"
+    );
+    assert_eq!(
+        completions.get("raise").map(Vec::len),
+        Some(3),
+        "{report:#?}"
+    );
+    assert_eq!(
+        completions.get("cancelled").map(Vec::len),
+        Some(3),
+        "async manager entry and exit cancellation outcomes remain visible: {report:#?}"
+    );
+    for (completion, expected_lines) in [
+        ("return", std::collections::BTreeSet::from([12])),
+        ("fallthrough", std::collections::BTreeSet::from([13, 18])),
+        ("raise", std::collections::BTreeSet::from([11, 16, 21])),
+        ("cancelled", std::collections::BTreeSet::from([11, 16, 21])),
+    ] {
+        let primary_lines = completions[completion]
+            .iter()
+            .map(|diagnostic| diagnostic.primary.line)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(primary_lines, expected_lines, "{completion}: {report:#?}");
+    }
+    let reported_acquisitions = leaks
+        .iter()
+        .map(|diagnostic| diagnostic.related[0].line)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(reported_acquisitions, acquisition_lines, "{report:#?}");
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
+
+#[test]
+fn v03_19_reviewed_async_context_cleanup_runs_on_return_break_and_continue() {
+    let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def return_path():\n    resource = C()\n    async with aclosing(resource):\n        return\nasync def break_path():\n    resource = C()\n    for item in (None,):\n        async with aclosing(resource):\n            break\nasync def continue_path():\n    resource = C()\n    for item in (None,):\n        async with aclosing(resource):\n            continue\n";
+    let acquisition_lines = source
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| (line.trim() == "resource = C()").then_some(index + 1))
+        .collect::<std::collections::BTreeSet<_>>();
+    let report =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 3, "{report:#?}");
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "reviewed async cleanup can be interrupted on every transfer: {report:#?}"
+    );
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.completion.as_deref() == Some("cancelled")),
+        "completed aclose discharges normal return/break/continue paths: {report:#?}"
+    );
+    let reported_acquisitions = leaks
+        .iter()
+        .map(|diagnostic| diagnostic.related[0].line)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(reported_acquisitions, acquisition_lines, "{report:#?}");
+    assert_eq!(
+        report.coverage.status, "incomplete",
+        "awaited aclose can be interrupted by cancellation: {report:#?}"
+    );
+}
+
+#[test]
 fn v03_19_nested_async_contexts_unwind_and_preserve_cancellation() {
     let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        async with aclosing(resource):\n            await resource.pause()\n";
     let result = check_source(source);
