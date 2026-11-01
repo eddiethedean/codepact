@@ -1310,3 +1310,35 @@ fn v03_24_custom_awaitable_does_not_infer_coroutine_execution() {
         "{result:#?}"
     );
 }
+
+#[test]
+fn v03_13_callback_escape_keeps_captured_cleanup_unknown() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef leak(register):\n    resource = C()\n    register(lambda: resource.close())\n";
+    let result = check_source(source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }),
+        "{result:#?}"
+    );
+    assert!(result
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("unsupported") || reason.contains("unknown")));
+}
+
+#[test]
+fn v03_15_nonterminating_loop_is_not_a_function_exit_witness() {
+    let result = check_source(&format!(
+        "{RESOURCE}def never_returns():\n    resource = C()\n    while True:\n        pass\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "{result:#?}"
+    );
+}
