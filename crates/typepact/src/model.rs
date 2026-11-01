@@ -140,6 +140,16 @@ impl FlowModelCatalog {
             return Err("resource effect models require identity, provenance, review, version bounds, conformance cases and an explicit async cancellation outcome".into());
         }
         if self.resources.iter().any(|existing| {
+            existing.id == model.id
+                && (existing.qualified_symbol != model.qualified_symbol
+                    || existing.close_method != model.close_method)
+        }) {
+            return Err(format!(
+                "model id {} must identify one resource cleanup method",
+                model.id
+            ));
+        }
+        if self.resources.iter().any(|existing| {
             existing.qualified_symbol == model.qualified_symbol
                 && existing.close_method == model.close_method
                 && existing
@@ -248,6 +258,36 @@ mod flow_model_tests {
         let encoded = serde_json::to_string(&catalog).unwrap();
         let decoded: FlowModelCatalog = serde_json::from_str(&encoded).unwrap();
         assert_eq!(decoded, catalog);
+    }
+
+    #[test]
+    fn stable_model_ids_cannot_alias_different_cleanup_methods() {
+        let mut catalog = FlowModelCatalog::default();
+        catalog.insert(model("stable-close", &["3.11"])).unwrap();
+
+        let mut different_resource = model("stable-close", &["3.12"]);
+        different_resource.qualified_symbol = "fixture.OtherConnection".into();
+        assert!(catalog
+            .insert(different_resource)
+            .unwrap_err()
+            .contains("must identify one resource cleanup method"));
+
+        let mut different_method = model("stable-close", &["3.12"]);
+        different_method.close_method = "aclose".into();
+        assert!(catalog
+            .insert(different_method)
+            .unwrap_err()
+            .contains("must identify one resource cleanup method"));
+
+        catalog
+            .insert(model("stable-close", &["3.12"]))
+            .expect("one stable model can carry disjoint exact-version records");
+        assert_eq!(
+            catalog
+                .resolve("fixture.Connection", "close", "3.12")
+                .map(|model| model.id.as_str()),
+            Some("stable-close")
+        );
     }
 }
 

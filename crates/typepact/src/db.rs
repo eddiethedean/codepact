@@ -1027,6 +1027,187 @@ mod tests {
     }
 
     #[test]
+    fn reviewed_normal_close_outcomes_flow_through_session_results() {
+        let file = SourceFile::new(
+            "model.py",
+            "model",
+            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n",
+        );
+
+        for (id, postcondition, expected_certainty, expected_coverage) in [
+            (
+                "fixture-normally-closed",
+                crate::model::LifecyclePostcondition::Closed,
+                None,
+                "complete-for-supported-subset",
+            ),
+            (
+                "fixture-normally-open",
+                crate::model::LifecyclePostcondition::Open,
+                Some("definite"),
+                "complete-for-supported-subset",
+            ),
+            (
+                "fixture-normal-preserve",
+                crate::model::LifecyclePostcondition::Preserve,
+                Some("definite"),
+                "complete-for-supported-subset",
+            ),
+            (
+                "fixture-normal-unknown",
+                crate::model::LifecyclePostcondition::Unknown,
+                Some("possible"),
+                "incomplete",
+            ),
+        ] {
+            let mut catalog = crate::model::FlowModelCatalog::default();
+            catalog
+                .insert(crate::model::ResourceEffectModel {
+                    id: id.into(),
+                    qualified_symbol: "model.Connection".into(),
+                    close_method: "close".into(),
+                    source_revision: "fixture-v1".into(),
+                    source_url: "fixture://model.Connection".into(),
+                    supported_python_versions: BTreeSet::from(["3.11".into()]),
+                    platform_assumptions: vec!["platform-independent fixture".into()],
+                    argument_aliases: Vec::new(),
+                    result_alias: None,
+                    duty_handoff: "none".into(),
+                    suppression: "not-a-context-manager".into(),
+                    asynchronous: false,
+                    normal: Some(postcondition),
+                    exceptional: None,
+                    cancelled: None,
+                    repeat_close: crate::model::RepeatClosePolicy::Unspecified,
+                    post_close_methods: BTreeSet::new(),
+                    trust: "reviewed-fixture".into(),
+                    reviewer: "fixture-test".into(),
+                    valid_cases: vec!["normal lifecycle postcondition".into()],
+                    invalid_cases: vec!["open postcondition retains a duty".into()],
+                    unknown_cases: vec!["unknown postcondition weakens certainty".into()],
+                })
+                .unwrap();
+            let mut session = AnalysisSession::default();
+            assert!(session.set_flow_model_catalog(catalog));
+
+            let checked = session.check_report(std::slice::from_ref(&file), "3.11");
+            let leaks = checked
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            match expected_certainty {
+                Some(certainty) => {
+                    assert_eq!(leaks.len(), 1, "{id}: {checked:#?}");
+                    assert_eq!(leaks[0].certainty, certainty, "{id}: {checked:#?}");
+                }
+                None => assert!(leaks.is_empty(), "{id}: {checked:#?}"),
+            }
+            assert_eq!(
+                checked.coverage.status, expected_coverage,
+                "{id}: {checked:#?}"
+            );
+            let selected = checked
+                .available_models
+                .iter()
+                .find(|model| model.id == id)
+                .expect("the selected normal outcome model is visible in the result");
+            assert!(selected
+                .modeled_behavior
+                .contains(&format!("normal=Some({postcondition:?})")));
+            assert!(selected.qualification.contains("reviewer=fixture-test"));
+        }
+    }
+
+    #[test]
+    fn reviewed_async_cancelled_close_outcomes_flow_through_session_results() {
+        let file = SourceFile::new(
+            "model.py",
+            "model",
+            "from typepact import resource\n@resource(closed_by='aclose')\nclass Connection:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = Connection()\n    await resource.aclose()\n",
+        );
+
+        for (id, postcondition, expected_certainty, expected_coverage) in [
+            (
+                "fixture-cancelled-closed",
+                crate::model::LifecyclePostcondition::Closed,
+                None,
+                "complete-for-supported-subset",
+            ),
+            (
+                "fixture-cancelled-open",
+                crate::model::LifecyclePostcondition::Open,
+                Some("definite"),
+                "complete-for-supported-subset",
+            ),
+            (
+                "fixture-cancelled-unknown",
+                crate::model::LifecyclePostcondition::Unknown,
+                Some("possible"),
+                "incomplete",
+            ),
+        ] {
+            let mut catalog = crate::model::FlowModelCatalog::default();
+            catalog
+                .insert(crate::model::ResourceEffectModel {
+                    id: id.into(),
+                    qualified_symbol: "model.Connection".into(),
+                    close_method: "aclose".into(),
+                    source_revision: "fixture-v1".into(),
+                    source_url: "fixture://model.Connection".into(),
+                    supported_python_versions: BTreeSet::from(["3.11".into()]),
+                    platform_assumptions: vec!["platform-independent fixture".into()],
+                    argument_aliases: Vec::new(),
+                    result_alias: None,
+                    duty_handoff: "none".into(),
+                    suppression: "not-a-context-manager".into(),
+                    asynchronous: true,
+                    normal: Some(crate::model::LifecyclePostcondition::Closed),
+                    exceptional: None,
+                    cancelled: Some(postcondition),
+                    repeat_close: crate::model::RepeatClosePolicy::Unspecified,
+                    post_close_methods: BTreeSet::new(),
+                    trust: "reviewed-fixture".into(),
+                    reviewer: "fixture-test".into(),
+                    valid_cases: vec!["cancelled lifecycle postcondition".into()],
+                    invalid_cases: vec!["open postcondition retains a duty".into()],
+                    unknown_cases: vec!["unknown postcondition weakens certainty".into()],
+                })
+                .unwrap();
+            let mut session = AnalysisSession::default();
+            assert!(session.set_flow_model_catalog(catalog));
+
+            let checked = session.check_report(std::slice::from_ref(&file), "3.11");
+            let leaks = checked
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            match expected_certainty {
+                Some(certainty) => {
+                    assert_eq!(leaks.len(), 1, "{id}: {checked:#?}");
+                    assert_eq!(leaks[0].certainty, certainty, "{id}: {checked:#?}");
+                    assert_eq!(leaks[0].completion.as_deref(), Some("cancelled"));
+                }
+                None => assert!(leaks.is_empty(), "{id}: {checked:#?}"),
+            }
+            assert_eq!(
+                checked.coverage.status, expected_coverage,
+                "{id}: {checked:#?}"
+            );
+            let selected = checked
+                .available_models
+                .iter()
+                .find(|model| model.id == id)
+                .expect("the selected async outcome model is visible in the result");
+            assert!(selected
+                .modeled_behavior
+                .contains(&format!("cancelled=Some({postcondition:?})")));
+            assert!(selected.qualification.contains("reviewer=fixture-test"));
+        }
+    }
+
+    #[test]
     fn resource_model_edits_invalidate_reused_cleanup_queries() {
         let executions = Arc::new(Mutex::new(Vec::<String>::new()));
         let observed = Arc::clone(&executions);
@@ -1081,7 +1262,7 @@ mod tests {
             unknown_cases: vec!["unsupported target version".into()],
         };
         let mut catalog = crate::model::FlowModelCatalog::default();
-        catalog.insert(model).unwrap();
+        catalog.insert(model.clone()).unwrap();
         executions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1116,6 +1297,43 @@ mod tests {
             "only the file with the modeled resource should be rechecked: {executed_flow_queries:#?}"
         );
 
+        let mut requires_open_model = model.clone();
+        requires_open_model.id = "fixture-requires-open-close".into();
+        requires_open_model.repeat_close = crate::model::RepeatClosePolicy::RequiresOpen;
+        let mut requires_open_catalog = crate::model::FlowModelCatalog::default();
+        requires_open_catalog.insert(requires_open_model).unwrap();
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        assert!(session.set_flow_model_catalog(requires_open_catalog.clone()));
+        let requires_open = session.check(&[file.clone(), unrelated.clone()], "3.11");
+        assert!(requires_open.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1001"
+                && diagnostic.message == "resource close requires an open resource"
+                && diagnostic.certainty == "definite"
+        }));
+        assert!(!requires_open.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message == "repeat-close behavior is not modeled"
+        }));
+        assert_eq!(
+            requires_open.coverage.status,
+            "complete-for-supported-subset"
+        );
+        let requires_open_flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            requires_open_flow_queries.len(),
+            1,
+            "changing close policy should refresh only the modeled file: {requires_open_flow_queries:#?}"
+        );
+
         let unsupported = session.check(&[file.clone(), unrelated.clone()], "3.12");
         assert!(unsupported.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == "TP9001"
@@ -1128,10 +1346,16 @@ mod tests {
             .any(|model| model.id == "fixture-idempotent-close"));
 
         let mut fresh = AnalysisSession::default();
-        fresh.set_flow_model_catalog(catalog);
+        fresh.set_flow_model_catalog(catalog.clone());
         assert_eq!(
             modeled,
             fresh.check(&[file.clone(), unrelated.clone()], "3.11")
+        );
+        let mut fresh_requires_open = AnalysisSession::default();
+        fresh_requires_open.set_flow_model_catalog(requires_open_catalog);
+        assert_eq!(
+            requires_open,
+            fresh_requires_open.check(&[file.clone(), unrelated.clone()], "3.11")
         );
         assert_eq!(unsupported, fresh.check(&[file, unrelated], "3.12"));
     }
