@@ -933,6 +933,26 @@ fn v03_18_async_coroutine_creation_does_not_delegate_an_owned_duty() {
 }
 
 #[test]
+fn v03_18_cancellation_before_coroutine_entry_keeps_only_caller_duties() {
+    let source = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def close_local():\n    local = C()\n    local.close()\nasync def close_owned(resource: Owned[C]):\n    resource.close()\nasync def caller():\n    await close_local()\n    resource = C()\n    await close_owned(resource)\n";
+    let result = check_source(source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].certainty, "possible", "{result:#?}");
+    assert!(leaks[0].message.ends_with("on cancelled"), "{result:#?}");
+    assert_eq!(leaks[0].primary.line, 14, "{result:#?}");
+    assert!(result
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("cancellation may interrupt the awaited operation")));
+}
+
+#[test]
 fn v03_20_task_scheduling_does_not_infer_completion_or_cleanup() {
     let source = "from typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\nasync def finish(resource):\n    resource.close()\ndef caller():\n    resource = C()\n    pending = finish(resource)\n    asyncio.create_task(pending)\n";
     let result = check_source(source);

@@ -940,6 +940,93 @@ mod tests {
     }
 
     #[test]
+    fn reviewed_exceptional_close_outcomes_flow_through_session_results() {
+        let file = SourceFile::new(
+            "model.py",
+            "model",
+            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n",
+        );
+
+        for (id, postcondition, expected_certainty, expected_coverage) in [
+            (
+                "fixture-exceptionally-closed",
+                crate::model::LifecyclePostcondition::Closed,
+                None,
+                "complete-for-supported-subset",
+            ),
+            (
+                "fixture-exceptionally-open",
+                crate::model::LifecyclePostcondition::Open,
+                Some("definite"),
+                "complete-for-supported-subset",
+            ),
+            (
+                "fixture-exceptionally-unknown",
+                crate::model::LifecyclePostcondition::Unknown,
+                Some("possible"),
+                "incomplete",
+            ),
+        ] {
+            let mut catalog = crate::model::FlowModelCatalog::default();
+            catalog
+                .insert(crate::model::ResourceEffectModel {
+                    id: id.into(),
+                    qualified_symbol: "model.Connection".into(),
+                    close_method: "close".into(),
+                    source_revision: "fixture-v1".into(),
+                    source_url: "fixture://model.Connection".into(),
+                    supported_python_versions: BTreeSet::from(["3.11".into()]),
+                    platform_assumptions: vec!["platform-independent fixture".into()],
+                    argument_aliases: Vec::new(),
+                    result_alias: None,
+                    duty_handoff: "none".into(),
+                    suppression: "not-a-context-manager".into(),
+                    asynchronous: false,
+                    normal: Some(crate::model::LifecyclePostcondition::Closed),
+                    exceptional: Some(postcondition),
+                    cancelled: None,
+                    repeat_close: crate::model::RepeatClosePolicy::Unspecified,
+                    post_close_methods: BTreeSet::new(),
+                    trust: "reviewed-fixture".into(),
+                    reviewer: "fixture-test".into(),
+                    valid_cases: vec!["exceptional lifecycle postcondition".into()],
+                    invalid_cases: vec!["open postcondition retains a duty".into()],
+                    unknown_cases: vec!["unknown postcondition weakens certainty".into()],
+                })
+                .unwrap();
+            let mut session = AnalysisSession::default();
+            assert!(session.set_flow_model_catalog(catalog));
+
+            let checked = session.check_report(std::slice::from_ref(&file), "3.11");
+            let leaks = checked
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            match expected_certainty {
+                Some(certainty) => {
+                    assert_eq!(leaks.len(), 1, "{id}: {checked:#?}");
+                    assert_eq!(leaks[0].certainty, certainty, "{id}: {checked:#?}");
+                }
+                None => assert!(leaks.is_empty(), "{id}: {checked:#?}"),
+            }
+            assert_eq!(
+                checked.coverage.status, expected_coverage,
+                "{id}: {checked:#?}"
+            );
+            let selected = checked
+                .available_models
+                .iter()
+                .find(|model| model.id == id)
+                .expect("the selected outcome model is visible in the result");
+            assert!(selected
+                .modeled_behavior
+                .contains(&format!("exceptional=Some({postcondition:?})")));
+            assert!(selected.qualification.contains("reviewer=fixture-test"));
+        }
+    }
+
+    #[test]
     fn resource_model_edits_invalidate_reused_cleanup_queries() {
         let executions = Arc::new(Mutex::new(Vec::<String>::new()));
         let observed = Arc::clone(&executions);
