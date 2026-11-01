@@ -1238,6 +1238,63 @@ fn v03_10_reviewed_context_cleanup_runs_on_return_break_and_continue() {
 }
 
 #[test]
+fn v03_10_unknown_context_keeps_duties_across_return_break_and_continue() {
+    let source = format!(
+        "{RESOURCE}class UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef return_path():\n    resource = C()\n    with UnknownManager():\n        return\ndef break_path():\n    resource = C()\n    for item in (None,):\n        with UnknownManager():\n            break\ndef continue_path():\n    resource = C()\n    for item in (None,):\n        with UnknownManager():\n            continue\n"
+    );
+    let acquisition_lines = source
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| (line.trim() == "resource = C()").then_some(index + 1))
+        .collect::<std::collections::BTreeSet<_>>();
+    let result =
+        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 6, "{result:#?}");
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "an unknown manager cannot prove cleanup on any transfer: {result:#?}"
+    );
+    let completions = leaks.iter().fold(
+        std::collections::BTreeMap::<&str, Vec<_>>::new(),
+        |mut grouped, diagnostic| {
+            grouped
+                .entry(diagnostic.completion.as_deref().unwrap_or_default())
+                .or_default()
+                .push(*diagnostic);
+            grouped
+        },
+    );
+    assert_eq!(
+        completions.get("return").map(Vec::len),
+        Some(1),
+        "{result:#?}"
+    );
+    assert_eq!(
+        completions.get("fallthrough").map(Vec::len),
+        Some(2),
+        "break and continue reach the enclosing function exit, not a function-level break/continue exit: {result:#?}"
+    );
+    assert_eq!(
+        completions.get("raise").map(Vec::len),
+        Some(3),
+        "manager construction can raise before each body or exit is entered: {result:#?}"
+    );
+    let reported_acquisitions = leaks
+        .iter()
+        .map(|diagnostic| diagnostic.related[0].line)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(reported_acquisitions, acquisition_lines, "{result:#?}");
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
 fn v03_11_closing_a_borrowed_value_is_still_rejected() {
     let result = check_source(&format!(
         "{RESOURCE}from contextlib import closing\ndef helper(resource: Borrowed[C]):\n    with closing(resource):\n        pass\n"
