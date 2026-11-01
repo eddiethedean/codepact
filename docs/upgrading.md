@@ -44,3 +44,15 @@ explicitly as shown in [report handling](ci-reporting.md).
 
 The 0.x API, diagnostic set, and schema remain provisional. Check the release
 notes and output schema before upgrading any consumer that parses diagnostics.
+
+## Planned change in 0.3.0
+
+Version 0.3.0 is not released. Its candidate adds TP1002 for definite cleanup
+obligations left outstanding on modeled exits, so an existing check can begin
+returning status `1` when a function acquires a resource and neither closes nor
+returns it through a resolved `Owned[T]` boundary. Review the [unreleased
+candidate notes](https://github.com/eddiethedean/typepact/blob/main/docs/release-notes.md#030--candidate-not-released) and the [cleanup
+limitations](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/specification.md) before trying the candidate in an optional CI job. Keep the check advisory until the maintainer accepts the
+phase evidence and publishes a qualified release. Install the matching
+`typepact` and `typepact-cli` versions together when 0.3 is released; no 0.3
+package version is available yet.

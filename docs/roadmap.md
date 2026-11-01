@@ -14,7 +14,7 @@ TypePact 0.x grows from declaration inspection toward broader resource lifecycle
 | 0.8.x | Ecosystem integrations, shared lint language server and IDE diagnostics |
 | 0.9.x | Stabilization and a 1.0 readiness decision |
 
-The roadmap describes direction, not arbitrary Python ownership proofs or memory-safety guarantees. Read [availability](availability.md) for the current package boundary and [release notes](release-notes.md) for the 0.2 scope. Each phase must define its supported subset and evidence before a release claim is made.
+The roadmap describes direction, not arbitrary Python ownership proofs or memory-safety guarantees. Read [availability](availability.md) for the current package boundary and [release notes](release-notes.md) for published behavior and the unreleased 0.3 candidate. Each phase must define its supported subset and evidence before a release claim is made.
 
 Planned linting work adds command/reporting foundations in 0.4, followed in 0.8 by inline TypePact diagnostics and problem-list entries through a shared language server. Target editors are VS Code, PyCharm/IntelliJ, Neovim and Emacs; support depends on verified client/version combinations. These features are not available in 0.1.
 

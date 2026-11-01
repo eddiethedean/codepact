@@ -1,5 +1,46 @@
 # Release notes
 
+## 0.3.0 — candidate, not released
+
+This unreleased candidate extends lifecycle checking with bounded cleanup
+obligations. Release qualification is pending; this section describes candidate
+behavior and must not be read as a published support claim. See the [phase
+plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3-cleanup.md), [supported subset and
+limitations](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/specification.md), [validation
+matrix](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/validation.md), and [candidate tutorial](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md).
+
+### Candidate behavior
+
+- TP1002 reports owned local resources left outstanding on modeled function
+  exits. Direct `Owned[T]` returns and resolved owning helpers transfer the
+  cleanup duty at their supported boundary; aliases share one duty.
+- `try`/`except`/`else`/`finally`, bounded `while`/`for` loops, early exits,
+  reviewed context cleanup, and cleanup failures retain path-specific
+  uncertainty.
+- Source-only models recognize exact `contextlib.closing` and
+  `contextlib.aclosing` identities for selected Python targets 3.11–3.13.
+- Bounded direct coroutine awaits include suspension and cancellation outcomes.
+  Possible cleanup interruption and incomplete coverage remain visible.
+- A separate versioned check-result schema carries completion kind, certainty,
+  trust, repair guidance, model metadata, and coverage information.
+
+### Compatibility and limitations
+
+The checker does not prove unique ownership, move validity, borrow lifetimes,
+task completion, race freedom, or runtime leak freedom. Task scheduling,
+TaskGroup joins, arbitrary awaitables, generators, general callbacks and
+container/field ownership, process/thread handoffs, and unsupported managers
+remain explicit boundaries. Exhausted work budgets weaken affected state and
+report incomplete coverage. Resource declarations remain static contracts, not
+proof that an external close operation succeeds at runtime.
+
+TP1002 is a new default diagnostic in the candidate and can make existing
+`typepact check` commands exit with status 1 for definite outstanding duties.
+Possible findings and boundary-only reports continue to return 0; malformed or
+unrecoverable input returns 2. The candidate has not yet passed the 0.3
+qualification gates, and no package version has been published for this
+behavior.
+
 ## 0.2.0 — published 2026-11-01
 
 TypePact 0.2.0 adds `typepact check` for bounded normal synchronous lifecycle
