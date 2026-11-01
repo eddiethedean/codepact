@@ -214,6 +214,7 @@ pub(crate) enum Declaration {
     Class {
         name: String,
         decorators: Vec<AstExpr>,
+        has_unresolved_base_classes: bool,
         methods: Vec<MethodBody>,
         unsupported: bool,
         range: SourceRange,
@@ -781,6 +782,10 @@ pub(crate) fn parse_frontend(
             Stmt::ClassDef(class) => declarations.push(Declaration::Class {
                 name: class.name.to_string(),
                 decorators: decorators(&class.decorator_list, &mut expression_budget),
+                has_unresolved_base_classes: class
+                    .bases()
+                    .iter()
+                    .any(|base| !matches!(base, Expr::Name(name) if name.id.as_str() == "object")),
                 methods: class
                     .body
                     .iter()

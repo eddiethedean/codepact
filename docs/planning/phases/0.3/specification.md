@@ -112,7 +112,7 @@ Separate context-manager identity, entered resource identity and cleanup respons
 
 Minimum catalog: source-only, version-bounded summaries for `contextlib.closing` and `contextlib.aclosing`. They delegate to the wrapped object's resolved `close`/`aclose` effects, including checked exceptional paths and cancellation; the wrapper supplies no stronger postcondition. The [contextlib reference](https://docs.python.org/3.13/library/contextlib.html#contextlib.closing) provides the starting behavior; exact source revisions and supported Python versions still need conformance evidence. Async-generator finalization remains outside this slice even when a wrapper is recognized.
 
-Unknown/shadowed/lookalike managers retain incomplete coverage and cannot discharge a duty. `__del__`, garbage collection and process exit are never deterministic cleanup. Borrowing a resource into a wrapper that closes it is still TP2001. Inferring arbitrary `@contextmanager`/`@asynccontextmanager` generator implementations is deferred.
+Unknown/shadowed/lookalike managers retain incomplete coverage and cannot discharge a duty. `__del__`, garbage collection and process exit are never deterministic cleanup. Resource class inheritance is not resolved for finalizer effects; outstanding duties of a resource type with a non-`object` base class retain an incomplete boundary because a base may define `__del__`. Borrowing a resource into a wrapper that closes it is still TP2001. Inferring arbitrary `@contextmanager`/`@asynccontextmanager` generator implementations is deferred.
 
 ## Loops and bounded analysis
 

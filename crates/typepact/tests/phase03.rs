@@ -778,6 +778,77 @@ fn v03_12_unknown_context_manager_cannot_discharge_a_duty() {
 }
 
 #[test]
+fn v03_12_finalizer_does_not_establish_deterministic_cleanup() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def __del__(self): self.close()\n@resource(closed_by='close')\nclass Plain(object):\n    def close(self): pass\ndef cleanup():\n    finalizable = C()\n    plain = Plain()\n";
+    let result = check_source(source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 2, "{result:#?}");
+    assert!(
+        leaks.iter().any(|leak| {
+            leak.certainty == "possible"
+                && leak.message.ends_with("on fallthrough")
+                && leak.related.first().is_some_and(|span| span.line == 10)
+        }),
+        "the finalizer leaves its own duty uncertain: {result:#?}"
+    );
+    assert!(
+        leaks.iter().any(|leak| {
+            leak.certainty == "definite"
+                && leak.message.ends_with("on fallthrough")
+                && leak.related.first().is_some_and(|span| span.line == 11)
+        }),
+        "the finalizer boundary must not weaken unrelated duties: {result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("finalizer")),
+        "{result:#?}"
+    );
+
+    let explicit_close = check_source(
+        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def __del__(self): self.close()\ndef cleanup():\n    resource = C()\n    resource.close()\n",
+    );
+    assert!(
+        explicit_close
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "TP1002"),
+        "{explicit_close:#?}"
+    );
+    assert_eq!(
+        explicit_close.coverage.status, "complete-for-supported-subset",
+        "{explicit_close:#?}"
+    );
+
+    let inherited_finalizer = check_source(
+        "from typepact import resource\nclass Base:\n    def __del__(self): pass\n@resource(closed_by='close')\nclass C(Base):\n    def close(self): pass\ndef cleanup():\n    resource = C()\n",
+    );
+    assert!(
+        inherited_finalizer
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002" && diagnostic.certainty == "possible"),
+        "inherited finalizer effects cannot support a definite finding: {inherited_finalizer:#?}"
+    );
+    assert!(
+        inherited_finalizer
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("base-class finalizer effects are not modeled") }),
+        "{inherited_finalizer:#?}"
+    );
+}
+
+#[test]
 fn v03_10_failed_later_context_entry_still_unwinds_earlier_managers() {
     let result = check_source(&format!(
         "{RESOURCE}from contextlib import closing\ndef cleanup(manager):\n    first = C()\n    second = C()\n    with closing(first), manager:\n        pass\n"
@@ -1394,6 +1465,65 @@ fn v03_19_unknown_async_context_keeps_exit_cancellation_visible() {
                 && diagnostic.message.ends_with("on cancelled")
         }),
         "an unknown asynchronous exit can be interrupted: {result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_19_unknown_async_exit_can_suppress_body_cancellation() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        await resource.pause()\n        resource.close()\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on cancelled")
+                && diagnostic
+                    .related
+                    .first()
+                    .is_some_and(|span| span.line == 10)
+        }),
+        "the unsuppressed cancellation path remains feasible: {result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on fallthrough")
+                && diagnostic
+                    .related
+                    .first()
+                    .is_some_and(|span| span.line == 10)
+        }),
+        "the unknown async exit may suppress cancellation and skip the body cleanup: {result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_19_nested_async_contexts_unwind_and_preserve_cancellation() {
+    let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        async with aclosing(resource):\n            await resource.pause()\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on cancelled")
+                && diagnostic
+                    .related
+                    .first()
+                    .is_some_and(|span| span.line == 11)
+        }),
+        "the nested exit retains a cancellation propagation path: {result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on fallthrough")
+                && diagnostic.related.first().is_some_and(|span| span.line == 11)
+        }),
+        "the outer unknown exit may suppress cancellation after inner cleanup is interrupted: {result:#?}"
     );
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
 }

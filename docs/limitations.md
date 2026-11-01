@@ -62,6 +62,12 @@ and 16 items respectively; each flow state retains at most 128 pending
 coroutine records. Unknown iterators, external close effects,
 unrecognized managers, repeated coroutine creation/await, task scheduling,
 unsupported escapes and exhausted budgets can leave coverage incomplete.
+Source-defined `__del__` methods are not assumed to run or to complete cleanup;
+an outstanding duty remains possible with an explicit incomplete-coverage
+boundary, even when the finalizer calls the declared closer. Inheritance is not
+resolved for finalizer effects, so an outstanding duty on a resource class
+with a non-`object` base also remains possible with an incomplete-coverage
+boundary.
 Async-generator finalization and general task lifetime analysis remain outside
 this candidate. See [supported syntax](supported-syntax.md#unreleased-03-candidate-behavior)
 and the [0.3 validation map](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/validation.md);

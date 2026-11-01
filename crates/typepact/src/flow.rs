@@ -888,6 +888,8 @@ fn report_cleanup_exit(
     file: &SourceFile,
     exit: &FlowExit,
     return_access: Option<&str>,
+    functions: &FunctionMap,
+    classes_with_unresolved_bases: &BTreeSet<String>,
 ) {
     report_unawaited_coroutines(&exit.state, file, result);
     let exit_span = span(file, exit.range);
@@ -1011,7 +1013,25 @@ fn report_cleanup_exit(
             }
             continue;
         }
-        let certainty = if mask & (CLOSED | UNKNOWN) == 0 {
+        let resource = exit.state.resources.get(object);
+        let has_finalizer = resource
+            .is_some_and(|resource| resource_method(resource, "__del__", functions).is_some());
+        let has_unresolved_bases = resource
+            .is_some_and(|resource| classes_with_unresolved_bases.contains(&resource.base_symbol));
+        if has_finalizer || has_unresolved_bases {
+            boundary(
+                result,
+                file,
+                exit.range,
+                if has_finalizer {
+                    "resource finalizer may run implicitly; its cleanup effect is unknown"
+                } else {
+                    "resource base-class finalizer effects are not modeled"
+                },
+            );
+        }
+        let certainty = if mask & (CLOSED | UNKNOWN) == 0 && !has_finalizer && !has_unresolved_bases
+        {
             "definite"
         } else {
             "possible"
@@ -5477,6 +5497,24 @@ fn check_bodies_impl(
     python_version: &str,
     models: &FlowModelCatalog,
 ) {
+    let classes_with_unresolved_bases = files
+        .iter()
+        .flat_map(|file| {
+            summaries
+                .get(&file.path)
+                .and_then(|summary| summary.declarations.as_ref())
+                .into_iter()
+                .flatten()
+                .filter_map(move |declaration| match declaration {
+                    Declaration::Class {
+                        name,
+                        has_unresolved_base_classes: true,
+                        ..
+                    } => Some(format!("{}.{}", file.module, name)),
+                    _ => None,
+                })
+        })
+        .collect::<BTreeSet<_>>();
     let supplied_modules = files
         .iter()
         .map(|file| file.module.clone())
@@ -5881,7 +5919,14 @@ fn check_bodies_impl(
                     CompletionKind::Return(_)
                     | CompletionKind::Raise(_)
                     | CompletionKind::Cancelled => {
-                        report_cleanup_exit(result, file, &exit, return_access);
+                        report_cleanup_exit(
+                            result,
+                            file,
+                            &exit,
+                            return_access,
+                            &functions,
+                            &classes_with_unresolved_bases,
+                        );
                     }
                     CompletionKind::Fallthrough => unreachable!(),
                     CompletionKind::Break | CompletionKind::Continue => {
@@ -5904,6 +5949,8 @@ fn check_bodies_impl(
                         kind: CompletionKind::Fallthrough,
                     },
                     return_access,
+                    &functions,
+                    &classes_with_unresolved_bases,
                 );
             }
             let _ = name;
@@ -5984,7 +6031,14 @@ fn check_bodies_impl(
                         CompletionKind::Return(_)
                         | CompletionKind::Raise(_)
                         | CompletionKind::Cancelled => {
-                            report_cleanup_exit(result, file, &exit, None);
+                            report_cleanup_exit(
+                                result,
+                                file,
+                                &exit,
+                                None,
+                                &functions,
+                                &classes_with_unresolved_bases,
+                            );
                         }
                         CompletionKind::Fallthrough => unreachable!(),
                         CompletionKind::Break | CompletionKind::Continue => boundary(
@@ -6005,6 +6059,8 @@ fn check_bodies_impl(
                             kind: CompletionKind::Fallthrough,
                         },
                         None,
+                        &functions,
+                        &classes_with_unresolved_bases,
                     );
                 }
             }

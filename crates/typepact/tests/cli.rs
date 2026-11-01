@@ -102,6 +102,18 @@ fn phase03_interfaces_agree_for_possible_and_unknown_cleanup_results() {
             "TP9001",
             "unknown",
         ),
+        (
+            "finalizer",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def __del__(self): self.close()\ndef cleanup():\n    resource = C()\n",
+            "TP9001",
+            "unknown",
+        ),
+        (
+            "async-context-cancellation-suppression",
+            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        await resource.pause()\n        resource.close()\n",
+            "TP9001",
+            "unknown",
+        ),
     ] {
         fs::write(root.join("main.py"), source).unwrap();
 
