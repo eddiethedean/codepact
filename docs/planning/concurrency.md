@@ -1,6 +1,6 @@
 # Concurrent resource safety
 
-Status: **Planned**, adopted 2026-10-31. This is the shared design for resource safety in async tasks and at multiprocessing boundaries. It does not expand the published inspector or the synchronous 0.2 lifecycle preview. No gate below has passed.
+Status: **Planned**, adopted 2026-10-31. This is the shared design for resource safety in async tasks and at multiprocessing boundaries. It does not expand the published inspector or the synchronous 0.2.0 lifecycle checker. No gate below has passed.
 
 ## Outcome and scope
 

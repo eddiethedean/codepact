@@ -1,11 +1,12 @@
 # Release notes
 
-## Upcoming 0.2.0 — source preview, not yet released
+## 0.2.0 — published 2026-11-01
 
-The current source checkout adds `typepact check` for bounded normal synchronous lifecycle
-analysis. Version 0.1.0 remains the latest published release and provides contract inspection;
-0.2.0 qualification gates remain pending in the
-[phase plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2-lifecycle.md).
+TypePact 0.2.0 adds `typepact check` for bounded normal synchronous lifecycle
+analysis. It is available through the matching `typepact` and `typepact-cli`
+Python packages on PyPI and the `typepact` crate on crates.io. The qualified scope
+and limitations are in the [phase plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2-lifecycle.md)
+and [release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md).
 
 - Local constructions, aliases, straight-line calls, returns, and `if`/`else` joins.
 - TP1001 use-after-close findings with certainty and related close locations.
@@ -26,7 +27,8 @@ diagnostics point back to the defining module.
 
 Start with the [lifecycle tutorial](lifecycle.md). Possible findings and incomplete
 coverage alone can return exit `0`; read the report before accepting a result.
-Ownership enforcement and cleanup on every exit remain outside this preview.
+Ownership enforcement and cleanup on every exit remain outside the supported
+0.2.0 subset.
 
 ## 0.1.0 — published
 

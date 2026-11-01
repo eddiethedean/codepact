@@ -1,16 +1,16 @@
 # JSON output reference
 
-`inspect-contracts` emits one JSON object. The 0.2.0 source preview `check` emits
-the same envelope when `--json` is supplied; readable diagnostics are its
-default. The Rust library returns `Inspection`. Schema version 0 is provisional,
-and checking JSON has not completed phase 0.2 release qualification.
+`inspect-contracts` emits one JSON object. The 0.2.0 `check` command emits the
+same envelope when `--json` is supplied; readable diagnostics are its default.
+The Rust library returns `Inspection`. Schema version 0 remains provisional
+during the 0.x series.
 
 ## Top-level object
 
 | Field | Meaning |
 | --- | --- |
 | `schema_version` | JSON schema version; currently `0` |
-| `assurance` | `contract-inspection-only` for inspection; `lifecycle-checking-for-supported-normal-flow` for the checking preview |
+| `assurance` | `contract-inspection-only` for inspection; `lifecycle-checking-for-supported-normal-flow` for supported lifecycle checking |
 | `contracts` | Normalized resource and access declarations |
 | `diagnostics` | Syntax errors, declaration conflicts, lifecycle findings in check mode, and unsupported or unresolved boundaries |
 | `coverage` | Coverage status, reasons, source byte count, and emitted declaration count |

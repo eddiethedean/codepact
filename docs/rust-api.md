@@ -1,19 +1,19 @@
 # Rust API reference
 
-The `typepact` crate exposes the same inspector used by the command-line program. It can be installed as a Rust library or used to build the CLI.
+The `typepact` crate exposes the same inspector and lifecycle checker used by the command-line program. It can be installed as a Rust library or used to build the CLI.
 
 ## Install
 
 Add the crate to a Rust application:
 
 ```sh
-cargo add typepact@0.1.0
+cargo add typepact@0.2.0
 ```
 
 Or install the command from crates.io:
 
 ```sh
-cargo install typepact --version 0.1.0 --locked
+cargo install typepact --version 0.2.0 --locked
 ```
 
 Source builds require Rust 1.96 or newer. Python CLI wheels do not require a Rust toolchain at installation time.
@@ -45,12 +45,11 @@ def read(conn: Borrowed[Connection]) -> str: ...
 
 `inspect` returns an `Inspection` with contract facts, diagnostics, and coverage. It does not import or execute the Python source. The analyzer accepts source targets 3.11, 3.12, and 3.13.
 
-## Lifecycle checking preview
+## Lifecycle checking
 
-The current unreleased source also exposes `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. They return the same `Inspection` shape with lifecycle findings and `assurance` set to `lifecycle-checking-for-supported-normal-flow`. This path tracks supported local constructions, aliases, branches, synchronous calls, and imported helpers through acyclic named re-exports. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
+The published 0.2.0 crate exposes `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. They return the same `Inspection` shape with lifecycle findings and `assurance` set to `lifecycle-checking-for-supported-normal-flow`. This path tracks supported local constructions, aliases, branches, synchronous calls, and imported helpers through acyclic named re-exports. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
 
-These methods require a dependency built from the source preview; the crates.io
-0.1.0 installation shown above provides inspection. The host supplies all
+The host supplies all
 `SourceFile` values for checking: filesystem discovery belongs to the CLI adapter,
 not to `check`. Consult the [lifecycle tutorial](lifecycle.md) for modeled behavior
 and the [output reference](output.md) for certainty and coverage interpretation.
@@ -83,8 +82,8 @@ The default one-shot function and incremental session share the same analysis pi
 Lifecycle body checks use tracked per-file queries with their supplied import
 dependencies. An edit to an unrelated file can reuse unaffected body checks;
 editing an imported effect refreshes that module and its callers. The 0.2
-validation matrix records query-execution evidence for both cases; phase
-qualification remains pending until the candidate record is complete.
+validation matrix records query-execution evidence for both cases; see the
+[release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md) for qualification results.
 
 ## Session operations
 
@@ -111,16 +110,15 @@ An `Ok` return does not establish successful declaration analysis. Check the ret
 ## Public types and limits
 
 The crate root exports the following result and input types. The 0.x API is
-provisional; the [`typepact` 0.1.0 rustdoc](https://docs.rs/typepact/0.1.0/typepact/)
-documents the published crate. Checking methods are available only from the
-upcoming 0.2.0 source until that release is published.
+provisional; the [`typepact` 0.2.0 rustdoc](https://docs.rs/typepact/0.2.0/typepact/)
+documents the published crate.
 
 | Type or function | Purpose |
 | --- | --- |
 | `SourceFile { path, module, source }` | One source snapshot item; `SourceFile::new(path, module, source)` accepts values convertible to `String` |
 | `inspect(files, python_version) -> Inspection` | One-shot declaration inspection |
-| `check(files, python_version) -> Inspection` | Source-preview lifecycle checking for the supported subset |
-| `AnalysisSession` | Reusable database for full-snapshot updates and inspection |
+| `check(files, python_version) -> Inspection` | Lifecycle checking for the supported subset |
+| `AnalysisSession` | Reusable database for full-snapshot updates, inspection, and checking |
 | `SessionInspection { revision, inspection }` | Result plus the session revision used for analysis |
 | `AnalysisCancelled` | Error returned by cancellable methods when no complete current result is available |
 | `SessionInputError` | `FileLimitExceeded`, `SourceLimitExceeded`, or `TotalSourceLimitExceeded` from `set_file` |

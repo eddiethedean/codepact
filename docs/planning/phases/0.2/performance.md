@@ -1,7 +1,12 @@
 # 0.2 lifecycle performance baseline
 
-Status: preliminary local baseline; exact-candidate replay and reviewer
-acceptance remain required before G4 or LC01 can pass.
+Status: exact analyzer-source replay from 2026-11-01. The analyzer implementation
+is unchanged from source revision `b7a5236d00cd14c06fe7fd633b6a05d2e64c5856`;
+the current candidate adds a reproducible retained-RSS probe to the benchmark
+example. The accountable maintainer accepted the measured regression, retained
+RSS, and provisional limits with the limitations recorded here on 2026-11-01.
+No independent review is required for this release under the documented
+maintainer waiver.
 
 ## Environment and method
 
@@ -13,24 +18,45 @@ acceptance remain required before G4 or LC01 can pass.
 - Corpus: two source files, one provider and one client. The client constructs N distinct resources and calls a helper that closes each before use. The 1, 250 and 1,000 object corpora contain 294, 19,641 and 78,891 source bytes.
 - The benchmark asserts the expected definite or possible finding count before reporting timings. It includes in-process Salsa session time, not process startup.
 
-These measurements describe the current source tree and are not an accepted
-release result until replayed on the exact 0.2.0 candidate. They do not establish
-performance on other platforms or corpora.
+These measurements replay the exact analyzer implementation source. They do not
+establish performance on other platforms or corpora, and they are not accepted
+release thresholds until reviewed.
 
 ## Lifecycle session timings
 
-Milliseconds, median (minimum–maximum):
+Milliseconds, median (minimum–maximum), measured after the exact-singleton
+flow-state optimization:
 
 | Resources | Cold session | Warm no-op | Unrelated body edit | Imported effect edit | Location-only edit |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 0.185 (0.144–1.320) | 0.010 (0.009–0.012) | 0.113 (0.112–0.128) | 0.114 (0.113–0.122) | 0.112 (0.111–0.114) |
-| 250 | 4.761 (4.742–5.237) | 0.390 (0.387–0.408) | 2.775 (2.753–2.824) | 3.097 (3.088–3.125) | 2.767 (2.757–2.783) |
-| 1,000 | 41.486 (41.185–42.031) | 1.416 (1.414–1.461) | 18.997 (18.685–19.188) | 20.923 (20.612–21.315) | 19.421 (19.277–19.436) |
+| 1 | 0.113 (0.098–0.369) | 0.004 (0.004–0.011) | 0.090 (0.088–0.106) | 0.093 (0.088–0.108) | 0.083 (0.080–0.088) |
+| 250 | 8.633 (7.613–11.986) | 0.361 (0.352–0.379) | 5.685 (5.678–5.743) | 7.124 (7.091–7.147) | 5.559 (5.551–5.582) |
+| 1,000 | 62.707 (62.043–74.219) | 1.442 (1.430–1.477) | 41.627 (40.981–41.753) | 47.055 (46.305–47.405) | 40.945 (40.485–41.326) |
 
-The 1,000-resource run reached 32.55 MiB peak child RSS, measured with Python's
-`resource.getrusage`. This is process high-water memory, not retained-session
-memory. Live RSS sampling was unavailable in this environment, so retained
-memory remains unmeasured.
+The 1,000-resource benchmark process reached 37.30 MiB maximum resident set
+size (`/usr/bin/time -l`), across its seven repeats of each scenario.
+
+The benchmark's `TYPEPACT_RETAINED_MEMORY_PROBE=1` mode samples RSS before a
+session check and two seconds after it, with the returned diagnostics dropped
+and the session retained. Three 1,000-resource samples measured a 1.91 MiB
+baseline and 19.50–19.73 MiB retained process RSS, an increase of 17.59–17.83
+MiB. RSS is a coarse process measurement that includes loaded code, input and
+allocator overhead; it is not an allocated-bytes count or a memory budget. It
+describes one corpus on this host.
+
+Compared with the earlier provisional measurements recorded before the latest
+correctness fixes, 1,000-resource cold time is
+1.57× higher and edit scenarios are 2.18×–2.47× higher; warm no-op time is
+unchanged. At 250 resources, cold time is 1.88× higher and edit scenarios are
+2.11×–2.43× higher; warm no-op time is slightly lower. The earlier source
+version and these later correctness fixes have no absolute latency threshold.
+The accountable maintainer accepted the measured regression with the
+limitations recorded here. A
+release-review profile found full flow-state clones on definite singleton
+method calls; evaluating those calls in place reduced the 1,000-resource cold
+median from 476.1 ms to 62.7 ms and the 250-resource median from 35.8 ms to
+8.6 ms. The remaining difference from the earlier provisional result is
+recorded for reviewer assessment rather than treated as a passed threshold.
 
 ## Query reuse evidence
 
@@ -51,24 +77,26 @@ See `db::tests::unchanged_session_check_reuses_the_check_query`,
 
 ## Inspector comparison with 0.1.0
 
-The existing declaration-inspection corpus v1 was run with the same optimized
-binary method on this host. Current medians were 2.923 ms for the small CLI,
-81.861 ms for 1,000 classes / 2,000 contracts, and 21.181 ms for helper import;
-maximum child RSS was 18.59 MiB. The recorded 0.1.0 medians were 2.732 ms,
-82.965 ms and 22.348 ms, with 18.61 MiB maximum child RSS. The synthetic CLI
-measurement is effectively unchanged. The small-process ranges include slow
-launch outliers (296 ms now and 460 ms in 0.1.0); its median shift is smaller
-than the observed launch variation. These results do not compare lifecycle
-checking with inspection.
+The existing declaration-inspection corpus v1 was replayed with the candidate
+binary on this host. Current medians were 3.079 ms for the small CLI, 83.944 ms
+for 1,000 classes / 2,000 contracts, and 20.802 ms for helper import; maximum
+child RSS was 18.58 MiB. The recorded 0.1.0 medians were 2.732 ms, 82.965 ms
+and 22.348 ms, with 18.61 MiB maximum child RSS. The synthetic CLI measurement
+is effectively unchanged. The small-process ranges include slow launch outliers
+(282 ms now and 460 ms in 0.1.0); its median shift is smaller than the observed
+launch variation. These results do not compare lifecycle checking with
+inspection.
 
 Reproduce with:
 
 ```sh
 cargo build --release --locked -p typepact
-cargo build --release --locked -p typepact --example benchmark_lifecycle
+cargo build --release --locked -p typepact --bins --examples
 target/release/examples/benchmark_lifecycle 1
 target/release/examples/benchmark_lifecycle 250
 target/release/examples/benchmark_lifecycle 1000
+/usr/bin/time -l target/release/examples/benchmark_lifecycle 1000
+TYPEPACT_RETAINED_MEMORY_PROBE=1 target/release/examples/benchmark_lifecycle 1000
 uv run --locked python scripts/benchmark_inspector.py --binary target/release/typepact --repeats 7 --classes 1000
 ```
 
@@ -85,6 +113,6 @@ uv run --locked python scripts/benchmark_inspector.py --binary target/release/ty
 The request-wide transfer budget is divided evenly among files. Unused work in
 one file is not reassigned, which keeps edits in earlier files from changing
 unrelated query inputs. Each limit triggers visible incomplete coverage and
-weakens affected state; the tests exercise exhaustion recovery. The limits
-still need an accepted LC01 rationale and measured workload impact. No absolute
-latency threshold has been set from this preliminary corpus.
+weakens affected state; the tests exercise exhaustion recovery. The accountable
+maintainer accepted the limits and measured impact for 0.2 on 2026-11-01. They
+remain provisional implementation budgets, not general performance guarantees.

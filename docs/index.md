@@ -2,25 +2,25 @@
 
 TypePact finds conflicting resource declarations and supported lifecycle errors in Python without importing or running your application. It reports each finding with source locations, certainty, and coverage information.
 
-**0.1.0 is the currently published release** and provides contract inspection. **0.2.0 is being prepared** and adds lifecycle checking; its implementation is available as a source preview. The preview is not in the published 0.1.0 packages. The current documentation describes that upcoming release and marks the preview boundaries explicitly.
+**0.2.0 is the current published release** and provides contract inspection and bounded lifecycle checking for the documented synchronous subset. The 0.1.0 release provides contract inspection. APIs, diagnostics, and JSON schema remain provisional during 0.x.
 
 ```sh
-uv add typepact==0.1.0
+uv add typepact==0.2.0
 uv run typepact inspect-contracts connection.py
+uv run typepact check --root src
 ```
 
 Create `connection.py` with the [quick start](quickstart.md), then read the result using the [JSON reference](output.md).
 
-To try the source preview, follow the [lifecycle tutorial](lifecycle.md). Installing
-the published 0.1.0 packages does not provide `check`. See the [availability guide](availability.md)
-for exact release, platform, and preview status.
+Follow the [lifecycle tutorial](lifecycle.md) to use `check`. See the
+[availability guide](availability.md) for exact release and platform support.
 
 ## Find your next step
 
 | I want to… | Start here |
 | --- | --- |
 | Declare a resource and inspect it | [Quick start](quickstart.md) |
-| Find a supported use after close | [Lifecycle checking preview](lifecycle.md) |
+| Find a supported use after close | [Lifecycle checking](lifecycle.md) |
 | Decide whether my project fits the supported subset | [Adopting TypePact](adopting.md) |
 | Resolve imports across my own modules | [Multi-file tutorial](project-guide.md) |
 | Use the inspector in a build pipeline | [Automation and CI](automation.md) and [report handling](ci-reporting.md) |

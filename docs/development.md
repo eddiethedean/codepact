@@ -64,11 +64,10 @@ The quick start and multi-file tutorial include source files from `docs/_example
 The lifecycle tutorial includes `examples/lifecycle.py` directly. Check its exact
 primary and related lines after edits, and confirm that removing the final use
 leaves no diagnostics or coverage boundaries. Keep published installation
-instructions distinct from source-preview commands. The published 0.1.0
-qualification record is in `docs/releases/0.1.0-evidence.md`; the 0.2.0 phase
-matrix remains pending until its candidate is qualified. Documentation of
-implemented patterns does not mark phase validation rows or release gates as
-passed.
+instructions distinct from source-build instructions. Qualification records are
+in `docs/releases/0.1.0-evidence.md` and `docs/releases/0.2.0-evidence.md`.
+Documentation of implemented patterns does not by itself mark phase validation
+rows or release gates as passed.
 
 Read the Docs uses `.readthedocs.yaml` at the repository root. Connect the GitHub repository to the `typepact` Read the Docs project and enable the desired branches or release tags there. The checked-in configuration selects the build tools, requirements, and Sphinx entry point. GitHub's docs job runs the same strict local build target on pushes and pull requests.
 

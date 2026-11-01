@@ -1,3 +1,4 @@
+use std::process::Command;
 use std::time::{Duration, Instant};
 use typepact::{AnalysisSession, SourceFile};
 
@@ -40,6 +41,15 @@ fn milliseconds(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1_000.0
 }
 
+fn current_rss_kib() -> Option<u64> {
+    let pid = std::process::id().to_string();
+    let output = Command::new("ps")
+        .args(["-o", "rss=", "-p", &pid])
+        .output()
+        .ok()?;
+    String::from_utf8(output.stdout).ok()?.trim().parse().ok()
+}
+
 fn main() {
     let objects = std::env::args()
         .nth(1)
@@ -48,6 +58,37 @@ fn main() {
         .clamp(1, 1_000);
     let close_effect = "    value.close()\n";
     let initial = source_files(objects, &provider(close_effect, 0, None));
+
+    if std::env::var_os("TYPEPACT_RETAINED_MEMORY_PROBE").is_some() {
+        let Some(baseline_rss) = current_rss_kib() else {
+            eprintln!("Retained-memory probe requires `ps` and a Unix-like host.");
+            return;
+        };
+        let mut session = AnalysisSession::default();
+        let result = session.check(&initial, "3.11");
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1001")
+                .count(),
+            objects
+        );
+        drop(result);
+        std::thread::sleep(Duration::from_secs(2));
+        let Some(retained_rss) = current_rss_kib() else {
+            eprintln!("Could not sample retained RSS with `ps`.");
+            return;
+        };
+        println!("Objects: {objects}; diagnostics dropped; analysis session retained");
+        println!("Baseline RSS: {baseline_rss} KiB");
+        println!("Retained-session RSS: {retained_rss} KiB");
+        println!(
+            "Incremental RSS: {} KiB",
+            retained_rss.saturating_sub(baseline_rss)
+        );
+        return;
+    }
 
     let cold_samples = (0..REPEATS)
         .map(|_| {

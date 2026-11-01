@@ -2,9 +2,9 @@
 
 The inspector handles a deliberately limited set of Python declarations. It parses source with the selected Python grammar, resolves only the supported static relationships, and marks coverage incomplete when a relevant construct falls outside that set.
 
-The declaration sections describe published 0.1.0. The
-[lifecycle preview](lifecycle.md) adds the checking subset below in a source
-checkout for the upcoming 0.2.0 release. Its phase qualification remains pending.
+The declaration sections describe the published inspector. Version 0.2.0 adds
+the lifecycle-checking subset below; the [release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md)
+records its qualification.
 
 ## Recognized declarations
 
@@ -21,13 +21,13 @@ Class lifecycle and function access declarations compose independently. Compatib
 
 ## Import resolution
 
-For `inspect-contracts`, imports resolve only among the explicitly supplied files. For the lifecycle preview, the checker discovers `.py` files under `--root` and resolves direct absolute imports plus acyclic named re-exports of supported classes, aliases, and synchronous helper functions. `--root` assigns package-qualified names to files; without it, each file's stem supplies the logical module name. Duplicate module names are reported. Neither mode imports packages or executes Python source.
+For `inspect-contracts`, imports resolve only among the explicitly supplied files. For `check`, the checker discovers `.py` files under `--root` and resolves direct absolute imports plus acyclic named re-exports of supported classes, aliases, and synchronous helper functions. `--root` assigns package-qualified names to files; without it, each file's stem supplies the logical module name. Duplicate module names are reported. Neither mode imports packages or executes Python source.
 
 Relative imports, star imports, dynamic imports, import cycles, and ambiguous
 modules remain outside the checking subset or produce visible incomplete
 coverage. See [CLI input behavior](cli.md).
 
-## Lifecycle preview subset
+## Lifecycle-checking subset
 
 | Pattern | Checking behavior |
 | --- | --- |
@@ -89,8 +89,9 @@ Lifecycle checking has additional conservative flow limits:
 When a flow limit is reached, the checker drops the affected exact facts,
 weakens reachable resource state, and reports a TP9001 boundary with incomplete
 coverage. It does not truncate an alias set and continue as if the remaining
-objects were exact. These values are current source-preview defaults; release
-qualification still requires the phase plan's budget fixtures and measurements.
+objects were exact. These are the accepted 0.2.0 defaults; the phase plan and
+[performance record](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2/performance.md)
+contain their qualification fixtures and measurements.
 The request-wide flow limit is split evenly among files; unused work in one file
 is not reassigned. An edit in one file therefore cannot shift another file's
 budget and invalidate its cached result when that file is otherwise unaffected.

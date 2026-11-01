@@ -1,10 +1,10 @@
 # Packaging and release plan
 
-TypePact 0.1.0 has been published and verified. The next planned release is
-0.2.0; its lifecycle preview is not release-qualified yet. See the
-[0.1.0 evidence record](../releases/0.1.0-evidence.md) for completed release
-results and the [0.2.0 release checklist](release-0.2.0-checklist.md) for the
-current candidate process.
+TypePact 0.1.0 and 0.2.0 have been published and verified. See the
+[0.1.0 evidence record](../releases/0.1.0-evidence.md) and
+[0.2.0 evidence record](../releases/0.2.0-evidence.md) for release results; the
+[0.2.0 release checklist](release-0.2.0-checklist.md) records its completed
+candidate and verification process.
 
 ## Artifacts
 
@@ -52,14 +52,14 @@ Every release note states added rules, behavior changes, support versions, known
 
 ## Tag-triggered GitHub workflow
 
-The implemented workflow `.github/workflows/release.yml` validates stable tags of the exact form `v1.2.3`. Manual dispatch and `codex/release-*` branches build candidates without publishing. Eight matrix jobs build native `typepact-cli` wheels. The source job builds the helper wheel and both source archives and runs a Cargo dry run. Publication requires the reusable quality workflow, all builds, complete artifact inventory and matching version/metadata checks. All three publishers consume the same validated candidate revision and verified artifacts. `typepact-cli` publishes before `typepact` so the exact dependency is available. The 0.1.0 evidence records the successful first release; repeat this process for each candidate.
+The implemented workflow `.github/workflows/release.yml` validates stable tags of the exact form `v1.2.3`. Manual dispatch and `codex/release-*` branches build candidates without publishing. Eight matrix jobs build native `typepact-cli` wheels. The source job builds the helper wheel and both source archives and runs a Cargo dry run. Publication requires the reusable quality workflow, all builds, complete artifact inventory and matching version/metadata checks. All three publishers consume the same validated candidate revision and verified artifacts. `typepact-cli` publishes before `typepact` so the exact dependency is available. The 0.1.0 and 0.2.0 evidence records retain the completed releases; repeat this process for each candidate.
 
 Before tagging a subsequent release:
 
 - Set the root Python project, `cli/pyproject.toml`, and Rust crate version to the tag version without the leading `v`; pin `typepact-cli` to that exact version in the helper dependency and refresh `uv.lock`.
 - Confirm the PyPI trusted publishers for both projects and the `CARGO_REGISTRY_TOKEN` GitHub secret are configured. Never put credential values in evidence or logs.
 - Use the pinned build tools and committed `uv.lock`/`Cargo.lock`. Require the eight CLI platform wheels, one pure helper wheel and both source archives; validate version metadata and dependency pins.
-- Complete the exact-candidate release evidence, maintainer approval, local checks, and CI review. Use the [0.2.0 release checklist](release-0.2.0-checklist.md) for the next tag.
+- Complete exact-candidate release evidence, maintainer approval, local checks, and CI review. The [0.2.0 release checklist](release-0.2.0-checklist.md) records the last release process and can guide later checklists.
 
 Push the version tag to trigger publication. Both PyPI publish jobs use Trusted Publishing: grant job-scoped `id-token: write`, omit username/password inputs, and enable attestations. Keep the `pypi` environment on both jobs. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; typepact publication also depends on successful typepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
 
@@ -91,7 +91,7 @@ All later phases inherit this distribution contract. Changes to the matrix, mini
 
 ## Two-project PyPI publication
 
-The first 0.1.0 release used the repository secret PYPI_API_TOKEN because two pending trusted publishers for the same GitHub project could not be configured. Both projects now exist on PyPI and have separate trusted publishers for repository eddiethedean/typepact, workflow release.yml and environment pypi. The release workflow has returned to OIDC: each publishing job receives only the job-scoped id-token: write permission, omits username/password inputs and enables attestations. The publish-cli job selects only typepact_cli artifacts; publish-typepact selects only typepact artifacts and waits for successful CLI publication. Remove the unused bootstrap API token from GitHub and revoke it in PyPI after the next successful trusted-publishing release. Keep the pure helper dependency exact to prevent skew with the native analyzer. Standalone users can install typepact-cli without the Python helpers.
+The first 0.1.0 release used the repository secret `PYPI_API_TOKEN` because two pending trusted publishers for the same GitHub project could not be configured. Both projects now have separate trusted publishers for repository `eddiethedean/typepact`, workflow `release.yml` and environment `pypi`. The 0.2.0 release successfully exercised OIDC: each publishing job used job-scoped `id-token: write`, omitted username/password inputs and enabled attestations. The unused `PYPI_API_TOKEN` GitHub secret has been removed; revoking its PyPI account token remains a maintainer cleanup action. Keep the pure helper dependency exact to prevent skew with the native analyzer. Standalone users can install `typepact-cli` without the Python helpers.
 
 The uv workspace contains the root helper project and cli project; workspace source mapping resolves the CLI locally during development. Standard published metadata uses the ordinary registry dependency typepact-cli==X.Y.Z. Updating versions requires changing all three manifests and the helper dependency together, then refreshing uv.lock. A partial publication leaves the candidate incomplete; resume only missing projects, preserving published bytes.
 

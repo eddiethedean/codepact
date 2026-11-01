@@ -2147,7 +2147,7 @@ mod tests {
     #[test]
     fn ast_ranges_use_one_based_utf8_byte_columns() {
         let source = "from typepact.rust import Borrowed\nclass C: pass\ndef use(label: str = 'é', *, value: Borrowed[C]): pass\n";
-        let output = crate::frontend::parse_frontend(source, "3.11").unwrap();
+        let output = crate::frontend::parse_frontend(source, "test", "3.11").unwrap();
         let Declaration::Function { parameters, .. } = output
             .declarations
             .iter()
@@ -2167,7 +2167,7 @@ mod tests {
     #[test]
     fn ast_expressions_retain_multiline_source_ranges() {
         let source = "from typepact.rust import Borrowed\nclass C: pass\ndef use(\n    value: Borrowed[C],\n): pass\n";
-        let output = crate::frontend::parse_frontend(source, "3.11").unwrap();
+        let output = crate::frontend::parse_frontend(source, "test", "3.11").unwrap();
         let Declaration::Function {
             parameters, range, ..
         } = output

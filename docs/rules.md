@@ -1,14 +1,14 @@
 # Diagnostic rule catalog
 
-This catalog describes the current 0.1.0 inspector and the unreleased 0.2.0
-lifecycle preview. Codes and message text remain provisional during 0.x. A
+This catalog describes the 0.2.0 inspector and lifecycle checker. Codes and
+message text remain provisional during 0.x. A
 diagnostic identifies a modeled problem or boundary; it does not make a runtime
 safety claim.
 
 | Code | Mode | Meaning | First repair to consider |
 | --- | --- | --- | --- |
-| `TP1001` | 0.2 preview | A resource known or possibly closed is used | Move the use before the closing operation, or make the control-flow paths preserve a valid open resource before use. Review certainty and the related close location. |
-| `TP2001` | 0.2 preview | A supported body closes a resource through a `Borrowed` parameter or alias | Keep the borrowed operation non-consuming. If the function truly owns and closes the resource, declare the ownership contract accurately and verify callers. |
+| `TP1001` | 0.2.0 | A resource known or possibly closed is used | Move the use before the closing operation, or make the control-flow paths preserve a valid open resource before use. Review certainty and the related close location. |
+| `TP2001` | 0.2.0 | A supported body closes a resource through a `Borrowed` parameter or alias | Keep the borrowed operation non-consuming. If the function truly owns and closes the resource, declare the ownership contract accurately and verify callers. |
 | `TP4001` | Both | The selected Python grammar could not parse the file | Fix the syntax error or select the source target matching the code. |
 | `TP4002` | Both | A declaration is invalid or metadata conflicts | Compare the primary and related spans; make the lifecycle/access declarations for that view consistent. |
 | `TP9001` | Both | An unsupported or unresolved construct leaves coverage incomplete | Supply a missing supported input or reduce the pilot to a documented subset. Do not treat the boundary as a pass. |

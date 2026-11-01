@@ -2,7 +2,7 @@
 
 ## Phase 0: establish executable contracts
 
-The 0.1 implementation work in [AM01–AM06](analyzer-migration.md) is complete and qualified in the [0.1.0 release record](../releases/0.1.0-evidence.md). The current implementation work is phase 0.2 lifecycle checking; its release qualification remains pending. Retain lightweight Python helpers and the canonical contract/diagnostic interface.
+The 0.1 implementation work in [AM01–AM06](analyzer-migration.md) is complete and qualified in the [0.1.0 release record](../releases/0.1.0-evidence.md). Phase 0.2 lifecycle checking is published and qualified in the [0.2.0 release record](../releases/0.2.0-evidence.md). Retain lightweight Python helpers and the canonical contract/diagnostic interface.
 
 Completion: F01–F08 and V01–V24 pass, including captured-identity regressions, AST parsing cases, fresh/updated query parity and execution-count evidence. Ordinary checkers retain underlying types; package import does not initialize the analyzer.
 

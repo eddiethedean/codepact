@@ -1,6 +1,6 @@
 # Testing, performance and quality plan
 
-This is the verification strategy for the published inspector and the unreleased lifecycle preview. Local Rust and CLI fixtures cover core flow, resolution, incremental reuse, cancellation, budgets and conservative boundaries. The V02 matrix is mapped to automation below, while full candidate evidence and review remain pending.
+This is the verification strategy for the published inspector and lifecycle checker. Local Rust and CLI fixtures cover core flow, resolution, incremental reuse, cancellation, budgets and conservative boundaries. The V02 matrix maps the 0.2.0 qualification evidence to automation below.
 
 ## Correctness layers
 
@@ -54,7 +54,7 @@ The current source suite has 32 Rust unit tests, 34 lifecycle CLI integration te
 
 ## Python helper and CLI distributions
 
-Packaging checks require a pure helper wheel declaring the exact native typepact-cli dependency, eight CLI platform wheels and separate helper/CLI source archives. The local make check gate builds both packages through their sdists and installs all four local artifacts into fresh uv environments outside the checkout, then verifies CLI version/help, inspection, lifecycle checking and source non-execution. Release CI builds all eight targets and validates inventory/metadata. Full candidate platform qualification still requires recorded evidence.
+Packaging checks require a pure helper wheel declaring the exact native typepact-cli dependency, eight CLI platform wheels and separate helper/CLI source archives. The local make check gate builds both packages through their sdists and installs all four local artifacts into fresh uv environments outside the checkout, then verifies CLI version/help, inspection, lifecycle checking and source non-execution. Release CI builds all eight targets and validates inventory/metadata. The [0.2.0 evidence record](../releases/0.2.0-evidence.md) contains exact candidate and publication results.
 
 ## Planned concurrent resource qualification
 

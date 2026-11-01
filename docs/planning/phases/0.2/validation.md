@@ -1,6 +1,6 @@
 # 0.2 validation matrix
 
-Status: **No row is accepted as qualified yet.** Existing source and tests cover part of this matrix; the candidate evidence record must link exact results before any row or gate is marked passed. The [specification](specification.md) is the oracle; the [phase plan](../0.2-lifecycle.md) defines L01–L06. IDs below are independent of 0.1 V01–V24.
+Status: **V02-01–20 regression checks passed on the exact candidate and were accepted by the accountable maintainer on 2026-11-01.** The maintainer waived independent review; exact results and environment are in the [release evidence](../../../releases/0.2.0-evidence.md). The [specification](specification.md) is the oracle; the [phase plan](../0.2-lifecycle.md) defines L01–L06. IDs below are independent of 0.1 V01–V24.
 
 ## Required matrix
 
@@ -29,9 +29,10 @@ Status: **No row is accepted as qualified yet.** Existing source and tests cover
 
 ## Automation currently present
 
-These tests are regression evidence in the current source tree. They do not
-qualify a V02 row until the exact candidate's run, environment, output and
-reviewer are retained in the [release evidence record](../../release-evidence-template.md).
+These automated checks provide the V02 regression evidence. Their exact
+candidate run, environment, results, and maintainer acceptance are retained in
+the [release evidence record](../../../releases/0.2.0-evidence.md). The accountable
+maintainer waived independent review for this release.
 
 | Rows | Current automated evidence |
 | --- | --- |
@@ -50,11 +51,12 @@ reviewer are retained in the [release evidence record](../../release-evidence-te
 | V02-19 | `tests/cli.rs::check_reports_one_use_after_close_at_the_call_site`, `possible_findings_exit_zero_while_invalid_project_input_exits_two`, `completeness_regressions_have_the_documented_exit_status` |
 | V02-20 | `Makefile::check-rust-package`, `scripts/verify_installed_package.py`, inherited `make check` targets |
 
-Still required for qualification: retain candidate logs and normalized snapshots,
-review missing-module/collision/exception cases against the written oracle, and
-measure cold and incremental lifecycle performance, memory and query reuse on
-fixed corpora. The numeric flow limits remain provisional until those results
-and LC01 review are recorded.
+The exact candidate run includes the mapped Rust/Python regressions, query reuse
+assertions, package checks, and lifecycle/runtime smokes. Cold and incremental
+timings, process high-water RSS, and retained-session RSS are recorded in the
+[performance record](performance.md). The accountable maintainer accepted the
+bounded scope, test coverage, and operational results with the limitations
+recorded in the release evidence.
 
 ## Assertions and differential checks
 

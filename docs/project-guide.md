@@ -1,8 +1,8 @@
 # Inspect a project with multiple files
 
-TypePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, which are supported in 0.1.
+TypePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, which are supported in 0.2.0.
 
-For a project-level evaluation path and lifecycle-preview constraints, see
+For a project-level evaluation path and lifecycle-checking limits, see
 [Adopting TypePact](adopting.md).
 
 ## Create the source files
@@ -34,7 +34,7 @@ Save its consumer as `src/client.py`:
 From `my-project`, install TypePact and inspect the two files:
 
 ```sh
-uv add typepact==0.1.0
+uv add typepact==0.2.0
 uv run typepact inspect-contracts --root src src/models.py src/client.py
 ```
 

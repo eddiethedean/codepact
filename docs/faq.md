@@ -2,10 +2,9 @@
 
 ## Which version can I install now?
 
-Version 0.1.0 is the currently published release. It provides declaration
-inspection through `typepact inspect-contracts`. Version 0.2.0 is being prepared;
-the `check` command is currently available only from source. See
-[availability](availability.md).
+Version 0.2.0 is the current release. It provides declaration inspection through
+`typepact inspect-contracts` and bounded lifecycle checking through `typepact
+check`. See [availability](availability.md).
 
 ## Does TypePact import or run my application?
 
@@ -16,7 +15,7 @@ TypePact's CLI does not import that application.
 
 ## Does a clean result prove my resources are safe?
 
-No. Contract facts have `declared-unverified` provenance. The lifecycle preview
+No. Contract facts have `declared-unverified` provenance. The lifecycle checker
 checks a bounded synchronous subset. Neither mode proves that a method releases
 a runtime resource, that cleanup occurs on every exit, or that ownership is
 generally safe.
@@ -38,7 +37,7 @@ Explicit check filenames add files to that scan and do not restrict it. See the
 
 The analyzer supports a limited set of syntax and import forms. In 0.1.0,
 relative imports, re-export chains, cycles, future/string annotations, and
-dynamic expressions are outside the supported inspector subset. The 0.2 preview
+dynamic expressions are outside the supported inspector subset. Version 0.2.0
 has additional lifecycle-flow limits. Read [supported syntax](supported-syntax.md)
 and [limitations](limitations.md), then inspect `coverage.reasons`.
 

@@ -5,7 +5,7 @@
 The command reads Python source as text and parses it locally. It does not
 import the analyzed application, evaluate its annotations, execute decorators,
 or invoke methods from the source. `inspect-contracts` reads the files named on
-the command line. The `check` preview scans `.py` files under its selected root;
+the command line. The `check` command scans `.py` files under its selected root;
 keep that root limited to the source you intend to analyze. The Rust API receives
 source strings from its host application.
 
