@@ -1,10 +1,10 @@
 # 0.2 lifecycle performance baseline
 
-Status: exact-source-candidate replay from 2026-10-31 on
-`b7a5236d00cd14c06fe7fd633b6a05d2e64c5856`. The subsequent release-record
-follow-up contains documentation only; no analyzer source changed. Reviewer
-acceptance of the measured regressions and provisional limits remains required
-before G4 or LC01 can pass.
+Status: exact analyzer-source replay from 2026-11-01. The analyzer implementation
+is unchanged from source revision `b7a5236d00cd14c06fe7fd633b6a05d2e64c5856`;
+the current candidate adds a reproducible retained-RSS probe to the benchmark
+example. Reviewer acceptance of the measured regressions and provisional limits
+remains required before G4 or LC01 can pass.
 
 ## Environment and method
 
@@ -16,7 +16,7 @@ before G4 or LC01 can pass.
 - Corpus: two source files, one provider and one client. The client constructs N distinct resources and calls a helper that closes each before use. The 1, 250 and 1,000 object corpora contain 294, 19,641 and 78,891 source bytes.
 - The benchmark asserts the expected definite or possible finding count before reporting timings. It includes in-process Salsa session time, not process startup.
 
-These measurements replay the exact analyzer source candidate. They do not
+These measurements replay the exact analyzer implementation source. They do not
 establish performance on other platforms or corpora, and they are not accepted
 release thresholds until reviewed.
 
@@ -27,14 +27,20 @@ flow-state optimization:
 
 | Resources | Cold session | Warm no-op | Unrelated body edit | Imported effect edit | Location-only edit |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 0.118 (0.102–1.640) | 0.005 (0.004–0.006) | 0.082 (0.080–0.110) | 0.091 (0.084–0.098) | 0.082 (0.075–0.083) |
-| 250 | 8.142 (7.962–8.457) | 0.381 (0.369–0.398) | 5.940 (5.836–6.153) | 7.432 (7.222–7.503) | 5.778 (5.712–6.094) |
-| 1,000 | 66.165 (65.294–69.273) | 1.461 (1.457–1.505) | 43.048 (42.357–43.673) | 49.312 (48.225–50.414) | 42.699 (41.773–43.591) |
+| 1 | 0.113 (0.098–0.369) | 0.004 (0.004–0.011) | 0.090 (0.088–0.106) | 0.093 (0.088–0.108) | 0.083 (0.080–0.088) |
+| 250 | 8.633 (7.613–11.986) | 0.361 (0.352–0.379) | 5.685 (5.678–5.743) | 7.124 (7.091–7.147) | 5.559 (5.551–5.582) |
+| 1,000 | 62.707 (62.043–74.219) | 1.442 (1.430–1.477) | 41.627 (40.981–41.753) | 47.055 (46.305–47.405) | 40.945 (40.485–41.326) |
 
-The 1,000-resource benchmark process reached 40.16 MiB maximum resident set
-size (`/usr/bin/time -l`), across its seven repeats of each scenario. This is a
-process high-water measurement, not retained-session memory; retained memory
-remains unmeasured.
+The 1,000-resource benchmark process reached 37.30 MiB maximum resident set
+size (`/usr/bin/time -l`), across its seven repeats of each scenario.
+
+The benchmark's `TYPEPACT_RETAINED_MEMORY_PROBE=1` mode samples RSS before a
+session check and two seconds after it, with the returned diagnostics dropped
+and the session retained. Three 1,000-resource samples measured a 1.91 MiB
+baseline and 19.50–19.73 MiB retained process RSS, an increase of 17.59–17.83
+MiB. RSS is a coarse process measurement that includes loaded code, input and
+allocator overhead; it is not an allocated-bytes count or a memory budget. It
+describes one corpus on this host.
 
 Compared with the earlier provisional measurements recorded before the latest
 correctness fixes, 1,000-resource cold time is
@@ -45,8 +51,8 @@ version and these later correctness fixes have not received an independent
 performance review, and no absolute latency threshold has been accepted. A
 release-review profile found full flow-state clones on definite singleton
 method calls; evaluating those calls in place reduced the 1,000-resource cold
-median from 476.1 ms to 66.2 ms and the 250-resource median from 35.8 ms to
-8.1 ms. The remaining difference from the earlier provisional result is
+median from 476.1 ms to 62.7 ms and the 250-resource median from 35.8 ms to
+8.6 ms. The remaining difference from the earlier provisional result is
 recorded for reviewer assessment rather than treated as a passed threshold.
 
 ## Query reuse evidence
@@ -87,6 +93,7 @@ target/release/examples/benchmark_lifecycle 1
 target/release/examples/benchmark_lifecycle 250
 target/release/examples/benchmark_lifecycle 1000
 /usr/bin/time -l target/release/examples/benchmark_lifecycle 1000
+TYPEPACT_RETAINED_MEMORY_PROBE=1 target/release/examples/benchmark_lifecycle 1000
 uv run --locked python scripts/benchmark_inspector.py --binary target/release/typepact --repeats 7 --classes 1000
 ```
 
