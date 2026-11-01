@@ -2,7 +2,7 @@
 
 `typepact-cli` distributes the Rust `typepact` command through Python packaging.
 Installing `typepact` installs this matching CLI package automatically. Version
-0.1.0 is currently published; 0.2.0 is being prepared.
+0.2.0 is currently published; the 0.3.0 cleanup release is being qualified.
 
 ## Install and inspect
 
@@ -18,23 +18,24 @@ incomplete coverage, and `2` means invocation or input failure.
 
 ## Lifecycle checking preview
 
-The source preview for the upcoming 0.2.0 release includes `typepact check`.
-Build it from the repository root with Rust 1.96+:
+The source preview for the upcoming 0.3.0 release includes expanded cleanup
+checking through `typepact check`. Build it from the repository root with Rust
+1.96+:
 
 ```sh
 git clone https://github.com/eddiethedean/typepact.git
 cd typepact
-git checkout cf2fb90989d3ed01b7ca9edb56cc5ff8bd7122c4
+git checkout main
 cargo run --locked -- check --root examples
 ```
 
-For a reproducible preview, use the pinned commit in the
-[availability guide](https://typepact.readthedocs.io/en/latest/availability.html).
+For a reproducible preview, use the candidate commit in the
+[0.3.0 release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.3.0-evidence.md).
 The lifecycle example intentionally reports a use after close and exits `1`.
 Checking scans Python files below its root, reports readable diagnostics by default,
 and accepts `--json`. Possible findings and coverage warnings can accompany exit `0`.
-The published 0.1.0 CLI does not include this command. Release gates for 0.2.0
-remain pending.
+The published 0.2.0 CLI does not include the phase 0.3 cleanup and cancellation
+behavior. Release gates for 0.3.0 remain pending.
 
 ## Requirements and reference
 

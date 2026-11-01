@@ -1,6 +1,6 @@
 [package]
 name = "typepact"
-version = "0.2.0"
+version = "0.3.0"
 description = "Inspect TypePact contracts in Python source without executing it"
 edition.workspace = true
 license.workspace = true
