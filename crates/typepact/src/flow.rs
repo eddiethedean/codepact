@@ -146,6 +146,15 @@ struct ContextCleanup {
     range: SourceRange,
 }
 
+#[derive(Clone)]
+enum ContextCleanupFrame {
+    Modeled(ContextCleanup),
+    Unknown {
+        asynchronous: bool,
+        range: SourceRange,
+    },
+}
+
 #[derive(Default)]
 struct FlowResult {
     returns: Vec<FlowExit>,
@@ -4551,63 +4560,100 @@ fn execute_with(
     }
 
     fn unwind(
-        mut path: Path,
-        cleanups: &[ContextCleanup],
+        path: Path,
+        cleanups: &[ContextCleanupFrame],
         remaining: usize,
         file: &SourceFile,
         contracts: &[Contract],
         functions: &FunctionMap,
         result: &mut Inspection,
     ) -> Vec<Path> {
-        if remaining == 0 {
-            return vec![path];
+        let mut pending = vec![(path, remaining)];
+        let mut completed = Vec::new();
+        while let Some((mut path, remaining)) = pending.pop() {
+            if remaining == 0 {
+                completed.push(path);
+                continue;
+            }
+            let cleanup = cleanups[remaining - 1].clone();
+            let cleanup_range = match &cleanup {
+                ContextCleanupFrame::Modeled(cleanup) => cleanup.range,
+                ContextCleanupFrame::Unknown { range, .. } => *range,
+            };
+            if !take_flow_step(&mut path.state, file, cleanup_range, result) {
+                completed.push(path);
+                continue;
+            }
+            match cleanup {
+                ContextCleanupFrame::Modeled(cleanup) => {
+                    path.state.alive = true;
+                    path.state.pending_raises.clear();
+                    run_context_cleanup(
+                        &cleanup,
+                        &mut path.state,
+                        file,
+                        contracts,
+                        functions,
+                        result,
+                    );
+                    let raises = take_pending_raises(&mut path.state);
+                    let had_raises = !raises.is_empty();
+                    for raised in raises {
+                        pending.push((
+                            Path {
+                                state: raised.state,
+                                completion: Some((raised.kind, raised.range)),
+                            },
+                            remaining - 1,
+                        ));
+                    }
+                    if path.state.alive {
+                        pending.push((path, remaining - 1));
+                    } else if !had_raises {
+                        pending.push((
+                            Path {
+                                state: path.state,
+                                completion: Some((CompletionKind::Raise(None), cleanup.range)),
+                            },
+                            remaining - 1,
+                        ));
+                    }
+                }
+                ContextCleanupFrame::Unknown {
+                    asynchronous,
+                    range,
+                } => {
+                    path.state.alive = true;
+                    path.state.pending_raises.clear();
+                    if matches!(
+                        path.completion.as_ref().map(|(kind, _)| kind),
+                        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled)
+                    ) {
+                        let mut suppressed = path.clone();
+                        suppressed.completion = None;
+                        pending.push((suppressed, remaining - 1));
+                    }
+                    pending.push((
+                        Path {
+                            state: path.state.clone(),
+                            completion: Some((CompletionKind::Raise(None), range)),
+                        },
+                        remaining - 1,
+                    ));
+                    if asynchronous {
+                        pending.push((
+                            Path {
+                                state: path.state.clone(),
+                                completion: Some((CompletionKind::Cancelled, range)),
+                            },
+                            remaining - 1,
+                        ));
+                    }
+                    pending.push((path, remaining - 1));
+                }
+            }
         }
-        let cleanup = &cleanups[remaining - 1];
-        path.state.alive = true;
-        path.state.pending_raises.clear();
-        run_context_cleanup(cleanup, &mut path.state, file, contracts, functions, result);
-        let raises = take_pending_raises(&mut path.state);
-        let had_raises = !raises.is_empty();
-        let mut paths = Vec::new();
-        for raised in raises {
-            paths.extend(unwind(
-                Path {
-                    state: raised.state,
-                    completion: Some((raised.kind, raised.range)),
-                },
-                cleanups,
-                remaining - 1,
-                file,
-                contracts,
-                functions,
-                result,
-            ));
-        }
-        if path.state.alive {
-            paths.extend(unwind(
-                path,
-                cleanups,
-                remaining - 1,
-                file,
-                contracts,
-                functions,
-                result,
-            ));
-        } else if !had_raises {
-            paths.extend(unwind(
-                Path {
-                    state: path.state.clone(),
-                    completion: Some((CompletionKind::Raise(None), cleanup.range)),
-                },
-                cleanups,
-                remaining - 1,
-                file,
-                contracts,
-                functions,
-                result,
-            ));
-        }
-        paths
+        completed
     }
 
     let mut cleanups = Vec::new();
@@ -4648,6 +4694,30 @@ fn execute_with(
                     "context-manager cleanup has no qualified model"
                 },
             );
+            if env.alive {
+                entry_raises.push((
+                    FlowExit {
+                        state: env.clone(),
+                        range: item.range,
+                        kind: CompletionKind::Raise(None),
+                    },
+                    cleanups.len(),
+                ));
+                if asynchronous {
+                    entry_raises.push((
+                        FlowExit {
+                            state: env.clone(),
+                            range: item.range,
+                            kind: CompletionKind::Cancelled,
+                        },
+                        cleanups.len(),
+                    ));
+                }
+                cleanups.push(ContextCleanupFrame::Unknown {
+                    asynchronous,
+                    range: item.range,
+                });
+            }
             continue;
         };
 
@@ -4750,12 +4820,12 @@ fn execute_with(
                     env.shadowed_classes.insert(target.clone());
                 }
             }
-            cleanups.push(ContextCleanup {
+            cleanups.push(ContextCleanupFrame::Modeled(ContextCleanup {
                 receiver,
                 method,
                 asynchronous: method == "aclose",
                 range: item.range,
-            });
+            }));
         }
     }
 
@@ -4800,7 +4870,9 @@ fn execute_with(
             path, &cleanups, remaining, file, contracts, functions, result,
         ) {
             if !uncertain.is_empty() {
-                weaken(&mut path.state, uncertain.iter().cloned());
+                let mut affected = uncertain.clone();
+                affected.extend(path.state.places.values().flatten().cloned());
+                weaken(&mut path.state, affected.into_iter());
             }
             path.state.alive = true;
             match path.completion {
@@ -6116,6 +6188,22 @@ mod tests {
             }),
             "the exhausted budget cannot claim the duty was discharged: {bounded:#?}"
         );
+    }
+
+    #[test]
+    fn unknown_context_unwind_worklist_obeys_the_flow_budget() {
+        let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager(), UnknownManager(), UnknownManager(), UnknownManager():\n        raise RuntimeError()\n";
+        let bounded = source_with_flow_budget(source, 2);
+
+        assert_eq!(bounded.coverage.status, "incomplete", "{bounded:#?}");
+        assert!(bounded
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("lifecycle flow work budget exceeded") }));
+        assert!(bounded.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
+        }));
     }
 
     #[test]

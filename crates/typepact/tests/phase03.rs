@@ -787,9 +787,16 @@ fn v03_10_failed_later_context_entry_still_unwinds_earlier_managers() {
         .iter()
         .filter(|diagnostic| diagnostic.code == "TP1002")
         .collect::<Vec<_>>();
-    assert_eq!(leaks.len(), 1, "{result:#?}");
-    assert_eq!(leaks[0].certainty, "possible");
-    assert_eq!(leaks[0].related[0].line, 9);
+    assert_eq!(leaks.len(), 2, "{result:#?}");
+    assert!(leaks.iter().all(|diagnostic| {
+        diagnostic.certainty == "possible" && diagnostic.related[0].line == 9
+    }));
+    assert!(leaks
+        .iter()
+        .any(|diagnostic| diagnostic.message.ends_with("on fallthrough")));
+    assert!(leaks
+        .iter()
+        .any(|diagnostic| diagnostic.message.ends_with("on raise")));
     assert_eq!(result.coverage.status, "incomplete");
 }
 
@@ -1352,6 +1359,45 @@ fn v03_19_async_context_entry_failure_unwinds_prior_manager() {
 }
 
 #[test]
+fn v03_19_unknown_async_context_keeps_exit_cancellation_visible() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return False\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        pass\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on cancelled")
+        }),
+        "an unknown asynchronous exit can be interrupted: {result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_19_unknown_async_entry_cancellation_skips_the_body() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return False\nasync def cleanup():\n    before = C()\n    async with UnknownManager():\n        before.close()\n        local = C()\n        local.close()\n";
+    let result = check_source(source);
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.message.ends_with("on cancelled")
+                && diagnostic.related.first().is_some_and(|span| span.line == 9)
+        }),
+        "cancellation during an unknown entry must retain the caller duty without acquiring body locals: {result:#?}"
+    );
+    assert!(result.diagnostics.iter().all(|diagnostic| {
+        diagnostic.code != "TP1002"
+            || !diagnostic.message.ends_with("on cancelled")
+            || diagnostic
+                .related
+                .first()
+                .is_some_and(|span| span.line == 9)
+    }));
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
 fn v03_21_contextlib_model_is_disabled_for_unlisted_python_targets() {
     for source in [
         "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
@@ -1539,6 +1585,102 @@ fn v03_10_unknown_suppression_cannot_hide_the_resource_exit() {
         }),
         "{result:#?}"
     );
+}
+
+#[test]
+fn v03_10_unknown_suppression_keeps_propagation_and_continuation_paths() {
+    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    before = C()\n    with UnknownManager():\n        raise RuntimeError()\n    after = C()\n";
+    let result = check_source(source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(
+        leaks.iter().any(|diagnostic| {
+            diagnostic.certainty == "possible" && diagnostic.message.ends_with("on raise")
+        }),
+        "the unsuppressed exception path must remain feasible: {result:#?}"
+    );
+    let after_leaks = leaks
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic
+                .related
+                .first()
+                .is_some_and(|span| span.line == 12)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(after_leaks.len(), 1, "{result:#?}");
+    assert_eq!(after_leaks[0].certainty, "definite", "{result:#?}");
+    assert!(
+        after_leaks[0].message.ends_with("on fallthrough"),
+        "{result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_10_unknown_outer_suppression_can_continue_after_inner_entry_failure() {
+    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef fail() -> C:\n    raise RuntimeError()\ndef cleanup():\n    outer = C()\n    with closing(outer), UnknownManager(), closing(fail()):\n        pass\n    after = C()\n";
+    let result = check_source(source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    let after_leaks = leaks
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic
+                .related
+                .first()
+                .is_some_and(|span| span.line == 15)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(after_leaks.len(), 1, "{result:#?}");
+    assert_eq!(after_leaks[0].certainty, "definite", "{result:#?}");
+    assert!(
+        after_leaks[0].message.ends_with("on fallthrough"),
+        "{result:#?}"
+    );
+    assert!(leaks
+        .iter()
+        .all(|diagnostic| diagnostic.related[0].line != 12));
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_10_unknown_outer_suppression_can_continue_after_inner_cleanup_failure() {
+    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise RuntimeError()\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager(), closing(resource):\n        pass\n    after = C()\n";
+    let result = check_source(source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(
+        leaks.iter().any(|diagnostic| {
+            diagnostic.message.ends_with("on raise")
+                && diagnostic.primary.line == 12
+                && diagnostic
+                    .related
+                    .first()
+                    .is_some_and(|span| span.line == 11)
+        }),
+        "the cleanup exception must remain propagatable: {result:#?}"
+    );
+    assert!(
+        leaks.iter().any(|diagnostic| {
+            diagnostic.message.ends_with("on fallthrough")
+                && diagnostic
+                    .related
+                    .first()
+                    .is_some_and(|span| span.line == 14)
+        }),
+        "the outer manager may suppress the inner cleanup exception: {result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
 }
 
 #[test]
