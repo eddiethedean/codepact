@@ -829,6 +829,44 @@ fn v03_05_shadowed_builtin_exception_constructor_keeps_a_boundary() {
 }
 
 #[test]
+fn v03_05_shadowed_base_exception_handler_does_not_hide_an_unmatched_raise() {
+    let source = format!(
+        "{RESOURCE}def cleanup():\n    resource = C()\n    BaseException = ValueError\n    try:\n        raise RuntimeError()\n    except BaseException:\n        resource.close()\n"
+    );
+    let acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    let handler_line = source
+        .lines()
+        .position(|line| line.trim() == "except BaseException:")
+        .unwrap()
+        + 1;
+    let result = check_source(&source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{result:#?}");
+    assert_eq!(leaks[0].certainty, "possible", "{result:#?}");
+    assert!(leaks[0].message.ends_with("on raise"), "{result:#?}");
+    assert_eq!(leaks[0].related[0].line, acquisition_line, "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.primary.line == handler_line
+                && diagnostic
+                    .message
+                    .contains("exception type may or may not match")
+        }),
+        "a rebound handler type must remain an explicit uncertainty: {result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
 fn v03_05_custom_exception_handler_keeps_the_unmatched_exit_unknown() {
     let result = check_source(&format!(
         "{RESOURCE}class CleanupError(Exception):\n    pass\ndef fail():\n    raise CleanupError()\ndef cleanup():\n    resource = C()\n    try:\n        fail()\n    except CleanupError:\n        resource.close()\n"

@@ -3951,7 +3951,24 @@ fn is_unshadowed_builtin_exception(name: &str, state: &State) -> bool {
         && !state.module_class_bindings.contains_key(name)
 }
 
-fn exception_handler_match(exception: Option<&str>, handler: Option<&AstExpr>) -> ExceptionMatch {
+fn is_unshadowed_exception_handler_name(name: &str, state: &State) -> bool {
+    if known_builtin_exception(name) {
+        return is_unshadowed_builtin_exception(name, state);
+    }
+    name == "CancelledError"
+        && !state.shadowed_classes.contains(name)
+        && !state.shadowed_functions.contains(name)
+        && !state.function_bindings.contains_key(name)
+        && !state.class_bindings.contains_key(name)
+        && !state.module_function_bindings.contains_key(name)
+        && !state.module_class_bindings.contains_key(name)
+}
+
+fn exception_handler_match(
+    exception: Option<&str>,
+    handler: Option<&AstExpr>,
+    state: &State,
+) -> ExceptionMatch {
     let Some(handler) = handler else {
         return ExceptionMatch::Definite;
     };
@@ -3960,10 +3977,13 @@ fn exception_handler_match(exception: Option<&str>, handler: Option<&AstExpr>) -
     };
     let mut possible = false;
     for caught in caught {
-        if caught == "BaseException" {
+        if caught == "BaseException" && is_unshadowed_exception_handler_name(caught, state) {
             return ExceptionMatch::Definite;
         }
-        match exception.and_then(|exception| builtin_exception_match(exception, caught)) {
+        let matching = is_unshadowed_exception_handler_name(caught, state)
+            .then(|| exception.and_then(|exception| builtin_exception_match(exception, caught)))
+            .flatten();
+        match matching {
             Some(true) => return ExceptionMatch::Definite,
             Some(false) => {}
             None => possible = true,
@@ -4070,7 +4090,11 @@ fn execute_try(
                 may_remain_unhandled = false;
                 break;
             }
-            let matching = exception_handler_match(exception_name, handler.exception.as_ref());
+            let matching = exception_handler_match(
+                exception_name,
+                handler.exception.as_ref(),
+                &dispatch_state,
+            );
             if matching == ExceptionMatch::No {
                 unmatched_state = dispatch_state;
                 continue;
@@ -6424,6 +6448,7 @@ mod tests {
 
     #[test]
     fn exception_matching_uses_known_builtin_ancestry_and_keeps_custom_types_unknown() {
+        let state = State::default();
         let handler = |name: &str| AstExpr {
             range: SourceRange {
                 start: 0,
@@ -6432,23 +6457,42 @@ mod tests {
             kind: AstExprKind::Name(name.into()),
         };
         assert_eq!(
-            exception_handler_match(Some("RuntimeError"), Some(&handler("ValueError"))),
+            exception_handler_match(Some("RuntimeError"), Some(&handler("ValueError")), &state),
             ExceptionMatch::No
         );
         assert_eq!(
-            exception_handler_match(Some("UnicodeDecodeError"), Some(&handler("ValueError"))),
+            exception_handler_match(
+                Some("UnicodeDecodeError"),
+                Some(&handler("ValueError")),
+                &state
+            ),
             ExceptionMatch::Definite
         );
         assert_eq!(
-            exception_handler_match(Some("CancelledError"), Some(&handler("Exception"))),
+            exception_handler_match(Some("CancelledError"), Some(&handler("Exception")), &state),
             ExceptionMatch::No
         );
         assert_eq!(
-            exception_handler_match(Some("CleanupError"), Some(&handler("BaseException"))),
+            exception_handler_match(
+                Some("CleanupError"),
+                Some(&handler("BaseException")),
+                &state
+            ),
             ExceptionMatch::Definite
         );
         assert_eq!(
-            exception_handler_match(Some("CleanupError"), Some(&handler("CleanupError"))),
+            exception_handler_match(Some("CleanupError"), Some(&handler("CleanupError")), &state),
+            ExceptionMatch::Possible
+        );
+
+        let mut shadowed = State::default();
+        shadowed.shadowed_classes.insert("BaseException".into());
+        assert_eq!(
+            exception_handler_match(
+                Some("RuntimeError"),
+                Some(&handler("BaseException")),
+                &shadowed
+            ),
             ExceptionMatch::Possible
         );
     }
