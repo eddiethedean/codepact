@@ -1399,6 +1399,51 @@ fn v03_05_conditional_module_rebinding_does_not_make_builtin_handler_exact() {
 }
 
 #[test]
+fn v03_05_module_pattern_and_nested_class_bindings_keep_handler_unknown() {
+    for (scenario, prelude, target_python_version) in [
+        (
+            "match capture",
+            "match token:\n    case BaseException:\n        pass\n",
+            "3.11",
+        ),
+        (
+            "nested class global",
+            "if enabled:\n    class Helper:\n        global BaseException\n        BaseException = RuntimeError\n",
+            "3.11",
+        ),
+        (
+            "conditional type alias",
+            "if enabled:\n    type BaseException = RuntimeError\n",
+            "3.12",
+        ),
+    ] {
+        let source = format!(
+            "{prelude}{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        raise ValueError()\n    except BaseException:\n        resource.close()\n"
+        );
+        let report = codepact::check_report(
+            &[SourceFile::new("phase03.py", "phase03", source)],
+            target_python_version,
+        );
+        let leaks = report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert!(
+            !leaks.is_empty(),
+            "{scenario} may rebind BaseException, so the unmatched raise remains feasible: {report:#?}"
+        );
+        assert!(
+            leaks
+                .iter()
+                .all(|diagnostic| diagnostic.certainty == "possible"),
+            "{scenario} must not make the handler exact: {report:#?}"
+        );
+        assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+    }
+}
+
+#[test]
 fn v03_05_unrelated_conditional_module_binding_preserves_builtin_handler_routing() {
     let source = format!(
         "if enabled:\n    unrelated = 1\n{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        raise ValueError()\n    except BaseException:\n        resource.close()\n"

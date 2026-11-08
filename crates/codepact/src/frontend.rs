@@ -1,6 +1,6 @@
 use ruff_python_ast::{
-    visitor::{walk_expr, walk_stmt, Visitor},
-    AnyParameterRef, Expr, PythonVersion, Stmt,
+    visitor::{walk_expr, walk_pattern, walk_stmt, Visitor},
+    AnyParameterRef, Expr, Pattern, PythonVersion, Stmt,
 };
 use ruff_python_parser::{Mode, ParseOptions};
 use ruff_text_size::Ranged;
@@ -389,6 +389,17 @@ struct ModuleBindingUncertaintyVisitor {
 }
 
 impl ModuleBindingUncertaintyVisitor {
+    fn add_binding_name(&mut self, name: &str) {
+        if is_exception_binding_name(name) {
+            self.exception_bindings.insert(name.to_owned());
+        }
+    }
+
+    fn add_all_exception_bindings(&mut self) {
+        self.exception_bindings
+            .extend(all_exception_binding_names());
+    }
+
     fn add_target(&mut self, target: &Expr) {
         let mut pending = vec![target];
         let mut nodes = 0;
@@ -399,9 +410,7 @@ impl ModuleBindingUncertaintyVisitor {
             }
             nodes += 1;
             match target {
-                Expr::Name(name) if is_exception_binding_name(name.id.as_str()) => {
-                    self.exception_bindings.insert(name.id.to_string());
-                }
+                Expr::Name(name) => self.add_binding_name(name.id.as_str()),
                 Expr::Tuple(tuple) => pending.extend(tuple.elts.iter()),
                 Expr::List(list) => pending.extend(list.elts.iter()),
                 Expr::Starred(starred) => pending.push(&starred.value),
@@ -441,9 +450,7 @@ impl<'a> Visitor<'a> for ModuleBindingUncertaintyVisitor {
                         .as_ref()
                         .map(ToString::to_string)
                         .unwrap_or_else(|| alias.name.to_string());
-                    if is_exception_binding_name(&name) {
-                        self.exception_bindings.insert(name);
-                    }
+                    self.add_binding_name(&name);
                 }
             }
             Stmt::Import(import) => {
@@ -452,20 +459,23 @@ impl<'a> Visitor<'a> for ModuleBindingUncertaintyVisitor {
                         || alias.name.split('.').next().unwrap_or_default().to_owned(),
                         ToString::to_string,
                     );
-                    if is_exception_binding_name(&name) {
-                        self.exception_bindings.insert(name);
-                    }
+                    self.add_binding_name(&name);
                 }
             }
             Stmt::FunctionDef(function) => {
-                if is_exception_binding_name(function.name.as_str()) {
-                    self.exception_bindings.insert(function.name.to_string());
-                }
+                self.add_binding_name(function.name.as_str());
             }
             Stmt::ClassDef(class) => {
-                if is_exception_binding_name(class.name.as_str()) {
-                    self.exception_bindings.insert(class.name.to_string());
+                self.add_binding_name(class.name.as_str());
+                if class_body_issue(statement).is_some() {
+                    self.add_all_exception_bindings();
                 }
+            }
+            Stmt::TypeAlias(alias) => {
+                if let Expr::Name(name) = alias.name.as_ref() {
+                    self.add_binding_name(name.id.as_str());
+                }
+                self.walk_statement(statement);
             }
             Stmt::Assign(assign) => {
                 for target in &assign.targets {
@@ -524,6 +534,38 @@ impl<'a> Visitor<'a> for ModuleBindingUncertaintyVisitor {
         }
         self.depth += 1;
         walk_expr(self, expression);
+        self.depth -= 1;
+    }
+
+    fn visit_pattern(&mut self, pattern: &'a Pattern) {
+        if self.wildcard_import || self.exceeded {
+            return;
+        }
+        if self.depth >= ExpressionBudget::MAX_DEPTH || self.nodes >= ExpressionBudget::MAX_NODES {
+            self.exceeded = true;
+            return;
+        }
+        self.nodes += 1;
+        match pattern {
+            Pattern::MatchAs(pattern) => {
+                if let Some(name) = &pattern.name {
+                    self.add_binding_name(name.as_str());
+                }
+            }
+            Pattern::MatchStar(pattern) => {
+                if let Some(name) = &pattern.name {
+                    self.add_binding_name(name.as_str());
+                }
+            }
+            Pattern::MatchMapping(pattern) => {
+                if let Some(name) = &pattern.rest {
+                    self.add_binding_name(name.as_str());
+                }
+            }
+            _ => {}
+        }
+        self.depth += 1;
+        walk_pattern(self, pattern);
         self.depth -= 1;
     }
 }
