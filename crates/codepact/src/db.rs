@@ -1642,6 +1642,72 @@ mod tests {
             "changing close policy should refresh only the modeled file: {requires_open_flow_queries:#?}"
         );
 
+        let mixed_source = "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup(flag):\n    resource = Connection()\n    if flag:\n        resource.close()\n    resource.close()\n";
+        let mixed_file = SourceFile::new("model.py", "model", mixed_source);
+        let mixed = session.check(&[mixed_file.clone(), unrelated.clone()], "3.11");
+        let repeat_rejections = mixed
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.code == "TP1001"
+                    && diagnostic.message == "resource close requires an open resource"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(repeat_rejections.len(), 1, "{mixed:#?}");
+        assert_eq!(repeat_rejections[0].certainty, "possible", "{mixed:#?}");
+        assert_eq!(repeat_rejections[0].primary.line, 9, "{mixed:#?}");
+        assert!(!mixed
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"));
+        assert_eq!(mixed.coverage.status, "complete-for-supported-subset");
+
+        let post_close_source = "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n    resource.status()\n";
+        let post_close_file = SourceFile::new("model.py", "model", post_close_source);
+        let mut post_close_model = model.clone();
+        post_close_model.id = "fixture-post-close-status".into();
+        post_close_model.post_close_methods = BTreeSet::from(["status".into()]);
+        let mut post_close_catalog = crate::model::FlowModelCatalog::default();
+        post_close_catalog.insert(post_close_model).unwrap();
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        assert!(session.set_flow_model_catalog(post_close_catalog.clone()));
+        let post_close = session.check(&[post_close_file.clone(), unrelated.clone()], "3.11");
+        assert!(!post_close
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"));
+        assert!(post_close.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001" && diagnostic.message.contains("unknown method effect")
+        }));
+        assert_eq!(post_close.coverage.status, "incomplete");
+        let post_close_report =
+            session.check_report(&[post_close_file.clone(), unrelated.clone()], "3.11");
+        assert!(post_close_report.available_models.iter().any(|model| {
+            model.id == "fixture-post-close-status"
+                && model.modeled_behavior.contains("post-close-methods=status")
+        }));
+        let post_close_flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            post_close_flow_queries.len(),
+            1,
+            "{post_close_flow_queries:#?}"
+        );
+        let mut fresh_post_close = AnalysisSession::default();
+        fresh_post_close.set_flow_model_catalog(post_close_catalog);
+        assert_eq!(
+            post_close,
+            fresh_post_close.check(&[post_close_file.clone(), unrelated.clone()], "3.11")
+        );
+
         let unsupported = session.check(&[file.clone(), unrelated.clone()], "3.12");
         assert!(unsupported.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == "TP9001"
