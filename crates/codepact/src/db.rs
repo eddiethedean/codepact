@@ -3445,7 +3445,25 @@ mod tests {
 
     #[test]
     fn cancelled_cleanup_check_discards_the_result_and_recovers() {
-        let mut session = AnalysisSession::default();
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
         let token = session.cancellation_token();
         token.cancel();
         let leaking = SourceFile::new(
@@ -3457,6 +3475,10 @@ mod tests {
             session.check_report_cancellable(std::slice::from_ref(&leaking), "3.11"),
             Err(AnalysisCancelled)
         ));
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
 
         let cleaned = SourceFile::new(
             "module.py",
@@ -3479,6 +3501,18 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "TP1002"));
+        let flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            flow_queries.len(),
+            1,
+            "recovery must recompute the cancelled file query exactly once: {flow_queries:#?}"
+        );
     }
 
     #[test]
