@@ -308,14 +308,24 @@ fn raise_stops_normal_flow_and_does_not_report_unreachable_use() {
 
     let result: serde_json::Value = serde_json::from_slice(&run_check(&root).stdout).unwrap();
     assert_eq!(
-        result["coverage"]["status"],
-        "complete-for-supported-subset"
+        result["coverage"]["status"], "incomplete",
+        "module completion is not interpreter shutdown after an initialization raise"
     );
     assert!(!result["diagnostics"]
         .as_array()
         .unwrap()
         .iter()
         .any(|diagnostic| diagnostic["code"] == "TP1001"));
+    assert!(result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| {
+            diagnostic["code"] == "TP9001"
+                && diagnostic["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("module-scope resource lifetime"))
+        }));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -1232,9 +1242,19 @@ fn lifecycle_method_aliases_use_base_identity_and_uncertain_receivers_join_effec
     assert_eq!(output.status.code(), Some(0));
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
-        result["coverage"]["status"],
-        "complete-for-supported-subset"
+        result["coverage"]["status"], "incomplete",
+        "open module resources remain outside the function cleanup scope"
     );
+    assert!(result["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| {
+            diagnostic["code"] == "TP9001"
+                && diagnostic["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("module-scope resource lifetime"))
+        }));
 
     fs::write(
         root.join("view.py"),

@@ -33,6 +33,10 @@ are not part of this candidate.
   weakening captured or execution-affected resources.
 - A separate versioned check-result schema carries completion kind, certainty,
   trust, repair guidance, model metadata, and coverage information.
+- Open module-scope resources and resource values stored in `global`
+  bindings receive explicit lifetime/escape boundaries. Module
+  completion is not treated as process shutdown or automatic cleanup; ordinary
+  scalar global assignments remain precise.
 
 ### Compatibility and limitations
 

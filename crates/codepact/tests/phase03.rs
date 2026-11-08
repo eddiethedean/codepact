@@ -29,6 +29,116 @@ fn v03_01_local_acquisition_creates_one_exit_duty() {
 }
 
 #[test]
+fn v03_01_module_scope_resource_lifetime_remains_an_explicit_boundary() {
+    let open_source = format!("{RESOURCE}global_resource = C()\n");
+    let open = check_source(&open_source);
+    assert!(
+        !open
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "module completion is not a function cleanup exit: {open:#?}"
+    );
+    let lifetime_boundary = open.diagnostics.iter().find(|diagnostic| {
+        diagnostic.code == "TP9001"
+            && diagnostic
+                .message
+                .contains("module-scope resource lifetime is outside cleanup analysis")
+    });
+    assert!(
+        lifetime_boundary.is_some(),
+        "an open module resource needs an explicit lifetime boundary: {open:#?}"
+    );
+    assert_eq!(
+        lifetime_boundary.unwrap().primary.line,
+        open_source
+            .lines()
+            .position(|line| line.trim() == "global_resource = C()")
+            .unwrap()
+            + 1,
+        "the boundary should point to the global acquisition: {open:#?}"
+    );
+
+    let closed_source = format!("{RESOURCE}global_resource = C()\nglobal_resource.close()\n");
+    let closed = check_source(&closed_source);
+    assert!(
+        !closed.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                || (diagnostic.code == "TP9001"
+                    && diagnostic
+                        .message
+                        .contains("module-scope resource lifetime is outside cleanup analysis"))
+        }),
+        "a module resource closed on every path needs no lifetime boundary: {closed:#?}"
+    );
+
+    let conditional_source =
+        format!("{RESOURCE}global_resource = C()\nif should_close:\n    global_resource.close()\n");
+    let conditional = check_source(&conditional_source);
+    assert!(
+        conditional.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic
+                    .message
+                    .contains("module-scope resource lifetime is outside cleanup analysis")
+        }),
+        "a conditionally open module resource must retain the boundary: {conditional:#?}"
+    );
+    assert!(
+        !conditional
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "module scope must not claim a function-scope leak: {conditional:#?}"
+    );
+}
+
+#[test]
+fn v03_01_global_resource_store_escapes_function_cleanup_analysis() {
+    let source = format!(
+        "{RESOURCE}def allocate_global():\n    global exported\n    exported = C()\ndef store_global_alias():\n    local = C()\n    global retained\n    retained = local\ndef store_scalar_global():\n    global counter\n    counter = 1\n"
+    );
+    let result = check_source(&source);
+    let global_boundaries = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic
+                    .message
+                    .contains("resource assignment escapes to a global or enclosing scope")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !global_boundaries.is_empty(),
+        "resource-valued global stores need an explicit escape boundary: {result:#?}"
+    );
+    assert_eq!(
+        global_boundaries.len(),
+        2,
+        "both resource-valued stores are visible, while scalar globals remain precise: {result:#?}"
+    );
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.message.ends_with("on fallthrough")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        leaks.len(),
+        2,
+        "both global allocations remain represented as unresolved duties: {result:#?}"
+    );
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "a module/global escape cannot be reported as a definite local leak: {result:#?}"
+    );
+}
+
+#[test]
 fn v03_01_failed_initialization_creates_no_object_duty() {
     let source = "from codepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def __init__(self):\n        raise RuntimeError\n    def close(self): pass\ndef fail():\n    resource = C()\n";
     let result = check_source(source);

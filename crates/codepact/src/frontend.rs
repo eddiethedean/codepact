@@ -119,6 +119,11 @@ pub(crate) enum FlowStatement {
         value: AstExpr,
         range: SourceRange,
     },
+    EscapingAssign {
+        name: String,
+        value: AstExpr,
+        range: SourceRange,
+    },
     Expression {
         value: AstExpr,
         range: SourceRange,
@@ -694,6 +699,26 @@ impl<'a> Visitor<'a> for ClassGlobalVisitor {
     fn visit_expr(&mut self, _expression: &'a Expr) {}
 }
 
+#[derive(Default)]
+struct ScopeEscapeVisitor {
+    names: BTreeSet<String>,
+}
+
+impl<'a> Visitor<'a> for ScopeEscapeVisitor {
+    fn visit_stmt(&mut self, statement: &'a Stmt) {
+        match statement {
+            Stmt::Global(declaration) => {
+                self.names
+                    .extend(declaration.names.iter().map(ToString::to_string));
+            }
+            Stmt::FunctionDef(_) | Stmt::ClassDef(_) => {}
+            _ => walk_stmt(self, statement),
+        }
+    }
+
+    fn visit_expr(&mut self, _expression: &'a Expr) {}
+}
+
 fn class_body_issue(statement: &Stmt) -> Option<&'static str> {
     let Stmt::ClassDef(class) = statement else {
         return None;
@@ -805,12 +830,17 @@ fn decorators(list: &[ruff_python_ast::Decorator], budget: &mut ExpressionBudget
 }
 
 fn flow_statements(statements: &[Stmt], budget: &mut ExpressionBudget) -> Vec<FlowStatement> {
-    flow_statements_at(statements, budget, 0)
+    let mut visitor = ScopeEscapeVisitor::default();
+    for statement in statements {
+        visitor.visit_stmt(statement);
+    }
+    flow_statements_at(statements, budget, &visitor.names, 0)
 }
 
 fn flow_statements_at(
     statements: &[Stmt],
     budget: &mut ExpressionBudget,
+    scope_escapes: &BTreeSet<String>,
     depth: usize,
 ) -> Vec<FlowStatement> {
     statements
@@ -828,11 +858,16 @@ fn flow_statements_at(
             }
             match statement {
                 Stmt::Assign(assign) if assign.targets.len() == 1 => match &assign.targets[0] {
-                    Expr::Name(name) => FlowStatement::Assign {
-                        name: name.id.to_string(),
-                        value: expression(&assign.value, budget, 0),
-                        range: source_range(assign),
-                    },
+                    Expr::Name(name) => {
+                        let name = name.id.to_string();
+                        let value = expression(&assign.value, budget, 0);
+                        let range = source_range(assign);
+                        if scope_escapes.contains(&name) {
+                            FlowStatement::EscapingAssign { name, value, range }
+                        } else {
+                            FlowStatement::Assign { name, value, range }
+                        }
+                    }
                     _ => FlowStatement::Unsupported {
                         range: source_range(statement),
                     },
@@ -842,10 +877,15 @@ fn flow_statements_at(
                         FlowStatement::Unsupported {
                             range: source_range(statement),
                         },
-                        |value| FlowStatement::Assign {
-                            name: name.id.to_string(),
-                            value: expression(value, budget, 0),
-                            range: source_range(statement),
+                        |value| {
+                            let name = name.id.to_string();
+                            let value = expression(value, budget, 0);
+                            let range = source_range(statement);
+                            if scope_escapes.contains(&name) {
+                                FlowStatement::EscapingAssign { name, value, range }
+                            } else {
+                                FlowStatement::Assign { name, value, range }
+                            }
                         },
                     ),
                     _ => FlowStatement::Unsupported {
@@ -864,7 +904,8 @@ fn flow_statements_at(
                     }
                     let mut alternate = Vec::new();
                     if let Some(clause) = branch.elif_else_clauses.last() {
-                        alternate = flow_statements_at(&clause.body, budget, depth + 1);
+                        alternate =
+                            flow_statements_at(&clause.body, budget, scope_escapes, depth + 1);
                         if branch
                             .elif_else_clauses
                             .iter()
@@ -883,7 +924,7 @@ fn flow_statements_at(
                     }
                     FlowStatement::If {
                         test: expression(&branch.test, budget, 0),
-                        body: flow_statements_at(&branch.body, budget, depth + 1),
+                        body: flow_statements_at(&branch.body, budget, scope_escapes, depth + 1),
                         alternate,
                         range: source_range(branch),
                     }
@@ -892,7 +933,7 @@ fn flow_statements_at(
                     range: source_range(statement),
                 },
                 Stmt::Try(attempt) => FlowStatement::Try {
-                    body: flow_statements_at(&attempt.body, budget, depth + 1),
+                    body: flow_statements_at(&attempt.body, budget, scope_escapes, depth + 1),
                     handlers: attempt
                         .handlers
                         .iter()
@@ -903,13 +944,28 @@ fn flow_statements_at(
                                     .as_deref()
                                     .map(|expr| expression(expr, budget, 0)),
                                 name: handler.name.as_ref().map(ToString::to_string),
-                                body: flow_statements_at(&handler.body, budget, depth + 1),
+                                body: flow_statements_at(
+                                    &handler.body,
+                                    budget,
+                                    scope_escapes,
+                                    depth + 1,
+                                ),
                                 range: source_range(handler),
                             },
                         })
                         .collect(),
-                    alternate: flow_statements_at(&attempt.orelse, budget, depth + 1),
-                    finalbody: flow_statements_at(&attempt.finalbody, budget, depth + 1),
+                    alternate: flow_statements_at(
+                        &attempt.orelse,
+                        budget,
+                        scope_escapes,
+                        depth + 1,
+                    ),
+                    finalbody: flow_statements_at(
+                        &attempt.finalbody,
+                        budget,
+                        scope_escapes,
+                        depth + 1,
+                    ),
                     range: source_range(attempt),
                 },
                 Stmt::For(loop_) if loop_.is_async => FlowStatement::Unsupported {
@@ -927,16 +983,16 @@ fn flow_statements_at(
                         Expr::Name(name) => Some(name.id.to_string()),
                         _ => None,
                     },
-                    body: flow_statements_at(&loop_.body, budget, depth + 1),
-                    alternate: flow_statements_at(&loop_.orelse, budget, depth + 1),
+                    body: flow_statements_at(&loop_.body, budget, scope_escapes, depth + 1),
+                    alternate: flow_statements_at(&loop_.orelse, budget, scope_escapes, depth + 1),
                     range: source_range(loop_),
                 },
                 Stmt::While(loop_) => FlowStatement::Loop {
                     test: Some(expression(&loop_.test, budget, 0)),
                     iterator: None,
                     target: None,
-                    body: flow_statements_at(&loop_.body, budget, depth + 1),
-                    alternate: flow_statements_at(&loop_.orelse, budget, depth + 1),
+                    body: flow_statements_at(&loop_.body, budget, scope_escapes, depth + 1),
+                    alternate: flow_statements_at(&loop_.orelse, budget, scope_escapes, depth + 1),
                     range: source_range(loop_),
                 },
                 Stmt::With(with_) => FlowStatement::With {
@@ -959,7 +1015,7 @@ fn flow_statements_at(
                             range: source_range(item),
                         })
                         .collect(),
-                    body: flow_statements_at(&with_.body, budget, depth + 1),
+                    body: flow_statements_at(&with_.body, budget, scope_escapes, depth + 1),
                     asynchronous: with_.is_async,
                     range: source_range(with_),
                 },
@@ -984,6 +1040,9 @@ fn flow_statements_at(
                     range: source_range(statement),
                 },
                 Stmt::Pass(_) => FlowStatement::Pass {
+                    range: source_range(statement),
+                },
+                Stmt::Global(_) => FlowStatement::Pass {
                     range: source_range(statement),
                 },
                 _ => FlowStatement::Unsupported {

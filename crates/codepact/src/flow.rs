@@ -1093,6 +1093,34 @@ fn report_cleanup_exit(
     }
 }
 
+fn report_module_scope_lifetimes(result: &mut Inspection, normal: &State, outcomes: &FlowResult) {
+    let mut states = outcomes
+        .all_abrupt()
+        .map(|exit| &exit.state)
+        .collect::<Vec<_>>();
+    if normal.alive {
+        states.push(normal);
+    }
+
+    for state in states {
+        let unresolved_origins = state
+            .duty_origins
+            .iter()
+            .filter_map(|(object, origin)| {
+                let mask = state.objects.get(object).copied().unwrap_or(UNKNOWN);
+                (mask & (OPEN | UNKNOWN) != 0).then(|| origin.clone())
+            })
+            .collect::<Vec<_>>();
+        for origin in unresolved_origins {
+            boundary_at_span(
+                result,
+                origin,
+                "module-scope resource lifetime is outside cleanup analysis; module completion is not process shutdown",
+            );
+        }
+    }
+}
+
 fn grouped_exits(exits: &[FlowExit]) -> Vec<FlowExit> {
     let mut groups = BTreeMap::<(usize, usize, u8), FlowExit>::new();
     for exit in exits {
@@ -1124,7 +1152,11 @@ fn grouped_exits(exits: &[FlowExit]) -> Vec<FlowExit> {
 
 fn boundary(result: &mut Inspection, file: &SourceFile, range: SourceRange, message: &str) {
     let primary = span(file, range);
-    let reason = format!("{}:{}: {message}", file.path, primary.line);
+    boundary_at_span(result, primary, message);
+}
+
+fn boundary_at_span(result: &mut Inspection, primary: Span, message: &str) {
+    let reason = format!("{}:{}: {message}", primary.file, primary.line);
     result.coverage.status = "incomplete".into();
     if result.coverage.reasons.contains(&reason) {
         return;
@@ -1305,7 +1337,7 @@ fn synthetic_name(state: &State, role: &str, range: SourceRange, index: usize) -
 fn collect_assigned_names(statements: &[FlowStatement], names: &mut BTreeSet<String>) {
     for statement in statements {
         match statement {
-            FlowStatement::Assign { name, .. } => {
+            FlowStatement::Assign { name, .. } | FlowStatement::EscapingAssign { name, .. } => {
                 names.insert(name.clone());
             }
             FlowStatement::If {
@@ -3792,6 +3824,21 @@ fn execute(
                     let returned = execute_non_if_statement(
                         statement, env, file, contracts, functions, result,
                     );
+                    if env.alive && !env.module_scope {
+                        if let FlowStatement::EscapingAssign { name, range, .. } = statement {
+                            let targets = env.places.get(name).cloned().unwrap_or_default();
+                            if !targets.is_empty() || env.unknown_places.contains(name) {
+                                env.escaped.extend(targets.iter().cloned());
+                                weaken(env, targets.into_iter());
+                                boundary(
+                                    result,
+                                    file,
+                                    *range,
+                                    "resource assignment escapes to a global or enclosing scope outside function cleanup analysis",
+                                );
+                            }
+                        }
+                    }
                     outcomes.raises.extend(take_pending_raises(env));
                     if let Some(returned) = returned {
                         outcomes.returns.push(FlowExit {
@@ -5253,7 +5300,8 @@ fn execute_non_if_statement(
     result: &mut Inspection,
 ) -> Option<State> {
     match statement {
-        FlowStatement::Assign { name, value, range } => {
+        FlowStatement::Assign { name, value, range }
+        | FlowStatement::EscapingAssign { name, value, range } => {
             env.pending_return_targets = None;
             let source_coroutine = expr_name(value)
                 .and_then(|source| env.coroutine_aliases.get(source))
@@ -5725,6 +5773,7 @@ fn statement_range(statement: &FlowStatement) -> SourceRange {
     match statement {
         FlowStatement::Pass { range }
         | FlowStatement::Assign { range, .. }
+        | FlowStatement::EscapingAssign { range, .. }
         | FlowStatement::Expression { range, .. }
         | FlowStatement::If { range, .. }
         | FlowStatement::Try { range, .. }
@@ -6370,7 +6419,7 @@ fn check_bodies_impl(
             }
         }
         if let Some(summary) = summaries.get(&file.path) {
-            execute(
+            let outcomes = execute(
                 &summary.module_body,
                 &mut module,
                 file,
@@ -6379,6 +6428,7 @@ fn check_bodies_impl(
                 result,
                 0,
             );
+            report_module_scope_lifetimes(result, &module, &outcomes);
             report_unawaited_coroutines(&module, file, result);
         }
     }

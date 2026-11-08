@@ -241,7 +241,7 @@ fn raising_receiver_alternatives_are_excluded_from_normal_continuations() {
         (
             "        raise RuntimeError()",
             "        raise RuntimeError()",
-            "complete-for-supported-subset",
+            "incomplete",
         ),
         (
             "        c.close()\n        raise RuntimeError()",
@@ -274,7 +274,7 @@ fn raising_expressions_stop_returns_conditions_arguments_and_initializers() {
         ),
         (
             "if fail():\n    c.close()\nc.close()\nc.status()\n",
-            "complete-for-supported-subset",
+            "incomplete",
         ),
         (
             "def use(first, second): pass\nc.close()\nuse(fail(), c.status())\n",
