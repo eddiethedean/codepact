@@ -388,6 +388,87 @@ fn v03_03_raise_in_finally_replaces_the_pending_return_exit() {
 }
 
 #[test]
+fn v03_03_nested_finally_exit_matrix_preserves_completion_and_cleanup_span() {
+    for (body, body_completion) in [
+        ("pass", "fallthrough"),
+        ("return", "return"),
+        ("raise RuntimeError()", "raise"),
+    ] {
+        for cleanup in ["pass", "resource.close()", "raise ValueError()"] {
+            let source = format!(
+                "{RESOURCE}def scenario():\n    resource = C()\n    try:\n        try:\n            {body}\n        finally:\n            {cleanup}\n    finally:\n        pass\n"
+            );
+            let report = typepact::check_report(
+                &[SourceFile::new("phase03.py", "phase03", source.clone())],
+                "3.11",
+            );
+            let leaks = report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            if cleanup == "resource.close()" {
+                assert!(leaks.is_empty(), "{body} / {cleanup}: {report:#?}");
+                assert_eq!(
+                    report.coverage.status, "complete-for-supported-subset",
+                    "{body} / {cleanup}: {report:#?}"
+                );
+                continue;
+            }
+
+            assert_eq!(leaks.len(), 1, "{body} / {cleanup}: {report:#?}");
+            let leak = leaks[0];
+            let expected_completion = if cleanup == "raise ValueError()" {
+                "raise"
+            } else {
+                body_completion
+            };
+            assert_eq!(
+                leak.completion.as_deref(),
+                Some(expected_completion),
+                "{body} / {cleanup}: {report:#?}"
+            );
+            assert_eq!(
+                leak.certainty, "definite",
+                "{body} / {cleanup}: {report:#?}"
+            );
+            let expected_exit_line = if cleanup == "raise ValueError()" {
+                source
+                    .lines()
+                    .position(|line| line.trim() == cleanup)
+                    .unwrap()
+                    + 1
+            } else if body_completion == "fallthrough" {
+                source
+                    .lines()
+                    .position(|line| line.trim() == "def scenario():")
+                    .unwrap()
+                    + 1
+            } else {
+                source.lines().position(|line| line.trim() == body).unwrap() + 1
+            };
+            let acquisition_line = source
+                .lines()
+                .position(|line| line.trim() == "resource = C()")
+                .unwrap()
+                + 1;
+            assert_eq!(
+                leak.primary.line, expected_exit_line,
+                "{body} / {cleanup}: {report:#?}"
+            );
+            assert_eq!(
+                leak.related[0].line, acquisition_line,
+                "{body} / {cleanup}: {report:#?}"
+            );
+            assert_eq!(
+                report.coverage.status, "complete-for-supported-subset",
+                "{body} / {cleanup}: {report:#?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn v03_03_finally_replacements_keep_the_actual_exit_and_duty_origin() {
     let source = format!(
         "{RESOURCE}def raise_from_finally():\n    resource = C()\n    try:\n        return 1\n    finally:\n        raise RuntimeError()\ndef return_from_finally():\n    resource = C()\n    try:\n        raise ValueError()\n    finally:\n        return 1\n"
