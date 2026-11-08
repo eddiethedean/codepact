@@ -1052,6 +1052,50 @@ fn v03_03_handler_expression_failure_crosses_async_finally_and_keeps_cancellatio
 }
 
 #[test]
+fn v03_03_handler_expression_failure_crosses_nested_async_finalizers_and_keeps_cancellation() {
+    let source = "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\ndef handler_type():\n    raise LookupError()\nasync def cleanup():\n    resource = C()\n    try:\n        try:\n            raise RuntimeError()\n        except handler_type():\n            pass\n    finally:\n        try:\n            await resource.pause()\n        finally:\n            await resource.aclose()\n";
+    let acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    let await_lines = source
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            ["await resource.pause()", "await resource.aclose()"]
+                .contains(&line.trim())
+                .then_some(index + 1)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let cancelled = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.completion.as_deref() == Some("cancelled")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !cancelled.is_empty(),
+        "the handler-expression raise must unwind both async finalizers: {report:#?}"
+    );
+    assert!(
+        cancelled.iter().all(|diagnostic| {
+            diagnostic.certainty == "possible"
+                && diagnostic
+                    .related
+                    .iter()
+                    .any(|span| span.line == acquisition_line)
+                && await_lines.contains(&diagnostic.primary.line)
+        }),
+        "interrupted nested cleanup retains the exact duty and await witnesses: {report:#?}"
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
+
+#[test]
 fn v03_06_distinct_return_and_raise_exits_keep_separate_findings() {
     let result = check_source(&format!(
         "{RESOURCE}def leak(flag):\n    resource = C()\n    if flag:\n        return\n    raise RuntimeError()\n"
