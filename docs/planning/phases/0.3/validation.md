@@ -109,12 +109,14 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 ## Candidate-local checks
 
 On 2026-11-08, local validation for candidate commit
-`5668f7d383b0015778359a890cce647ec595d74d` passed
+`56d0d3402110a7d1d33c7a14620b6334d537d6ed` passed
 `uv run --locked make check` on CPython 3.14.3, macOS 26.5.2 ARM64.
 `cargo test --workspace --locked` passed 62 library, 51 CLI, 60 fixture, 26
-lifecycle regression and 184 phase tests (383 Rust tests total); all 22 Python tests passed. Formatting,
-workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and
-source builds and install smokes, dependency audits, Rust 1.96 checks/package
+lifecycle regression and 185 phase tests (384 Rust tests total); all 22 Python
+tests passed. All 26 V03 IDs appear in both matrix tables, and all 83 distinct
+named test references resolve to declared Rust tests. Formatting, workspace
+check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and source
+builds and install smokes, dependency audits, Rust 1.96 checks/package
 test/install smoke, inspector behavior, documentation links and the
 warnings-as-errors docs build also passed. Exact-candidate Quality and
 non-publishing Release workflow results, downloaded artifact inventory, strict
@@ -139,7 +141,9 @@ checks three pending exits through nested awaited finalizers and exact
 cancellation locations. `v03_03_handler_expression_failure_crosses_async_finally_and_keeps_cancellation`
 checks a handler-type evaluation failure crossing async `finally`, then
 retains only the possible interrupted-close duty with the exact acquisition
-span. V03-05's
+span. `v03_03_handler_expression_failure_crosses_nested_async_finalizers_and_keeps_cancellation`
+extends the handler-expression failure case through nested awaited finalizers
+and checks the cancellation duty origin and await witnesses. V03-05's
 `v03_05_handler_expression_failure_still_runs_finally_cleanup` confirms a
 known handler-expression raise still crosses `finally` and discharges the
 duty. V03-14's
