@@ -43,6 +43,8 @@ Use internal module boundaries first; additional crates require a demonstrated b
 
 [TypePact](typepact.md) is a separate planned host combining the CodePact library with pinned embedded Pyrefly behind an adapter. It coordinates configuration, source revisions and per-engine diagnostics; it does not add ordinary type semantics to CodePact or duplicate contract rules. Keep ASTs, resolvers and incremental databases private to each engine. The maintainer accepts upstream library API changes between pins, qualified through PF01 and per-upgrade parity/packaging evidence. The core CLI and helper distribution remain independently usable.
 
+Following the composition alpha, TC01–TC03 introduce a versioned engine-neutral input carrying qualified type/call identities, generic/union alternatives and branch facts, bound to exact source revisions and flow locations. TypePact supplies those inputs; CodePact owns model selection, aliases, state and obligation analysis. Track the evidence and its absence as incremental dependencies. Reports distinguish composition parity from enriched findings and retain type provenance. This preserves separate engine internals and a standalone CodePact path without requiring Pyrefly.
+
 ## Incremental computation
 
 In-memory Salsa queries are required in 0.1. Expose a reusable analysis session and retain the one-shot inspection wrapper. Module exports are small semantic summaries; importers should not depend on irrelevant foreign AST details. Source text, target Python, resolver search paths, configuration and model versions are tracked inputs. Disk reads and module discovery happen in the host and enter the database explicitly.

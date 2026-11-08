@@ -42,7 +42,9 @@ Completion: release checklist is satisfied, remaining limitations are published,
 
 ## Optional combined type-checking prototype
 
-The planned [TypePact combined product](typepact.md) follows PF01–PF05 independently of these phases: pinned Pyrefly embedding, combined reports, compatibility and historical-name migration, package qualification and a dedicated TypePact release lane. It reuses the core engine and does not block its phase acceptance. The maintainer accepts upstream library API maintenance; qualify the selected pin and source-build route in PF01, and qualify publication through PF-V01–PF-V08.
+The planned [TypePact combined product](typepact.md) follows PF01–PF05 independently of these phases: pinned Pyrefly embedding, combined reports, engine compatibility and workflows, package qualification and a dedicated TypePact release lane. It reuses the core engine and does not block its phase acceptance. The maintainer accepts upstream library API maintenance; qualify the selected pin and source-build route in PF01, and qualify publication through PF-V01–PF-V08.
+
+The next TypePact stages are TC01 inferred model selection, TC02 branch-aware contracts and TC03 ownership through typed outcomes. Introduce a versioned, source-bound type-fact input to the canonical CodePact engine; qualify TC-V01–TC-V06 for each claimed stage. PF01 inventories upstream fact APIs without making bridge implementation an alpha prerequisite. TC03 follows qualified core ownership/outcome support; callback/protocol behavioral compatibility remains the next candidate.
 
 ## Work item template
 

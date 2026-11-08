@@ -32,7 +32,9 @@ Initial scope is lifecycle checking, cross-interface normalization, a CLI and st
 
 A general replacement for mypy or Pyright, a Python compiler, and a universal memory-safety proof are outside the initial product. Native Python exceptions remain available. Users do not need to rewrite every return value into Result.
 
-**CodePact — Behavioral contracts for Python.** The planned companion product, [TypePact — Type checking and behavioral contracts for Python](typepact.md), combines pinned embedded Pyrefly with the same CodePact engine in one command and report. Python declarations retain the `codepact` imports. General type semantics remain upstream-owned, and CodePact remains independently usable alongside any type checker. The TypePact name previously identified the historical 0.1.0/0.2.0 behavioral releases; the combined product requires an explicit migration and independent version boundary.
+**CodePact — Behavioral contracts for Python.** The planned companion product, [TypePact — Type checking and behavioral contracts for Python](typepact.md), combines pinned embedded Pyrefly with the same CodePact engine in one command and report. Python declarations retain the `codepact` imports. General type semantics remain upstream-owned, and CodePact remains independently usable alongside any type checker. TypePact is independently versioned; migration and historical backward compatibility are outside its product plan.
+
+Beyond composition, TypePact's selected extensions use type evidence to recognize modeled resources with fewer annotations, specialize contracts within narrowed branches, and track obligations inside typed outcomes. A small qualified fact bridge supplies evidence to CodePact while preserving its ownership of resource state and duties. These staged capabilities require separate acceptance and the relevant core features; they are not first-alpha claims.
 
 ## Adoption path
 

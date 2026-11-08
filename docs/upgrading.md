@@ -14,7 +14,7 @@ does not provide compatibility aliases for the old names.
 
 ## Future combined TypePact product
 
-The [planned combined TypePact](https://github.com/eddiethedean/codepact/blob/main/docs/planning/typepact.md) will reuse the `typepact` command and distribution names for Pyrefly type checking plus CodePact behavioral checks. It is not implemented or released. Historical 0.1.0/0.2.0 artifacts retain their original meaning; a future combined release will use an explicit new version boundary and migration notes. Code declarations will continue to import `codepact`, with no restored `typepact` import aliases. Choose CodePact for behavioral checks or explicitly opt into the combined product when it is qualified.
+The [planned combined TypePact](https://github.com/eddiethedean/codepact/blob/main/docs/planning/typepact.md) will reuse the `typepact` command and distribution names for Pyrefly type checking plus CodePact behavioral checks. It is not implemented or released. Code declarations will continue to import `codepact`. Migration and historical backward compatibility are outside the combined product plan. Choose CodePact for behavioral checks or explicitly opt into the combined product when it is qualified.
 
 ## Update Python projects
 
