@@ -2477,13 +2477,17 @@ mod tests {
         let first_phase = phase("pass");
         let first = session.check(&[first_phase.clone(), unrelated.clone()], "3.11");
         assert!(
-            first.diagnostics.iter().any(|diagnostic| {
-                diagnostic.code == "TP1002"
-                    && diagnostic.certainty == "possible"
-                    && diagnostic.primary.file == "phase03.py"
-            }),
-            "{first:#?}"
+            !first
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP1002"),
+            "a successful synchronous close in finally resolves the captured duty: {first:#?}"
         );
+        assert!(first.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("cancellation")
+                && diagnostic.primary.file == "phase03.py"
+        }));
         executions
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -2492,13 +2496,17 @@ mod tests {
         let edited_phase = phase("await resource.pause()");
         let updated = session.check(&[edited_phase.clone(), unrelated.clone()], "3.11");
         assert!(
-            updated.diagnostics.iter().any(|diagnostic| {
-                diagnostic.code == "TP1002"
-                    && diagnostic.certainty == "possible"
-                    && diagnostic.primary.file == "phase03.py"
-            }),
-            "{updated:#?}"
+            !updated
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP1002"),
+            "a successful synchronous close after suspension resolves the captured duty: {updated:#?}"
         );
+        assert!(updated.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("cancellation")
+                && diagnostic.primary.file == "phase03.py"
+        }));
         assert_eq!(updated.coverage.status, "incomplete", "{updated:#?}");
         assert_ne!(
             updated, first,

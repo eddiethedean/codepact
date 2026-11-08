@@ -1177,8 +1177,12 @@ fn weaken(state: &mut State, objects: impl Iterator<Item = String>) {
     }
 }
 
-fn closed_mask(previous: u8) -> u8 {
-    if previous & UNKNOWN != 0 {
+fn closed_mask(previous: u8, escaped: bool) -> u8 {
+    // A successful call to the declared close method establishes its normal
+    // postcondition even when an earlier non-escaping path made the prior
+    // lifecycle state unknown. If an opaque actor retained the resource, keep
+    // the prior alternatives because it may still act after this close.
+    if escaped {
         previous | CLOSED
     } else {
         CLOSED
@@ -3006,7 +3010,10 @@ fn consume_expr(
                                 } else {
                                     env.close_origins
                                         .insert(object.clone(), span(file, expr.range));
-                                    env.objects.insert(object.clone(), closed_mask(mask));
+                                    env.objects.insert(
+                                        object.clone(),
+                                        closed_mask(mask, env.escaped.contains(object)),
+                                    );
                                 }
                             }
                             if !child.alive {
@@ -3062,7 +3069,10 @@ fn consume_expr(
                             } else {
                                 env.close_origins
                                     .insert(object.clone(), span(file, expr.range));
-                                env.objects.insert(object.clone(), closed_mask(mask));
+                                env.objects.insert(
+                                    object.clone(),
+                                    closed_mask(mask, env.escaped.contains(object)),
+                                );
                                 let mut exceptional = env.clone();
                                 exceptional.alive = true;
                                 exceptional.pending_raises.clear();
@@ -3415,8 +3425,8 @@ fn consume_expr(
                         }
                     }
                 }
-                weaken(env, affected.into_iter());
-                env.escaped.extend(env.places.values().flatten().cloned());
+                weaken(env, affected.iter().cloned());
+                env.escaped.extend(affected);
                 boundary(
                     result,
                     file,

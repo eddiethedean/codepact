@@ -390,6 +390,34 @@ fn v03_13_uncertain_alias_close_cannot_discharge_every_candidate() {
 }
 
 #[test]
+fn v03_13_unrelated_unknown_call_does_not_capture_a_local_resource() {
+    let report = codepact::check_report(
+        &[SourceFile::new(
+            "phase03.py",
+            "phase03",
+            format!(
+                "{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        opaque_effect()\n    finally:\n        resource.close()\n"
+            ),
+        )],
+        "3.11",
+    );
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001" && diagnostic.message.contains("opaque_effect")
+        }),
+        "the unresolved call remains visible: {report:#?}"
+    );
+    assert!(
+        !report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "both the normal and raising call outcomes cross finally cleanup: {report:#?}"
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
+
+#[test]
 fn v03_03_finally_replacement_cancels_owned_return_handoff() {
     let result = check_source(&format!(
         "{RESOURCE}def invalid() -> Owned[C]:\n    resource = C()\n    try:\n        return resource\n    finally:\n        return None\n"
@@ -1137,6 +1165,71 @@ fn v03_05_builtin_exception_constructor_keeps_exact_handler_routing() {
     ));
     assert!(result.diagnostics.is_empty(), "{result:#?}");
     assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_05_tuple_handler_types_route_known_builtin_exceptions_exactly() {
+    let source = format!(
+        "{RESOURCE}def matched():\n    resource = C()\n    try:\n        raise ValueError()\n    except (RuntimeError, ValueError):\n        resource.close()\ndef unmatched():\n    resource = C()\n    try:\n        raise KeyError()\n    except (RuntimeError, ValueError):\n        resource.close()\n"
+    );
+    let unmatched_start = source
+        .lines()
+        .position(|line| line == "def unmatched():")
+        .unwrap();
+    let acquisition_line = source
+        .lines()
+        .enumerate()
+        .skip(unmatched_start + 1)
+        .find(|(_, line)| line.trim() == "resource = C()")
+        .unwrap()
+        .0
+        + 1;
+    let raise_line = source
+        .lines()
+        .position(|line| line.trim() == "raise KeyError()")
+        .unwrap()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{report:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(leaks[0].completion.as_deref(), Some("raise"), "{report:#?}");
+    assert_eq!(leaks[0].primary.line, raise_line, "{report:#?}");
+    assert_eq!(leaks[0].related[0].line, acquisition_line, "{report:#?}");
+    assert!(!report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP9001"));
+    assert_eq!(report.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_05_invalid_tuple_handler_type_remains_a_boundary_through_finally() {
+    let source = format!(
+        "{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        raise KeyError()\n    except (RuntimeError, 1):\n        pass\n    finally:\n        resource.close()\n"
+    );
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP9001"),
+        "an invalid exception-type tuple must remain visible: {report:#?}"
+    );
+    assert!(
+        !report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "the invalid handler match still executes the applicable finally cleanup: {report:#?}"
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
 }
 
 #[test]
@@ -3827,27 +3920,16 @@ fn v03_18_exception_handler_does_not_swallow_cancellation() {
 }
 
 #[test]
-fn v03_18_base_exception_handler_catches_cancellation_but_keeps_state_unknown() {
+fn v03_18_base_exception_handler_catches_cancellation_and_close_discharges() {
     let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    except BaseException:\n        resource.close()\n    else:\n        resource.close()\n";
     let report =
         codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
-    let leaks = report
-        .diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.code == "TP1002")
-        .collect::<Vec<_>>();
-    assert_eq!(leaks.len(), 1, "{report:#?}");
-    assert_eq!(leaks[0].certainty, "possible", "{report:#?}");
-    assert_eq!(leaks[0].completion.as_deref(), Some("fallthrough"));
-    assert_eq!(leaks[0].primary.line, 6, "{report:#?}");
-    assert_eq!(
-        leaks[0]
-            .related
+    assert!(
+        !report
+            .diagnostics
             .iter()
-            .map(|span| span.line)
-            .collect::<Vec<_>>(),
-        [7, 11],
-        "caught cancellation continues, but suspension leaves the resource state uncertain: {report:#?}"
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "both the caught-cancellation and normal paths successfully close the resource: {report:#?}"
     );
     assert!(report.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "TP9001"
