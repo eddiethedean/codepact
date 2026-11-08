@@ -1136,6 +1136,173 @@ mod tests {
     }
 
     #[test]
+    fn exceptional_close_outcome_matrix_keeps_duties_isolated() {
+        let source = [
+            "from codepact import resource",
+            "@resource(closed_by='close')",
+            "class Closed:",
+            "    def close(self): raise RuntimeError()",
+            "@resource(closed_by='close')",
+            "class Open:",
+            "    def close(self): raise RuntimeError()",
+            "@resource(closed_by='close')",
+            "class Preserved:",
+            "    def close(self): raise RuntimeError()",
+            "@resource(closed_by='close')",
+            "class Unknown:",
+            "    def close(self): raise RuntimeError()",
+            "def cleanup():",
+            "    closed_resource = Closed()",
+            "    open_resource = Open()",
+            "    preserved_resource = Preserved()",
+            "    unknown_resource = Unknown()",
+            "    try:",
+            "        closed_resource.close()",
+            "    except RuntimeError:",
+            "        pass",
+            "    try:",
+            "        open_resource.close()",
+            "    except RuntimeError:",
+            "        pass",
+            "    try:",
+            "        preserved_resource.close()",
+            "    except RuntimeError:",
+            "        pass",
+            "    try:",
+            "        unknown_resource.close()",
+            "    except RuntimeError:",
+            "        pass",
+        ]
+        .join("\n");
+        let file = SourceFile::new("matrix.py", "matrix", source.clone());
+        let cleanup_exit_line = source
+            .lines()
+            .position(|line| line == "def cleanup():")
+            .unwrap()
+            + 1;
+        let acquisition_lines = BTreeMap::from([
+            (
+                "Open",
+                source
+                    .lines()
+                    .position(|line| line.trim() == "open_resource = Open()")
+                    .unwrap()
+                    + 1,
+            ),
+            (
+                "Preserved",
+                source
+                    .lines()
+                    .position(|line| line.trim() == "preserved_resource = Preserved()")
+                    .unwrap()
+                    + 1,
+            ),
+            (
+                "Unknown",
+                source
+                    .lines()
+                    .position(|line| line.trim() == "unknown_resource = Unknown()")
+                    .unwrap()
+                    + 1,
+            ),
+        ]);
+        let cases = [
+            (
+                "fixture-exceptional-closed",
+                "Closed",
+                crate::model::LifecyclePostcondition::Closed,
+            ),
+            (
+                "fixture-exceptional-open",
+                "Open",
+                crate::model::LifecyclePostcondition::Open,
+            ),
+            (
+                "fixture-exceptional-preserve",
+                "Preserved",
+                crate::model::LifecyclePostcondition::Preserve,
+            ),
+            (
+                "fixture-exceptional-unknown",
+                "Unknown",
+                crate::model::LifecyclePostcondition::Unknown,
+            ),
+        ];
+        let mut catalog = crate::model::FlowModelCatalog::default();
+        for (id, class_name, postcondition) in cases {
+            catalog
+                .insert(crate::model::ResourceEffectModel {
+                    id: id.into(),
+                    qualified_symbol: format!("matrix.{class_name}"),
+                    close_method: "close".into(),
+                    source_revision: "fixture-v1".into(),
+                    source_url: format!("fixture://matrix.{class_name}"),
+                    supported_python_versions: BTreeSet::from(["3.11".into()]),
+                    platform_assumptions: vec!["platform-independent fixture".into()],
+                    argument_aliases: Vec::new(),
+                    result_alias: None,
+                    duty_handoff: "none".into(),
+                    suppression: "not-a-context-manager".into(),
+                    asynchronous: false,
+                    normal: Some(crate::model::LifecyclePostcondition::Closed),
+                    exceptional: Some(postcondition),
+                    cancelled: None,
+                    repeat_close: crate::model::RepeatClosePolicy::Unspecified,
+                    post_close_methods: BTreeSet::new(),
+                    trust: "reviewed-fixture".into(),
+                    reviewer: "fixture-test".into(),
+                    valid_cases: vec!["exceptional close outcome isolation".into()],
+                    invalid_cases: vec!["open exceptional state retains its duty".into()],
+                    unknown_cases: vec!["unknown state weakens only its own duty".into()],
+                })
+                .unwrap();
+        }
+
+        let mut session = AnalysisSession::default();
+        assert!(session.set_flow_model_catalog(catalog));
+        let checked = session.check_report(&[file], "3.11");
+        let leaks = checked
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert_eq!(leaks.len(), 3, "{checked:#?}");
+        let actual = leaks
+            .iter()
+            .map(|diagnostic| {
+                assert_eq!(diagnostic.completion.as_deref(), Some("fallthrough"));
+                assert_eq!(diagnostic.primary.line, cleanup_exit_line);
+                let origin = diagnostic.related[0].line;
+                (origin, diagnostic.certainty.as_str())
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            actual,
+            BTreeMap::from([
+                (acquisition_lines["Open"], "definite"),
+                (acquisition_lines["Preserved"], "definite"),
+                (acquisition_lines["Unknown"], "possible"),
+            ]),
+            "the known normal close postcondition must not leak onto any exception edge: {checked:#?}"
+        );
+        assert_eq!(checked.coverage.status, "incomplete", "{checked:#?}");
+        for (id, class_name, postcondition) in cases {
+            let selected = checked
+                .available_models
+                .iter()
+                .find(|model| model.id == id)
+                .unwrap_or_else(|| panic!("selected model {id} is missing: {checked:#?}"));
+            assert!(selected
+                .modeled_behavior
+                .contains(&format!("exceptional=Some({postcondition:?})")));
+            assert!(selected
+                .qualified_symbol
+                .contains(&format!("matrix.{class_name}::close")));
+            assert!(selected.qualification.contains("reviewer=fixture-test"));
+        }
+    }
+
+    #[test]
     fn reviewed_normal_close_outcomes_flow_through_session_results() {
         let source = "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n";
         let file = SourceFile::new("model.py", "model", source);
