@@ -1,9 +1,9 @@
 # Contributing to CodePact
 
-Version 0.1.0 is published. The current source also contains a lifecycle
-checking preview for the upcoming 0.2.0 release; its qualification gates remain
-open. Start with the [development guide](docs/development.md) for setup and the
-[0.2 phase plan](docs/planning/phases/0.2-lifecycle.md) for current scope.
+The predecessor TypePact 0.1.0 and 0.2.0 releases are published. CodePact 0.3.0
+is an unreleased candidate with bounded cleanup and cancellation checks; its
+qualification and release gates remain pending. Start with the
+[development guide](docs/development.md) and [0.3 phase plan](docs/planning/phases/0.3-cleanup.md).
 
 ## Set up the repository
 
@@ -58,10 +58,10 @@ without provenance and license review.
 
 Release versions must match across the Python helper, CLI, and Rust crate. The
 tag workflow builds and validates the exact artifact set before publishing.
-See the [release plan](docs/planning/releases.md) and the
-[0.2.0 release checklist](docs/planning/release-0.2.0-checklist.md). Do not
-publish a release from an unreviewed candidate or claim qualification from a
-passing unrelated CI run.
+See the [release plan](docs/planning/releases.md) and current
+[0.3.0 evidence record](docs/releases/0.3.0-evidence.md). The
+[0.2.0 checklist](docs/planning/release-0.2.0-checklist.md) is historical
+guidance. Do not claim release qualification from a run on another commit.
 
 The accountable maintainer may review their own changes, validate all release
 evidence and approve publication alone. Additional reviewers are optional;

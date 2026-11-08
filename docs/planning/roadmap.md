@@ -23,7 +23,7 @@ The first preview must name the exact supported resource patterns, parser versio
 
 ## Deferred decisions
 
-Ruff AST and Salsa are the accepted analyzer direction. Qualify exact component versions, semantic primitive reuse, Rust MSRV and Cargo packaging in AM01. MIT and a pure Python codepact package depending on matching native codepact-cli wheels is selected under D015, with the Cargo crate retained. Result variance and exact transition syntax need their relevant RFC/evidence. Do not reserve roadmap versions as promises of delivery dates.
+Ruff AST and Salsa are the accepted analyzer direction. Qualify exact component versions, semantic primitive reuse, Rust MSRV and Cargo packaging in AM01. D015 established the pure-Python helper, matching native CLI and Cargo crate distribution model under the historical TypePact names; D019 maps it to CodePact's `codepact` and `codepact-cli` names for 0.3. MIT remains the license. Result variance and exact transition syntax need their relevant RFC/evidence. Do not reserve roadmap versions as promises of delivery dates.
 
 ## Versioned release sequence
 

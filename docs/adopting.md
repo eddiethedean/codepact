@@ -4,14 +4,17 @@ Start with a small, reviewable source slice. CodePact does not import your
 application or discover dependencies from installed packages. Inspection takes
 explicit files; lifecycle checking scans Python files below a selected root.
 
-## 1. Check the published release against declarations
+## 1. Inspect declarations with the current candidate
 
-The current 0.2.0 release inspects declarations in explicitly named files.
-Install it and pass the files that define and use your resource type:
+CodePact 0.3.0 is not published. Clone the repository and install its locked
+development environment, then point the checkout's CLI at your project:
 
 ```sh
-uv add codepact==0.3.0
-uv run codepact inspect-contracts --root src src/data/connection.py src/data/client.py
+git clone https://github.com/eddiethedean/codepact.git
+cd codepact
+uv sync --locked
+uv run --locked codepact inspect-contracts --root /path/to/project/src \
+  /path/to/project/src/data/connection.py /path/to/project/src/data/client.py
 ```
 
 Use this first to check that resource decorators, access aliases, and direct
@@ -21,12 +24,13 @@ boundary, not evidence that the declaration is safe.
 
 ## 2. Check whether lifecycle analysis fits
 
-The 0.2.0 lifecycle checker finds supported use-after-close operations and
-closes through `Borrowed` parameters. Try it on a narrow directory that contains
-only the relevant Python modules:
+The 0.3 candidate checks use-after-close, closes through `Borrowed` parameters,
+and owned cleanup obligations across a bounded set of synchronous and async
+exits. Try it on a narrow directory containing only the relevant Python
+modules:
 
 ```sh
-uv run codepact check --root /path/to/pilot
+uv run --locked codepact check --root /path/to/pilot
 ```
 
 The checker scans every `.py` file under the selected root. A filename argument
@@ -46,21 +50,22 @@ direct synchronous uses. Review:
 4. Whether the source actually closes the runtime resource as declared; CodePact
    does not execute or verify the method implementation.
 
-A clean result covers only the supported subset and normal-flow model. It does
-not prove leak freedom, cleanup through exceptions, or general ownership safety.
+A clean result covers only the supported subset and modeled exits. It does not
+prove leak freedom, cleanup on every possible path, or general ownership safety.
 Do not use an incomplete result as a clean bill of health.
 
 ## Fit checklist
 
-The checker is most useful when the pilot uses direct resource
-construction, local aliases, ordinary synchronous calls, local helpers, and
-`if`/`else` branches. Common blockers include future/string annotations, relative
-imports, dynamic dispatch, loops, exception handlers, context managers, async
-code, and resources stored in fields or containers. See the full
+The checker is most useful when the pilot uses direct resource construction,
+local aliases, resolved helpers, `if`/`else`, supported `try`/`finally` and
+loops, reviewed `contextlib` cleanup, or directly awaited local coroutines.
+Common boundaries include future/string annotations, relative imports, dynamic
+dispatch, arbitrary managers and awaitables, task scheduling, and resources
+stored in fields or containers. See the full
 [supported-syntax guide](supported-syntax.md) and [limitations](limitations.md)
 before expanding the pilot.
 
 If the pilot depends on these unsupported forms, keep the boundary visible and
-wait for a documented capability that covers the required behavior. CodePact
-does not provide a strict-mode switch, baseline file, or suppressions in this
-release line.
+wait for a documented capability that covers the required behavior. The
+candidate remains unqualified, and CodePact does not provide a strict-mode
+switch, baseline file, or suppressions.

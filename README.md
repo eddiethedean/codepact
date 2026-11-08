@@ -201,7 +201,9 @@ The historical TypePact 0.2.0 release added bounded lifecycle flow checks. The C
 | Python typing | Inline types and `py.typed`; compatibility fixtures for mypy and Pyright |
 | Rust source builds | Rust 1.96+ |
 
-The native CLI wheel matrix covers eight platform targets:
+The release configuration defines eight native CLI wheel targets. The current
+candidate's build and install evidence is still pending; see the
+[availability guide](docs/availability.md) before relying on a platform claim:
 
 | Platform | x86-64 | ARM64 |
 | --- | --- | --- |

@@ -17,7 +17,7 @@ project slug has not been renamed.
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
-| CodePact 0.3.0 | Candidate; not published | `codepact`, `codepact-cli`, Rust crate `codepact` | Cleanup obligations, lifecycle checking, and declaration inspection; see the candidate specification |
+| CodePact 0.3.0 | Candidate; not published | `codepact`, `codepact-cli`, Rust crate `codepact` | Declaration inspection, lifecycle checking, cleanup obligations, and bounded intratask cancellation/cleanup; see the candidate specification |
 | TypePact 0.2.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Declaration inspection and bounded synchronous lifecycle checking |
 | TypePact 0.1.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Contract declaration inspection |
 
@@ -56,8 +56,10 @@ CLI wheel targets:
 | macOS | 10.13+ | 11.0+ |
 | Windows | Supported | Supported |
 
-The candidate's exact artifact build, inventory, metadata, and install results
-will be recorded in the [0.3.0 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md).
+The earlier candidate's artifact build, inventory, metadata, and install results
+are recorded in the [0.3.0 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md).
+They predate the current correctness fixes, so distribution qualification must
+be repeated for the current candidate before its artifacts are accepted.
 The Python helpers target Python 3.11 and later; the analyzer source grammar
 targets Python 3.11–3.13. Building the CLI from source requires Rust 1.96+ and a
 linker.

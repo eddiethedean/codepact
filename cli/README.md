@@ -19,7 +19,7 @@ incomplete coverage, and `2` means invocation or input failure.
 
 ## Lifecycle checking preview
 
-The source preview for the upcoming 0.3.0 release includes expanded cleanup
+The unreleased 0.3.0 candidate includes expanded cleanup
 checking through `codepact check`. Build it from the repository root with Rust
 1.96+:
 
@@ -44,7 +44,9 @@ Platform wheels include the executable; source installs require Rust 1.96+ and a
 The analyzer reads Python source without importing or executing it.
 
 The release matrix covers Linux glibc/musl, macOS and Windows on x86-64 and ARM64.
-Python 3.11+ is required for installation. The Rust crate remains available on crates.io.
+Python 3.11+ is required for installation. The CodePact `codepact` Rust crate
+has not been published; the older TypePact crate belongs to the historical
+0.1.0 and 0.2.0 releases.
 
 See the [installation guide](https://typepact.readthedocs.io/en/latest/install.html),
 [command reference](https://typepact.readthedocs.io/en/latest/cli.html), and

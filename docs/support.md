@@ -1,8 +1,9 @@
 # Support and maintenance
 
-CodePact is an early 0.x project. Version 0.2.0 is published with bounded
-lifecycle checking. APIs, diagnostics, and schema remain provisional during the
-0.x series.
+CodePact is an early 0.x project. Its 0.3.0 candidate adds bounded cleanup
+checking but is not published. The published 0.1.0 and 0.2.0 releases used the
+TypePact name and package identifiers. APIs, diagnostics, and schema remain
+provisional during the 0.x series.
 
 ## Ask for help or report a bug
 

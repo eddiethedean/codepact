@@ -79,6 +79,9 @@ and release gates.
 - A direct `Owned[T]` return hands an open local duty to the caller after
   `finally` completes. Returning Borrowed, already-closed, or unsupported
   values does not fabricate an ownership handoff.
+- Repeated calls to a resolved resource factory keep distinct allocation
+  identities while outstanding, so closing one result cannot discharge
+  another result from the same call site.
 - `with contextlib.closing(value)` and `async with
   contextlib.aclosing(value)` are recognized through exact `from contextlib`
   imports, `import contextlib` module aliases, and supplied-module named
@@ -86,9 +89,14 @@ and release gates.
   checked close-body effects; an unknown manager cannot discharge a duty.
   Target 3.14 is not yet modeled.
 - Resolved local coroutine calls retain captured resource aliases. A direct
-  `await` applies the supported body summary; an unawaited coroutine does not
-  perform cleanup. Cancellation and task scheduling remain visible boundaries
-  where the checker cannot prove cleanup.
+  `await` applies the body summary only to the specifically awaited call.
+  Nested calls that are not awaited remain pending and do not perform cleanup.
+  Cancellation and task scheduling remain visible boundaries where the
+  checker cannot prove cleanup.
+- After an `except ... as name` handler, the exception target is unbound. A
+  failure while evaluating a `raise ... from ...` cause follows the failure's
+  own exception path and is not caught by the handler that matched the original
+  raised exception.
 
 The close declaration supplies a normal state transition with
 `declared-unverified` provenance; it is not runtime proof. A checked source
@@ -115,7 +123,7 @@ The analyzer bounds memory and work per request:
 | Expression nesting per statement | 128 |
 | Converted expression nodes per statement | 50,000 |
 
-Lifecycle checking has additional conservative flow limits:
+The published 0.2 checker used these additional conservative flow limits:
 
 | Flow limit | Maximum |
 | --- | ---: |
@@ -125,11 +133,14 @@ Lifecycle checking has additional conservative flow limits:
 | Nested call/effect evaluation | 8 |
 | Lifecycle statement and expression transfers per analysis request | 100,000 |
 
-The 0.3 candidate also caps loop fixed-point analysis at 16 passes, exact
-static tuple iteration at 16 items, and pending coroutine records at 128 per
-flow state. Exceeding a bound widens affected state and reports incomplete
-coverage. These 0.3 values are candidate defaults, not accepted release
-budgets; see the [phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
+The 0.3 candidate additionally caps total nested control-flow depth at 64,
+loop fixed-point analysis at 16 passes, exact static tuple iteration at 16
+items, context-exit partitions at 256 per unwind, and pending coroutine
+records at 128 per flow state. The 64-depth cap is stricter than the historical
+128 nested-`if` cap. Exceeding any bound widens affected state and reports
+incomplete coverage. CL01 defaults were accepted, while technical and release
+qualification remain pending; see the
+[phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
 
 When a flow limit is reached, the checker drops the affected exact facts,
 weakens reachable resource state, and reports a TP9001 boundary with incomplete

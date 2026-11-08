@@ -42,10 +42,12 @@ dynamic expressions are outside the supported inspector subset. Version 0.2.0
 has additional lifecycle-flow limits. Read [supported syntax](supported-syntax.md)
 and [limitations](limitations.md), then inspect `coverage.reasons`.
 
-## Do I need Rust to install the released command?
+## Will I need Rust to install the CodePact command?
 
-No, if your platform has a compatible prebuilt CLI wheel. Building the CLI from
-source requires Rust 1.96 or newer and a linker. See [installation](install.md).
+The release configuration provides native CLI wheels for supported platforms,
+which do not need Rust at installation. Those artifacts are not yet qualified
+for the current candidate. Building the candidate from source requires Rust
+1.96 or newer and a linker. See [installation](install.md).
 
 ## Which Python version is analyzed?
 

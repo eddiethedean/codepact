@@ -16,9 +16,9 @@ Completion: the documented Connection example produces exactly the intended post
 
 ## Phase 2: cover real cleanup and adoption
 
-The [refined 0.3 cleanup plan](phases/0.3-cleanup.md), [cleanup specification](phases/0.3/specification.md) and [V03 matrix](phases/0.3/validation.md) define CL01–CL08 and C01–C05/C07/CS01. Cleanup duties, exceptional exits, reviewed contexts, loop fixed points and bounded intratask cancellation belong to 0.3; must-use rules, configuration, baselines, suppressions, broader reporting and pilots belong to [0.4 adoption](phases/0.4-adoption.md).
+The [refined 0.3 cleanup plan](phases/0.3-cleanup.md), [cleanup specification](phases/0.3/specification.md) and [V03 matrix](phases/0.3/validation.md) define CL01–CL08 and C01–C05/C07/CS01. The 0.3 candidate implements cleanup duties, exceptional exits, reviewed contexts, loop fixed points and bounded intratask cancellation; its automated code checks pass, while maintainer qualification and current-candidate distribution evidence remain pending. Must-use rules, configuration, baselines, suppressions, broader reporting and pilots belong to [0.4 adoption](phases/0.4-adoption.md).
 
-Add exception edges, finally, context-manager models, early returns and loops. Introduce cleanup obligations and initial must-use checks. Add pyproject configuration, machine output, suppression reasons, baseline support and analysis coverage reporting.
+The candidate implements exception edges, `finally`, reviewed context-manager models, early returns, loops and cleanup obligations. Finish its V03 technical qualification and current-candidate release evidence. Initial must-use checks, `pyproject` configuration, suppression reasons and baselines, broader reporting and pilot workflows are planned for 0.4.
 
 Completion: pilot projects can run in CI with stable exit codes; modeled cleanup works on normal and exceptional paths; unresolved behavior is visible; baseline updates cannot silently hide new rules.
 
@@ -58,7 +58,7 @@ These engineering phases group work by subsystem. The [root ROADMAP](../../ROADM
 
 ## Python helper and CLI distributions
 
-D015 makes the pure codepact to native codepact-cli dependency part of WP02/WP06 in 0.1. Use Hatchling/maturin, two complete sdists, eight CLI release targets and installed-artifact checks before publication; later phases retain this contract.
+D015 established the pure-helper to native-CLI dependency model in the original TypePact 0.1 release; D019 assigns the CodePact candidate the `codepact` and `codepact-cli` names. Retain Hatchling/maturin, two complete source archives, eight CLI release targets and exact-artifact checks before publication.
 
 ## Concurrent resource safety work stream
 

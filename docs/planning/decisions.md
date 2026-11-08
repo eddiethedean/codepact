@@ -19,7 +19,7 @@
 | D013 | Pin Ruff parser/AST 0.0.12 and Salsa 0.28.5; raise Rust MSRV to 1.96 | crates.io packages and published metadata report these versions; exact lockfile and archive build are required |
 | D014 | Do not depend on `ruff_python_semantic` in 0.1; keep a CodePact-owned binding index for the supported declaration subset | Ruff labels the component API unstable and frequently breaking; its semantic model adds Ruff-specific scope and reference behavior that does not define CodePact's eager captured-contract semantics |
 
-| D015 | Keep codepact pure Python and depend on codepact-cli==the same version; build codepact-cli with maturin bin wheels from 0.1 and retain the Cargo crate | One Python installation resolves annotations and analysis; codepact stays pure Python and pins the matching codepact-cli version. Publish eight CLI wheels, one universal helper wheel and two source archives, following the robin-sparkless release build matrix |
+| D015 | Keep the Python helper pure Python, depend on the matching CLI distribution, build native CLI wheels with maturin and retain the Cargo crate. The original TypePact 0.1–0.2 names were `typepact` and `typepact-cli`; D019 maps this distribution model to CodePact's `codepact` and `codepact-cli` names for 0.3. | One Python installation resolves annotations and analysis while the helper remains lightweight. Publish eight CLI wheels, one universal helper wheel and two source archives, following the robin-sparkless release build matrix. |
 
 D009–D012 establish direction, not implementation completion. [AM01–AM06](analyzer-migration.md) define the evidence and rollout; D007's MIT choice remains in force.
 

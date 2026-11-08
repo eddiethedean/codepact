@@ -14,9 +14,11 @@ uv run --locked codepact inspect-contracts \
 
 This command uses the layout in the [multi-file tutorial](project-guide.md). Include every provider module required by the annotations you want to resolve.
 
-## Run the standalone CLI in GitHub Actions
+## Run the standalone CLI in GitHub Actions after publication
 
-This job installs only the CLI tool and inspects that same source layout:
+After CodePact 0.3.0 is published, this job installs only the CLI tool and
+inspects that same source layout. To use the unreleased candidate, build from a
+CodePact checkout and record its Git revision:
 
 ```yaml
 name: CodePact declarations

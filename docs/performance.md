@@ -30,6 +30,15 @@ measured regression with its limitations; these results describe one host and
 are not performance guarantees. Do not apply the 0.1.0 numbers to lifecycle
 checking or another platform.
 
+## 0.3 candidate measurements
+
+The [0.3 performance record](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/performance.md) contains
+cleanup, cancellation, lifecycle, query-reuse, and memory measurements. Those
+timings were collected before the current correctness fixes to allocation
+identity, direct-await matching, exception-target cleanup, and raise-cause
+evaluation. They do not qualify the current analyzer revision; G4 remains
+pending until measurements are refreshed for that revision.
+
 ## Practical guidance
 
 - Use a narrow root for `check`: it scans Python files throughout that root.

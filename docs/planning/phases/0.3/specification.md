@@ -12,7 +12,7 @@ The default scope includes obligations for resource acquisitions inside supporte
 
 ## User-facing example
 
-This is proposed 0.3 behavior, using existing declaration spellings:
+This demonstrates the implemented 0.3 candidate behavior, using existing declaration spellings:
 
 ```python
 from codepact import resource
@@ -25,7 +25,7 @@ class Connection:
 
 def leak():
     connection = Connection()
-    return  # Proposed TP1002: owned local remains open on this exit.
+    return  # TP1002: owned local remains open on this exit.
 
 def safe():
     connection = Connection()
@@ -47,7 +47,7 @@ def read(connection: Borrowed[Connection]):
 
 Track resource identity, lifecycle state, duty holder, obligation status and provenance separately. A resource can be open with a duty held by a caller, or have unknown state with an unresolved duty. Closing an object and completing work that captured it are different facts.
 
-| Event | Proposed duty rule |
+| Event | Candidate duty rule |
 | --- | --- |
 | Successful local resource construction or modeled acquisition | Create one duty in the current function scope, after the acquisition succeeds |
 | Failed acquisition | No returned-object duty; preserve effects/duties created earlier in evaluation; partially constructed internal resources require a model or boundary |
@@ -69,9 +69,9 @@ Summaries distinguish argument evaluation, entry acceptance, normal return, rais
 
 A resolved `Owned` parameter delegates the duty at supported entry. Apply its checked outcome summary back to the same object: successful cleanup discharges, an owning return restores the duty with its result identity, and exceptional/unknown outcomes retain their specified obligation state. Report a callee's known unfulfilled duty at its exit, with the caller origin where available; do not independently report the same delegated duty as a second caller leak. Opaque declarations supply no verified cleanup guarantee. Callee body checks and call-site instantiations must share a deterministic reporting policy.
 
-For async callees, creation retains arguments/captures but does not enter the body or transfer the caller duty; direct await uses the reviewed execution-entry/cancellation model. Cancellation before body entry cannot make an owning argument disappear. Calling a borrowed helper never delegates the owner duty. Independently acquired resources in any helper remain that helper's responsibility.
+For async callees, creation retains arguments/captures but does not enter the body or transfer the caller duty; directly awaiting a resolved coroutine executes only that specifically awaited call under the reviewed execution-entry/cancellation model. A nested coroutine call that is not itself awaited remains pending and cannot apply its cleanup effects. Cancellation before body entry cannot make an owning argument disappear. Calling a borrowed helper never delegates the owner duty. Independently acquired resources in any helper remain that helper's responsibility.
 
-Returning a resource as `Owned[T]` transfers its duty only after return-value evaluation and all pending cleanup complete. Retain a pending return value while `finally` runs. A replacing return/raise cancels the earlier transfer; an object left behind still needs cleanup or a diagnostic. Closing the pending returned object makes the owned-open return invalid; diagnose a contract violation rather than grant a valid open result. CL01 must select the exact code for that violation. Unknown result aliases and borrowed-to-owned returns cannot establish a handoff.
+Returning a resource as `Owned[T]` transfers its duty only after return-value evaluation and all pending cleanup complete. Retain a pending return value while `finally` runs. A replacing return/raise cancels the earlier transfer; an object left behind still needs cleanup or a diagnostic. Closing the pending returned object makes the owned-open return invalid; report the contract violation with TP1003 rather than grant a valid open result. Unknown result aliases and borrowed-to-owned returns cannot establish a handoff.
 
 This is cleanup-accounting transfer only. General use-after-move, double transfer, unique handles and borrow escape enforcement remain 0.5 work; retained aliases prevent any uniqueness claim.
 
@@ -87,7 +87,7 @@ Carry a pending completion reason and resource state through cleanup. Route eval
 | Cancellation | Preserve it as a distinct completion class and unwind modeled cleanup; keep interrupted cleanup outcomes separate |
 | Abrupt exit inside cleanup | Replace the pending completion as required; keep effects and obligations accumulated before replacement |
 
-Ordinary calls have exceptional edges unless checked inference or a reviewed model establishes otherwise. Evaluate `raise` operands and handler expressions with their effects. Handler routing preserves source order and uses the bounded built-in exception ancestry table only for unqualified, unshadowed built-in exception names. A raised constructor name is exact only under the same condition. Qualified handler attributes, rebound/imported names, conditional module-level rebinding (including pattern captures, type aliases, and nested class `global` writes), wildcard imports, custom types, and other uncertain matches retain feasible matched and unmatched outcomes with visible incompleteness; never discard an unmatched exceptional edge. `else` is reached only from normal completion of the try body. Exceptions from handlers/else still cross the enclosing finally. Nested cleanup runs in stack order.
+Ordinary calls have exceptional edges unless checked inference or a reviewed model establishes otherwise. Evaluate `raise` operands, explicit causes, and handler expressions with their effects. If evaluation of a `raise ... from ...` cause fails, route that failure from the raise statement; do not send it through the handler list that already selected the original exception. Handler routing preserves source order and uses the bounded built-in exception ancestry table only for unqualified, unshadowed built-in exception names. A raised constructor name is exact only under the same condition. After an `except ... as name` handler exits, that target is unbound as Python specifies; a prior value or assignment inside the handler does not make it available afterward. Qualified handler attributes, rebound/imported names, conditional module-level rebinding (including pattern captures, type aliases, and nested class `global` writes), wildcard imports, custom types, and other uncertain matches retain feasible matched and unmatched outcomes with visible incompleteness; never discard an unmatched exceptional edge. `else` is reached only from normal completion of the try body. Exceptions from handlers/else still cross the enclosing finally. Nested cleanup runs in stack order.
 
 Do not treat `except Exception` as a universal cancellation/process-control handler. Bare and explicit broader handlers require distinct matching; unknown exception types cannot prove all exceptional exits handled. Catching an error does not itself close a resource. Unsupported exception-group routing keeps the affected region incomplete.
 
@@ -120,7 +120,7 @@ For supported `while` and `for`, evaluate condition/iterator effects, include ze
 
 Allocation identity must distinguish repeated outstanding resources. Use bounded recent-instance identities plus a summary carrying conservative outstanding multiplicity; closing the most recent object cannot discharge earlier instances merged at the same allocation site. A different finite representation is acceptable only with equivalent counterexamples. Include acquire/close each iteration, overwrite without close, break before cleanup, cleanup on continue and cleanup after the loop.
 
-The candidate retains the 0.2 flow limits, uses up to 16 loop fixed-point passes, exactly unrolls up to 16 entries for supported static tuples, bounds each context-manager unwind to 256 exit partitions, tracks at most 4,096 resource objects and cleanup duties per body, and retains at most 128 pending coroutine records. The maintainer accepted these defaults under CL01 on 2026-11-07. That acceptance does not qualify their technical behavior or performance. The V03-16/23/26 counterexamples, measured memory/time, and exhaustion/recovery behavior remain technical qualification evidence for maintainer review. On exhaustion, widen affected state/duties to unknown, add a reason and keep the session usable. No truncated graph may establish successful cleanup. Recursive-call components retain conservative bounded recovery; no new recursive fixed-point support is promised.
+The candidate retains unchanged 0.2 flow limits, lowers the total nested control-flow depth cap from the historical 128 nested-if regions to 64, uses up to 16 loop fixed-point passes, exactly unrolls up to 16 entries for supported static tuples, bounds each context-manager unwind to 256 exit partitions, tracks at most 4,096 resource objects and cleanup duties per body, and retains at most 128 pending coroutine records. The maintainer accepted these defaults under CL01 on 2026-11-07. That acceptance does not qualify their technical behavior or performance. The V03-16/23/26 counterexamples, refreshed measurements, and exhaustion/recovery behavior remain technical qualification evidence for maintainer review. On exhaustion, widen affected state/duties to unknown, add a reason and keep the session usable. No truncated graph may establish successful cleanup. Recursive-call components retain conservative bounded recovery; no new recursive fixed-point support is promised.
 
 ## Intratask async and CS01
 
@@ -144,14 +144,14 @@ Model content, selection/version inputs, target Python, root/module map and budg
 
 ## Diagnostics and compatibility
 
-Proposed TP1002 reports an outstanding cleanup duty in the existing lifecycle family; TP3xxx remains reserved for must-use/variants. Primary location is the actual exit or escaping operation; related locations include acquisition/owning annotation, conditional cleanup and model origin as applicable. Include completion kind, certainty, trust, coverage reason and repair explanation in structured results as well as text. CL01 must freeze codes and a versioned checking schema before snapshots; preserve inspection schema/assurance.
+TP1002 reports an outstanding cleanup duty in the existing lifecycle family; TP3xxx remains reserved for must-use/variants. Primary location is the actual exit or escaping operation; related locations include acquisition/owning annotation, conditional cleanup and model origin as applicable. Include completion kind, certainty, trust, coverage reason and repair explanation in structured results as well as text. The accepted CL01 policy freezes these diagnostic choices and the separate versioned checking schema; qualification must verify the implementation and preserve inspection schema/assurance.
 
-Group by rule, duty acquisition context, source exit and completion kind. Separate explicit returns/raises retain separate findings; paths reaching the same source exit and outcome group join certainty. Bound related origins deterministically. Implicit exceptional exits are anchored to their originating operation; finalizer replacement updates the actual exit without erasing the earlier origin. Aliases, callee checks and call-site instantiations must not multiply the same witness. V03-06/09/25 must freeze this policy with exact counts.
+Group by rule, duty acquisition context, source exit and completion kind. Separate explicit returns/raises retain separate findings; paths reaching the same source exit and outcome group join certainty. Bound related origins deterministically. Implicit exceptional exits are anchored to their originating operation; finalizer replacement updates the actual exit without erasing the earlier origin. Aliases, callee checks and call-site instantiations must not multiply the same witness. V03-06/09/25 must verify this accepted policy with exact counts.
 
 Definite means a pending duty on every feasible state within the reported modeled exit group. Possible means known pending and discharged/absent alternatives. Unknown effects yield a boundary and unresolved duty, with independent known leak witnesses retained without overstating certainty. This is a static contract finding, not proof of a physical runtime leak.
 
 Retain check exits: 1 for definite violations/declaration errors, 0 for no definite violation (including visible possible/boundary-only reports), and 2 for command/input failure, request cancellation or unrecoverable failure. Bounded incomplete analysis remains a visible boundary. New default cleanup diagnostics change CI behavior and require release/migration notes; strict policies stay in 0.4. Keep text/JSON/one-shot/session results aligned and retain lightweight helper typing/runtime identity.
 
-## Decision record required before acceptance
+## Decision record and qualification status
 
 The maintainer accepted all proposed CL01 defaults on 2026-11-07; see the [CL01 decision record](decision-record.md) for the choices, alternatives, evidence, limitations and reconsideration triggers. That decision does not pass technical qualification gates, approve a release, or authorize a tag or publication. The maintainer may implement, validate and review the remaining evidence alone under the [maintainer authority policy](../../release-gates.md#maintainer-authority).

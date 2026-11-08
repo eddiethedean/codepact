@@ -2,9 +2,10 @@
 
 The `codepact` command inspects declarations or checks resource lifecycles in Python source without importing or executing the project.
 
-Both `inspect-contracts` and the bounded lifecycle-checking `check` command are
-available in the published 0.2.0 release. See the [availability guide](availability.md),
-[installation instructions](install.md), and [lifecycle tutorial](lifecycle.md).
+The published TypePact 0.2.0 release used the `typepact` command. CodePact's
+renamed `codepact` command is in the unreleased 0.3.0 candidate; build it from a
+checkout using [installation instructions](install.md). See the
+[availability guide](availability.md) and [lifecycle tutorial](lifecycle.md).
 
 ## Commands
 
@@ -23,9 +24,16 @@ codepact check --root src
 codepact check --root src --python-version 3.12 src/app.py
 ```
 
-The current checking subset tracks direct resource construction, local aliases, straight-line synchronous code, `if`/`else`, returns, resolved local helpers, and acyclic named re-exports. It reports use after a known close as TP1001 and close through a Borrowed parameter as TP2001. Unsupported statements and unknown effects are shown as incomplete coverage. A possible violation is a warning and does not by itself make the command fail.
+The published TypePact 0.2 subset tracked direct resource construction, local
+aliases, straight-line synchronous code, `if`/`else`, returns, resolved local
+helpers, and acyclic named re-exports. It reported use after close as TP1001
+and close through a `Borrowed` parameter as TP2001. The CodePact 0.3 candidate
+extends this subset as described below.
 
-This is bounded lifecycle checking, not a guarantee of runtime safety, leak freedom or cleanup across exceptions. Loops, exception handlers, context managers, dynamic dispatch and escaped resource storage are not modeled precisely; related resource facts are weakened and a coverage boundary is reported. Read the [limitations](limitations.md) before treating a clean result as a proof.
+Checking is bounded static analysis, not a guarantee of runtime safety, leak
+freedom or cleanup on every Python path. Dynamic dispatch, arbitrary escaped
+resource storage and unsupported expressions retain visible boundaries. Read
+the [limitations](limitations.md) before treating a clean result as a proof.
 
 ## Select the Python grammar
 
@@ -71,11 +79,14 @@ For `check`, status `1` means a definite lifecycle violation or declaration erro
 
 ## Unreleased 0.3 worktree
 
-The current worktree extends `check` to bounded cleanup obligations across
+The current 0.3 candidate extends `check` to bounded cleanup obligations across
 returns, raises, supported exception handlers, loops, `finally`, exact
 `contextlib.closing`/`aclosing` imports, and resolved local coroutine calls
-that are directly awaited once. Finite tuple loops are unrolled up to 16 items;
-each flow state retains up to 128 pending coroutine records. It prints
+that are directly awaited once. Each awaited call is matched to its own
+coroutine; nested calls that are not awaited remain pending and do not apply
+cleanup. Repeated calls to one resolved factory site keep distinct bounded
+allocation identities. Finite tuple loops are unrolled up to 16 items; each
+flow state retains up to 128 pending coroutine records. It prints
 completion, certainty, trust, coverage reason and repair guidance. With
 `--json`, it emits the separately versioned `check_schema_version: 1` result
 described in the [output reference](output.md); `inspect-contracts` keeps its

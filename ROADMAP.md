@@ -1,6 +1,6 @@
 # CodePact 0.x release roadmap
 
-Planning baseline: 2026-10-31; release status updated from the retained evidence. **The predecessor project, TypePact, published and qualified 0.1.0 and 0.2.0 under the `typepact` package names.** The repository and project are now CodePact. Its 0.3.0 candidate uses the new `codepact` Python package, `codepact-cli` command distribution, `codepact` CLI and Rust crate. The candidate implements the cleanup behavior in the [refined cleanup plan](docs/planning/phases/0.3-cleanup.md), with automated evidence mapped in the [V03 matrix](docs/planning/phases/0.3/validation.md). Remaining matrix evidence, maintainer qualification and release authorization are tracked there and in the candidate record.
+Planning baseline: 2026-10-31; release status updated from the retained evidence. **The predecessor project, TypePact, published and qualified 0.1.0 and 0.2.0 under the `typepact` package names.** The repository and project are now CodePact. Its 0.3.0 candidate uses the new `codepact` Python package, `codepact-cli` command distribution, `codepact` CLI and Rust crate. The candidate implements the cleanup behavior in the [refined cleanup plan](docs/planning/phases/0.3-cleanup.md); its fixed code revision passed local checks and Quality CI. The [V03 matrix](docs/planning/phases/0.3/validation.md) maps automated coverage. Maintainer qualification, refreshed performance and distribution evidence for the fixed candidate, and release authorization remain pending.
 
 This document is the authoritative release sequence. The original [feature milestones](docs/planning/roadmap.md) and [implementation phases](docs/planning/implementation.md) remain technical work groupings; they are mapped below rather than treated as version numbers.
 
@@ -61,7 +61,7 @@ Each phase owner is assigned before work starts; the accountable maintainer may 
 
 ## First executable release
 
-The [0.1 plan](docs/planning/phases/0.1-foundations.md) is complete: its pure Python helper, matching CLI package, Rust crate, eight native CLI wheel targets, source archives, and F01–F08/G1–G8 evidence are recorded in the [release evidence](docs/releases/0.1.0-evidence.md). The [0.1 prototype](docs/planning/phases/0.1/prototype.md) and [validation matrix](docs/planning/phases/0.1/validation.md) remain historical references. The [0.2 lifecycle release](docs/releases/0.2.0-evidence.md) is also complete. Follow the [0.3 phase plan](docs/planning/phases/0.3-cleanup.md) for the next release; its proposed cleanup semantics and gates are not shipped behavior.
+The [0.1 plan](docs/planning/phases/0.1-foundations.md) is complete: its pure Python helper, matching CLI package, Rust crate, eight native CLI wheel targets, source archives, and F01–F08/G1–G8 evidence are recorded in the [release evidence](docs/releases/0.1.0-evidence.md). The [0.1 prototype](docs/planning/phases/0.1/prototype.md) and [validation matrix](docs/planning/phases/0.1/validation.md) remain historical references. The [0.2 lifecycle release](docs/releases/0.2.0-evidence.md) is also complete. The unreleased 0.3 candidate implements cleanup behavior under the [phase plan](docs/planning/phases/0.3-cleanup.md); its qualification gates remain pending, so this behavior is not published support.
 
 ## 1.0 boundary
 

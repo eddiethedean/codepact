@@ -8,13 +8,15 @@ pattern or establishes general resource safety.
 
 The published 0.2 checker tracks direct construction, local aliases, ordinary synchronous calls, local helpers, `if`/`else` joins, and acyclic named re-exports from local modules. CodePact 0.3 adds bounded cleanup across the supported exits described below. In the 0.3 candidate, decorated methods, including `staticmethod` and `classmethod`, still lack modeled Python binding and produce an incomplete-coverage boundary. Method parameter annotations and function defaults are outside the modeled summary; their declarations produce incomplete-coverage boundaries. Unsupported call argument expressions weaken tracked resources and produce boundaries. A custom `__new__` allocation also produces a boundary because its effects are not modeled. Dynamic dispatch and arbitrary field/container ownership remain unsupported. Unsupported regions can produce boundaries and weaken tracked state; unmodeled alias and boundary combinations are not proven safe. Recursive calls recover to unknown summaries. Unknown methods and calls do not establish purity. A clean run does not prove leak freedom, runtime leak freedom, or correctness of declared resource models.
 
-Flow work is bounded to 128 nested `if` regions, 64 possible objects for one
-local alias at a join, 4,096 tracked objects in one function or module body, 8
-nested call/effect evaluations, 16 loop passes, 256 context-exit partitions,
-and 128 pending coroutine records. Exhaustion produces an incomplete-coverage
-boundary and weakens affected facts. The defaults are documented in the
-[supported syntax guide](supported-syntax.md#input-and-work-limits); 0.3
-measurements and the pending maintainer review are in the
+The 0.3 candidate caps total nested control-flow depth at 64 (the historical
+0.2 limit was 128 nested `if` regions), possible objects for one local alias
+at a join at 64, tracked objects in one function or module body at 4,096,
+nested call/effect evaluations at 8, loop passes at 16, context-exit partitions
+at 256, and pending coroutine records at 128. Exhaustion produces an
+incomplete-coverage boundary and weakens affected facts. See the
+[supported syntax guide](supported-syntax.md#input-and-work-limits); the 0.3
+measurements predate the current correctness fixes, so refreshed G4 evidence
+and the pending maintainer review are in the
 [candidate performance record](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/performance.md).
 
 Repeat close has no general policy and is reported as a coverage boundary rather

@@ -13,7 +13,7 @@ The accountable maintainer can validate and approve a release alone, including t
 
 ## Artifacts
 
-Deliver a pure Python codepact package built with Hatchling and an exact dependency on codepact-cli at the same version (D015). Maturin bin bindings build codepact-cli with the Rust command. Publish eight CLI platform wheels, one universal helper wheel and two complete source archives. Retain the reusable codepact Rust crate and optional Cargo CLI installation. The Ruff/Salsa migration must retain reproducible registry-compatible dependencies and documented Rust prerequisites; qualify these before selecting dependency versions.
+Deliver a pure Python `codepact` package built with Hatchling and an exact dependency on `codepact-cli` at the same version (D015's distribution model, renamed under D019). Maturin bin bindings build `codepact-cli` with the Rust command. Publish eight CLI platform wheels, one universal helper wheel and two complete source archives. Retain the reusable `codepact` Rust crate and optional Cargo CLI installation. The Ruff/Salsa migration must retain reproducible registry-compatible dependencies and documented Rust prerequisites; qualify these before selecting dependency versions.
 
 Confirm ownership and availability of the new `codepact` and `codepact-cli`
 PyPI projects and the `codepact` crates.io name before publication. Repository

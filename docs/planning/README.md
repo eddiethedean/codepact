@@ -12,7 +12,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [Analyzer migration](analyzer-migration.md) | Ruff AST, declaration identities, Salsa query graph and AM01–AM06 acceptance |
 | [0.1 implementation repair](phases/0.1/remediation.md) | Archived file-level repair plan; see the release evidence for completed work |
 | [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, released scope, V02 matrix and performance record |
-| [0.3 cleanup plan](phases/0.3-cleanup.md) | Proposed CL01–CL08 work, cleanup/async semantics and pending V03 acceptance matrix |
+| [0.3 cleanup plan](phases/0.3-cleanup.md) | Implemented candidate scope, accepted CL01 semantics, cleanup/async behavior and pending maintainer qualification |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
@@ -35,7 +35,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 
 **Proposal** is an implementable starting point awaiting prototype evidence. Public API spellings, package layout, support versions and milestone targets are proposals. **Research** covers capabilities whose feasibility is unresolved. A feature becomes **implemented** only when code, tests, documentation and release notes establish its supported scope.
 
-Documents use “must” for a proposed acceptance requirement, not a claim of present functionality. Update this index and the feature matrix as implementation lands. Cross-interface semantic parity is a release gate.
+In planning documents, “must” describes an acceptance requirement and is not by itself a claim of present functionality. The 0.3 candidate implementation and automated coverage are recorded separately from maintainer qualification and release status. Cross-interface semantic parity is a release gate.
 
 ## Repository baseline
 
@@ -43,8 +43,8 @@ A Ruff AST-based inspector, Python helpers, package manifests and CI workflows n
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete; CodePact 0.3.0 gates remain pending until candidate evidence and the maintainer's decision are recorded. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 has accepted CL01 semantics and passing automated code checks; maintainer qualification, refreshed performance and current-candidate distribution evidence, and release authorization remain pending. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 
-D015 keeps codepact pure Python and pins the matching codepact-cli package from 0.1, with eight CLI platform builds, one pure helper wheel and two source archives. Cargo distribution remains available. The release plan is authoritative for the target matrix; later phases inherit it.
+D015 established the pure-Python helper and matching native CLI distribution model, inherited by CodePact under the `codepact` and `codepact-cli` names for 0.3. The planned inventory includes eight CLI platform builds, one pure helper wheel and two source archives; the Cargo crate route remains part of the distribution plan. The release plan is authoritative for the target matrix; later phases inherit it.

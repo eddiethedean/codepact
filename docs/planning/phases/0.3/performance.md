@@ -1,7 +1,7 @@
 # 0.3 candidate performance record
 
-Status: **Measured on the optimized phase 0.3 implementation candidate; maintainer performance review and release qualification are pending.**
-Measurements were recollected on 2026-11-08 against analyzer source revision `61dde0eb8d0dcf61c675b9a18671ba9b8f8f7fe5`. The candidate validation additions since that commit change tests and documentation only; the benchmarked analyzer source is identical. These measurements replace the earlier candidate results, which predated substantial flow and query changes. They do not pass a qualification gate.
+Status: **Historical pre-fix measurements; current-candidate performance review and release qualification are pending.**
+Measurements were recollected on 2026-11-08 against analyzer source revision `61dde0eb8d0dcf61c675b9a18671ba9b8f8f7fe5`. Four correctness fixes landed afterward in flow and frontend analysis: distinct repeated factory allocation identities, direct-awaited coroutine execution, exception-target cleanup after handlers, and evaluation/routing of `raise ... from ...` causes. The benchmarked analyzer source therefore differs from the fixed 0.3 candidate. The tables below describe only the earlier revision; rerun these measurements before using them to support G4. They do not pass a qualification gate.
 
 ## Environment and method
 

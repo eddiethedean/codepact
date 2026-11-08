@@ -6,7 +6,7 @@ and lifecycle checking:
 1. The `codepact` Python package offers `resource` and `Annotated` metadata. Importing it does not load or launch the analyzer.
 2. The `codepact-cli` package distributes the native Rust `codepact` command.
 3. The Rust library parses supplied source text, resolves supported declaration relationships, and emits contracts, diagnostics, and coverage.
-4. The 0.2.0 checker runs a bounded flow pass over module statements and synchronous bodies to produce lifecycle findings.
+4. The CodePact 0.3 candidate runs a bounded flow pass over module statements and supported synchronous and async bodies to produce lifecycle and cleanup findings.
 
 ## Source is not executed
 
@@ -22,13 +22,21 @@ The library uses Salsa to track parsing, module inspection, and export summaries
 
 The checking path starts from declaration inspection and parsed body statements.
 Its flow state separates local names from modeled resource objects, tracks open,
-closed, and unknown state, and joins supported normal branches. Supported calls
-apply body effects to passed objects; recursive calls recover to unknown summaries.
+closed, and unknown state, and carries cleanup duties across supported
+fallthrough, return, raise, loop, context-manager, and cancellation outcomes.
+Resolved calls apply effects to passed objects; repeated factory invocations
+retain separate allocation identities within the bounded caller context.
+Coroutine creation retains captures without running the body; only the
+specifically awaited resolved call executes. Other nested coroutine calls stay
+pending. Exception target names are cleared after their handlers, and failures
+while evaluating `raise ... from ...` causes follow the exception route from
+that statement. Recursive calls recover to unknown summaries.
 
 The current implementation uses a project checking query. Phase 0.2 qualified
 its invalidation and reuse behavior; the inspection query cache alone does not
-provide that guarantee. See the
-[phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.2-lifecycle.md).
+provide that guarantee. Phase 0.3 extends tracked inputs to cleanup models,
+budgets, and flow results. See the
+[phase 0.3 plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
 
 ## Shared engine
 
