@@ -57,7 +57,7 @@ runtime conformance evidence where applicable. None of these entries is a
 qualification Pass.
 
 `make check` runs `scripts/check_phase03_validation.py` to require all 26 IDs in
-both tables, require all 65 distinct named `v03_*` references to be declared Rust tests,
+both tables, require all 66 distinct named `v03_*` references to be declared Rust tests,
 and resolve qualified `::` references to Rust functions. Its unit tests reject
 missing rows, stale test references and ordinary functions substituted for
 tests. This guards matrix-index drift; it does not qualify behavior or pass a
@@ -111,7 +111,7 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 On 2026-11-08, local validation for the current 0.3 candidate passed
 `uv run --locked make check` on CPython 3.14.3, macOS 26.5.2 ARM64.
 `cargo test --workspace --locked` passed 60 library, 51 CLI, 60 fixture, 26
-lifecycle regression and 169 phase tests (366 Rust tests total); all 21 Python tests passed. Formatting,
+lifecycle regression and 170 phase tests (367 Rust tests total); all 21 Python tests passed. Formatting,
 workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and
 source builds and install smokes, dependency audits, Rust 1.96 checks/package
 test/install smoke, inspector behavior, documentation links and the
