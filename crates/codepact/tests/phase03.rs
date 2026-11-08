@@ -3989,25 +3989,71 @@ fn v03_15_unconditional_continue_does_not_create_a_function_exit() {
 
 #[test]
 fn v03_01_each_open_obligation_is_reported_at_each_distinct_return_exit() {
-    let result = check_source(&format!(
+    let source = format!(
         "{RESOURCE}def leak(flag):\n    first = C()\n    second = C()\n    if flag:\n        return\n    first.close()\n    return\n"
-    ));
-    let leaks = result
+    );
+    let return_lines = source
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| (line.trim() == "return").then_some(index + 1))
+        .collect::<Vec<_>>();
+    let first_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "first = C()")
+        .unwrap()
+        + 1;
+    let second_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "second = C()")
+        .unwrap()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
         .diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.code == "TP1002")
         .collect::<Vec<_>>();
-    assert_eq!(leaks.len(), 3, "{result:#?}");
+    assert_eq!(leaks.len(), 3, "{report:#?}");
     assert!(leaks.iter().all(|diagnostic| {
         diagnostic.certainty == "definite"
-            && diagnostic.message.ends_with("on return")
+            && diagnostic.completion.as_deref() == Some("return")
             && diagnostic.related.len() == 1
     }));
-    let acquisition_lines = leaks
-        .iter()
-        .map(|diagnostic| diagnostic.related[0].line)
-        .collect::<Vec<_>>();
-    assert_eq!(acquisition_lines, [7, 8, 8], "{result:#?}");
+    let mut grouped = std::collections::BTreeMap::<usize, Vec<usize>>::new();
+    for diagnostic in &leaks {
+        grouped
+            .entry(diagnostic.primary.line)
+            .or_default()
+            .push(diagnostic.related[0].line);
+    }
+    for acquisition_lines in grouped.values_mut() {
+        acquisition_lines.sort_unstable();
+    }
+    assert_eq!(
+        grouped.len(),
+        2,
+        "each return keeps a distinct exit group: {report:#?}"
+    );
+    assert_eq!(
+        grouped.keys().copied().collect::<Vec<_>>(),
+        return_lines,
+        "diagnostic groups are anchored to both return statements: {report:#?}"
+    );
+    assert_eq!(
+        grouped[&return_lines[0]],
+        [first_acquisition_line, second_acquisition_line],
+        "the early return retains both acquired duties: {report:#?}"
+    );
+    assert_eq!(
+        grouped[&return_lines[1]],
+        [second_acquisition_line],
+        "the later return retains only the second duty after first.close(): {report:#?}"
+    );
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
+    );
 }
 
 #[test]
