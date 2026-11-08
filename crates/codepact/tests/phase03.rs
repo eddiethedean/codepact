@@ -1079,6 +1079,46 @@ fn v03_09_repeated_owned_argument_positions_share_one_duty() {
 }
 
 #[test]
+fn v03_09_owned_and_borrowed_positions_keep_aliased_duty_uncertain() {
+    let source = format!(
+        "{RESOURCE}def consume(owner: Owned[C], view: Borrowed[C]):\n    owner.close()\ndef caller():\n    resource = C()\n    consume(resource, resource)\n"
+    );
+    let call_line = source
+        .lines()
+        .position(|line| line.trim() == "consume(resource, resource)")
+        .unwrap()
+        + 1;
+    let owned_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    let report = check_source(&source);
+    let owner_leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(owner_leaks.len(), 1, "{report:#?}");
+    assert_eq!(owner_leaks[0].certainty, "possible", "{report:#?}");
+    assert_eq!(owner_leaks[0].related.len(), 1, "{report:#?}");
+    assert_eq!(owner_leaks[0].related[0].line, owned_line, "{report:#?}");
+    assert!(
+        report.diagnostics.iter().all(|diagnostic| diagnostic.code != "TP2001"),
+        "the mixed Owned/Borrowed alias pattern is unresolved, not a definite Borrowed violation: {report:#?}"
+    );
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("Owned and Borrowed")
+                && diagnostic.primary.line == call_line
+        }),
+        "the caller must see the unresolved alias effect: {report:#?}"
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
+
+#[test]
 fn v03_09_borrowed_helper_does_not_delegate_the_callers_duty() {
     let result = check_source(&format!(
         "{RESOURCE}def inspect(resource: Borrowed[C]):\n    resource.close()\ndef cleanup():\n    resource = C()\n    inspect(resource)\n    resource.close()\n"
@@ -4779,6 +4819,103 @@ fn v03_02_borrowed_alias_cannot_be_closed_directly_or_through_a_wrapper() {
     assert_eq!(
         result.coverage.status, "complete-for-supported-subset",
         "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_02_borrowed_helper_wrapper_cannot_consume_the_callers_duty() {
+    let source = format!(
+        "{RESOURCE}from contextlib import closing\ndef borrowed_wrapper(value: Borrowed[C]):\n    alias = value\n    with closing(alias):\n        pass\ndef owner():\n    owned = C()\n    borrowed_wrapper(owned)\n"
+    );
+    let borrowed_line = source
+        .lines()
+        .position(|line| line.trim() == "with closing(alias):")
+        .unwrap()
+        + 1;
+    let owned_line = source
+        .lines()
+        .position(|line| line.trim() == "owned = C()")
+        .unwrap()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let borrowed_rejections = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP2001")
+        .collect::<Vec<_>>();
+    assert_eq!(borrowed_rejections.len(), 1, "{report:#?}");
+    assert_eq!(borrowed_rejections[0].certainty, "definite", "{report:#?}");
+    assert_eq!(
+        borrowed_rejections[0].primary.line, borrowed_line,
+        "{report:#?}"
+    );
+
+    let owner_leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(owner_leaks.len(), 1, "{report:#?}");
+    assert_eq!(owner_leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(owner_leaks[0].completion.as_deref(), Some("fallthrough"));
+    assert_eq!(owner_leaks[0].related.len(), 1, "{report:#?}");
+    assert_eq!(owner_leaks[0].related[0].line, owned_line, "{report:#?}");
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("invalid Borrowed close effect")
+        }),
+        "dependent callers must retain the invalid/incomplete status: {report:#?}"
+    );
+}
+
+#[test]
+fn v03_02_borrowed_helper_close_on_raise_keeps_the_callers_duty() {
+    let source = format!(
+        "{RESOURCE}from contextlib import closing\ndef borrowed_wrapper(value: Borrowed[C]):\n    alias = value\n    with closing(alias):\n        raise RuntimeError()\ndef owner():\n    owned = C()\n    try:\n        borrowed_wrapper(owned)\n    except RuntimeError:\n        pass\n"
+    );
+    let borrowed_line = source
+        .lines()
+        .position(|line| line.trim() == "with closing(alias):")
+        .unwrap()
+        + 1;
+    let owned_line = source
+        .lines()
+        .position(|line| line.trim() == "owned = C()")
+        .unwrap()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let borrowed_rejections = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP2001")
+        .collect::<Vec<_>>();
+    assert_eq!(borrowed_rejections.len(), 1, "{report:#?}");
+    assert_eq!(
+        borrowed_rejections[0].primary.line, borrowed_line,
+        "{report:#?}"
+    );
+
+    let owner_leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(owner_leaks.len(), 1, "{report:#?}");
+    assert_eq!(owner_leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(owner_leaks[0].completion.as_deref(), Some("fallthrough"));
+    assert_eq!(owner_leaks[0].related.len(), 1, "{report:#?}");
+    assert_eq!(owner_leaks[0].related[0].line, owned_line, "{report:#?}");
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("invalid Borrowed close effect")
+        }),
+        "the raised helper outcome must remain incomplete: {report:#?}"
     );
 }
 

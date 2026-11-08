@@ -1994,6 +1994,200 @@ mod tests {
     }
 
     #[test]
+    fn exceptional_model_edits_refresh_each_dependent_location_and_metadata() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let provider = SourceFile::new(
+            "provider.py",
+            "provider",
+            "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\n",
+        );
+        let consumer_a = SourceFile::new(
+            "consumer_a.py",
+            "consumer_a",
+            "from provider import Connection\ndef cleanup_a():\n    first = Connection()\n    try:\n        first.close()\n    except RuntimeError:\n        pass\n",
+        );
+        let consumer_b = SourceFile::new(
+            "consumer_b.py",
+            "consumer_b",
+            "from provider import Connection\ndef cleanup_b():\n    second = Connection()\n    try:\n        second.close()\n    except RuntimeError:\n        pass\n",
+        );
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let files = [
+            provider.clone(),
+            consumer_a.clone(),
+            consumer_b.clone(),
+            unrelated.clone(),
+        ];
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let make_catalog = |exceptional, revision: &str| {
+            let mut catalog = crate::model::FlowModelCatalog::default();
+            catalog
+                .insert(crate::model::ResourceEffectModel {
+                    id: "fixture-exceptional-edit".into(),
+                    qualified_symbol: "provider.Connection".into(),
+                    close_method: "close".into(),
+                    source_revision: revision.into(),
+                    source_url: "fixture://provider.Connection.close".into(),
+                    supported_python_versions: BTreeSet::from(["3.11".into()]),
+                    platform_assumptions: vec!["platform-independent fixture".into()],
+                    argument_aliases: Vec::new(),
+                    result_alias: None,
+                    duty_handoff: "none".into(),
+                    suppression: "not-a-context-manager".into(),
+                    asynchronous: false,
+                    normal: Some(crate::model::LifecyclePostcondition::Closed),
+                    exceptional: Some(exceptional),
+                    cancelled: None,
+                    repeat_close: crate::model::RepeatClosePolicy::Unspecified,
+                    post_close_methods: BTreeSet::new(),
+                    trust: "reviewed-fixture".into(),
+                    reviewer: "fixture-test".into(),
+                    valid_cases: vec!["exceptional close postcondition applies".into()],
+                    invalid_cases: vec!["open exceptional state retains its duty".into()],
+                    unknown_cases: vec!["unknown state weakens certainty".into()],
+                })
+                .unwrap();
+            catalog
+        };
+
+        let baseline = session.check_report(&files, "3.11");
+        let baseline_leaks = baseline
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            baseline_leaks.len(),
+            2,
+            "without an exceptional postcondition, each checked source close retains its open duty: {baseline:#?}"
+        );
+        assert!(baseline_leaks.iter().all(|diagnostic| {
+            diagnostic.certainty == "definite"
+                && diagnostic.completion.as_deref() == Some("fallthrough")
+        }));
+
+        let cases = [
+            (
+                crate::model::LifecyclePostcondition::Closed,
+                "model-closed",
+                Vec::<(&str, usize, usize)>::new(),
+                "complete-for-supported-subset",
+            ),
+            (
+                crate::model::LifecyclePostcondition::Open,
+                "model-open",
+                vec![("consumer_a.py", 2, 3), ("consumer_b.py", 2, 3)],
+                "complete-for-supported-subset",
+            ),
+            (
+                crate::model::LifecyclePostcondition::Preserve,
+                "model-preserve",
+                vec![("consumer_a.py", 2, 3), ("consumer_b.py", 2, 3)],
+                "complete-for-supported-subset",
+            ),
+            (
+                crate::model::LifecyclePostcondition::Unknown,
+                "model-unknown",
+                vec![("consumer_a.py", 2, 3), ("consumer_b.py", 2, 3)],
+                "incomplete",
+            ),
+        ];
+
+        for (postcondition, revision, expected_locations, expected_coverage) in cases {
+            let catalog = make_catalog(postcondition, revision);
+            executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clear();
+            assert!(session.set_flow_model_catalog(catalog.clone()));
+            let result = session.check_report(&files, "3.11");
+            let leaks = result
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            let actual_locations = leaks
+                .iter()
+                .map(|diagnostic| {
+                    assert!(
+                        diagnostic.primary.file == "consumer_a.py"
+                            || diagnostic.primary.file == "consumer_b.py",
+                        "unexpected diagnostic file: {result:#?}"
+                    );
+                    assert_eq!(diagnostic.related.len(), 1, "{result:#?}");
+                    let certainty =
+                        if postcondition == crate::model::LifecyclePostcondition::Unknown {
+                            "possible"
+                        } else {
+                            "definite"
+                        };
+                    assert_eq!(diagnostic.certainty, certainty, "{result:#?}");
+                    assert_eq!(diagnostic.completion.as_deref(), Some("fallthrough"));
+                    (
+                        diagnostic.primary.file.as_str(),
+                        diagnostic.primary.line,
+                        diagnostic.related[0].line,
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(actual_locations, expected_locations, "{result:#?}");
+            assert_eq!(result.coverage.status, expected_coverage, "{result:#?}");
+
+            let selected = result
+                .available_models
+                .iter()
+                .find(|model| model.id == "fixture-exceptional-edit")
+                .expect("the selected exceptional model is retained in result metadata");
+            assert_eq!(
+                selected.source_revisions,
+                [format!("{revision} (Python 3.11)")]
+            );
+            assert!(selected
+                .modeled_behavior
+                .contains(&format!("exceptional=Some({postcondition:?})")));
+            assert!(selected.qualification.contains("reviewer=fixture-test"));
+
+            let flow_queries = executions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .cloned()
+                .collect::<Vec<_>>();
+            assert_eq!(
+                flow_queries.len(),
+                3,
+                "the provider and both dependent consumers must refresh; unrelated.py must reuse its query: {flow_queries:#?}"
+            );
+
+            let mut fresh = AnalysisSession::default();
+            fresh.set_flow_model_catalog(catalog);
+            assert_eq!(
+                result,
+                fresh.check_report(&files, "3.11"),
+                "{postcondition:?} model result, identities, metadata and spans must match a fresh session"
+            );
+        }
+    }
+
+    #[test]
     fn async_cancelled_outcome_edits_refresh_only_affected_flow_and_match_fresh() {
         let executions = Arc::new(Mutex::new(Vec::<String>::new()));
         let observed = Arc::clone(&executions);

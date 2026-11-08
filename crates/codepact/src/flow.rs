@@ -79,6 +79,8 @@ struct State {
     resources: BTreeMap<String, Contract>,
     borrowed: BTreeSet<String>,
     borrowed_origins: BTreeMap<String, Span>,
+    forbidden_borrowed_closes: BTreeSet<String>,
+    ambiguous_borrowed_owned_aliases: BTreeSet<String>,
     escaped: BTreeSet<String>,
     call_stack: BTreeSet<String>,
     call_depth: usize,
@@ -729,6 +731,12 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     }
     joined.resources.extend(right.resources.clone());
     joined.borrowed.extend(right.borrowed.iter().cloned());
+    joined
+        .forbidden_borrowed_closes
+        .extend(right.forbidden_borrowed_closes.iter().cloned());
+    joined
+        .ambiguous_borrowed_owned_aliases
+        .extend(right.ambiguous_borrowed_owned_aliases.iter().cloned());
     for (object, origin) in &right.borrowed_origins {
         joined
             .borrowed_origins
@@ -816,6 +824,12 @@ fn project_call_exit(parent: &State, child: &FlowExit, call_range: SourceRange) 
         .coroutine_budget_overflow
         .or(parent.coroutine_budget_overflow);
     for object in parent.objects.keys() {
+        if child.state.forbidden_borrowed_closes.contains(object) {
+            if child.state.escaped.contains(object) {
+                state.escaped.insert(object.clone());
+            }
+            continue;
+        }
         if let Some(mask) = child.state.objects.get(object) {
             state.objects.insert(object.clone(), *mask);
         }
@@ -1351,6 +1365,14 @@ fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<St
         if parent.borrowed.contains(object) {
             child.borrowed.insert(object.clone());
         }
+        if parent.forbidden_borrowed_closes.contains(object) {
+            child.forbidden_borrowed_closes.insert(object.clone());
+        }
+        if parent.ambiguous_borrowed_owned_aliases.contains(object) {
+            child
+                .ambiguous_borrowed_owned_aliases
+                .insert(object.clone());
+        }
         if parent.escaped.contains(object) {
             child.escaped.insert(object.clone());
         }
@@ -1556,6 +1578,12 @@ fn apply_call_effects(parent: &mut State, child: &State, extra_objects: &BTreeSe
         .collect::<BTreeSet<_>>();
     for object in candidates {
         if parent.objects.contains_key(object) || extra_objects.contains(object) {
+            if child.forbidden_borrowed_closes.contains(object) {
+                if child.escaped.contains(object) {
+                    parent.escaped.insert(object.to_owned());
+                }
+                continue;
+            }
             apply_call_object_effects(parent, child, extra_objects, object);
         }
     }
@@ -2866,18 +2894,21 @@ fn consume_expr(
                             );
                         }
                         if env.borrowed.contains(object) && is_close {
-                            report(
-                                result,
-                                "TP2001",
-                                "Borrowed parameter cannot close the resource",
-                                span(file, expr.range),
-                                env.borrowed_origins
-                                    .get(object)
-                                    .cloned()
-                                    .into_iter()
-                                    .collect(),
-                                "definite",
-                            );
+                            env.forbidden_borrowed_closes.insert(object.clone());
+                            if !env.ambiguous_borrowed_owned_aliases.contains(object) {
+                                report(
+                                    result,
+                                    "TP2001",
+                                    "Borrowed parameter cannot close the resource",
+                                    span(file, expr.range),
+                                    env.borrowed_origins
+                                        .get(object)
+                                        .cloned()
+                                        .into_iter()
+                                        .collect(),
+                                    "definite",
+                                );
+                            }
                         }
                         if is_close && mask & CLOSED != 0 {
                             match close_model
@@ -2961,6 +2992,18 @@ fn consume_expr(
                                 },
                                 FlowContext { functions, result },
                             );
+                            if child
+                                .forbidden_borrowed_closes
+                                .iter()
+                                .any(|object| !env.forbidden_borrowed_closes.contains(object))
+                            {
+                                boundary(
+                                    result,
+                                    file,
+                                    expr.range,
+                                    "resolved method has an invalid Borrowed close effect; lifecycle changes are not applied",
+                                );
+                            }
                             let mut raised = child
                                 .pending_raises
                                 .iter()
@@ -3309,6 +3352,7 @@ fn consume_expr(
                     .extend(assigned_names(&definition.statements));
                 let call_site = span(file, expr.range);
                 let mut owned_entry_objects = BTreeSet::new();
+                let mut borrowed_entry_objects = BTreeSet::new();
                 for (parameter, argument) in bindings {
                     if let Some(actual) = expr_name(argument) {
                         if let Some(targets) = env.places.get(actual) {
@@ -3323,6 +3367,7 @@ fn consume_expr(
                                             .entry(object.clone())
                                             .or_insert_with(|| contract.source.clone());
                                     } else if contract.access == "shared" {
+                                        borrowed_entry_objects.insert(object.clone());
                                         child.borrowed.insert(object.clone());
                                         child
                                             .borrowed_origins
@@ -3345,6 +3390,19 @@ fn consume_expr(
                         result,
                     );
                 }
+                let mut ambiguous_borrowed_owned_aliases = owned_entry_objects
+                    .intersection(&borrowed_entry_objects)
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                ambiguous_borrowed_owned_aliases.extend(
+                    owned_entry_objects
+                        .iter()
+                        .filter(|object| env.borrowed.contains(*object))
+                        .cloned(),
+                );
+                child
+                    .ambiguous_borrowed_owned_aliases
+                    .extend(ambiguous_borrowed_owned_aliases.iter().cloned());
                 let diagnostic_start = result.diagnostics.len();
                 let returned = execute(
                     &definition.statements,
@@ -3355,6 +3413,44 @@ fn consume_expr(
                     result,
                     0,
                 );
+                let mut forbidden_borrowed_closes = child
+                    .forbidden_borrowed_closes
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                forbidden_borrowed_closes.extend(
+                    returned
+                        .all_abrupt()
+                        .flat_map(|exit| exit.state.forbidden_borrowed_closes.iter().cloned()),
+                );
+                forbidden_borrowed_closes
+                    .retain(|object| !env.forbidden_borrowed_closes.contains(object));
+                let ambiguous_close_effects = forbidden_borrowed_closes
+                    .intersection(&ambiguous_borrowed_owned_aliases)
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                forbidden_borrowed_closes
+                    .retain(|object| !ambiguous_close_effects.contains(object));
+                if !forbidden_borrowed_closes.is_empty() {
+                    boundary(
+                        result,
+                        file,
+                        expr.range,
+                        "callee has an invalid Borrowed close effect; lifecycle changes are not applied",
+                    );
+                }
+                if !ambiguous_close_effects.is_empty() {
+                    for object in &ambiguous_close_effects {
+                        owned_entry_objects.remove(object);
+                        *env.objects.entry(object.clone()).or_default() |= CLOSED | UNKNOWN;
+                    }
+                    boundary(
+                        result,
+                        file,
+                        expr.range,
+                        "same resource passed as Owned and Borrowed has an unresolved close effect",
+                    );
+                }
                 let mut owned_return_targets = BTreeSet::new();
                 if definition.return_access.as_deref() == Some("owned") {
                     for exit in &returned.returns {
