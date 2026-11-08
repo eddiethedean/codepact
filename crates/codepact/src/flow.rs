@@ -3787,7 +3787,6 @@ enum ExceptionMatch {
 fn expression_exception_names(expression: &AstExpr) -> Option<Vec<&str>> {
     match &expression.kind {
         AstExprKind::Name(name) => Some(vec![name]),
-        AstExprKind::Attribute(_, name) => Some(vec![name]),
         AstExprKind::Tuple(items) => items
             .iter()
             .map(expression_exception_names)
@@ -3804,10 +3803,11 @@ fn raised_exception_name(exit: &FlowExit) -> Option<&str> {
     let CompletionKind::Raise(Some(expression)) = &exit.kind else {
         return None;
     };
-    match &expression.kind {
+    let name = match &expression.kind {
         AstExprKind::Call { function, .. } => expr_name(function),
         _ => expr_name(expression),
-    }
+    }?;
+    is_unshadowed_exception_handler_name(name, &exit.state).then_some(name)
 }
 
 fn known_builtin_exception(name: &str) -> bool {
@@ -6466,6 +6466,44 @@ mod tests {
             },
             kind: AstExprKind::Name(name.into()),
         };
+        let qualified_builtin_spelling = AstExpr {
+            range: SourceRange { start: 0, end: 19 },
+            kind: AstExprKind::Attribute(
+                Box::new(AstExpr {
+                    range: SourceRange { start: 0, end: 7 },
+                    kind: AstExprKind::Name("errors".into()),
+                }),
+                "ValueError".into(),
+            ),
+        };
+        assert_eq!(
+            exception_handler_match(
+                Some("ValueError"),
+                Some(&qualified_builtin_spelling),
+                &state
+            ),
+            ExceptionMatch::Possible,
+            "a qualified attribute must not inherit a built-in identity from its short name"
+        );
+        let qualified_base_exception_spelling = AstExpr {
+            range: SourceRange { start: 0, end: 21 },
+            kind: AstExprKind::Attribute(
+                Box::new(AstExpr {
+                    range: SourceRange { start: 0, end: 7 },
+                    kind: AstExprKind::Name("errors".into()),
+                }),
+                "BaseException".into(),
+            ),
+        };
+        assert_eq!(
+            exception_handler_match(
+                Some("RuntimeError"),
+                Some(&qualified_base_exception_spelling),
+                &state
+            ),
+            ExceptionMatch::Possible,
+            "a qualified attribute must not inherit BaseException's catch-all behavior"
+        );
         assert_eq!(
             exception_handler_match(Some("RuntimeError"), Some(&handler("ValueError")), &state),
             ExceptionMatch::No

@@ -1233,6 +1233,54 @@ fn v03_05_invalid_tuple_handler_type_remains_a_boundary_through_finally() {
 }
 
 #[test]
+fn v03_05_qualified_handler_attribute_keeps_matching_unknown() {
+    let source = format!(
+        "{RESOURCE}import errors\ndef cleanup():\n    resource = C()\n    try:\n        raise ValueError()\n    except errors.ValueError:\n        resource.close()\n"
+    );
+    let handler_line = source
+        .lines()
+        .position(|line| line.trim() == "except errors.ValueError:")
+        .unwrap()
+        + 1;
+    let raise_line = source
+        .lines()
+        .position(|line| line.trim() == "raise ValueError()")
+        .unwrap()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001" && diagnostic.primary.line == handler_line
+        }),
+        "a qualified attribute must not be identified by its short name: {report:#?}"
+    );
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        leaks.len(),
+        2,
+        "both possible handler outcomes retain the duty: {report:#?}"
+    );
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "qualified handler matching must never be treated as definite: {report:#?}"
+    );
+    assert!(leaks.iter().any(|diagnostic| {
+        diagnostic.completion.as_deref() == Some("raise") && diagnostic.primary.line == raise_line
+    }));
+    assert!(leaks
+        .iter()
+        .any(|diagnostic| { diagnostic.completion.as_deref() == Some("fallthrough") }));
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
+
+#[test]
 fn v03_05_shadowed_builtin_exception_constructor_keeps_a_boundary() {
     let result = check_source(&format!(
         "{RESOURCE}def cleanup():\n    resource = C()\n    RuntimeError = ValueError\n    try:\n        raise RuntimeError()\n    except RuntimeError:\n        resource.close()\n"
@@ -1245,6 +1293,46 @@ fn v03_05_shadowed_builtin_exception_constructor_keeps_a_boundary() {
         "{result:#?}"
     );
     assert_eq!(result.coverage.status, "incomplete");
+}
+
+#[test]
+fn v03_05_shadowed_constructor_is_not_routed_by_its_builtin_spelling() {
+    let source = format!(
+        "{RESOURCE}def cleanup():\n    resource = C()\n    ValueError = RuntimeError\n    try:\n        raise ValueError()\n    except RuntimeError:\n        resource.close()\n"
+    );
+    let handler_line = source
+        .lines()
+        .position(|line| line.trim() == "except RuntimeError:")
+        .unwrap()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    assert!(
+        report.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.primary.line == handler_line
+                && diagnostic
+                    .message
+                    .contains("exception type may or may not match")
+        }),
+        "a shadowed constructor name must not be matched using its built-in spelling: {report:#?}"
+    );
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(
+        !leaks.is_empty(),
+        "the unmatched raise remains feasible: {report:#?}"
+    );
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "a shadowed constructor must not create a definite mismatch: {report:#?}"
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
 }
 
 #[test]
