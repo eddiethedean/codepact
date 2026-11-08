@@ -4295,6 +4295,50 @@ fn v03_24_generator_and_except_star_flow_remain_visible_boundaries() {
 }
 
 #[test]
+fn v03_24_unsupported_flow_boundaries_are_deterministic_and_preserve_duties() {
+    for (name, source) in [
+        (
+            "custom awaitable",
+            "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nclass CustomAwaitable:\n    def __await__(self): pass\nasync def cleanup():\n    resource = C()\n    await CustomAwaitable()\n".to_string(),
+        ),
+        (
+            "generator",
+            format!("{RESOURCE}def cleanup():\n    resource = C()\n    yield resource\n"),
+        ),
+        (
+            "except-star",
+            format!("{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        raise ExceptionGroup('failure', [RuntimeError()])\n    except* RuntimeError:\n        resource.close()\n"),
+        ),
+    ] {
+        let first = check_source(&source);
+        let second = check_source(&source);
+        assert_eq!(first, second, "the unsupported boundary must be deterministic: {name}");
+        assert_eq!(first.coverage.status, "incomplete", "{name}: {first:#?}");
+        assert!(
+            first.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001" || diagnostic.code == "TP9002"
+            }),
+            "the unsupported construct remains an explicit boundary: {name}: {first:#?}"
+        );
+        let duties = first
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert!(
+            !duties.is_empty(),
+            "the unsupported construct cannot erase the outstanding cleanup duty: {name}: {first:#?}"
+        );
+        assert!(
+            duties
+                .iter()
+                .any(|diagnostic| diagnostic.certainty == "possible"),
+            "unsupported control flow retains a possible cleanup duty: {name}: {first:#?}"
+        );
+    }
+}
+
+#[test]
 fn v03_13_callback_escape_keeps_captured_cleanup_unknown() {
     let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef leak(register):\n    resource = C()\n    register(lambda: resource.close())\n";
     let result = check_source(source);

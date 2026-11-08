@@ -57,7 +57,7 @@ runtime conformance evidence where applicable. None of these entries is a
 qualification Pass.
 
 `make check` runs `scripts/check_phase03_validation.py` to require all 26 IDs in
-both tables, require all 71 distinct named `v03_*` references to be declared Rust tests,
+both tables, require all 72 distinct named `v03_*` references to be declared Rust tests,
 and resolve qualified `::` references to Rust functions. Its unit tests reject
 missing rows, stale test references and ordinary functions substituted for
 tests. This guards matrix-index drift; it does not qualify behavior or pass a
@@ -88,7 +88,7 @@ gate.
 | V03-21 | `tests/phase03.rs`: unsupported and missing Python target versions; `tests/cli.rs`: selected contextlib model revisions in JSON; `src/model.rs`: exact-version selection, conflict rejection, stable model IDs, and rejection of resource-close models that claim context suppression; `src/db.rs`: supported-to-unsupported target and model edits in a reused session | Maintainer provenance review |
 | V03-22 | `tests/phase03.rs`: changed-body fresh-session parity; `src/db.rs`: `cleanup_body_edits_refresh_only_the_changed_flow_query_and_match_fresh` asserts pass/close/raise body edits against fresh results and one affected flow-query execution; normal, exceptional and cancelled resource-model outcome edits; Owned-return, async-callee and coroutine-capture edits match fresh results while reusing unrelated flow queries; `async_callee_suspension_edits_refresh_callers_and_match_fresh` confirms that a synchronous close after an edited async callee's suspension discharges the duty while preserving the cancellation boundary; cleanup-related spans move with edits; target selection, repeat-close policy and existing callee/import invalidation tests | Broader query-event snapshots across remaining model and location edit combinations |
 | V03-23 | `src/db.rs`: target-version mutation, cancellation/recovery for inspection and check-report sessions, related imported-close location refresh; model and flow-budget input edits; `cleanup_root_removal_and_readdition_match_fresh_results` asserts revision changes, stale-finding removal, re-add parity and no-op stability; `moving_acquisition_and_owned_annotation_spans_matches_fresh_cleanup_results` checks both origin classes after an edit; `tests/phase03.rs`: context-manager exit-partition exhaustion recovers to fresh-result parity after an edit | Full V03 edit matrix and remaining query-event snapshots |
-| V03-24 | `tests/phase03.rs`: custom awaitable, generator, and `except*` boundaries; existing CLI tests cover no target execution, unsupported syntax/import behavior and recursion | Broader deterministic-boundary matrix |
+| V03-24 | `tests/phase03.rs`: custom awaitable, generator, and `except*` boundaries; `v03_24_unsupported_flow_boundaries_are_deterministic_and_preserve_duties` repeats all three checks and asserts identical results, visible boundaries and possible duties; existing CLI tests cover no target execution, unsupported syntax/import behavior and recursion | Broader deterministic-boundary matrix |
 | V03-25 | `tests/cli.rs`: definite cleanup and possible/unknown boundary text/JSON parity, including finalizer uncertainty and unknown async-context cancellation suppression; one-shot Rust `CheckResult` parity, and exit codes 1/0/0/2; module-qualified cleanup/model metadata parity plus inherited CLI/schema checks; selected CPython contextlib source revisions match Rust `CheckResult` model provenance | Alternate reviewed fixture-model origins and inherited helper/inspector contract evidence |
 | V03-26 | `tests/phase03.rs`: `v03_26_pending_coroutine_budget_widens_captures_and_keeps_the_duty_unknown` confirms 128 pending records fit without a budget boundary and the caller duty remains definite, while record 129 widens it to possible; closing a captured resource does not complete its pending coroutine; unknown actor across suspension retains an uncertain duty; pending `Borrowed` capture before `async with aclosing` asserts pre-body cancellation, retained coroutine boundary and possible interrupted-cleanup duty; `v03_26_coroutine_and_async_exit_budgets_keep_cleanup_unknown_together` combines coroutine-capture and async exit-partition exhaustion with eight unknown managers inside nested while/for paths and loop transfers, while retaining a possible duty; budget edit recovers with fresh-result parity; `src/db.rs`: capture-specific cancellation leaves unrelated duties definite | Further mixed capture/exit-budget interactions and maintainer qualification review |
 
@@ -111,7 +111,7 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 On 2026-11-08, local validation for the current 0.3 candidate passed
 `uv run --locked make check` on CPython 3.14.3, macOS 26.5.2 ARM64.
 `cargo test --workspace --locked` passed 60 library, 51 CLI, 60 fixture, 26
-lifecycle regression and 175 phase tests (372 Rust tests total); all 21 Python tests passed. Formatting,
+lifecycle regression and 176 phase tests (373 Rust tests total); all 21 Python tests passed. Formatting,
 workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and
 source builds and install smokes, dependency audits, Rust 1.96 checks/package
 test/install smoke, inspector behavior, documentation links and the
