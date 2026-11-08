@@ -2928,13 +2928,34 @@ fn v03_20_scheduled_multi_resource_capture_keeps_each_duty_uncertain() {
 
 #[test]
 fn v03_26_pending_coroutine_budget_widens_captures_and_keeps_the_duty_unknown() {
-    let mut source = format!(
-        "{RESOURCE}async def hold(resource: Borrowed[C]):\n    pass\ndef leak():\n    resource = C()\n"
+    let source_with_pending_coroutines = |count: usize| {
+        let mut source = format!(
+            "{RESOURCE}async def hold(resource: Borrowed[C]):\n    pass\ndef leak():\n    resource = C()\n"
+        );
+        for index in 0..count {
+            source.push_str(&format!("    pending_{index} = hold(resource)\n"));
+        }
+        source
+    };
+
+    let at_limit = check_source(&source_with_pending_coroutines(128));
+    assert_eq!(at_limit.coverage.status, "incomplete", "{at_limit:#?}");
+    assert!(
+        !at_limit
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("pending coroutine budget exceeded") }),
+        "128 coroutine records fit the configured budget: {at_limit:#?}"
     );
-    for index in 0..129 {
-        source.push_str(&format!("    pending_{index} = hold(resource)\n"));
-    }
-    let result = check_source(&source);
+    assert!(
+        at_limit.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "definite"
+        }),
+        "the unexecuted pending coroutine does not weaken the caller duty: {at_limit:#?}"
+    );
+
+    let result = check_source(&source_with_pending_coroutines(129));
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == "TP9001"
