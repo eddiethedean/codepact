@@ -358,6 +358,66 @@ fn v03_08_field_and_container_storage_keep_unknown_escape_duties() {
 }
 
 #[test]
+fn v03_08_unknown_result_alias_forms_keep_the_original_duty_unresolved() {
+    for (name, source, boundary) in [
+        (
+            "unknown call result",
+            format!("{RESOURCE}def escape():\n    resource = C()\n    return unknown_result(resource)\n"),
+            "unknown call effect for unknown_result",
+        ),
+        (
+            "unknown method result",
+            format!("{RESOURCE}def escape(holder):\n    resource = C()\n    return holder.convert(resource)\n"),
+            "unresolved method receiver may affect tracked resources",
+        ),
+        (
+            "joined local and unknown result",
+            format!("{RESOURCE}def escape(flag):\n    resource = C()\n    if flag:\n        result = resource\n    else:\n        result = unknown_result(resource)\n    return result\n"),
+            "resource-valued call result is not tracked",
+        ),
+    ] {
+        let acquisition_line = source
+            .lines()
+            .position(|line| line.trim() == "resource = C()")
+            .unwrap()
+            + 1;
+        let result = check_source(&source);
+        assert_eq!(result.coverage.status, "incomplete", "{name}: {result:#?}");
+        assert!(
+            result.coverage.reasons.iter().any(|reason| reason.contains(boundary)),
+            "{name}: {result:#?}"
+        );
+        let leaks = result
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert!(
+            leaks.iter().any(|diagnostic| diagnostic.message.ends_with("on return")),
+            "the escaping result keeps the local obligation visible: {name}: {result:#?}"
+        );
+        assert!(
+            leaks.iter().any(|diagnostic| diagnostic.message.ends_with("on raise")),
+            "evaluation failure keeps the local obligation visible: {name}: {result:#?}"
+        );
+        assert!(
+            leaks.iter().all(|diagnostic| {
+                diagnostic.certainty == "possible"
+                    && diagnostic
+                        .related
+                        .iter()
+                        .any(|span| span.line == acquisition_line)
+            }),
+            "unknown return aliases cannot prove transfer or erase the acquisition origin: {name}: {result:#?}"
+        );
+        assert!(!result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1003"));
+    }
+}
+
+#[test]
 fn v03_02_lost_last_alias_does_not_discard_the_local_duty() {
     let result = check_source(&format!(
         "{RESOURCE}def leak():\n    resource = C()\n    alias = resource\n    resource = None\n    alias = None\n"
@@ -2001,6 +2061,32 @@ fn v03_11_closing_a_borrowed_value_is_still_rejected() {
 }
 
 #[test]
+fn v03_11_aclosing_a_borrowed_value_is_still_rejected() {
+    let source = "from contextlib import aclosing\nfrom codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def helper(resource: Borrowed[C]):\n    async with aclosing(resource):\n        pass\n";
+    let result = check_source(source);
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP2001"),
+        "aclosing cannot take cleanup responsibility for a borrowed value: {result:#?}"
+    );
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "a borrowed input creates no owner duty in the wrapper: {result:#?}"
+    );
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(result
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| { reason.contains("cancellation may interrupt the awaited operation") }));
+}
+
+#[test]
 fn v03_12_unknown_context_manager_cannot_discharge_a_duty() {
     let result = check_source(&format!(
         "{RESOURCE}def cleanup(manager):\n    resource = C()\n    with manager:\n        pass\n"
@@ -2198,6 +2284,60 @@ fn v03_15_unknown_iterator_effect_does_not_prove_loop_cleanup() {
     assert_eq!(raised.related.len(), 1, "{result:#?}");
     assert_eq!(raised.related[0].line, acquisition_line, "{result:#?}");
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v03_15_unknown_iterator_item_alias_keeps_candidate_duties_possible() {
+    let source = format!(
+        "{RESOURCE}def cleanup():\n    first = C()\n    second = C()\n    for item in unknown_items(first, second):\n        item.close()\n"
+    );
+    let first_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "first = C()")
+        .unwrap()
+        + 1;
+    let second_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "second = C()")
+        .unwrap()
+        + 1;
+    let result = check_source(&source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(result.coverage.reasons.iter().any(|reason| {
+        reason.contains("for-iterator effects and element aliases are not modeled")
+    }));
+
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        leaks.len(),
+        6,
+        "each candidate duty is retained on every exit: {result:#?}"
+    );
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "an unknown iterator element cannot discharge a candidate alias: {result:#?}"
+    );
+    let acquisition_lines = leaks
+        .iter()
+        .flat_map(|diagnostic| diagnostic.related.iter().map(|span| span.line))
+        .fold(std::collections::BTreeMap::new(), |mut counts, line| {
+            *counts.entry(line).or_insert(0) += 1;
+            counts
+        });
+    assert_eq!(
+        acquisition_lines,
+        std::collections::BTreeMap::from([
+            (first_acquisition_line, 3),
+            (second_acquisition_line, 3),
+        ]),
+        "all candidate acquisition origins survive iterator and body failures: {result:#?}"
+    );
 }
 
 #[test]
@@ -2863,6 +3003,46 @@ fn v03_20_asyncio_handoff_helpers_remain_explicit_boundaries() {
 }
 
 #[test]
+fn v03_20_asyncio_timeout_contexts_keep_cancellation_as_an_unknown_boundary() {
+    for timeout in ["asyncio.timeout(1)", "asyncio.timeout_at(deadline)"] {
+        let source = format!(
+            "{RESOURCE}async def finish(resource: Owned[C]):\n    resource.close()\nasync def cleanup(deadline):\n    resource = C()\n    async with {timeout}:\n        await finish(resource)\n"
+        );
+        let result = check_source(&source);
+        assert_eq!(
+            result.coverage.status, "incomplete",
+            "{timeout}: {result:#?}"
+        );
+        assert!(
+            result.coverage.reasons.iter().any(|reason| {
+                reason.contains("asynchronous context-manager cleanup has no qualified model")
+            }),
+            "timeout managers remain unsupported context effects: {timeout}: {result:#?}"
+        );
+        assert!(
+            result.coverage.reasons.iter().any(|reason| {
+                reason.contains("cancellation may interrupt the awaited operation")
+            }),
+            "timeout cancellation must remain visible: {timeout}: {result:#?}"
+        );
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002"
+                    && diagnostic.certainty == "possible"
+                    && diagnostic.message.ends_with("on cancelled")
+            }),
+            "a timeout cannot prove cleanup completed: {timeout}: {result:#?}"
+        );
+        assert!(
+            !result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002" && diagnostic.certainty == "definite"
+            }),
+            "an unknown timeout outcome cannot make the duty definite: {timeout}: {result:#?}"
+        );
+    }
+}
+
+#[test]
 fn v03_20_scheduled_multi_resource_capture_keeps_each_duty_uncertain() {
     let source = format!(
         "{RESOURCE}async def finish(first: Owned[C], second: Owned[C]):\n    first.close()\n    second.close()\ndef caller():\n    first = C()\n    second = C()\n    pending = finish(first, second)\n    asyncio.create_task(pending)\n"
@@ -2924,6 +3104,69 @@ fn v03_20_scheduled_multi_resource_capture_keeps_each_duty_uncertain() {
         ]),
         "both captured caller duties remain represented: {result:#?}"
     );
+}
+
+#[test]
+fn v03_20_returned_pending_coroutines_preserve_capture_and_local_duty() {
+    let prefix = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    await resource.pause()\n";
+    let cases = [
+        (
+            "open",
+            format!("{prefix}def make():\n    resource = C()\n    return use(resource)\n"),
+            true,
+        ),
+        (
+            "closed",
+            format!(
+                "{prefix}def make():\n    resource = C()\n    pending = use(resource)\n    resource.close()\n    return pending\n"
+            ),
+            false,
+        ),
+    ];
+
+    for (name, source, duty_expected) in cases {
+        let acquisition_line = source
+            .lines()
+            .position(|line| line.trim() == "resource = C()")
+            .unwrap()
+            + 1;
+        let coroutine_line = source
+            .lines()
+            .position(|line| line.contains("use(resource)"))
+            .unwrap()
+            + 1;
+        let result = check_source(&source);
+        assert_eq!(result.coverage.status, "incomplete", "{name}: {result:#?}");
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001"
+                    && diagnostic
+                        .message
+                        .contains("created coroutine is not awaited")
+                    && diagnostic.primary.line == coroutine_line
+            }),
+            "the returned coroutine capture must remain unresolved: {name}: {result:#?}"
+        );
+        let leaks = result
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        if duty_expected {
+            assert_eq!(leaks.len(), 1, "{name}: {result:#?}");
+            assert_eq!(leaks[0].certainty, "definite", "{name}: {result:#?}");
+            assert!(
+                leaks[0].message.ends_with("on return"),
+                "{name}: {result:#?}"
+            );
+            assert_eq!(
+                leaks[0].related[0].line, acquisition_line,
+                "{name}: {result:#?}"
+            );
+        } else {
+            assert!(leaks.is_empty(), "{name}: {result:#?}");
+        }
+    }
 }
 
 #[test]
@@ -3420,33 +3663,43 @@ fn v03_19_nested_async_contexts_unwind_and_preserve_cancellation() {
 
 #[test]
 fn v03_16_context_exit_partition_budget_keeps_duties_unknown() {
-    let managers = ["UnknownManager()"; 8].join(", ");
-    let source = format!(
-        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with {managers}:\n        pass\n"
-    );
-    let result = check_source(&source);
-
-    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
-    assert!(
-        result
+    for manager_count in 1..=8 {
+        let managers = (0..manager_count)
+            .map(|_| "UnknownManager()")
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!(
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with {managers}:\n        pass\n"
+        );
+        let result = check_source(&source);
+        let partition_budget_exceeded = result
             .coverage
             .reasons
             .iter()
-            .any(|reason| { reason.contains("context-manager exit partition budget exceeded") }),
-        "the dedicated path bound must report visible incomplete coverage: {result:#?}"
-    );
-    assert!(
-        result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
-        }),
-        "widening must preserve the outstanding duty as possible: {result:#?}"
-    );
-    assert!(
-        !result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "TP1002" && diagnostic.certainty == "definite"
-        }),
-        "truncated cleanup paths cannot establish a definite result: {result:#?}"
-    );
+            .any(|reason| reason.contains("context-manager exit partition budget exceeded"));
+
+        assert_eq!(
+            result.coverage.status, "incomplete",
+            "managers={manager_count}: {result:#?}"
+        );
+        assert_eq!(
+            partition_budget_exceeded,
+            manager_count >= 4,
+            "the 256-exit-partition boundary must be stable at manager count {manager_count}: {result:#?}"
+        );
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
+            }),
+            "widening must preserve the outstanding duty as possible: managers={manager_count}: {result:#?}"
+        );
+        assert!(
+            !result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002" && diagnostic.certainty == "definite"
+            }),
+            "truncated cleanup paths cannot establish a definite result: managers={manager_count}: {result:#?}"
+        );
+    }
 }
 
 #[test]
