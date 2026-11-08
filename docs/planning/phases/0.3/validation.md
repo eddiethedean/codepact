@@ -108,7 +108,8 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 
 ## Candidate-local checks
 
-On 2026-11-08, local validation for the current 0.3 candidate passed
+On 2026-11-08, local validation for candidate commit
+`8cc1630b373309cdfdcd43173f0c2f28f522bf55` passed
 `uv run --locked make check` on CPython 3.14.3, macOS 26.5.2 ARM64.
 `cargo test --workspace --locked` passed 61 library, 51 CLI, 60 fixture, 26
 lifecycle regression and 184 phase tests (382 Rust tests total); all 21 Python tests passed. Formatting,
@@ -135,7 +136,10 @@ resource is not treated as escaped by a no-argument unknown call. V03-03's
 checks 60 three-level finalizer combinations for completion, duty origin and
 exit spans; `v03_03_nested_async_finalizers_keep_cancellation_duties_on_each_pending_exit`
 checks three pending exits through nested awaited finalizers and exact
-cancellation locations. V03-05's
+cancellation locations. `v03_03_handler_expression_failure_crosses_async_finally_and_keeps_cancellation`
+checks a handler-type evaluation failure crossing async `finally`, then
+retains only the possible interrupted-close duty with the exact acquisition
+span. V03-05's
 `v03_05_handler_expression_failure_still_runs_finally_cleanup` confirms a
 known handler-expression raise still crosses `finally` and discharges the
 duty. V03-14's
