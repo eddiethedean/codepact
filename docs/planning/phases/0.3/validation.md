@@ -101,7 +101,7 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 
 ## Candidate-local checks
 
-On 2026-11-07, the current candidate worktree passed
+On 2026-11-07, candidate `e386da1ea53c8d84dc9e3b871b8f42b1e754dfa7` passed
 `uv run --locked make check` locally on CPython 3.14.3, macOS 26.5.2 ARM64.
 `cargo test --workspace --locked` passed 59 library, 51 CLI, 60 fixture, 26
 lifecycle regression and 156 phase tests; all 14 Python tests passed. Formatting,
@@ -116,7 +116,10 @@ V03-03's `v03_03_three_nested_finalizers_preserve_single_close_and_replacement_m
 checks 60 three-level finalizer combinations for completion, duty origin and
 exit spans; `v03_03_nested_async_finalizers_keep_cancellation_duties_on_each_pending_exit`
 checks three pending exits through nested awaited finalizers and exact
-cancellation locations. V03-14's
+cancellation locations. V03-05's
+`v03_05_handler_expression_failure_still_runs_finally_cleanup` confirms a
+known handler-expression raise still crosses `finally` and discharges the
+duty. V03-14's
 `v03_14_outer_finally_transfers_target_the_outer_loop_after_inner_exhaustion`
 checks that outer-target break and continue retain their intended loop routing
 and exact duty spans after the inner loop is exhausted. The remaining tests and
@@ -125,8 +128,8 @@ fixtures were rerun with the source CLI and matched the documented definite
 synchronous leak and cancellation-possible async findings. Separate runtime
 model outcomes and source hashes are in the [contextlib conformance
 record](contextlib-conformance.md). This is automation evidence only; it does
-not qualify behavior or pass any gate. Maintainer semantic acceptance and
-remaining phase-specific evidence are pending.
+not qualify behavior or pass a technical gate. Remaining phase-specific
+qualification evidence is pending.
 
 The exact candidate's Quality and non-publishing Release workflow results, local check results, downloaded artifact inventory and strict Twine recheck are recorded in the [release evidence record](../../../releases/0.3.0-evidence.md). These automation results do not themselves qualify behavior or pass a gate.
 
@@ -134,4 +137,4 @@ The [current 0.3 candidate performance record](performance.md) measures cleanup 
 
 The runnable [candidate cleanup tutorial](cleanup-tutorial.md) demonstrates synchronous exit obligations and async cancellation findings with separate fixtures and expected CLI outcomes.
 
-The CodePact 0.3 candidate has passed `make check`, installed-artifact checks, Quality CI and D015's eight-target distribution workflow. The [release evidence](../../../releases/0.3.0-evidence.md) records exact revisions, workflow runs and artifact hashes. Complete the remaining V03 matrix and maintainer review of C01–C05, C07, CS01 and G1–G7 before tagging; record release authorization separately and G8 after authorized publication using the [common evidence template](../../release-evidence-template.md).
+The CodePact 0.3 candidate has passed `make check`, installed-artifact checks, Quality CI and D015's eight-target distribution workflow. The [release evidence](../../../releases/0.3.0-evidence.md) records exact revisions, workflow runs and artifact hashes. Complete the remaining V03 matrix and maintainer review of C01–C05, C07, CS01 and G2–G7 before tagging; record release authorization separately and G8 after authorized publication using the [common evidence template](../../release-evidence-template.md).
