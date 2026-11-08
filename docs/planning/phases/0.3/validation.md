@@ -120,7 +120,7 @@ builds and install smokes, dependency audits, Rust 1.96 checks/package
 test/install smoke, inspector behavior, documentation links and the
 warnings-as-errors docs build also passed. Exact-candidate Quality and
 non-publishing Release workflow results, downloaded artifact inventory, strict
-Twine checks and clean install smokes are recorded in the
+Twine checks and clean wheel/sdist install smokes are recorded in the
 [release evidence record](../../../releases/0.3.0-evidence.md).
 The regression suite also confirms that an invalid Borrowed close through a
 helper/context wrapper cannot discharge its caller's duty on normal or raised
