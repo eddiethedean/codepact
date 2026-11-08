@@ -2243,6 +2243,69 @@ fn v03_13_alias_target_budget_keeps_candidate_duties_possible() {
 }
 
 #[test]
+fn v03_16_alias_target_budget_is_conservative_at_and_beyond_the_limit() {
+    let source_for_candidates = |candidate_count: usize| {
+        let flag_names = (0..candidate_count - 1)
+            .map(|index| format!("flag_{index}"))
+            .collect::<Vec<_>>();
+        let mut source = format!("{RESOURCE}def cleanup({}):\n", flag_names.join(", "));
+        for index in 0..candidate_count {
+            source.push_str(&format!("    resource_{index} = C()\n"));
+        }
+        source.push_str("    selected = resource_0\n");
+        for index in 0..candidate_count - 1 {
+            source.push_str(&format!(
+                "    if flag_{index}:\n        selected = resource_{}\n",
+                index + 1
+            ));
+        }
+        source.push_str("    selected.close()\n");
+        source
+    };
+
+    let at_limit = check_source(&source_for_candidates(64));
+    assert_eq!(
+        at_limit.coverage.status, "complete-for-supported-subset",
+        "the full 64-target alias remains tracked: {at_limit:#?}"
+    );
+    let at_limit_leaks = at_limit
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(at_limit_leaks.len(), 64, "{at_limit:#?}");
+    assert!(
+        at_limit_leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "each candidate is closed on some paths and remains open on others: {at_limit:#?}"
+    );
+
+    let over_limit = check_source(&source_for_candidates(65));
+    assert_eq!(over_limit.coverage.status, "incomplete", "{over_limit:#?}");
+    assert!(
+        over_limit
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("alias target budget exceeded for selected") }),
+        "the 65th target must expose alias widening: {over_limit:#?}"
+    );
+    let over_limit_leaks = over_limit
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(!over_limit_leaks.is_empty(), "{over_limit:#?}");
+    assert!(
+        over_limit_leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty != "definite"),
+        "alias widening cannot upgrade a candidate duty to definite: {over_limit:#?}"
+    );
+}
+
+#[test]
 fn v03_16_alias_budget_inside_a_loop_cannot_prove_candidate_cleanup() {
     let flag_names = (0..64)
         .map(|index| format!("flag_{index}"))
