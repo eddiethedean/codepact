@@ -367,6 +367,72 @@ fn v03_07_nested_finally_replacement_preserves_only_the_final_owned_handoff() {
 }
 
 #[test]
+fn v03_07_nested_branching_replacements_preserve_abandoned_duty_origins() {
+    let source = format!(
+        "{RESOURCE}def make(inner, outer) -> Owned[C]:\n    abandoned = C()\n    intermediate = C()\n    final = C()\n    try:\n        try:\n            return abandoned\n        finally:\n            if inner:\n                return intermediate\n            else:\n                raise RuntimeError()\n    finally:\n        if outer:\n            return final\n"
+    );
+    let report = codepact::check_report(
+        &[SourceFile::new("phase03.py", "phase03", source.clone())],
+        "3.11",
+    );
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    let line_of = |needle: &str| {
+        source
+            .lines()
+            .position(|line| line.trim() == needle)
+            .unwrap()
+            + 1
+    };
+    let actual = leaks
+        .iter()
+        .map(|diagnostic| {
+            assert_eq!(diagnostic.certainty, "definite", "{report:#?}");
+            assert_eq!(diagnostic.related.len(), 1, "{report:#?}");
+            (
+                diagnostic.related[0].line,
+                diagnostic.primary.line,
+                diagnostic.completion.as_deref().unwrap_or_default(),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let abandoned_line = line_of("abandoned = C()");
+    let intermediate_line = line_of("intermediate = C()");
+    assert_eq!(
+        actual,
+        std::collections::BTreeSet::from([
+            (abandoned_line, line_of("return final"), "return"),
+            (intermediate_line, line_of("return final"), "return"),
+            (abandoned_line, line_of("return intermediate"), "return"),
+            (
+                line_of("final = C()"),
+                line_of("return intermediate"),
+                "return",
+            ),
+            (abandoned_line, line_of("raise RuntimeError()"), "raise"),
+            (intermediate_line, line_of("raise RuntimeError()"), "raise"),
+            (
+                line_of("final = C()"),
+                line_of("raise RuntimeError()"),
+                "raise",
+            ),
+        ]),
+        "each nested branch must retain only duties abandoned by its actual final exit: {report:#?}"
+    );
+    assert!(!report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP1003"));
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "all branch conditions and cleanup operations are in the supported subset: {report:#?}"
+    );
+}
+
+#[test]
 fn v03_08_borrowed_to_owned_return_is_rejected_without_inventing_a_handoff() {
     let result = check_source(&format!(
         "{RESOURCE}def invalid(resource: Borrowed[C]) -> Owned[C]:\n    return resource\n"
@@ -2315,6 +2381,45 @@ fn v03_11_aclosing_a_borrowed_value_is_still_rejected() {
 }
 
 #[test]
+fn v03_02_borrowed_aclosing_forwarding_chain_keeps_the_owner_duty() {
+    let source = "from contextlib import aclosing\nfrom codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def rejected(value: Borrowed[C]):\n    async with aclosing(value):\n        pass\nasync def middle(value: Borrowed[C]):\n    await rejected(value)\nasync def owner():\n    resource = C()\n    await middle(resource)\n";
+    let acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    let borrow_wrapper_line = source
+        .lines()
+        .position(|line| line.trim() == "async with aclosing(value):")
+        .unwrap()
+        + 1;
+    let result = check_source(source);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP2001"
+                && diagnostic.certainty == "definite"
+                && diagnostic.primary.line == borrow_wrapper_line
+        }),
+        "a borrowed value cannot be cleaned through an async wrapper: {result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic
+                    .related
+                    .iter()
+                    .any(|span| span.line == acquisition_line)
+        }),
+        "the caller retains its acquisition duty after two awaited helper hops: {result:#?}"
+    );
+    assert!(!result
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP1003"));
+}
+
+#[test]
 fn v03_12_unknown_context_manager_cannot_discharge_a_duty() {
     let result = check_source(&format!(
         "{RESOURCE}def cleanup(manager):\n    resource = C()\n    with manager:\n        pass\n"
@@ -3449,6 +3554,81 @@ fn v03_20_returned_pending_coroutines_preserve_capture_and_local_duty() {
 }
 
 #[test]
+fn v03_20_container_and_callback_escapes_keep_pending_capture_boundaries() {
+    let source = format!(
+        "{RESOURCE}async def finish(resource: Owned[C]):\n    resource.close()\ndef container_escape():\n    resource = C()\n    pending = finish(resource)\n    bucket = [pending]\n    return bucket\ndef callback_escape():\n    resource = C()\n    pending = finish(resource)\n    register_callback(pending)\n"
+    );
+    for function in ["container_escape", "callback_escape"] {
+        let result = check_source(&source);
+        assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001"
+                    && (diagnostic
+                        .message
+                        .contains("created coroutine is not awaited")
+                        || diagnostic.message.contains("resource-valued container"))
+            }),
+            "{function} cannot infer that the escaped pending coroutine completed: {result:#?}"
+        );
+        let function_start = source
+            .lines()
+            .position(|line| line.starts_with(&format!("def {function}()")))
+            .unwrap();
+        let next_function_start = source
+            .lines()
+            .enumerate()
+            .skip(function_start + 1)
+            .find_map(|(line, text)| text.starts_with("def ").then_some(line))
+            .unwrap_or_else(|| source.lines().count());
+        let pending_line = source
+            .lines()
+            .enumerate()
+            .skip(function_start)
+            .take(next_function_start - function_start)
+            .find_map(|(line, text)| {
+                text.contains("pending = finish(resource)")
+                    .then_some(line + 1)
+            })
+            .unwrap();
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001"
+                    && diagnostic
+                        .message
+                        .contains("created coroutine is not awaited")
+                    && diagnostic.primary.line == pending_line
+            }),
+            "{function} must retain the unresolved coroutine capture at its creation site: {result:#?}"
+        );
+        let escaped_at = source
+            .lines()
+            .enumerate()
+            .skip(function_start)
+            .take(next_function_start - function_start)
+            .find_map(|(line, text)| {
+                let is_escape = if function == "container_escape" {
+                    text.trim() == "bucket = [pending]"
+                } else {
+                    text.trim() == "register_callback(pending)"
+                };
+                is_escape.then_some(line + 1)
+            })
+            .unwrap();
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001" && diagnostic.primary.line == escaped_at
+            }),
+            "{function} must report the unsupported container/callback escape at its source: {result:#?}"
+        );
+        assert!(!result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1003"));
+    }
+}
+
+#[test]
 fn v03_26_pending_coroutine_budget_widens_captures_and_keeps_the_duty_unknown() {
     let source_with_pending_coroutines = |count: usize| {
         let mut source = format!(
@@ -4071,6 +4251,66 @@ fn v03_16_owned_parameter_budget_reports_untracked_duties_as_incomplete() {
 }
 
 #[test]
+fn v03_16_object_and_coroutine_budgets_keep_their_boundaries_independent() {
+    for resource_count in [4_096, 4_097] {
+        for coroutine_count in [128, 129] {
+            let parameters = (0..resource_count)
+                .map(|index| format!("resource_{index}: Owned[C]"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut source = format!(
+                "{RESOURCE}async def hold(resource: Borrowed[C]):\n    pass\ndef cleanup({parameters}):\n"
+            );
+            for index in 0..coroutine_count {
+                source.push_str(&format!("    pending_{index} = hold(resource_0)\n"));
+            }
+
+            let result = check_source(&source);
+            let object_budget_exceeded = result
+                .coverage
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("tracked resource object budget exceeded"));
+            let coroutine_budget_exceeded = result
+                .coverage
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("pending coroutine budget exceeded"));
+            assert_eq!(
+                object_budget_exceeded,
+                resource_count == 4_097,
+                "resources={resource_count}, coroutines={coroutine_count}: {result:#?}"
+            );
+            assert_eq!(
+                coroutine_budget_exceeded,
+                coroutine_count == 129,
+                "resources={resource_count}, coroutines={coroutine_count}: {result:#?}"
+            );
+            let tracked_duties = result
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            assert_eq!(
+                tracked_duties.len(),
+                4_096,
+                "each within-budget duty remains visible exactly once: resources={resource_count}, coroutines={coroutine_count}: {result:#?}"
+            );
+            assert!(
+                tracked_duties.iter().any(|diagnostic| {
+                    diagnostic.certainty == if coroutine_count == 129 {
+                        "possible"
+                    } else {
+                        "definite"
+                    }
+                }),
+                "coroutine capture widening weakens the captured duty independently of the object cap: resources={resource_count}, coroutines={coroutine_count}: {result:#?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn v03_16_context_exit_partition_budget_edit_recovers_with_fresh_result_parity() {
     let managers = ["UnknownManager()"; 8].join(", ");
     let over_budget = SourceFile::new(
@@ -4219,14 +4459,33 @@ fn v03_16_unknown_effect_cannot_improve_cleanup_certainty() {
 #[test]
 fn v03_18_nested_awaited_cleanup_keeps_cancellation_uncertain() {
     let source = "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    finally:\n        try:\n            await resource.pause()\n        finally:\n            await resource.aclose()\n";
-    let result = check_source(source);
-    assert!(
-        result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
-        }),
-        "{result:#?}"
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let cancellation_boundaries = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.message.contains("cancellation may interrupt"))
+        .map(|diagnostic| diagnostic.primary.line)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        cancellation_boundaries,
+        std::collections::BTreeSet::from([9, 12, 14]),
+        "the analysis must retain cancellation boundaries at use and both cleanup awaits: {report:#?}"
     );
-    assert!(result
+    let cancelled = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "possible"
+                && diagnostic.completion.as_deref() == Some("cancelled")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(cancelled.len(), 1, "{report:#?}");
+    assert_eq!(cancelled[0].primary.line, 14, "{report:#?}");
+    assert_eq!(cancelled[0].related.len(), 1, "{report:#?}");
+    assert_eq!(cancelled[0].related[0].line, 7, "{report:#?}");
+    assert!(report
         .coverage
         .reasons
         .iter()
@@ -4900,6 +5159,72 @@ fn v03_03_nested_cleanup_raise_still_runs_outer_cleanup_once() {
     assert_eq!(leaks[0].related.len(), 1, "{report:#?}");
     assert_eq!(leaks[0].related[0].line, 11, "{report:#?}");
     assert_eq!(report.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
+fn v03_10_three_manager_outcome_cross_product_preserves_only_failed_close_duties() {
+    for failure_mask in 0u8..8 {
+        for body in ["pass", "raise ValueError()"] {
+            let mut source = format!("{RESOURCE}from contextlib import closing\n");
+            for index in 0..3 {
+                source.push_str(&format!(
+                    "@resource(closed_by='close')\nclass R{index}:\n    def close(self):\n"
+                ));
+                source.push_str(if failure_mask & (1 << index) == 0 {
+                    "        pass\n"
+                } else {
+                    "        raise RuntimeError()\n"
+                });
+            }
+            source.push_str("def cleanup():\n");
+            for index in 0..3 {
+                source.push_str(&format!("    resource_{index} = R{index}()\n"));
+            }
+            source.push_str(
+                "    with closing(resource_0), closing(resource_1), closing(resource_2):\n",
+            );
+            source.push_str(&format!("        {body}\n"));
+
+            let result = check_source(&source);
+            let leaks = result
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            let expected_origins = (0..3)
+                .filter(|index| failure_mask & (1 << index) != 0)
+                .map(|index| {
+                    source
+                        .lines()
+                        .position(|line| line.trim() == format!("resource_{index} = R{index}()"))
+                        .unwrap()
+                        + 1
+                })
+                .collect::<std::collections::BTreeSet<_>>();
+            let actual_origins = leaks
+                .iter()
+                .map(|diagnostic| {
+                    assert_eq!(diagnostic.certainty, "definite", "{result:#?}");
+                    assert!(diagnostic.message.ends_with("on raise"), "{result:#?}");
+                    assert_eq!(diagnostic.related.len(), 1, "{result:#?}");
+                    diagnostic.related[0].line
+                })
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(
+                actual_origins, expected_origins,
+                "failure_mask={failure_mask:03b}, body={body:?}: every manager must unwind in LIFO order, and only a failing close may retain its duty: {result:#?}"
+            );
+            assert_eq!(
+                leaks.len(), expected_origins.len(),
+                "failure_mask={failure_mask:03b}, body={body:?}: no cleanup duty may be duplicated: {result:#?}"
+            );
+            assert_eq!(
+                result.coverage.status,
+                "complete-for-supported-subset",
+                "failure_mask={failure_mask:03b}, body={body:?}: checked manager outcomes stay exact: {result:#?}"
+            );
+        }
+    }
 }
 
 #[test]
