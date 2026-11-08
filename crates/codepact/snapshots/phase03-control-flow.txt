@@ -1,0 +1,18 @@
+try [39..316]
+  body:
+    while (backedge) [52..241]
+      body:
+        if [76..115]
+          then:
+            return [101..115]
+        if [128..177]
+          then:
+            raise [157..177]
+        if [190..220]
+          then:
+            break -> loop exit [215..220]
+        continue -> loop backedge [233..241]
+  finally (pending completion preserved):
+    async with [263..316] (cleanup frame)
+      body:
+        await -> suspension [295..316]

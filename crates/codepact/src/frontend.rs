@@ -2107,3 +2107,121 @@ fn class_body_requires_boundary(
             _ => true,
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot(statements: &[FlowStatement], depth: usize, lines: &mut Vec<String>) {
+        let indent = "  ".repeat(depth);
+        for statement in statements {
+            match statement {
+                FlowStatement::If { range, body, .. } => {
+                    lines.push(format!("{indent}if [{}..{}]", range.start, range.end));
+                    lines.push(format!("{indent}  then:"));
+                    snapshot(body, depth + 2, lines);
+                }
+                FlowStatement::Try {
+                    range,
+                    body,
+                    finalbody,
+                    ..
+                } => {
+                    lines.push(format!("{indent}try [{}..{}]", range.start, range.end));
+                    lines.push(format!("{indent}  body:"));
+                    snapshot(body, depth + 2, lines);
+                    if !finalbody.is_empty() {
+                        lines.push(format!("{indent}  finally (pending completion preserved):"));
+                        snapshot(finalbody, depth + 2, lines);
+                    }
+                }
+                FlowStatement::Loop {
+                    range, test, body, ..
+                } => {
+                    lines.push(format!(
+                        "{indent}{} [{}..{}]",
+                        if test.is_some() {
+                            "while (backedge)"
+                        } else {
+                            "for (backedge)"
+                        },
+                        range.start,
+                        range.end
+                    ));
+                    lines.push(format!("{indent}  body:"));
+                    snapshot(body, depth + 2, lines);
+                }
+                FlowStatement::With {
+                    range,
+                    body,
+                    asynchronous,
+                    ..
+                } => {
+                    lines.push(format!(
+                        "{indent}{} [{}..{}] (cleanup frame)",
+                        if *asynchronous { "async with" } else { "with" },
+                        range.start,
+                        range.end
+                    ));
+                    lines.push(format!("{indent}  body:"));
+                    snapshot(body, depth + 2, lines);
+                }
+                FlowStatement::Return { range, .. } => {
+                    lines.push(format!("{indent}return [{}..{}]", range.start, range.end));
+                }
+                FlowStatement::Raise { range, .. } => {
+                    lines.push(format!("{indent}raise [{}..{}]", range.start, range.end));
+                }
+                FlowStatement::Break { range } => {
+                    lines.push(format!(
+                        "{indent}break -> loop exit [{}..{}]",
+                        range.start, range.end
+                    ));
+                }
+                FlowStatement::Continue { range } => {
+                    lines.push(format!(
+                        "{indent}continue -> loop backedge [{}..{}]",
+                        range.start, range.end
+                    ));
+                }
+                FlowStatement::Expression { value, range }
+                    if matches!(value.kind, AstExprKind::Await(_)) =>
+                {
+                    lines.push(format!(
+                        "{indent}await -> suspension [{}..{}]",
+                        range.start, range.end
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn cleanup_control_flow_frontend_snapshot_keeps_exits_backedge_and_unwind_frame() {
+        let source = "async def transfer(flag, manager):\n    try:\n        while flag:\n            if flag:\n                return manager\n            if not flag:\n                raise RuntimeError()\n            if flag:\n                break\n            continue\n    finally:\n        async with manager:\n            await manager.close()\n";
+        let parsed = parse_frontend(source, "fixture", "3.11").expect("fixture parses");
+        let body = parsed
+            .declarations
+            .iter()
+            .find_map(|declaration| match declaration {
+                Declaration::Function {
+                    name,
+                    body,
+                    is_async,
+                    ..
+                } if name == "transfer" => {
+                    assert!(*is_async);
+                    Some(body)
+                }
+                _ => None,
+            })
+            .expect("transfer function is present");
+        let mut lines = Vec::new();
+        snapshot(body, 0, &mut lines);
+        assert_eq!(
+            lines.join("\n"),
+            include_str!("../snapshots/phase03-control-flow.txt").trim_end()
+        );
+    }
+}
