@@ -199,8 +199,6 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: validate-artifacts
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
     environment:
       name: pypi
       url: https://pypi.org/p/codepact-cli
@@ -211,17 +209,25 @@ jobs:
           path: dist/
       - name: Select native CLI distributions
         run: mkdir cli-dist && mv dist/codepact_cli-* cli-dist/
+      - name: Require PyPI API token
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$PYPI_API_TOKEN" ]; then
+            echo "::error::The PYPI_API_TOKEN secret is required to publish to PyPI"
+            exit 1
+          fi
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: cli-dist/
-          attestations: true
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: false
 
   publish-codepact:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: [validate-artifacts, publish-cli]
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
     environment:
       name: pypi
       url: https://pypi.org/p/codepact
@@ -232,10 +238,20 @@ jobs:
           path: dist/
       - name: Select pure Python distributions
         run: mkdir helper-dist && mv dist/codepact-* helper-dist/
+      - name: Require PyPI API token
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$PYPI_API_TOKEN" ]; then
+            echo "::error::The PYPI_API_TOKEN secret is required to publish to PyPI"
+            exit 1
+          fi
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: helper-dist/
-          attestations: true
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: false
 
   publish-crates:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')

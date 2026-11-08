@@ -67,11 +67,11 @@ The implemented workflow `.github/workflows/release.yml` validates stable tags o
 Before tagging a subsequent release:
 
 - Set the root Python project, `cli/pyproject.toml`, and Rust crate version to the tag version without the leading `v`; pin `codepact-cli` to that exact version in the helper dependency and refresh `uv.lock`.
-- Confirm the PyPI trusted publishers for both projects and the `CARGO_REGISTRY_TOKEN` GitHub secret are configured. Never put credential values in evidence or logs.
+- Confirm the `PYPI_API_TOKEN` GitHub Actions secret and the `CARGO_REGISTRY_TOKEN` secret are configured. `PYPI_API_TOKEN` must be able to upload both `codepact-cli` and `codepact`; never put credential values in evidence or logs.
 - Use the pinned build tools and committed `uv.lock`/`Cargo.lock`. Require the eight CLI platform wheels, one pure helper wheel and both source archives; validate version metadata and dependency pins.
 - Complete exact-candidate release evidence, maintainer approval, local checks, and CI review. The [0.2.0 release checklist](release-0.2.0-checklist.md) records the last release process and can guide later checklists.
 
-Push the version tag to trigger publication. Both PyPI publish jobs use Trusted Publishing: grant job-scoped `id-token: write`, omit username/password inputs, and enable attestations. Keep the `pypi` environment on both jobs, with no protection rule requiring another person's approval. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; codepact publication also depends on successful codepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
+Push the version tag to trigger publication. Both PyPI publish jobs use `PYPI_API_TOKEN` with username `__token__`; the release action's attestations are disabled because PyPI attestations require Trusted Publishing. Keep the `pypi` environment on both jobs, with no protection rule requiring another person's approval. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; codepact publication also depends on successful codepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
 
 This workflow does not publish anything until a matching tag is pushed. Manual dispatch is build-only. The current Quality workflow is wired into release validation; a successful run on an unrelated revision is not candidate evidence.
 
@@ -102,13 +102,12 @@ All later phases inherit this distribution contract. Changes to the matrix, mini
 ## Two-project PyPI publication
 
 The TypePact 0.1.0 release used `PYPI_API_TOKEN`; its 0.2.0 release exercised
-OIDC for the old `typepact` and `typepact-cli` projects. CodePact's new PyPI
-projects require trusted publisher entries for owner `eddiethedean`, repository
-`codepact`, workflow `release.yml`, and environment `pypi`; the existing
-TypePact publisher setup does not qualify these new names. Confirm that setup
-before a tag release. Keep the helper dependency exact to prevent skew with the
-native analyzer. Standalone users can install `codepact-cli` without the
-Python helpers.
+OIDC for the old `typepact` and `typepact-cli` projects. The CodePact release
+workflow uses the `PYPI_API_TOKEN` GitHub Actions secret for both new PyPI
+projects. PyPI project-scoped tokens authorize only one project, so the shared
+secret must use a token with access to both projects. Keep the helper
+dependency exact to prevent skew with the native analyzer. Standalone users
+can install `codepact-cli` without the Python helpers.
 
 The uv workspace contains the root helper project and cli project; workspace source mapping resolves the CLI locally during development. Standard published metadata uses the ordinary registry dependency codepact-cli==X.Y.Z. Updating versions requires changing all three manifests and the helper dependency together, then refreshing uv.lock. A partial publication leaves the candidate incomplete; resume only missing projects, preserving published bytes.
 
