@@ -105,8 +105,9 @@ def validation_errors(root: Path) -> list[str]:
             continue
         rust_text = path.read_text(encoding="utf-8", errors="replace")
         rust_functions.update(RUST_FUNCTION.findall(rust_text))
-        if "tests" in path.parts:
-            rust_tests.update(RUST_TEST.findall(rust_text))
+        # Tests can live in either integration-test files or a crate's `src`
+        # tree. Qualified references in the matrix may name both.
+        rust_tests.update(RUST_TEST.findall(rust_text))
     stale_tests = sorted(set(test_references) - rust_tests)
     if stale_tests:
         errors.append(

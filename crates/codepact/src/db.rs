@@ -1029,6 +1029,86 @@ mod tests {
     }
 
     #[test]
+    fn v03_22_handler_expression_edit_refreshes_async_finally_cleanup_and_matches_fresh() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let source = |handler: &str| {
+            SourceFile::new(
+                "phase03.py",
+                "phase03",
+                format!(
+                    "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\ndef handler_type():\n    raise LookupError()\nasync def cleanup():\n    resource = C()\n    try:\n        try:\n            raise RuntimeError()\n        except {handler}:\n            pass\n    finally:\n        await resource.aclose()\n"
+                ),
+            )
+        };
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let initial_file = source("RuntimeError");
+        let initial = session.check(&[initial_file.clone(), unrelated.clone()], "3.11");
+        assert!(
+            initial.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP1002"
+                    && diagnostic.certainty == "possible"
+                    && diagnostic.message.ends_with("on cancelled")
+            }),
+            "initial async cleanup retains its cancellation duty: {initial:#?}"
+        );
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+
+        let edited_file = source("handler_type()");
+        let updated = session.check(&[edited_file.clone(), unrelated.clone()], "3.11");
+        assert_eq!(
+            updated,
+            crate::check(&[edited_file, unrelated], "3.11"),
+            "a handler-expression failure must still execute async finally cleanup and match a fresh analysis"
+        );
+        let duties = updated
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert_eq!(duties.len(), 1, "{updated:#?}");
+        assert_eq!(duties[0].certainty, "possible", "{updated:#?}");
+        assert!(
+            duties[0].message.ends_with("on cancelled"),
+            "the remaining duty belongs to interrupted cleanup: {updated:#?}"
+        );
+        assert_eq!(duties[0].related[0].line, 8, "{updated:#?}");
+        assert_eq!(updated.coverage.status, "incomplete", "{updated:#?}");
+        let flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            flow_queries.len(),
+            1,
+            "only the changed phase file should refresh its flow query: {flow_queries:#?}"
+        );
+    }
+
+    #[test]
     fn reviewed_exceptional_close_outcomes_flow_through_session_results() {
         let source = "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n";
         let file = SourceFile::new("model.py", "model", source);

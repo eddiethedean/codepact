@@ -78,6 +78,35 @@ class Phase03ValidationTest(unittest.TestCase):
                 any("missing Rust tests" in error for error in errors), errors
             )
 
+    def test_crate_unit_test_satisfies_a_test_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_matrix(root)
+            coverage_path = root / "docs/planning/phases/0.3/validation.md"
+            coverage = coverage_path.read_text(encoding="utf-8")
+            coverage_path.write_text(
+                coverage.replace("v03_01_case", "v03_01_src_case", 1),
+                encoding="utf-8",
+            )
+            tests_path = root / "crates/codepact/tests/phase03.rs"
+            tests_path.write_text(
+                "\n".join(
+                    f"#[test]\nfn {identifier.lower().replace('-', '_')}_case() {{}}"
+                    for identifier in EXPECTED_ROWS
+                    if identifier != "V03-01"
+                ),
+                encoding="utf-8",
+            )
+            source_dir = root / "crates/codepact/src"
+            source_dir.mkdir(parents=True)
+            (source_dir / "db.rs").write_text(
+                "#[cfg(test)]\nmod tests {\n    #[test]\n"
+                "    fn v03_01_src_case() {}\n}\n",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(validation_errors(root), [])
+
 
 if __name__ == "__main__":
     unittest.main()
