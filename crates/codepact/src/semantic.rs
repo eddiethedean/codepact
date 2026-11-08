@@ -374,7 +374,7 @@ fn inspect_inner(
                         }
                     }
                 }
-                Declaration::Unsupported { message, range } => {
+                Declaration::Unsupported { message, range, .. } => {
                     unsupported(&mut result, file, *range, message);
                     state.clear_module(&file.module, &mut bindings);
                 }

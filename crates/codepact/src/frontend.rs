@@ -4,6 +4,10 @@ use ruff_python_ast::{
 };
 use ruff_python_parser::{Mode, ParseOptions};
 use ruff_text_size::Ranged;
+use std::collections::BTreeSet;
+
+pub(crate) const MODULE_STAR_IMPORT_UNCERTAINTY: &str =
+    "module-level wildcard import is unsupported";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SourceRange {
@@ -246,6 +250,7 @@ pub(crate) enum Declaration {
     },
     Unsupported {
         message: &'static str,
+        unknown_exception_bindings: Vec<String>,
         range: SourceRange,
     },
 }
@@ -372,6 +377,255 @@ struct ClassGlobalVisitor {
     nodes: usize,
     found: bool,
     exceeded: bool,
+}
+
+#[derive(Default)]
+struct ModuleBindingUncertaintyVisitor {
+    depth: usize,
+    nodes: usize,
+    wildcard_import: bool,
+    exception_bindings: BTreeSet<String>,
+    exceeded: bool,
+}
+
+impl ModuleBindingUncertaintyVisitor {
+    fn add_target(&mut self, target: &Expr) {
+        let mut pending = vec![target];
+        let mut nodes = 0;
+        while let Some(target) = pending.pop() {
+            if nodes >= ExpressionBudget::MAX_NODES {
+                self.exceeded = true;
+                return;
+            }
+            nodes += 1;
+            match target {
+                Expr::Name(name) if is_exception_binding_name(name.id.as_str()) => {
+                    self.exception_bindings.insert(name.id.to_string());
+                }
+                Expr::Tuple(tuple) => pending.extend(tuple.elts.iter()),
+                Expr::List(list) => pending.extend(list.elts.iter()),
+                Expr::Starred(starred) => pending.push(&starred.value),
+                _ => {}
+            }
+        }
+    }
+
+    fn finish(self) -> Vec<String> {
+        if self.exceeded {
+            all_exception_binding_names()
+        } else {
+            self.exception_bindings.into_iter().collect()
+        }
+    }
+}
+
+impl<'a> Visitor<'a> for ModuleBindingUncertaintyVisitor {
+    fn visit_stmt(&mut self, statement: &'a Stmt) {
+        if self.wildcard_import || self.exceeded {
+            return;
+        }
+        if self.depth >= ExpressionBudget::MAX_DEPTH || self.nodes >= ExpressionBudget::MAX_NODES {
+            self.exceeded = true;
+            return;
+        }
+        self.nodes += 1;
+        match statement {
+            Stmt::ImportFrom(import) => {
+                for alias in &import.names {
+                    if alias.name.as_str() == "*" {
+                        self.wildcard_import = true;
+                        return;
+                    }
+                    let name = alias
+                        .asname
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| alias.name.to_string());
+                    if is_exception_binding_name(&name) {
+                        self.exception_bindings.insert(name);
+                    }
+                }
+            }
+            Stmt::Import(import) => {
+                for alias in &import.names {
+                    let name = alias.asname.as_ref().map_or_else(
+                        || alias.name.split('.').next().unwrap_or_default().to_owned(),
+                        ToString::to_string,
+                    );
+                    if is_exception_binding_name(&name) {
+                        self.exception_bindings.insert(name);
+                    }
+                }
+            }
+            Stmt::FunctionDef(function) => {
+                if is_exception_binding_name(function.name.as_str()) {
+                    self.exception_bindings.insert(function.name.to_string());
+                }
+            }
+            Stmt::ClassDef(class) => {
+                if is_exception_binding_name(class.name.as_str()) {
+                    self.exception_bindings.insert(class.name.to_string());
+                }
+            }
+            Stmt::Assign(assign) => {
+                for target in &assign.targets {
+                    self.add_target(target);
+                }
+                self.walk_statement(statement);
+            }
+            Stmt::AnnAssign(assign) => {
+                self.add_target(&assign.target);
+                self.walk_statement(statement);
+            }
+            Stmt::AugAssign(assign) => {
+                self.add_target(&assign.target);
+                self.walk_statement(statement);
+            }
+            Stmt::Delete(delete) => {
+                for target in &delete.targets {
+                    self.add_target(target);
+                }
+            }
+            Stmt::For(loop_) => {
+                self.add_target(&loop_.target);
+                self.walk_statement(statement);
+            }
+            Stmt::With(with_) => {
+                for item in &with_.items {
+                    if let Some(target) = &item.optional_vars {
+                        self.add_target(target);
+                    }
+                }
+                self.walk_statement(statement);
+            }
+            _ => {
+                self.walk_statement(statement);
+            }
+        }
+    }
+
+    fn visit_expr(&mut self, expression: &'a Expr) {
+        if self.wildcard_import || self.exceeded {
+            return;
+        }
+        if self.depth >= ExpressionBudget::MAX_DEPTH || self.nodes >= ExpressionBudget::MAX_NODES {
+            self.exceeded = true;
+            return;
+        }
+        self.nodes += 1;
+        if let Expr::Named(named) = expression {
+            self.add_target(&named.target);
+        }
+        if let Expr::Lambda(lambda) = expression {
+            if let Some(parameters) = &lambda.parameters {
+                self.visit_parameters(parameters);
+            }
+            return;
+        }
+        self.depth += 1;
+        walk_expr(self, expression);
+        self.depth -= 1;
+    }
+}
+
+impl ModuleBindingUncertaintyVisitor {
+    fn walk_statement(&mut self, statement: &Stmt) {
+        self.depth += 1;
+        walk_stmt(self, statement);
+        self.depth -= 1;
+    }
+}
+
+fn module_binding_uncertainty(statement: &Stmt) -> (bool, Vec<String>) {
+    let mut visitor = ModuleBindingUncertaintyVisitor::default();
+    visitor.visit_stmt(statement);
+    let wildcard_import = visitor.wildcard_import;
+    (wildcard_import, visitor.finish())
+}
+
+const BUILTIN_EXCEPTION_NAMES: &[&str] = &[
+    "ArithmeticError",
+    "AssertionError",
+    "AttributeError",
+    "BaseException",
+    "BlockingIOError",
+    "BrokenPipeError",
+    "BufferError",
+    "BytesWarning",
+    "ChildProcessError",
+    "ConnectionError",
+    "ConnectionAbortedError",
+    "ConnectionRefusedError",
+    "ConnectionResetError",
+    "DeprecationWarning",
+    "EOFError",
+    "EncodingWarning",
+    "Exception",
+    "FileExistsError",
+    "FileNotFoundError",
+    "FloatingPointError",
+    "FutureWarning",
+    "GeneratorExit",
+    "ImportError",
+    "ImportWarning",
+    "IndentationError",
+    "IndexError",
+    "InterruptedError",
+    "IsADirectoryError",
+    "KeyError",
+    "KeyboardInterrupt",
+    "LookupError",
+    "MemoryError",
+    "ModuleNotFoundError",
+    "NameError",
+    "NotADirectoryError",
+    "NotImplementedError",
+    "OSError",
+    "OverflowError",
+    "PendingDeprecationWarning",
+    "PermissionError",
+    "ProcessLookupError",
+    "RecursionError",
+    "ReferenceError",
+    "ResourceWarning",
+    "RuntimeError",
+    "RuntimeWarning",
+    "StopAsyncIteration",
+    "StopIteration",
+    "SyntaxError",
+    "SyntaxWarning",
+    "SystemError",
+    "SystemExit",
+    "TabError",
+    "TimeoutError",
+    "TypeError",
+    "UnboundLocalError",
+    "UnicodeDecodeError",
+    "UnicodeEncodeError",
+    "UnicodeError",
+    "UnicodeTranslateError",
+    "UnicodeWarning",
+    "UserWarning",
+    "ValueError",
+    "Warning",
+    "ZeroDivisionError",
+];
+
+pub(crate) fn is_known_builtin_exception_name(name: &str) -> bool {
+    BUILTIN_EXCEPTION_NAMES.contains(&name)
+}
+
+fn is_exception_binding_name(name: &str) -> bool {
+    is_known_builtin_exception_name(name) || name == "CancelledError"
+}
+
+fn all_exception_binding_names() -> Vec<String> {
+    BUILTIN_EXCEPTION_NAMES
+        .iter()
+        .copied()
+        .chain(std::iter::once("CancelledError"))
+        .map(str::to_owned)
+        .collect()
 }
 
 impl<'a> Visitor<'a> for ClassGlobalVisitor {
@@ -747,15 +1001,17 @@ pub(crate) fn parse_frontend(
         if index >= crate::DEFAULT_MAX_AST_DECLARATIONS {
             declarations.push(Declaration::Unsupported {
                 message: "module declaration count exceeds the 20,000 statement work limit",
+                unknown_exception_bindings: all_exception_binding_names(),
                 range: source_range(statement),
             });
             break;
         }
-        if let Some(message) =
-            class_body_issue(statement).or_else(|| eager_named_expression_issue(statement))
-        {
+        let unsupported_issue =
+            class_body_issue(statement).or_else(|| eager_named_expression_issue(statement));
+        if let Some(message) = unsupported_issue {
             declarations.push(Declaration::Unsupported {
                 message,
+                unknown_exception_bindings: all_exception_binding_names(),
                 range: source_range(statement),
             });
             continue;
@@ -890,6 +1146,7 @@ pub(crate) fn parse_frontend(
                 } else {
                     declarations.push(Declaration::Unsupported {
                         message: "destructuring and chained assignments are unsupported",
+                        unknown_exception_bindings: module_binding_uncertainty(statement).1,
                         range: source_range(assign),
                     });
                 }
@@ -913,6 +1170,7 @@ pub(crate) fn parse_frontend(
                     declarations.push(Declaration::Unsupported {
                         message:
                             "annotated attribute and destructuring assignments are unsupported",
+                        unknown_exception_bindings: module_binding_uncertainty(statement).1,
                         range: source_range(assign),
                     });
                 }
@@ -941,15 +1199,25 @@ pub(crate) fn parse_frontend(
                     range: source_range(alias),
                 });
             }
-            _ => declarations.push(Declaration::Unsupported {
-                message: "module-level control flow and executable statements are unsupported",
-                range: source_range(statement),
-            }),
+            _ => {
+                let (wildcard_import, unknown_exception_bindings) =
+                    module_binding_uncertainty(statement);
+                declarations.push(Declaration::Unsupported {
+                    message: if wildcard_import {
+                        MODULE_STAR_IMPORT_UNCERTAINTY
+                    } else {
+                        "module-level control flow and executable statements are unsupported"
+                    },
+                    unknown_exception_bindings,
+                    range: source_range(statement),
+                });
+            }
         }
         if expression_budget.exceeded {
             declarations.push(Declaration::Unsupported {
                 message:
                     "AST expression exceeds the 128-level or 50,000-node per-statement work limit",
+                unknown_exception_bindings: all_exception_binding_names(),
                 range: source_range(statement),
             });
         }

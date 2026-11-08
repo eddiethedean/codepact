@@ -1336,6 +1336,89 @@ fn v03_05_shadowed_constructor_is_not_routed_by_its_builtin_spelling() {
 }
 
 #[test]
+fn v03_05_unknown_star_import_does_not_make_builtin_handler_exact() {
+    for (scenario, import) in [
+        ("module scope", "from effects import *\n"),
+        (
+            "conditional module scope",
+            "if enabled:\n    from effects import *\n",
+        ),
+    ] {
+        let source = format!(
+            "{import}{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        raise ValueError()\n    except BaseException:\n        resource.close()\n"
+        );
+        let report = codepact::check_report(
+            &[
+                SourceFile::new("effects.py", "effects", "BaseException = RuntimeError\n"),
+                SourceFile::new("phase03.py", "phase03", source),
+            ],
+            "3.11",
+        );
+        let leaks = report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .collect::<Vec<_>>();
+        assert!(
+            !leaks.is_empty(),
+            "an unknown star import may rebind BaseException, so the unmatched raise remains feasible at {scenario}: {report:#?}"
+        );
+        assert!(
+            leaks
+                .iter()
+                .all(|diagnostic| diagnostic.certainty == "possible"),
+            "an unknown imported handler must not be treated as exact at {scenario}: {report:#?}"
+        );
+        assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+    }
+}
+
+#[test]
+fn v03_05_conditional_module_rebinding_does_not_make_builtin_handler_exact() {
+    let source = format!(
+        "if enabled:\n    BaseException = RuntimeError\n{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        raise ValueError()\n    except BaseException:\n        resource.close()\n"
+    );
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(
+        !leaks.is_empty(),
+        "a conditional module binding may rebind BaseException, so the unmatched raise remains feasible: {report:#?}"
+    );
+    assert!(
+        leaks
+            .iter()
+            .all(|diagnostic| diagnostic.certainty == "possible"),
+        "an uncertain module binding must not be treated as an exact handler: {report:#?}"
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
+
+#[test]
+fn v03_05_unrelated_conditional_module_binding_preserves_builtin_handler_routing() {
+    let source = format!(
+        "if enabled:\n    unrelated = 1\n{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        raise ValueError()\n    except BaseException:\n        resource.close()\n"
+    );
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "TP1002"),
+        "an unrelated conditional binding must not weaken exact built-in handler routing: {report:#?}"
+    );
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
+    );
+}
+
+#[test]
 fn v03_05_shadowed_base_exception_handler_does_not_hide_an_unmatched_raise() {
     let source = format!(
         "{RESOURCE}def cleanup():\n    resource = C()\n    BaseException = ValueError\n    try:\n        raise RuntimeError()\n    except BaseException:\n        resource.close()\n"

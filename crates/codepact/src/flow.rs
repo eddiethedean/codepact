@@ -23,6 +23,7 @@ const MAX_EXIT_PARTITIONS: usize = 256;
 const MAX_STATIC_FOR_ITERATIONS: usize = 16;
 const MAX_PENDING_COROUTINES: usize = 128;
 pub(crate) const MAX_FLOW_STEPS: usize = 100_000;
+const UNKNOWN_EXCEPTION_BINDINGS: &str = "*";
 thread_local! {
     static FLOW_STEPS: Cell<usize> = const { Cell::new(0) };
     static FLOW_STEP_LIMIT: Cell<usize> = const { Cell::new(MAX_FLOW_STEPS) };
@@ -664,6 +665,15 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
         if left.class_bindings.get(&name) != right.class_bindings.get(&name) {
             joined.class_bindings.remove(&name);
         }
+    }
+    if left.class_bindings.contains_key(UNKNOWN_EXCEPTION_BINDINGS)
+        || right
+            .class_bindings
+            .contains_key(UNKNOWN_EXCEPTION_BINDINGS)
+    {
+        joined
+            .class_bindings
+            .insert(UNKNOWN_EXCEPTION_BINDINGS.to_owned(), None);
     }
     joined
         .unknown_places
@@ -1858,6 +1868,7 @@ fn final_class_bindings(
                     for binding in bindings.values_mut() {
                         *binding = None;
                     }
+                    bindings.insert(UNKNOWN_EXCEPTION_BINDINGS.to_owned(), None);
                 } else {
                     for import in names {
                         let local = import.alias.as_deref().unwrap_or(&import.name);
@@ -1902,9 +1913,19 @@ fn final_class_bindings(
             } => {
                 bindings.insert(name.clone(), None);
             }
-            Declaration::Unsupported { .. } => {
+            Declaration::Unsupported {
+                message,
+                unknown_exception_bindings,
+                ..
+            } => {
                 for binding in bindings.values_mut() {
                     *binding = None;
+                }
+                for name in unknown_exception_bindings {
+                    bindings.insert(name.clone(), None);
+                }
+                if *message == crate::frontend::MODULE_STAR_IMPORT_UNCERTAINTY {
+                    bindings.insert(UNKNOWN_EXCEPTION_BINDINGS.to_owned(), None);
                 }
             }
             Declaration::Assignment { .. } | Declaration::TypeAlias { .. } => {}
@@ -3811,74 +3832,7 @@ fn raised_exception_name(exit: &FlowExit) -> Option<&str> {
 }
 
 fn known_builtin_exception(name: &str) -> bool {
-    matches!(
-        name,
-        "ArithmeticError"
-            | "AssertionError"
-            | "AttributeError"
-            | "BaseException"
-            | "BlockingIOError"
-            | "BrokenPipeError"
-            | "BufferError"
-            | "BytesWarning"
-            | "ChildProcessError"
-            | "ConnectionError"
-            | "ConnectionAbortedError"
-            | "ConnectionRefusedError"
-            | "ConnectionResetError"
-            | "DeprecationWarning"
-            | "EOFError"
-            | "EncodingWarning"
-            | "Exception"
-            | "FileExistsError"
-            | "FileNotFoundError"
-            | "FloatingPointError"
-            | "FutureWarning"
-            | "GeneratorExit"
-            | "ImportError"
-            | "ImportWarning"
-            | "IndentationError"
-            | "IndexError"
-            | "InterruptedError"
-            | "IsADirectoryError"
-            | "KeyError"
-            | "KeyboardInterrupt"
-            | "LookupError"
-            | "MemoryError"
-            | "ModuleNotFoundError"
-            | "NameError"
-            | "NotADirectoryError"
-            | "NotImplementedError"
-            | "OSError"
-            | "OverflowError"
-            | "PendingDeprecationWarning"
-            | "PermissionError"
-            | "ProcessLookupError"
-            | "RecursionError"
-            | "ReferenceError"
-            | "ResourceWarning"
-            | "RuntimeError"
-            | "RuntimeWarning"
-            | "StopAsyncIteration"
-            | "StopIteration"
-            | "SyntaxError"
-            | "SyntaxWarning"
-            | "SystemError"
-            | "SystemExit"
-            | "TabError"
-            | "TimeoutError"
-            | "TypeError"
-            | "UnboundLocalError"
-            | "UnicodeDecodeError"
-            | "UnicodeEncodeError"
-            | "UnicodeError"
-            | "UnicodeTranslateError"
-            | "UnicodeWarning"
-            | "UserWarning"
-            | "ValueError"
-            | "Warning"
-            | "ZeroDivisionError"
-    )
+    crate::frontend::is_known_builtin_exception_name(name)
 }
 
 fn known_exception_for_match(name: &str) -> bool {
@@ -3952,6 +3906,12 @@ fn builtin_exception_match(exception: &str, caught: &str) -> Option<bool> {
 
 fn is_unshadowed_builtin_exception(name: &str, state: &State) -> bool {
     known_builtin_exception(name)
+        && !state
+            .class_bindings
+            .contains_key(UNKNOWN_EXCEPTION_BINDINGS)
+        && !state
+            .module_class_bindings
+            .contains_key(UNKNOWN_EXCEPTION_BINDINGS)
         && !state.shadowed_classes.contains(name)
         && !state.shadowed_functions.contains(name)
         && !state.function_bindings.contains_key(name)
@@ -3966,6 +3926,12 @@ fn is_unshadowed_exception_handler_name(name: &str, state: &State) -> bool {
         return is_unshadowed_builtin_exception(name, state);
     }
     name == "CancelledError"
+        && !state
+            .class_bindings
+            .contains_key(UNKNOWN_EXCEPTION_BINDINGS)
+        && !state
+            .module_class_bindings
+            .contains_key(UNKNOWN_EXCEPTION_BINDINGS)
         && !state.shadowed_classes.contains(name)
         && !state.shadowed_functions.contains(name)
         && !state.function_bindings.contains_key(name)
@@ -5597,6 +5563,10 @@ fn execute_non_if_statement(
             class_decorators,
             range: _,
         } => {
+            if name == "*" {
+                env.class_bindings
+                    .insert(UNKNOWN_EXCEPTION_BINDINGS.to_owned(), None);
+            }
             env.shadowed_functions.remove(name);
             env.shadowed_classes.remove(name);
             if let Some(binding) = binding {
