@@ -42,11 +42,13 @@ Document deprecation warnings, replacement paths and removal releases. A 1.0 rel
 
 Publishing is a separate authorized release action. Creating these planning documents does not publish packages or reserve registry names.
 
-## Optional combined Pyrefly prototype
+## Planned TypePact combined product
 
-The [codepact-pyrefly-cli plan](codepact-pyrefly-cli.md) defines a third, optional distribution combining embedded Pyrefly type checking with the CodePact Rust engine. It has a distinct `codepact-pyrefly` executable, independent prerelease versions and a planned `release-pyrefly.yml` workflow using environment `pypi`. The PyPI trusted publisher is project `codepact-pyrefly-cli`, owner `eddiethedean`, repository `codepact`, workflow filename `release-pyrefly.yml`, environment `pypi`. A maintainer-supplied screenshot confirms this configuration on 2026-10-30; workflow implementation and successful OIDC publication remain outstanding.
+The [TypePact plan](typepact.md) supersedes the `codepact-pyrefly-cli` proposal. TypePact combines pinned embedded Pyrefly with the CodePact Rust engine, using proposed `typepact` and `typepact-cli` distributions and the `typepact` command. Its main package supplies the compatible CodePact helpers through an exact dependency; Python source continues to import `codepact`. D015's helper/standalone CLI dependency remains in force, including its additional binary download.
 
-Qualify the PF01–PF05 work and PF-V01–PF-V08 gates before releasing it. The first proposed version is `0.1.0a1`, tagged `codepact-pyrefly-v0.1.0a1`; manual candidate builds do not publish. Start with verified Linux glibc x86-64, macOS ARM64 and Windows x86-64 wheels plus a buildable source archive; additional targets need evidence. Use a separate artifact verifier and publishing job. The existing two-project version pins, artifact counts and `release.yml` publication retain their D015 contract. The combined prototype remains planned, and this document does not implement its workflow or authorize publication.
+Qualify PF01–PF05 and PF-V01–PF-V08, including migration from the historical TypePact names. The first proposed combined version is `0.4.0a1`, tagged `typepact-v0.4.0a1`, subject to checking published version history. Use a separate `release-typepact.yml` workflow and artifact verifier; manual candidate builds do not publish. Verify current ownership and trusted publishers for both TypePact projects against the current repository and workflow. No earlier publisher screenshot establishes the new identity.
+
+Start with qualified Linux glibc x86-64, macOS ARM64 and Windows x86-64 CLI wheels, a universal main-package wheel and both complete source archives. Publish the qualified CodePact dependency, then TypePact CLI, then its main package. The core artifact inventory and `release.yml` retain their D015 contract. The combined product remains planned; this does not implement its workflow or authorize publication.
 
 ## Recovery and support
 

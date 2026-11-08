@@ -42,7 +42,7 @@ Completion: release checklist is satisfied, remaining limitations are published,
 
 ## Optional combined type-checking prototype
 
-The optional [Pyrefly combined CLI prototype](codepact-pyrefly-cli.md) follows PF01–PF05 independently of these phases: embedded-library feasibility, combined reports, compatibility/workflow evidence, package qualification and a dedicated trusted-publishing lane. It reuses the core engine and does not block its phase acceptance. Keep dependency integration gated on the spike and publication gated on PF-V01–PF-V08.
+The planned [TypePact combined product](typepact.md) follows PF01–PF05 independently of these phases: pinned Pyrefly embedding, combined reports, compatibility and historical-name migration, package qualification and a dedicated TypePact release lane. It reuses the core engine and does not block its phase acceptance. The maintainer accepts upstream library API maintenance; qualify the selected pin and source-build route in PF01, and qualify publication through PF-V01–PF-V08.
 
 ## Work item template
 

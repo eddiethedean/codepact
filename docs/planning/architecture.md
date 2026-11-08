@@ -39,6 +39,10 @@ Salsa tracks the inputs read by each query in this pipeline. Frontends translate
 
 Use internal module boundaries first; additional crates require a demonstrated build or API benefit. Keep Ruff and Salsa internals behind CodePact-owned interfaces. The Python helper package never initializes the analyzer. Delivery uses two Python distributions: codepact is a pure Python helper wheel built by Hatchling, with an exact dependency on codepact-cli at the same version. Maturin bin bindings package the compiled Rust inspector as the codepact command in codepact-cli. CLI wheels have py3-none platform tags because the executable does not depend on the Python ABI. Importing helpers does not launch the CLI. Separate source archives provide helper code and the CLI Rust workspace/manifests/Cargo.lock; Cargo remains an additional delivery route. D015 and the release matrix govern all phases.
 
+## Planned TypePact host
+
+[TypePact](typepact.md) is a separate planned host combining the CodePact library with pinned embedded Pyrefly behind an adapter. It coordinates configuration, source revisions and per-engine diagnostics; it does not add ordinary type semantics to CodePact or duplicate contract rules. Keep ASTs, resolvers and incremental databases private to each engine. The maintainer accepts upstream library API changes between pins, qualified through PF01 and per-upgrade parity/packaging evidence. The core CLI and helper distribution remain independently usable.
+
 ## Incremental computation
 
 In-memory Salsa queries are required in 0.1. Expose a reusable analysis session and retain the one-shot inspection wrapper. Module exports are small semantic summaries; importers should not depend on irrelevant foreign AST details. Source text, target Python, resolver search paths, configuration and model versions are tracked inputs. Disk reads and module discovery happen in the host and enter the database explicitly.

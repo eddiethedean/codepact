@@ -20,7 +20,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [Compatibility](compatibility.md) | Python typing, versions and ecosystem integration |
 | [Linting and IDE diagnostics](linting-and-editors.md) | Lint command, shared language server, editor targets and validation gates |
 | [AI-agent integration](ai-agent-integration.md) | Structured findings, repair context, check–edit–recheck workflows and MCP tools |
-| [Pyrefly combined CLI prototype](codepact-pyrefly-cli.md) | Optional `codepact-pyrefly-cli` package, ordinary typing plus resource checks, packaging and publisher setup |
+| [TypePact combined product](typepact.md) | Pinned embedded Pyrefly plus CodePact, package split, historical-name migration, PF01–PF05 work and acceptance gates |
 | [Roadmap](roadmap.md) | Priorities, dependencies and release scope |
 | [Implementation](implementation.md) | Work packages and completion gates |
 | [Testing and performance](testing.md) | Correctness, interoperability, benchmarks and CI |
