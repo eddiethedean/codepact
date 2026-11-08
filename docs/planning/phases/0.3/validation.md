@@ -115,14 +115,15 @@ lifecycle regression and 179 phase tests (377 Rust tests total); all 21 Python t
 workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and
 source builds and install smokes, dependency audits, Rust 1.96 checks/package
 test/install smoke, inspector behavior, documentation links and the
-warnings-as-errors docs build also passed. Exact-commit Quality and Release
-workflow results, the downloaded artifact inventory and strict Twine checks
-are recorded in the [release evidence record](../../../releases/0.3.0-evidence.md).
+warnings-as-errors docs build also passed. Exact-candidate Quality and
+non-publishing Release workflow results, downloaded artifact inventory, strict
+Twine checks and clean install smokes are recorded in the
+[release evidence record](../../../releases/0.3.0-evidence.md).
 The regression suite also confirms that an invalid Borrowed close through a
 helper/context wrapper cannot discharge its caller's duty on normal or raised
-exits; dependent callers retain an explicit incomplete boundary. Exact-commit
-Quality and non-publishing Release runs will be recorded after this candidate
-is pushed.
+exits; dependent callers retain an explicit incomplete boundary. These
+automated results do not pass maintainer qualification gates or authorize
+publication.
 
 V03-05 adds known tuple-handler matching and an invalid tuple-type boundary whose
 resource is still discharged by `finally`. Exact exception ancestry is limited
