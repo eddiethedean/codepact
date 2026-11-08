@@ -218,6 +218,45 @@ fn v03_07_branching_finally_replacement_keeps_abandoned_and_raised_duties() {
 }
 
 #[test]
+fn v03_07_nested_finally_replacement_preserves_only_the_final_owned_handoff() {
+    let source = format!(
+        "{RESOURCE}def make(flag) -> Owned[C]:\n    abandoned = C()\n    intermediate = C()\n    final = C()\n    try:\n        try:\n            return abandoned\n        finally:\n            return intermediate\n    finally:\n        if flag:\n            return final\n"
+    );
+    let result = check_source(&source);
+    let leaks = result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 4, "{result:#?}");
+    let base = RESOURCE.lines().count();
+    let actual_exits = leaks
+        .iter()
+        .map(|diagnostic| {
+            assert_eq!(diagnostic.certainty, "definite", "{result:#?}");
+            assert!(diagnostic.message.ends_with("on return"), "{result:#?}");
+            assert_eq!(diagnostic.related.len(), 1, "{result:#?}");
+            (diagnostic.related[0].line, diagnostic.primary.line)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        actual_exits,
+        std::collections::BTreeSet::from([
+            (base + 2, base + 9),
+            (base + 4, base + 9),
+            (base + 2, base + 12),
+            (base + 3, base + 12),
+        ]),
+        "the outer finalizer either preserves the intermediate handoff or replaces it with the final resource: {result:#?}"
+    );
+    assert!(!result
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP1003"));
+    assert_eq!(result.coverage.status, "complete-for-supported-subset");
+}
+
+#[test]
 fn v03_08_borrowed_to_owned_return_is_rejected_without_inventing_a_handoff() {
     let result = check_source(&format!(
         "{RESOURCE}def invalid(resource: Borrowed[C]) -> Owned[C]:\n    return resource\n"
