@@ -946,6 +946,107 @@ mod tests {
     }
 
     #[test]
+    fn v03_23_target_model_and_root_edits_have_exact_query_refreshes() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let context = SourceFile::new(
+            "phase03.py",
+            "phase03",
+            "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
+        );
+        let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
+        let flow_queries = |events: &Mutex<Vec<String>>| {
+            events
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+
+        let supported = session.check(&[context.clone(), unrelated.clone()], "3.11");
+        assert_eq!(supported.coverage.status, "complete-for-supported-subset");
+        assert_eq!(flow_queries(&executions).len(), 2);
+
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        assert_eq!(
+            session.check(&[context.clone(), unrelated.clone()], "3.11"),
+            supported,
+            "a no-op must reuse all cleanup queries"
+        );
+        assert!(flow_queries(&executions).is_empty());
+
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let unsupported = session.check(&[context.clone(), unrelated.clone()], "3.14");
+        assert_eq!(
+            unsupported,
+            crate::check(&[context.clone(), unrelated.clone()], "3.14")
+        );
+        assert_eq!(unsupported.coverage.status, "incomplete");
+        assert_eq!(
+            flow_queries(&executions).len(),
+            2,
+            "target-version selection refreshes both supplied file queries"
+        );
+
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let removed = session.check(std::slice::from_ref(&unrelated), "3.14");
+        assert_eq!(
+            removed,
+            crate::check(std::slice::from_ref(&unrelated), "3.14")
+        );
+        assert!(
+            removed.diagnostics.is_empty(),
+            "removing the root drops stale findings"
+        );
+        assert_eq!(
+            flow_queries(&executions).len(),
+            1,
+            "only the retained file query runs after root removal"
+        );
+
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let restored = session.check(&[context.clone(), unrelated.clone()], "3.11");
+        assert_eq!(restored, crate::check(&[context, unrelated], "3.11"));
+        assert_eq!(restored.coverage.status, "complete-for-supported-subset");
+        assert_eq!(
+            flow_queries(&executions).len(),
+            1,
+            "restoring the supported context file refreshes its model-dependent query and reuses the unrelated file"
+        );
+    }
+
+    #[test]
     fn cleanup_body_edits_refresh_only_the_changed_flow_query_and_match_fresh() {
         let executions = Arc::new(Mutex::new(Vec::<String>::new()));
         let observed = Arc::clone(&executions);

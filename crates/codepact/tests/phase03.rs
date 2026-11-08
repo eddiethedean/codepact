@@ -3031,6 +3031,57 @@ fn v03_16_static_for_iteration_budget_widens_instead_of_claiming_cleanup() {
 }
 
 #[test]
+fn v03_16_static_for_exact_limit_cleans_every_resource_before_widening() {
+    let source_for = |resource_count: usize| {
+        let mut source = format!("{RESOURCE}def cleanup():\n");
+        let names = (0..resource_count)
+            .map(|index| format!("resource_{index}"))
+            .collect::<Vec<_>>();
+        for name in &names {
+            source.push_str(&format!("    {name} = C()\n"));
+        }
+        source.push_str(&format!(
+            "    for selected in ({}):\n        selected.close()\n",
+            names.join(", ")
+        ));
+        source
+    };
+
+    let at_limit = check_source(&source_for(16));
+    assert!(
+        !at_limit
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "all sixteen statically enumerated resources are cleaned: {at_limit:#?}"
+    );
+    assert_eq!(
+        at_limit.coverage.status, "complete-for-supported-subset",
+        "the supported boundary itself must not widen: {at_limit:#?}"
+    );
+
+    let over_limit = check_source(&source_for(17));
+    assert_eq!(over_limit.coverage.status, "incomplete", "{over_limit:#?}");
+    assert!(over_limit
+        .coverage
+        .reasons
+        .iter()
+        .any(|reason| { reason.contains("static for-loop iteration budget exceeded") }));
+    let duties = over_limit
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(
+        !duties.is_empty(),
+        "the unprocessed seventeenth item cannot disappear: {over_limit:#?}"
+    );
+    assert!(duties
+        .iter()
+        .all(|diagnostic| diagnostic.certainty != "definite"));
+}
+
+#[test]
 fn v03_16_break_before_static_for_budget_does_not_create_a_truncation_boundary() {
     let items = vec!["None"; 17].join(", ");
     let result = check_source(&format!(
@@ -3971,6 +4022,27 @@ fn v03_26_coroutine_and_async_exit_budgets_keep_cleanup_unknown_together() {
 
 #[test]
 fn v03_16_owned_parameter_budget_reports_untracked_duties_as_incomplete() {
+    let at_limit_parameters = (0..4_096)
+        .map(|index| format!("resource_{index}: Owned[C]"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let at_limit = check_source(&format!(
+        "{RESOURCE}def cleanup({at_limit_parameters}):\n    pass\n"
+    ));
+    assert_eq!(
+        at_limit.coverage.status, "complete-for-supported-subset",
+        "the 4,096th tracked object remains inside the declared limit: {at_limit:#?}"
+    );
+    assert_eq!(
+        at_limit
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP1002")
+            .count(),
+        4_096,
+        "every duty at the limit is retained: {at_limit:#?}"
+    );
+
     let parameters = (0..=4_096)
         .map(|index| format!("resource_{index}: Owned[C]"))
         .collect::<Vec<_>>()
@@ -5455,6 +5527,175 @@ fn v03_16_generated_static_loop_paths_preserve_zero_and_repeated_iteration_cases
                     .iter()
                     .any(|reason| reason.contains("repeat-close behavior is not modeled")),
                 "iterations={iteration_count}: {result:#?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn v03_23_target_model_and_root_edits_match_fresh_results() {
+    let mut session = AnalysisSession::default();
+    let file = |body: &str| {
+        SourceFile::new(
+            "phase03.py",
+            "phase03",
+            format!(
+                "from contextlib import closing\n{RESOURCE}def cleanup():\n    resource = C()\n    {body}\n"
+            ),
+        )
+    };
+    let initial_file = file("with closing(resource):\n        pass");
+    let initial = session.check(std::slice::from_ref(&initial_file), "3.11");
+    assert_eq!(initial.coverage.status, "complete-for-supported-subset");
+    assert!(!initial
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP1002"));
+
+    let no_op = session.check(std::slice::from_ref(&initial_file), "3.11");
+    assert_eq!(no_op, initial, "a no-op revision retains identical results");
+
+    let unsupported_target = session.check(std::slice::from_ref(&initial_file), "3.14");
+    assert_eq!(
+        unsupported_target,
+        check(std::slice::from_ref(&initial_file), "3.14"),
+        "changing target Python must select the same model state as a fresh session"
+    );
+    assert_eq!(unsupported_target.coverage.status, "incomplete");
+    assert!(unsupported_target
+        .diagnostics
+        .iter()
+        .any(|diagnostic| { diagnostic.code == "TP1002" && diagnostic.certainty != "definite" }));
+
+    let edited_file = file("resource.close()");
+    let edited = session.check(std::slice::from_ref(&edited_file), "3.11");
+    assert_eq!(edited, check(std::slice::from_ref(&edited_file), "3.11"));
+    assert_eq!(edited.coverage.status, "complete-for-supported-subset");
+    assert!(!edited
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP1002"));
+
+    let removed = session.check(&[], "3.11");
+    assert_eq!(removed, check(&[], "3.11"));
+    assert!(
+        removed.diagnostics.is_empty(),
+        "root removal drops stale findings"
+    );
+
+    let readded_file = SourceFile::new(
+        "phase03.py",
+        "phase03",
+        format!(
+            "{RESOURCE}@resource(closed_by='close')\nclass Broken:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Broken()\n    resource.close()\n"
+        ),
+    );
+    let readded = session.check(std::slice::from_ref(&readded_file), "3.11");
+    assert_eq!(readded, check(std::slice::from_ref(&readded_file), "3.11"));
+    assert!(readded.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "TP1002" && diagnostic.message.ends_with("on raise")
+    }));
+}
+
+#[test]
+fn v03_24_import_cycle_file_order_preserves_deterministic_cleanup_results() {
+    let files = [
+        SourceFile::new("left.py", "left", "from right import helper\nfrom models import C\ndef leak():\n    resource = C()\n    helper()\n"),
+        SourceFile::new("models.py", "models", RESOURCE),
+        SourceFile::new("right.py", "right", "from left import leak\ndef helper():\n    pass\n"),
+    ];
+    let baseline = check(&files, "3.11");
+    assert_eq!(baseline.coverage.status, "incomplete", "{baseline:#?}");
+    assert!(baseline
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("import cycle")));
+    let duties = baseline
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        duties.len(),
+        2,
+        "the call has fallthrough and raise exits: {baseline:#?}"
+    );
+    assert!(duties.iter().all(|diagnostic| {
+        diagnostic.related[0].file == "left.py" && diagnostic.related[0].line == 4
+    }));
+    let completions = duties
+        .iter()
+        .filter_map(|diagnostic| {
+            ["fallthrough", "raise"]
+                .into_iter()
+                .find(|completion| diagnostic.message.ends_with(&format!("on {completion}")))
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        completions,
+        std::collections::BTreeSet::from(["fallthrough", "raise"])
+    );
+
+    for order in [
+        [files[2].clone(), files[1].clone(), files[0].clone()],
+        [files[1].clone(), files[0].clone(), files[2].clone()],
+    ] {
+        assert_eq!(
+            check(&order, "3.11"),
+            baseline,
+            "input file order must not affect cycle results"
+        );
+    }
+}
+
+#[test]
+fn v03_26_coroutine_and_context_budget_cross_product_keeps_each_boundary_exact() {
+    for coroutine_count in [128, 129] {
+        for manager_count in [3, 4] {
+            let managers = (0..manager_count)
+                .map(|_| "UnknownManager()")
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut source = format!(
+                "{RESOURCE}async def hold(resource: Borrowed[C]):\n    pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with {managers}:\n"
+            );
+            for index in 0..coroutine_count {
+                source.push_str(&format!("        pending_{index} = hold(resource)\n"));
+            }
+            source.push_str("        resource.close()\n");
+
+            let result = check_source(&source);
+            let coroutine_budget_exceeded = result
+                .coverage
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("pending coroutine budget exceeded"));
+            let exit_budget_exceeded =
+                result.coverage.reasons.iter().any(|reason| {
+                    reason.contains("context-manager exit partition budget exceeded")
+                });
+            assert_eq!(
+                coroutine_budget_exceeded,
+                coroutine_count == 129,
+                "coroutines={coroutine_count}, managers={manager_count}: {result:#?}"
+            );
+            assert_eq!(
+                exit_budget_exceeded,
+                manager_count == 4,
+                "coroutines={coroutine_count}, managers={manager_count}: {result:#?}"
+            );
+            let duties = result
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.code == "TP1002")
+                .collect::<Vec<_>>();
+            assert!(
+                duties.iter().any(|diagnostic| diagnostic.certainty == "possible"),
+                "unknown async exit and retained captures must preserve a possible duty: coroutines={coroutine_count}, managers={manager_count}: {result:#?}"
+            );
+            assert!(
+                duties.iter().all(|diagnostic| diagnostic.certainty != "definite"),
+                "none of the four combinations may infer completed cleanup: coroutines={coroutine_count}, managers={manager_count}: {result:#?}"
             );
         }
     }
