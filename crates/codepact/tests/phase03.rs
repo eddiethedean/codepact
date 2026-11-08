@@ -1685,6 +1685,38 @@ fn v03_05_handler_expression_failure_still_runs_finally_cleanup() {
 }
 
 #[test]
+fn v03_05_scalar_handler_values_remain_unknown_through_finally() {
+    for handler_type in ["1", "None", "'not-an-exception'"] {
+        let source = format!(
+            "{RESOURCE}def cleanup():\n    resource = C()\n    try:\n        raise RuntimeError()\n    except {handler_type}:\n        pass\n    finally:\n        resource.close()\n"
+        );
+        let handler_line = source
+            .lines()
+            .position(|line| line.trim() == format!("except {handler_type}:"))
+            .unwrap()
+            + 1;
+        let report =
+            codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        assert!(
+            report.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001"
+                    && diagnostic.certainty == "unknown"
+                    && diagnostic.primary.line == handler_line
+            }),
+            "non-exception handler value `{handler_type}` must remain an unknown boundary: {report:#?}"
+        );
+        assert!(
+            !report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "TP1002"),
+            "the finally close still discharges the duty for `{handler_type}`: {report:#?}"
+        );
+        assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+    }
+}
+
+#[test]
 fn v03_09_owned_helper_leak_is_not_reported_again_by_the_caller() {
     let result = check_source(&format!(
         "{RESOURCE}def leak(resource: Owned[C]):\n    pass\ndef caller():\n    resource = C()\n    leak(resource)\n"
@@ -2604,6 +2636,56 @@ fn v03_16_loop_fixed_point_budget_keeps_cleanup_incomplete() {
             diagnostic.code == "TP1002" && diagnostic.certainty != "definite"
         }),
         "{result:#?}"
+    );
+}
+
+#[test]
+fn v03_16_nested_loop_fixed_point_budget_keeps_candidate_duty_unknown() {
+    let mut source = format!("{RESOURCE}def cleanup(outer, inner):\n    value_0 = C()\n");
+    for index in 1..=20 {
+        source.push_str(&format!("    value_{index} = None\n"));
+    }
+    source.push_str("    while outer:\n        while inner:\n");
+    for index in (1..=20).rev() {
+        source.push_str(&format!(
+            "            value_{index} = value_{}\n",
+            index - 1
+        ));
+    }
+    source.push_str("        value_20.close()\n");
+
+    let report = codepact::check_report(
+        &[SourceFile::new("phase03.py", "phase03", source.clone())],
+        "3.11",
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+    assert!(
+        report
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("loop fixed-point budget exceeded")),
+        "nested fixed-point widening must remain visible: {report:#?}"
+    );
+    let acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "value_0 = C()")
+        .unwrap()
+        + 1;
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert!(
+        leaks.iter().any(|diagnostic| {
+            diagnostic.certainty != "definite"
+                && diagnostic
+                    .related
+                    .iter()
+                    .any(|span| span.line == acquisition_line)
+        }),
+        "nested widening must preserve the candidate acquisition as an uncertain duty: {report:#?}"
     );
 }
 
@@ -3637,6 +3719,53 @@ fn v03_10_contextlib_close_raise_replaces_body_raise_without_discharging() {
 }
 
 #[test]
+fn v03_10_outer_reviewed_manager_unwinds_after_inner_close_raises() {
+    let source = "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n@resource(closed_by='close')\nclass Failing:\n    def close(self):\n        raise OSError()\ndef cleanup():\n    outer = C()\n    inner = Failing()\n    try:\n        with closing(outer), closing(inner):\n            raise ValueError()\n    except OSError:\n        pass\n";
+    let cleanup_line = source
+        .lines()
+        .position(|line| line.trim() == "def cleanup():")
+        .unwrap()
+        + 1;
+    let inner_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "inner = Failing()")
+        .unwrap()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        leaks.len(),
+        1,
+        "outer cleanup must run after inner exit fails: {report:#?}"
+    );
+    assert_eq!(leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(
+        leaks[0].completion.as_deref(),
+        Some("fallthrough"),
+        "{report:#?}"
+    );
+    assert_eq!(leaks[0].primary.line, cleanup_line, "{report:#?}");
+    assert_eq!(
+        leaks[0]
+            .related
+            .iter()
+            .map(|span| span.line)
+            .collect::<Vec<_>>(),
+        [inner_acquisition_line],
+        "the failed inner close retains only its own duty: {report:#?}"
+    );
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
+    );
+}
+
+#[test]
 fn v03_10_unknown_suppression_cannot_hide_the_resource_exit() {
     let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager():\n        raise RuntimeError()\n";
     let result = check_source(source);
@@ -4274,41 +4403,73 @@ fn v03_02_borrowed_alias_cannot_be_closed_directly_or_through_a_wrapper() {
 
 #[test]
 fn v03_06_branch_paths_sharing_one_return_are_grouped_per_duty() {
-    let result = check_source(&format!(
+    let source = format!(
         "{RESOURCE}def cleanup(flag):\n    first = C()\n    second = C()\n    if flag:\n        first.close()\n    return\n"
-    ));
-    let leaks = result
+    );
+    let first_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "first = C()")
+        .unwrap()
+        + 1;
+    let second_acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "second = C()")
+        .unwrap()
+        + 1;
+    let close_line = source
+        .lines()
+        .position(|line| line.trim() == "first.close()")
+        .unwrap()
+        + 1;
+    let return_line = source
+        .lines()
+        .position(|line| line.trim() == "return")
+        .unwrap()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let leaks = report
         .diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.code == "TP1002")
         .collect::<Vec<_>>();
-    assert_eq!(leaks.len(), 2, "{result:#?}");
-    assert!(
-        leaks.iter().all(|diagnostic| {
-            diagnostic.message.ends_with("on return") && diagnostic.primary.line == 11
-        }),
-        "{result:#?}"
-    );
-    assert!(
-        leaks.iter().any(|diagnostic| {
-            diagnostic.certainty == "possible"
-                && diagnostic.related.len() == 2
-                && diagnostic.related[0].line == 7
-                && diagnostic.related[1].line == 10
-        }),
-        "{result:#?}"
-    );
-    assert!(
-        leaks.iter().any(|diagnostic| {
-            diagnostic.certainty == "definite"
-                && diagnostic.related.len() == 1
-                && diagnostic.related[0].line == 8
-        }),
-        "{result:#?}"
+    assert_eq!(leaks.len(), 2, "{report:#?}");
+    let snapshots = leaks
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.certainty.as_str(),
+                diagnostic.completion.as_deref(),
+                diagnostic.primary.line,
+                diagnostic
+                    .related
+                    .iter()
+                    .map(|span| span.line)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        snapshots,
+        std::collections::BTreeSet::from([
+            (
+                "possible",
+                Some("return"),
+                return_line,
+                vec![first_acquisition_line, close_line],
+            ),
+            (
+                "definite",
+                Some("return"),
+                return_line,
+                vec![second_acquisition_line],
+            ),
+        ]),
+        "each duty is reported once at the shared exit with exact witnesses: {report:#?}"
     );
     assert_eq!(
-        result.coverage.status, "complete-for-supported-subset",
-        "{result:#?}"
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
     );
 }
 
