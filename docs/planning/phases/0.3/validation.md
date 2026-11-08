@@ -101,12 +101,35 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 
 ## Candidate-local checks
 
-On 2026-11-01, the phase 0.3 worktree for candidate `e3c3d7bed41b7304b3278390edd6d70f99ba2d6f` passed `uv run --locked make check` locally on CPython 3.14.3, macOS 26.5.2 ARM64. `cargo test --workspace --locked` passed 59 library, 51 CLI, 60 fixture, 26 lifecycle regression and 151 phase tests; 14 Python tests passed. Workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel/sdist builds and install smoke checks, dependency audit, MSRV check, inspector behavior, documentation links and the warnings-as-errors docs build also passed. The Python quality suite (including all 14 Python tests, typing, lint and checker fixtures) also passed on CPython 3.11.15, 3.12.13 and 3.13.16; package build/install smoke checks ran in the full CPython 3.14.3 check. V03-01 verifies that failed acquisition argument evaluation creates no object duty, that a later failing initializer preserves an earlier duty, and that unsupported custom `__new__` effects leave that duty possible with a visible boundary. V03-02 verifies that Borrowed aliases are rejected at the exact Owned return site without fabricating a leak or unknown escape. V03-03/05/06/07 assert exact nested cleanup and branching finally return/raise origins; the nine-case nested cleanup matrix confirms completion replacement and exact exit/acquisition spans, and the finally close-then-replacement case confirms only the surviving open result is handed off. V03-05 also verifies that shadowing the `BaseException` handler name cannot hide an unmatched raise and preserves separate possible constructor and explicit raise witnesses for unresolved custom inheritance. V03-09 checks Owned helper close/return/leak/raise outcomes and Borrowed duty retention across helper exits; V03-10 checks reviewed context cleanup on return, break and continue, unknown-manager duties across those transfers, and ordered exit outcomes; V03-19 checks unknown and reviewed async manager entry, exit, return/break/continue and cancellation outcomes. V03-13 covers escaped bound-method callback duties; V03-14/15 exercise generated loop paths through the 16-iteration bound, loop break/continue/else routing including transfers originating in `finally`, and repeated allocation exits. V03-16 combines an over-budget alias set with loop cleanup and confirms every candidate duty remains represented without becoming definite. V03-17/18 assert cancellation completion and handler uncertainty; V03-22 checks pass/close/raise body edits against fresh results and executes only the affected flow query; V03-23 checks root removal/re-addition, stale finding removal, no-op revision stability, and moved acquisition/Owned-annotation spans against fresh results. V03-25 verifies CLI and Rust result parity for selected contextlib model revisions; V03-26 combines coroutine capture and async exit-partition exhaustion while retaining an uncertain duty. The two tutorial fixtures were rerun with the source CLI and matched the documented definite synchronous leak and cancellation-possible async findings. Separate six-case runtime model results and source hashes are in the [contextlib conformance record](contextlib-conformance.md). The current measurements are recorded in the [performance record](performance.md). This local automation evidence does not qualify behavior or pass any gate; remaining phase-specific evidence and maintainer semantic acceptance are pending.
+On 2026-11-07, candidate `0f325e5807a3851ed0e1eef5edb811c5d387e179` passed
+`uv run --locked make check` locally on CPython 3.14.3, macOS 26.5.2 ARM64.
+`cargo test --workspace --locked` passed 59 library, 51 CLI, 60 fixture, 26
+lifecycle regression and 154 phase tests; all 14 Python tests passed. Formatting,
+workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and
+source builds and install smokes, dependency audits, Rust 1.96 checks/package
+test/install smoke, inspector behavior, documentation links and the
+warnings-as-errors docs build also passed. Exact-commit Quality and Release
+workflow results, the downloaded artifact inventory and strict Twine checks
+are recorded in the [release evidence record](../../../releases/0.3.0-evidence.md).
 
-The current exact candidate's Quality and non-publishing Release workflow results, local check results, downloaded artifact inventory and strict Twine recheck are recorded in the [release evidence record](../../../releases/0.3.0-evidence.md). These automation results do not themselves qualify behavior or pass a gate.
+V03-03's `v03_03_three_nested_finalizers_preserve_single_close_and_replacement_matrix`
+checks 60 three-level finalizer combinations for completion, duty origin and
+exit spans. V03-14's
+`v03_14_outer_finally_transfers_target_the_outer_loop_after_inner_exhaustion`
+checks that outer-target break and continue retain their intended loop routing
+and exact duty spans after the inner loop is exhausted. The remaining tests and
+their outstanding qualification work are mapped row by row above. The tutorial
+fixtures were rerun with the source CLI and matched the documented definite
+synchronous leak and cancellation-possible async findings. Separate runtime
+model outcomes and source hashes are in the [contextlib conformance
+record](contextlib-conformance.md). This is automation evidence only; it does
+not qualify behavior or pass any gate. Maintainer semantic acceptance and
+remaining phase-specific evidence are pending.
+
+The exact candidate's Quality and non-publishing Release workflow results, local check results, downloaded artifact inventory and strict Twine recheck are recorded in the [release evidence record](../../../releases/0.3.0-evidence.md). These automation results do not themselves qualify behavior or pass a gate.
 
 The [current 0.3 candidate performance record](performance.md) measures cleanup corpora, nested exceptions/loops, multiple managers and direct-await cancellation cases, plus lifecycle/inspection comparisons, query reuse, memory and budgets. Cold and edit medians at 250 and 1,000 resources are at or below the accepted [0.2 baseline](../0.2/performance.md); the 250-resource warm no-op sample is 1.04× baseline. Single-resource timings remain small and noisy. The maintainer's G4 review and any additional qualification measurements remain pending. A completed budget table is not an absolute latency guarantee.
 
 The runnable [candidate cleanup tutorial](cleanup-tutorial.md) demonstrates synchronous exit obligations and async cancellation findings with separate fixtures and expected CLI outcomes.
 
-The versioned candidate has passed inherited `make check`, installed-artifact checks, quality CI and D015's eight-target distribution workflow. The [release evidence](../../../releases/0.3.0-evidence.md) records exact revisions, workflow runs and artifact hashes. Complete the remaining V03 matrix and maintainer review of C01–C05, C07, CS01 and G1–G7 before tagging; record release authorization separately and G8 after authorized publication using the [common evidence template](../../release-evidence-template.md).
+The CodePact 0.3 candidate has passed `make check`, installed-artifact checks, Quality CI and D015's eight-target distribution workflow. The [release evidence](../../../releases/0.3.0-evidence.md) records exact revisions, workflow runs and artifact hashes. Complete the remaining V03 matrix and maintainer review of C01–C05, C07, CS01 and G1–G7 before tagging; record release authorization separately and G8 after authorized publication using the [common evidence template](../../release-evidence-template.md).
