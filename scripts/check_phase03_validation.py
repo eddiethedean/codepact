@@ -14,6 +14,14 @@ CODE_ROOTS = (
     Path("crates/codepact/tests"),
     Path("tests"),
 )
+RUST_TEST = re.compile(
+    r"(?m)^\s*#\[test\]\s*(?:^\s*#\[[^\]]+\]\s*)*"
+    r"^\s*(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("
+)
+RUST_FUNCTION = re.compile(
+    r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?"
+    r"fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>]+>\s*)?\("
+)
 
 
 def table_section(text: str, heading: str) -> str:
@@ -81,12 +89,37 @@ def validation_errors(root: Path) -> list[str]:
         list[str], re.findall(r"::([A-Za-z_][A-Za-z0-9_]*)", coverage_text)
     )
     references = set(test_references + qualified_references)
-    source_text = "\n".join(
-        path.read_text(encoding="utf-8", errors="replace")
+    source_files = [
+        path
         for code_root in CODE_ROOTS
         for path in (root / code_root).rglob("*")
         if path.is_file() and path.suffix in {".rs", ".py"}
+    ]
+    source_text = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace") for path in source_files
     )
+    rust_tests: set[str] = set()
+    rust_functions: set[str] = set()
+    for path in source_files:
+        if path.suffix != ".rs":
+            continue
+        rust_text = path.read_text(encoding="utf-8", errors="replace")
+        rust_functions.update(RUST_FUNCTION.findall(rust_text))
+        if "tests" in path.parts:
+            rust_tests.update(RUST_TEST.findall(rust_text))
+    stale_tests = sorted(set(test_references) - rust_tests)
+    if stale_tests:
+        errors.append(
+            "coverage map references missing Rust tests: " + ", ".join(stale_tests)
+        )
+
+    stale_qualified = sorted(set(qualified_references) - rust_functions)
+    if stale_qualified:
+        errors.append(
+            "coverage map references missing Rust functions: "
+            + ", ".join(stale_qualified)
+        )
+
     stale = sorted(
         reference for reference in references if reference not in source_text
     )

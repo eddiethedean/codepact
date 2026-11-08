@@ -41,7 +41,7 @@ def write_matrix(
     source_dir = root / "crates/codepact/tests"
     source_dir.mkdir(parents=True)
     definitions = [
-        f"fn {identifier.lower().replace('-', '_')}_case() {{}}"
+        f"#[test]\nfn {identifier.lower().replace('-', '_')}_case() {{}}"
         for identifier in EXPECTED_ROWS
         if identifier != missing
     ]
@@ -65,6 +65,18 @@ class Phase03ValidationTest(unittest.TestCase):
             write_matrix(root, stale=True)
             errors = validation_errors(root)
             self.assertTrue(any("v03_01_missing_case" in error for error in errors))
+
+    def test_ordinary_function_does_not_satisfy_a_test_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_matrix(root, stale=True)
+            source = root / "crates/codepact/tests/phase03.rs"
+            with source.open("a", encoding="utf-8") as test_file:
+                test_file.write("\nfn v03_01_missing_case() {}\n")
+            errors = validation_errors(root)
+            self.assertTrue(
+                any("missing Rust tests" in error for error in errors), errors
+            )
 
 
 if __name__ == "__main__":

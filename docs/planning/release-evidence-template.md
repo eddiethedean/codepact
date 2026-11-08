@@ -4,6 +4,8 @@ Copy this template to a versioned release record when a candidate exists. Placeh
 
 The accountable maintainer may fill every owner, validator, reviewer and approver role under the [maintainer authority policy](release-gates.md#maintainer-authority). No additional reviewer or independent-review waiver is required. Reviewer columns record who assessed the evidence; they do not require a different person from its author.
 
+For every gate marked Pass, record the accountable maintainer's name and ISO date in its signoff column. The release checker enforces this before tagging; optional reviewers may be listed alongside the maintainer.
+
 ## Candidate
 
 - Version and phase:

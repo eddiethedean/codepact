@@ -57,9 +57,11 @@ runtime conformance evidence where applicable. None of these entries is a
 qualification Pass.
 
 `make check` runs `scripts/check_phase03_validation.py` to require all 26 IDs in
-both tables and resolve the 60 named `v03_*` tests and qualified source symbols
-to code. Its unit tests reject missing rows and stale test names. This guards
-matrix-index drift; it does not qualify behavior or pass a gate.
+both tables, require all 60 named `v03_*` references to be declared Rust tests,
+and resolve qualified `::` references to Rust functions. Its unit tests reject
+missing rows, stale test references and ordinary functions substituted for
+tests. This guards matrix-index drift; it does not qualify behavior or pass a
+gate.
 
 | ID | Current automated paths | Remaining qualification evidence |
 | --- | --- | --- |

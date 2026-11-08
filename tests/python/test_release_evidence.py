@@ -23,11 +23,13 @@ def write_candidate(
     )
     (root / "docs/planning/phases/0.2-lifecycle.md").write_text(phase_gates)
     common = "\n".join(
-        f"| G{number} | {'Pending' if pending == f'G{number}' else 'Pass'} | Evidence recorded. | `eddiethedean` |"
+        f"| G{number} | {'Pending' if pending == f'G{number}' else 'Pass'} | "
+        "Evidence recorded. | `eddiethedean` / 2026-11-08 |"
         for number in range(1, 8)
     )
     phase = "\n".join(
-        f"| L{number:02} | {'Pending' if pending == f'L{number:02}' else 'Pass'} | Fixture and result. | `eddiethedean` |"
+        f"| L{number:02} | {'Pending' if pending == f'L{number:02}' else 'Pass'} | "
+        "Fixture and result. | `eddiethedean` / 2026-11-08 |"
         for number in range(1, 7)
     )
     record = (
@@ -35,7 +37,8 @@ def write_candidate(
         "## Candidate\n\n"
         f"- Version and phase: {VERSION}\n"
         f"- Candidate commit: `{commit}`\n\n"
-        "- Accountable maintainer, author, validator, reviewer and release approver: `eddiethedean`.\n\n"
+        "- Accountable maintainer, author, validator, reviewer and release approver: "
+        "`eddiethedean`.\n\n"
         "## Common gates\n\n"
         "| Gate | Status | Evidence | Reviewer / date |\n"
         "| --- | --- | --- | --- |\n"
@@ -63,6 +66,51 @@ class ReleaseEvidenceTest(unittest.TestCase):
             write_candidate(root, pending="L04")
             errors = release_evidence_errors(root, VERSION)
             self.assertIn("L04 status is Pending, expected Pass", errors)
+
+    def test_passed_gate_requires_accountable_maintainer_signoff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_candidate(root)
+            evidence = root / f"docs/releases/{VERSION}-evidence.md"
+            text = evidence.read_text(encoding="utf-8")
+            text = text.replace(
+                "| L01 | Pass | Fixture and result. | `eddiethedean` / 2026-11-08 |",
+                "| L01 | Pass | Fixture and result. | "
+                "`another-reviewer` / 2026-11-08 |",
+            )
+            evidence.write_text(text, encoding="utf-8")
+            errors = release_evidence_errors(root, VERSION)
+            self.assertIn(
+                "L01 Pass requires the accountable maintainer in its signoff", errors
+            )
+
+    def test_passed_gate_requires_a_valid_signoff_date(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_candidate(root)
+            evidence = root / f"docs/releases/{VERSION}-evidence.md"
+            text = evidence.read_text(encoding="utf-8")
+            text = text.replace(
+                "| G1 | Pass | Evidence recorded. | `eddiethedean` / 2026-11-08 |",
+                "| G1 | Pass | Evidence recorded. | `eddiethedean` / Pending |",
+            )
+            evidence.write_text(text, encoding="utf-8")
+            errors = release_evidence_errors(root, VERSION)
+            self.assertIn("G1 Pass requires an ISO date in its signoff", errors)
+
+    def test_passed_gate_rejects_an_invalid_signoff_date(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_candidate(root)
+            evidence = root / f"docs/releases/{VERSION}-evidence.md"
+            text = evidence.read_text(encoding="utf-8")
+            text = text.replace(
+                "| G1 | Pass | Evidence recorded. | `eddiethedean` / 2026-11-08 |",
+                "| G1 | Pass | Evidence recorded. | `eddiethedean` / 2026-99-99 |",
+            )
+            evidence.write_text(text, encoding="utf-8")
+            errors = release_evidence_errors(root, VERSION)
+            self.assertIn("G1 signoff has an invalid ISO date", errors)
 
     def test_missing_evidence_record_blocks_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -152,7 +200,8 @@ class ReleaseEvidenceTest(unittest.TestCase):
                 ["git", "rev-parse", "HEAD"], cwd=root, text=True
             ).strip()
             self.assertIn(
-                "tag changes files beyond its release evidence record since the candidate",
+                "tag changes files beyond its release evidence record since the "
+                "candidate",
                 release_evidence_errors(root, VERSION, tag_commit=tag_commit),
             )
 

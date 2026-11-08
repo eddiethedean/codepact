@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import re
 import subprocess
 from pathlib import Path
@@ -20,8 +21,8 @@ def section(text: str, title: str) -> str:
     return text[start : start + end.start()] if end else text[start:]
 
 
-def table_rows(text: str, title: str) -> dict[str, tuple[str, str]]:
-    rows: dict[str, tuple[str, str]] = {}
+def table_rows(text: str, title: str) -> dict[str, tuple[str, str, str]]:
+    rows: dict[str, tuple[str, str, str]] = {}
     for line in section(text, title).splitlines():
         if not line.strip().startswith("|"):
             continue
@@ -32,13 +33,28 @@ def table_rows(text: str, title: str) -> dict[str, tuple[str, str]]:
         if gate:
             gate_id = gate.group(1)
             rows[gate_id] = (
-                ("Duplicate", "") if gate_id in rows else (cells[1], cells[2])
+                ("Duplicate", "", "")
+                if gate_id in rows
+                else (cells[1], cells[2], cells[3] if len(cells) > 3 else "")
             )
     return rows
 
 
 def is_pass(status: str) -> bool:
     return status.lower().split(maxsplit=1)[0] == "pass" if status else False
+
+
+def maintainer_signoff_error(gate: str, signoff: str, maintainer: str) -> str | None:
+    if not re.search(rf"(?<![\w-]){re.escape(maintainer)}(?![\w-])", signoff):
+        return f"{gate} Pass requires the accountable maintainer in its signoff"
+    date_match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", signoff)
+    if date_match is None:
+        return f"{gate} Pass requires an ISO date in its signoff"
+    try:
+        date.fromisoformat(date_match.group(1))
+    except ValueError:
+        return f"{gate} signoff has an invalid ISO date"
+    return None
 
 
 def required_phase_gates(root: Path, version: str) -> list[str]:
@@ -110,13 +126,30 @@ def release_evidence_errors(
                     "since the candidate"
                 )
 
+    maintainer_match = re.search(
+        r"^\s*-\s*Accountable maintainer[^:]*:\s*`([^`]+)`\.?\s*$",
+        candidate,
+        re.M,
+    )
+    if maintainer_match is None:
+        errors.append("candidate section must identify the accountable maintainer")
+        accountable_maintainer = ""
+    else:
+        accountable_maintainer = maintainer_match.group(1)
+
     common = table_rows(text, "Common gates")
     for gate in (f"G{number}" for number in range(1, 8)):
-        status, evidence = common.get(gate, ("Missing", ""))
+        status, evidence, signoff = common.get(gate, ("Missing", "", ""))
         if not is_pass(status):
             errors.append(f"{gate} status is {status}, expected Pass")
         if not evidence:
             errors.append(f"{gate} has no evidence")
+        if is_pass(status) and accountable_maintainer:
+            signoff_error = maintainer_signoff_error(
+                gate, signoff, accountable_maintainer
+            )
+            if signoff_error:
+                errors.append(signoff_error)
     g7_evidence = common.get("G7", ("", ""))[1].lower()
     if "maintainer explicitly approved" not in g7_evidence:
         errors.append("G7 evidence must record that the maintainer explicitly approved")
@@ -128,11 +161,17 @@ def release_evidence_errors(
     if not phase:
         phase = table_rows(text, "Phase gates")
     for gate in required:
-        status, evidence = phase.get(gate, ("Missing", ""))
+        status, evidence, signoff = phase.get(gate, ("Missing", "", ""))
         if not is_pass(status):
             errors.append(f"{gate} status is {status}, expected Pass")
         if not evidence:
             errors.append(f"{gate} has no evidence")
+        if is_pass(status) and accountable_maintainer:
+            signoff_error = maintainer_signoff_error(
+                gate, signoff, accountable_maintainer
+            )
+            if signoff_error:
+                errors.append(signoff_error)
     return errors
 
 
