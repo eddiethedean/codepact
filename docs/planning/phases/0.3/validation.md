@@ -56,6 +56,11 @@ and span assertions, fixture-model provenance, differential/session checks or
 runtime conformance evidence where applicable. None of these entries is a
 qualification Pass.
 
+`make check` runs `scripts/check_phase03_validation.py` to require all 26 IDs in
+both tables and resolve the 60 named `v03_*` tests and qualified source symbols
+to code. Its unit tests reject missing rows and stale test names. This guards
+matrix-index drift; it does not qualify behavior or pass a gate.
+
 | ID | Current automated paths | Remaining qualification evidence |
 | --- | --- | --- |
 | V03-01 | `tests/phase03.rs`: local acquisition, failed initialization and `v03_01_constructor_argument_failure_creates_no_object_duty`; a failing later constructor preserves the earlier acquisition duty on the raise exit with exact acquisition span and no duty for the failed object; `v03_01_custom_new_boundary_preserves_the_prior_duty_as_possible` asserts the unsupported custom allocator boundary and keeps the prior duty possible; separate return/raise exits assert distinct findings, certainty and acquisition/exit spans; two duties across two return exits assert exact witness count and acquisition spans | Remaining cross-exit grouping snapshots and maintainer qualification |
@@ -101,10 +106,10 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 
 ## Candidate-local checks
 
-On 2026-11-08, candidate `5a1ba0c33c352cc3df4ba073163470394ac16c3b` passed
+On 2026-11-08, the current 0.3 candidate passed
 `uv run --locked make check` locally on CPython 3.14.3, macOS 26.5.2 ARM64.
 `cargo test --workspace --locked` passed 59 library, 51 CLI, 60 fixture, 26
-lifecycle regression and 166 phase tests (362 Rust tests total); all 14 Python tests passed. Formatting,
+lifecycle regression and 166 phase tests (362 Rust tests total); all 17 Python tests passed. Formatting,
 workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and
 source builds and install smokes, dependency audits, Rust 1.96 checks/package
 test/install smoke, inspector behavior, documentation links and the

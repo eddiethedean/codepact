@@ -18,6 +18,7 @@ check-rust:
 
 check-python:
 	$(PYTHON) scripts/generate_identifier_tables.py --check
+	$(PYTHON) scripts/check_phase03_validation.py
 	PYTHONPATH=python $(PYTHON) -m unittest discover -s tests/python -v
 	basedpyright
 	ruff check python/codepact scripts
