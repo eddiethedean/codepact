@@ -1312,6 +1312,31 @@ fn v03_05_handler_type_expression_effects_reach_matched_and_unmatched_paths() {
 }
 
 #[test]
+fn v03_05_handler_expression_failure_still_runs_finally_cleanup() {
+    let report = codepact::check_report(
+        &[SourceFile::new(
+            "phase03.py",
+            "phase03",
+            format!(
+                "{RESOURCE}def handler_type():\n    raise RuntimeError()\ndef cleanup():\n    resource = C()\n    try:\n        raise ValueError()\n    except handler_type():\n        pass\n    finally:\n        resource.close()\n"
+            ),
+        )],
+        "3.11",
+    );
+    assert!(
+        !report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1002"),
+        "a failing handler-expression path must still cross finally cleanup: {report:#?}"
+    );
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
+    );
+}
+
+#[test]
 fn v03_09_owned_helper_leak_is_not_reported_again_by_the_caller() {
     let result = check_source(&format!(
         "{RESOURCE}def leak(resource: Owned[C]):\n    pass\ndef caller():\n    resource = C()\n    leak(resource)\n"

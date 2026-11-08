@@ -1,6 +1,6 @@
 # 0.3 cleanup specification
 
-Status: **Bounded implementation is in the candidate; maintainer semantic acceptance and release qualification remain pending.** This is the review oracle for [CL01–CL08 and C01–C05/C07/CS01](../0.3-cleanup.md). The [V03 matrix](validation.md) defines required evidence. Preserve the [0.2 released semantics](../0.2/specification.md) except where this proposal explicitly extends them.
+Status: **Bounded implementation is in the candidate; the maintainer accepted the proposed CL01 semantic defaults on 2026-11-07. Technical and release qualification remain pending.** This is the accepted semantic oracle for [CL01–CL08 and C01–C05/C07/CS01](../0.3-cleanup.md). The [V03 matrix](validation.md) defines required evidence. Preserve existing CodePact behavior except where this specification explicitly extends it.
 
 ## Supported slice
 
@@ -154,4 +154,4 @@ Retain check exits: 1 for definite violations/declaration errors, 0 for no defin
 
 ## Decision record required before acceptance
 
-All checkpoints in the [phase plan](../0.3-cleanup.md#decision-checkpoints) remain pending. The [CL01 decision record](decision-record.md) lists each proposed option, alternative, V03 evidence, limitation, reconsideration trigger and maintainer/date field. The maintainer may implement, validate and review these decisions and models alone under the [maintainer authority policy](../../release-gates.md#maintainer-authority); an additional reviewer is optional. A proposed default is not a release decision or model support claim.
+The maintainer accepted all proposed CL01 defaults on 2026-11-07; see the [CL01 decision record](decision-record.md) for the choices, alternatives, evidence, limitations and reconsideration triggers. That decision does not pass technical qualification gates, approve a release, or authorize a tag or publication. The maintainer may implement, validate and review the remaining evidence alone under the [maintainer authority policy](../../release-gates.md#maintainer-authority).
