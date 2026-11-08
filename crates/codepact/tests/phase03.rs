@@ -6025,3 +6025,85 @@ fn v03_26_coroutine_and_context_budget_cross_product_keeps_each_boundary_exact()
         }
     }
 }
+
+#[test]
+fn owned_factory_calls_keep_distinct_allocation_identities() {
+    let resource = RESOURCE.replace(
+        "def close(self): pass",
+        "def close(self): pass\n    def use(self): pass",
+    );
+    let result = check_source(&format!(
+        "{resource}def make() -> Owned[C]:\n    return C()\ndef caller():\n    first = make()\n    second = make()\n    first.close()\n    second.use()\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"),
+        "closing one factory result must not close another: {result:#?}"
+    );
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "definite"
+                && diagnostic.message.ends_with("on fallthrough")
+        }),
+        "the second factory result retains its own cleanup duty: {result:#?}"
+    );
+}
+
+#[test]
+fn unawaited_nested_coroutine_does_not_apply_cleanup() {
+    let result = check_source(&format!(
+        "{RESOURCE}async def cleanup(resource):\n    resource.close()\nasync def wrapper(resource):\n    cleanup(resource)\nasync def caller():\n    resource = C()\n    await wrapper(resource)\n    resource.use()\n    resource.close()\n"
+    ));
+    assert!(
+        !result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP1001"),
+        "an unawaited nested coroutine cannot establish cleanup: {result:#?}"
+    );
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP9001"),
+        "the unawaited nested coroutine must remain a visible boundary: {result:#?}"
+    );
+}
+
+#[test]
+fn exception_target_is_unbound_after_handler_exit() {
+    let result = check_source(&format!(
+        "{RESOURCE}def caller():\n    resource = C()\n    try:\n        raise ValueError()\n    except ValueError as caught:\n        caught = resource\n    caught.close()\n"
+    ));
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "possible"
+        }),
+        "the cleanup after a deleted exception target cannot discharge the duty: {result:#?}"
+    );
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP9001"),
+        "the post-handler unbound name must remain visible as an unsupported effect: {result:#?}"
+    );
+}
+
+#[test]
+fn raise_cause_failure_bypasses_the_original_exception_handler() {
+    let result = check_source(&format!(
+        "{RESOURCE}def fail():\n    raise TypeError()\ndef caller():\n    resource = C()\n    try:\n        raise ValueError() from fail()\n    except ValueError:\n        resource.close()\n"
+    ));
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.certainty == "definite"
+                && diagnostic.message.ends_with("on raise")
+        }),
+        "a failure while evaluating the explicit cause escapes past the ValueError handler: {result:#?}"
+    );
+}

@@ -65,6 +65,7 @@ struct MethodInvocation<'a> {
     keywords: &'a [CallKeyword],
     parent: &'a State,
     call_key: String,
+    call_site: String,
 }
 
 type ProjectFunctionMap = BTreeMap<(String, String), FunctionBody>;
@@ -104,7 +105,8 @@ struct State {
     pending_coroutine_result: Option<String>,
     close_origins: BTreeMap<String, Span>,
     duty_origins: BTreeMap<String, Span>,
-    awaiting_coroutine: bool,
+    awaited_call: Option<(String, SourceRange)>,
+    allocation_context: Vec<String>,
     pending_return_targets: Option<BTreeSet<String>>,
     pending_raises: Vec<FlowExit>,
     alive: bool,
@@ -113,6 +115,7 @@ struct State {
 #[derive(Clone, PartialEq, Eq)]
 struct CoroutineRecord {
     invocation: AstExpr,
+    file_path: String,
     captures: BTreeMap<String, CapturedCoroutinePlace>,
     range: SourceRange,
     consumed: bool,
@@ -244,6 +247,13 @@ fn expr_name(expr: &AstExpr) -> Option<&str> {
     } else {
         None
     }
+}
+
+fn is_awaited_call(expr: &AstExpr, file: &SourceFile, state: &State) -> bool {
+    state
+        .awaited_call
+        .as_ref()
+        .is_some_and(|(path, range)| path == &file.path && range == &expr.range)
 }
 
 fn called_method(expr: &AstExpr) -> Option<MethodCall<'_>> {
@@ -1474,6 +1484,7 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         keywords,
         parent,
         call_key,
+        call_site,
     } = invocation;
     let (module_function_bindings, module_class_bindings) =
         module_bindings_for_child(parent, definition);
@@ -1489,7 +1500,12 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         call_depth: parent.call_depth.saturating_add(1),
         control_depth: parent.control_depth,
         loop_depth: parent.loop_depth,
-        awaiting_coroutine: parent.awaiting_coroutine,
+        awaited_call: None,
+        allocation_context: {
+            let mut context = parent.allocation_context.clone();
+            context.push(call_site);
+            context
+        },
         target_python_version: parent.target_python_version.clone(),
         models: parent.models.clone(),
         scope_module: definition.file.module.clone(),
@@ -2400,6 +2416,7 @@ fn register_pending_coroutine(
     }
     let record = CoroutineRecord {
         invocation,
+        file_path: file.path.clone(),
         captures,
         range: expression.range,
         consumed: false,
@@ -2527,7 +2544,10 @@ fn consume_expr(
             let _ = id;
         }
         let before = env.clone();
-        env.awaiting_coroutine = true;
+        env.awaited_call = coroutine.as_ref().map_or_else(
+            || Some((file.path.clone(), awaited.range)),
+            |record| Some((record.file_path.clone(), record.invocation.range)),
+        );
         if let Some(record) = &coroutine {
             consume_expr(
                 &record.invocation,
@@ -2541,7 +2561,7 @@ fn consume_expr(
         } else {
             consume_expr(awaited, env, file, contracts, functions, result, depth + 1);
         }
-        env.awaiting_coroutine = before.awaiting_coroutine;
+        env.awaited_call = before.awaited_call.clone();
         if let Some(id) = &coroutine_id {
             if let Some(record) = env.coroutines.get_mut(id) {
                 record.consumed = true;
@@ -2576,7 +2596,6 @@ fn consume_expr(
                 .map(|(object, _)| object.clone())
                 .collect::<BTreeSet<_>>();
             let mut cancelled = before;
-            cancelled.awaiting_coroutine = env.awaiting_coroutine;
             cancelled.alive = true;
             cancelled.pending_raises.clear();
             if let Some(id) = &coroutine_id {
@@ -2875,7 +2894,7 @@ fn consume_expr(
                                 .as_ref()
                                 .is_some_and(|model| model.asynchronous);
                         if (definition.is_some_and(|definition| definition.is_async) || async_model)
-                            && !env.awaiting_coroutine
+                            && !is_awaited_call(expr, file, env)
                         {
                             if uncertain_receiver {
                                 let mut affected = vec![object.clone()];
@@ -3021,6 +3040,10 @@ fn consume_expr(
                                     keywords,
                                     parent: env,
                                     call_key: method_key,
+                                    call_site: format!(
+                                        "{}:{}:{}",
+                                        file.path, expr.range.start, expr.range.end
+                                    ),
                                 },
                                 FlowContext { functions, result },
                             );
@@ -3320,7 +3343,7 @@ fn consume_expr(
                             return;
                         }
                     };
-                if definition.is_async && !env.awaiting_coroutine {
+                if definition.is_async && !is_awaited_call(expr, file, env) {
                     register_pending_coroutine(
                         expr,
                         env,
@@ -3362,7 +3385,15 @@ fn consume_expr(
                     call_depth: env.call_depth.saturating_add(1),
                     control_depth: env.control_depth,
                     loop_depth: env.loop_depth,
-                    awaiting_coroutine: env.awaiting_coroutine,
+                    awaited_call: None,
+                    allocation_context: {
+                        let mut context = env.allocation_context.clone();
+                        context.push(format!(
+                            "{}:{}:{}",
+                            file.path, expr.range.start, expr.range.end
+                        ));
+                        context
+                    },
                     target_python_version: env.target_python_version.clone(),
                     models: env.models.clone(),
                     scope_module: definition.file.module.clone(),
@@ -4115,6 +4146,29 @@ fn exception_handler_match(
     }
 }
 
+fn clear_exception_target(state: &mut State, name: &str) {
+    state.places.remove(name);
+    state.unknown_places.remove(name);
+    state.coroutine_aliases.remove(name);
+    state.unknown_coroutine_aliases.remove(name);
+    state.function_bindings.remove(name);
+    state.class_bindings.remove(name);
+    state.shadowed_functions.insert(name.to_owned());
+    state.shadowed_classes.insert(name.to_owned());
+}
+
+fn clear_exception_target_from_outcomes(outcomes: &mut FlowResult, name: &str) {
+    for exit in outcomes
+        .returns
+        .iter_mut()
+        .chain(&mut outcomes.raises)
+        .chain(&mut outcomes.breaks)
+        .chain(&mut outcomes.continues)
+    {
+        clear_exception_target(&mut exit.state, name);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn execute_try(
     body: &[FlowStatement],
@@ -4235,7 +4289,7 @@ fn execute_try(
                 handler_state.shadowed_functions.insert(name.clone());
                 handler_state.shadowed_classes.insert(name.clone());
             }
-            let handler_outcomes = execute(
+            let mut handler_outcomes = execute(
                 &handler.body,
                 &mut handler_state,
                 file,
@@ -4244,6 +4298,10 @@ fn execute_try(
                 result,
                 depth + 1,
             );
+            if let Some(name) = &handler.name {
+                clear_exception_target(&mut handler_state, name);
+                clear_exception_target_from_outcomes(&mut handler_outcomes, name);
+            }
             pending.append(handler_outcomes);
             if handler_state.alive {
                 normal_states.push(handler_state);
@@ -5362,7 +5420,8 @@ fn execute_non_if_statement(
                             );
                             return None;
                         }
-                        let object = format!("{}:{}:{}", file.path, range.start, class);
+                        let context = env.allocation_context.join("/");
+                        let object = format!("{}:{}:{}:{}", file.path, range.start, class, context);
                         let previous_object_mask = env.objects.get(&object).copied();
                         let repeated_allocation = env.loop_depth > 0
                             && previous_object_mask
@@ -5471,6 +5530,10 @@ fn execute_non_if_statement(
                                             keywords,
                                             parent: env,
                                             call_key: init_key,
+                                            call_site: format!(
+                                                "{}:{}:{}",
+                                                file.path, range.start, range.end
+                                            ),
                                         },
                                         FlowContext { functions, result },
                                     );
@@ -5689,9 +5752,16 @@ fn execute_non_if_statement(
             env.alive = false;
             return Some(returned);
         }
-        FlowStatement::Raise { exception, .. } => {
+        FlowStatement::Raise {
+            exception, cause, ..
+        } => {
             if let Some(exception) = exception {
                 consume_expr(exception, env, file, contracts, functions, result, 0);
+            }
+            if env.alive {
+                if let Some(cause) = cause {
+                    consume_expr(cause, env, file, contracts, functions, result, 0);
+                }
             }
             if !env.alive {
                 return None;

@@ -167,6 +167,7 @@ pub(crate) enum FlowStatement {
     },
     Raise {
         exception: Option<AstExpr>,
+        cause: Option<AstExpr>,
         range: SourceRange,
     },
     BindFunction {
@@ -1035,6 +1036,10 @@ fn flow_statements_at(
                 Stmt::Raise(raise) => FlowStatement::Raise {
                     exception: raise
                         .exc
+                        .as_deref()
+                        .map(|value| expression(value, budget, 0)),
+                    cause: raise
+                        .cause
                         .as_deref()
                         .map(|value| expression(value, budget, 0)),
                     range: source_range(statement),
