@@ -728,6 +728,59 @@ fn v03_03_nested_finally_runs_cleanup_through_the_pending_raise() {
 }
 
 #[test]
+fn v03_03_nested_async_finalizers_keep_cancellation_duties_on_each_pending_exit() {
+    let prefix = "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\n";
+    for (case, body) in [
+        ("fallthrough", "pass"),
+        ("return", "return"),
+        ("raise", "raise ValueError()"),
+    ] {
+        let source = format!(
+            "{prefix}async def cleanup():\n    resource = C()\n    try:\n        {body}\n    finally:\n        try:\n            await resource.pause()\n        finally:\n            await resource.aclose()\n"
+        );
+        let acquisition_line = source
+            .lines()
+            .position(|line| line.trim() == "resource = C()")
+            .unwrap()
+            + 1;
+        let await_lines = source
+            .lines()
+            .enumerate()
+            .filter_map(|(index, line)| {
+                ["await resource.pause()", "await resource.aclose()"]
+                    .contains(&line.trim())
+                    .then_some(index + 1)
+            })
+            .collect::<Vec<_>>();
+        let report =
+            codepact::check_report(&[SourceFile::new("phase03.py", "phase03", &source)], "3.11");
+        let cancelled = report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.code == "TP1002" && diagnostic.completion.as_deref() == Some("cancelled")
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            !cancelled.is_empty(),
+            "{case} through nested awaited finalizers must retain cancellation duties: {report:#?}"
+        );
+        assert!(
+            cancelled.iter().all(|diagnostic| {
+                diagnostic.certainty == "possible"
+                    && diagnostic
+                        .related
+                        .iter()
+                        .any(|span| span.line == acquisition_line)
+                    && await_lines.contains(&diagnostic.primary.line)
+            }),
+            "cancellation findings must retain the duty origin and exact await site: {report:#?}"
+        );
+        assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+    }
+}
+
+#[test]
 fn v03_06_distinct_return_and_raise_exits_keep_separate_findings() {
     let result = check_source(&format!(
         "{RESOURCE}def leak(flag):\n    resource = C()\n    if flag:\n        return\n    raise RuntimeError()\n"
@@ -2860,11 +2913,11 @@ fn v03_16_context_exit_partition_budget_keeps_duties_unknown() {
 #[test]
 fn v03_26_coroutine_and_async_exit_budgets_keep_cleanup_unknown_together() {
     let managers = ["UnknownManager()"; 8].join(", ");
-    let mut source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def hold(resource: Borrowed[C]):\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n".to_owned();
+    let mut source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def hold(resource: Borrowed[C]):\n    await resource.pause()\nasync def cleanup(flag: bool):\n    resource = C()\n    while flag:\n        for attempt in (0, 1):\n".to_owned();
     for index in 0..129 {
-        source.push_str(&format!("    pending_{index} = hold(resource)\n"));
+        source.push_str(&format!("            pending_{index} = hold(resource)\n"));
     }
-    source.push_str(&format!("    async with {managers}:\n        pass\n"));
+    source.push_str(&format!("            async with {managers}:\n                break\n            break\n        break\n"));
 
     let result = check_source(&source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
