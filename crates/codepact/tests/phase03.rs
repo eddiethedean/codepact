@@ -4920,6 +4920,54 @@ fn v03_02_borrowed_helper_close_on_raise_keeps_the_callers_duty() {
 }
 
 #[test]
+fn v03_02_borrowed_helper_forwarding_chain_keeps_owner_duty_and_boundary() {
+    let source = format!(
+        "{RESOURCE}from contextlib import closing\ndef rejected(value: Borrowed[C]):\n    alias = value\n    with closing(alias):\n        pass\ndef middle(value: Borrowed[C]):\n    return rejected(value)\ndef outer(value: Borrowed[C]):\n    middle(value)\ndef owner():\n    owned = C()\n    outer(owned)\n    owned.close()\ndef leaked_owner():\n    owned = C()\n    outer(owned)\n"
+    );
+    let borrowed_line = source
+        .lines()
+        .position(|line| line.trim() == "with closing(alias):")
+        .unwrap()
+        + 1;
+    let leaked_owner_line = source[..source.rfind("    owned = C()").unwrap()]
+        .lines()
+        .count()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let borrowed_rejections = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP2001")
+        .collect::<Vec<_>>();
+    assert_eq!(borrowed_rejections.len(), 1, "{report:#?}");
+    assert_eq!(
+        borrowed_rejections[0].primary.line, borrowed_line,
+        "{report:#?}"
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP9001"),
+        "the invalid effect must remain visible through the forwarding chain: {report:#?}"
+    );
+    let owner_leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(owner_leaks.len(), 1, "{report:#?}");
+    assert_eq!(owner_leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(owner_leaks[0].related.len(), 1, "{report:#?}");
+    assert_eq!(
+        owner_leaks[0].related[0].line, leaked_owner_line,
+        "the forwarding chain must preserve the leaked caller's acquisition: {report:#?}"
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
+
+#[test]
 fn v03_06_branch_paths_sharing_one_return_are_grouped_per_duty() {
     let source = format!(
         "{RESOURCE}def cleanup(flag):\n    first = C()\n    second = C()\n    if flag:\n        first.close()\n    return\n"
