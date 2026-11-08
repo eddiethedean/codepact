@@ -1,9 +1,9 @@
 # Inspect a project with multiple files
 
-TypePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, which are supported in 0.2.0.
+CodePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, which are supported in 0.2.0.
 
 For a project-level evaluation path and lifecycle-checking limits, see
-[Adopting TypePact](adopting.md).
+[Adopting CodePact](adopting.md).
 
 ## Create the source files
 
@@ -31,14 +31,14 @@ Save its consumer as `src/client.py`:
 
 ## Supply both modules
 
-From `my-project`, install TypePact and inspect the two files:
+From `my-project`, install CodePact and inspect the two files:
 
 ```sh
-uv add typepact==0.2.0
-uv run typepact inspect-contracts --root src src/models.py src/client.py
+uv add codepact==0.3.0
+uv run codepact inspect-contracts --root src src/models.py src/client.py
 ```
 
-The root makes the files' module names `models` and `client`. TypePact resolves `from models import Connection` using the supplied `models.py`, then associates `read.conn` with `models.Connection` and its `close` lifecycle.
+The root makes the files' module names `models` and `client`. CodePact resolves `from models import Connection` using the supplied `models.py`, then associates `read.conn` with `models.Connection` and its `close` lifecycle.
 
 | Declaration | Base symbol | Lifecycle | Access |
 | --- | --- | --- | --- |

@@ -7,7 +7,7 @@ usually includes an explanation on standard error. In a JSON report, read both
 
 ## The command is unavailable after installation
 
-For a project installation, run `uv run typepact --version` from the project directory. For a standalone installation, use `uv tool install typepact-cli==0.2.0` and check that the uv tool directory is on your shell's PATH.
+For a project installation, run `uv run codepact --version` from the project directory. For a standalone installation, use `uv tool install codepact-cli==0.3.0` and check that the uv tool directory is on your shell's PATH.
 
 Both distributions require Python 3.11+. A CLI source build requires Rust 1.96+ and a linker; a compatible platform wheel includes the executable. If installation reports that no compatible wheel exists, confirm the operating system, architecture, and libc against the [platform matrix](availability.md#platform-and-runtime-evidence). See [installation](install.md) for source-build requirements.
 
@@ -17,12 +17,12 @@ The 0.1.0 executable provides `inspect-contracts` only. Install the current
 0.2.0 package to use lifecycle checking:
 
 ```sh
-uv add typepact==0.2.0
-uv run typepact check --root DIR
+uv add codepact==0.3.0
+uv run codepact check --root DIR
 ```
 
 An older command earlier on your `PATH` may shadow the project installation;
-check `uv run typepact --version` and the resolved executable path.
+check `uv run codepact --version` and the resolved executable path.
 
 ## Coverage is incomplete even though there are no errors
 
@@ -57,7 +57,7 @@ in [CI report handling](ci-reporting.md).
 
 ## A contract is nested inside a container
 
-TypePact reports incomplete coverage for annotations such as `list[Borrowed[Connection]]`, including nested uses of captured resource aliases. Container/field alias analysis belongs to later phases. Use direct parameter and return contracts within the supported subset; keep container declarations accurate and treat the diagnostic as an analysis boundary.
+CodePact reports incomplete coverage for annotations such as `list[Borrowed[Connection]]`, including nested uses of captured resource aliases. Container/field alias analysis belongs to later phases. Use direct parameter and return contracts within the supported subset; keep container declarations accurate and treat the diagnostic as an analysis boundary.
 
 Literal `None` parameters and returns are ordinary non-resource annotations and do not cause incomplete coverage. A wrapper such as `Owned[None]` still lacks a resolvable resource class. String annotations such as `"None"` and future annotations remain unsupported.
 
@@ -88,4 +88,4 @@ The source budget is 1,000,000 UTF-8 bytes for the whole request as well as each
 
 ## Report a problem
 
-Open a [GitHub issue](https://github.com/eddiethedean/typepact/issues) with the TypePact version, operating system and architecture, selected source target, invocation, exit status, and a small source example. Include the diagnostics and coverage fields when available. Replace private application data before sharing the reproduction.
+Open a [GitHub issue](https://github.com/eddiethedean/codepact/issues) with the CodePact version, operating system and architecture, selected source target, invocation, exit status, and a small source example. Include the diagnostics and coverage fields when available. Replace private application data before sharing the reproduction.

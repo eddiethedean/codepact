@@ -1,5 +1,5 @@
-from typepact import resource
-from typepact.rust import Borrowed, Owned
+from codepact import resource
+from codepact.rust import Borrowed, Owned
 
 
 @resource(closed_by="close")

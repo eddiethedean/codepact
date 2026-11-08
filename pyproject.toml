@@ -3,14 +3,14 @@ requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "typepact"
+name = "codepact"
 version = "0.3.0"
-description = "Lightweight Python contract annotations for TypePact"
+description = "Lightweight Python contract annotations for CodePact"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["typepact-cli==0.3.0"]
+dependencies = ["codepact-cli==0.3.0"]
 license = "MIT"
-authors = [{ name = "TypePact contributors" }]
+authors = [{ name = "CodePact contributors" }]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Programming Language :: Python :: 3",
@@ -36,19 +36,19 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["python/typepact"]
+packages = ["python/codepact"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/python/typepact", "/README.md", "/LICENSE", "/pyproject.toml"]
+include = ["/python/codepact", "/README.md", "/LICENSE", "/pyproject.toml"]
 
 [tool.uv.workspace]
 members = ["cli"]
 
 [tool.uv.sources]
-typepact-cli = { workspace = true }
+codepact-cli = { workspace = true }
 
 [tool.basedpyright]
-include = ["python/typepact", "scripts"]
+include = ["python/codepact", "scripts"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 deprecateTypingAliases = true

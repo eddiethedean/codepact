@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 pub const CHECK_SCHEMA_VERSION: u8 = 1;
 pub const CHECK_MODEL_CATALOG_VERSION: u8 = 2;
 
-/// Lifecycle postconditions used by TypePact-owned effect summaries. These
+/// Lifecycle postconditions used by CodePact-owned effect summaries. These
 /// records are internal model inputs; they do not add user annotation syntax.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) enum LifecyclePostcondition {
@@ -513,7 +513,7 @@ impl CheckResult {
                 .map(str::to_owned)
                 .collect(),
                 selection_rule: "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.".into(),
-                modeled_behavior: "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped TypePact close summary.".into(),
+                modeled_behavior: "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.".into(),
                 qualification: "Source-reviewed against the listed CPython tags; controlled runtime cases and exact interpreter/source hashes are recorded in docs/planning/phases/0.3/contextlib-conformance.md; 0.3 release qualification pending.".into(),
             },
             CheckModelMetadata {
@@ -532,7 +532,7 @@ impl CheckResult {
                 .map(str::to_owned)
                 .collect(),
                 selection_rule: "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.".into(),
-                modeled_behavior: "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped TypePact close summary.".into(),
+                modeled_behavior: "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.".into(),
                 qualification: "Source-reviewed against the listed CPython tags; controlled runtime cases and exact interpreter/source hashes are recorded in docs/planning/phases/0.3/contextlib-conformance.md; 0.3 release qualification pending.".into(),
             },
         ];

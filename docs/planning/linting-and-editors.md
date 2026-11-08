@@ -1,12 +1,12 @@
-# TypePact linting and IDE diagnostics
+# CodePact linting and IDE diagnostics
 
 Status: **Planned**. This is a proposal, not shipped editor support. Owner: maintainer to assign before implementation. Command/reporting foundations belong to [0.4 adoption](phases/0.4-adoption.md); the language server and supported editor integrations belong to [0.8 ecosystem](phases/0.8-ecosystem.md). Prototypes may begin earlier under the [roadmap dependency policy](../../ROADMAP.md#sequence-and-dependencies).
 
 ## User outcome
 
-Python developers see TypePact findings as source underlines and entries in their IDE's Problems or inspection view. Each finding identifies TypePact, its rule code, severity and explanation, with navigation to related resource declarations, close calls or ownership transitions when available. Fixing the source removes the finding. The same source and settings produce the same findings in the CLI and editor.
+Python developers see CodePact findings as source underlines and entries in their IDE's Problems or inspection view. Each finding identifies CodePact, its rule code, severity and explanation, with navigation to related resource declarations, close calls or ownership transitions when available. Fixing the source removes the finding. The same source and settings produce the same findings in the CLI and editor.
 
-TypePact supplements ordinary Python type checking. Editor adapters reuse the Rust analyzer; they do not implement separate resource rules. Initial rules expose only the analysis qualified in earlier releases, including declaration errors, supported lifecycle violations and explicit analysis boundaries. Ownership and other later rules become available only as their semantic gates pass.
+CodePact supplements ordinary Python type checking. Editor adapters reuse the Rust analyzer; they do not implement separate resource rules. Initial rules expose only the analysis qualified in earlier releases, including declaration errors, supported lifecycle violations and explicit analysis boundaries. Ownership and other later rules become available only as their semantic gates pass.
 
 The companion [AI-agent integration plan](ai-agent-integration.md) reuses these diagnostic and configuration contracts for structured check–edit–recheck workflows and local MCP tools. Editor and agent adapters must agree on findings, source revisions and analysis boundaries.
 
@@ -14,9 +14,9 @@ The companion [AI-agent integration plan](ai-agent-integration.md) reuses these 
 
 | Work item | Deliverable | Depends on |
 | --- | --- | --- |
-| LE01 — lint command contract (0.4) | Specify a `typepact check` reporting surface with human-readable and versioned JSON output, plus a location-per-line format for external-tool consumers. Reconcile with the 0.2 check interface rather than adding a duplicate command. | Qualified lifecycle checker and 0.4 reporting/configuration policies |
+| LE01 — lint command contract (0.4) | Specify a `codepact check` reporting surface with human-readable and versioned JSON output, plus a location-per-line format for external-tool consumers. Reconcile with the 0.2 check interface rather than adding a duplicate command. | Qualified lifecycle checker and 0.4 reporting/configuration policies |
 | LE02 — diagnostic adapter (0.8) | Convert canonical diagnostics and coverage into editor diagnostics; retain codes, severity, certainty, related locations and links to rule explanations. | LE01, stable candidate diagnostic/schema contract |
-| LE03 — shared language server (0.8) | Add a proposed `typepact lsp` stdio entry point using the existing Salsa session and shared configuration resolver. | LE02, revision/cancellation and project-discovery APIs |
+| LE03 — shared language server (0.8) | Add a proposed `codepact lsp` stdio entry point using the existing Salsa session and shared configuration resolver. | LE02, revision/cancellation and project-discovery APIs |
 | LE04 — editor clients (0.8) | Provide a thin VS Code extension, a JetBrains integration and documented Neovim/Emacs LSP configurations. | LE03, supported-client/version qualification |
 | LE05 — distribution and qualification (0.8) | Verify installed commands, client/server version compatibility, clean setup and the validation matrix below on declared platforms. | LE01–LE04, E01–E07 and release artifact gates |
 
@@ -38,7 +38,7 @@ Use the [LSP specification](https://microsoft.github.io/language-server-protocol
 - Analyze unsaved document contents on open/change and reconcile saved files, close events, deletes and renames. Debounce edits, cancel superseded work and publish results only for the current document version and project revision.
 - Recheck affected callers when imported resource contracts change. Track filesystem/configuration changes, multiple workspace roots and files sharing the same basename. Retain an explicit mapping from analyzer paths to document URIs rather than guessing from display labels.
 - Convert the analyzer's one-based UTF-8 byte spans to zero-based negotiated LSP positions with exclusive ends; support the UTF-16 fallback. Test non-ASCII text, emoji, multiline spans and CRLF source. Preserve related locations across files.
-- Identify diagnostics with source `typepact`, canonical rule codes and severities. Preserve certainty in the message or accompanying details; expose coverage independently of the severity threshold. Clear obsolete findings after fixes and invalidate results for deleted or excluded files.
+- Identify diagnostics with source `codepact`, canonical rule codes and severities. Preserve certainty in the message or accompanying details; expose coverage independently of the severity threshold. Clear obsolete findings after fixes and invalidate results for deleted or excluded files.
 - Keep bounded work and retained-memory policies. Recover after cancellation or invalid configuration without leaving misleading old findings; expose an actionable server/configuration failure in the client.
 - Analyze source as data without importing target modules, running project hooks or evaluating annotations. Respect editor workspace trust when selecting a project-provided executable.
 
@@ -53,7 +53,7 @@ These are qualification targets; none is claimed supported until installation an
 | Neovim | Document setup through its built-in LSP client. | Underlines, diagnostic list, root detection and executable discovery |
 | Emacs | Document Eglot setup for the same server; evaluate coexistence with an existing Python server and a Flymake command adapter where needed. | Source diagnostics, related-location access and a usable configuration alongside existing Python tooling |
 
-Do not claim automatic compatibility for every LSP-capable editor. Each recipe must be reproduced; adapters should coexist with existing language tools without duplicate TypePact reports. Notebook cells, remote/browser-only clients and automatic installation of server binaries require separate scope and evidence.
+Do not claim automatic compatibility for every LSP-capable editor. Each recipe must be reproduced; adapters should coexist with existing language tools without duplicate CodePact reports. Notebook cells, remote/browser-only clients and automatic installation of server binaries require separate scope and evidence.
 
 ## Validation and release evidence
 
@@ -62,7 +62,7 @@ Do not claim automatic compatibility for every LSP-capable editor. Each recipe m
 | LE-V01 — parity | Golden CLI/JSON/LSP comparisons on identical source/settings: codes, messages, locations, severity, certainty, suppressions and coverage agree. Include valid, invalid and unsupported examples. |
 | LE-V02 — positions | Unicode, emoji, CRLF, multiline spans, paths with spaces, duplicate basenames and cross-file related locations resolve to the intended source. |
 | LE-V03 — edits | Unsaved edits, rapid changes, dependency/config changes, cancellation, close/reopen, rename and delete never publish superseded findings; fixing a violation clears it. |
-| LE-V04 — clients | A clean setup walkthrough for every claimed editor demonstrates one real TypePact violation, related-location navigation, a fix, and coexistence with existing Python tools. Record any client limitations. |
+| LE-V04 — clients | A clean setup walkthrough for every claimed editor demonstrates one real CodePact violation, related-location navigation, a fix, and coexistence with existing Python tools. Record any client limitations. |
 | LE-V05 — failures | Invalid configuration, missing/incompatible executables, malformed requests and server restart produce useful errors and recover without stale clean status or protocol corruption. |
 | LE-V06 — responsiveness | Record cold startup, warm local/dependency edits, cancellation recovery and peak memory on a named corpus. Agree latency/work budgets before implementation and retain measurements. |
 | LE-V07 — artifacts | Installed CLI/server and editor packages work on each declared target; protocol/schema incompatibilities fail clearly with upgrade guidance. |

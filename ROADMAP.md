@@ -1,6 +1,6 @@
-# TypePact 0.x release roadmap
+# CodePact 0.x release roadmap
 
-Planning baseline: 2026-10-31; release status updated from the retained evidence. **TypePact 0.1.0 and 0.2.0 are published and qualified.** The releases provide declaration inspection and bounded lifecycle checking respectively; see the [0.1.0](docs/releases/0.1.0-evidence.md) and [0.2.0 release evidence](docs/releases/0.2.0-evidence.md). The next planned release is 0.3.0; its [refined cleanup plan](docs/planning/phases/0.3-cleanup.md), [proposed semantics](docs/planning/phases/0.3/specification.md) and [V03 matrix](docs/planning/phases/0.3/validation.md) remain pending implementation and qualification.
+Planning baseline: 2026-10-31; release status updated from the retained evidence. **The predecessor project, TypePact, published and qualified 0.1.0 and 0.2.0 under the `typepact` package names.** The repository and project are now CodePact. Its 0.3.0 candidate uses the new `codepact` Python package, `codepact-cli` command distribution, `codepact` CLI and Rust crate. The candidate implements the cleanup behavior in the [refined cleanup plan](docs/planning/phases/0.3-cleanup.md), with automated evidence mapped in the [V03 matrix](docs/planning/phases/0.3/validation.md). Remaining matrix evidence, maintainer qualification and release authorization are tracked there and in the candidate record.
 
 This document is the authoritative release sequence. The original [feature milestones](docs/planning/roadmap.md) and [implementation phases](docs/planning/implementation.md) remain technical work groupings; they are mapped below rather than treated as version numbers.
 
@@ -39,7 +39,7 @@ The [linting and IDE diagnostics plan](docs/planning/linting-and-editors.md) add
 
 The [AI-agent integration plan](docs/planning/ai-agent-integration.md) adds structured analysis schemas, repair explanations and check–edit–recheck workflows in 0.4, followed by local read-only MCP tools and qualified agent clients in 0.8. Acceptance requires preserved certainty/coverage, current-source evidence, CLI/tool parity and verified repairs without weakening project policy. These integrations remain planned.
 
-The optional [typepact-pyrefly-cli prototype](docs/planning/typepact-pyrefly-cli.md) combines embedded Pyrefly type checking with TypePact resource checks in a separate package and command. It has independent prerelease versions, PF01–PF05 work packages and PF-V01–PF-V08 gates, and may progress alongside lifecycle work without blocking the main release sequence. Its planned trusted publisher uses `release-pyrefly.yml` and environment `pypi`; embedded-library feasibility and clean packaging must pass before publication.
+The optional [codepact-pyrefly-cli prototype](docs/planning/codepact-pyrefly-cli.md) combines embedded Pyrefly type checking with CodePact resource checks in a separate package and command. It has independent prerelease versions, PF01–PF05 work packages and PF-V01–PF-V08 gates, and may progress alongside lifecycle work without blocking the main release sequence. Its planned trusted publisher uses `release-pyrefly.yml` and environment `pypi`; embedded-library feasibility and clean packaging must pass before publication.
 
 The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded async cleanup and cancellation foundations in 0.3 (CS01), reporting and an async pilot in 0.4 (CS02), opt-in structured task ownership/borrow checking in 0.5 (CS03), suspension-aware exclusivity and protocol states in 0.6 (CS04), cancellation-preserving outcomes in 0.7 (CS05), qualified models and integration parity in 0.8 (CS06), and a stable-scope audit in 0.9 (CS07). Start task-lifetime modeling with `asyncio.TaskGroup` in 0.5; 0.3 qualifies intratask cleanup only. Multiprocessing and thread handoffs remain conservative escape boundaries until separately qualified; no race, deadlock, Send/Sync or general process-ownership guarantee is added. The published synchronous 0.2 scope is unchanged.
 
@@ -47,7 +47,7 @@ The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded
 
 The first accepted release in each line is 0.N.0. Use 0.N.patch for corrections and compatible improvements within that phase's scope. Public API or semantic breaks belong in a new minor line with migration guidance. New default diagnostics can affect CI and require explicit release notes even when APIs do not change.
 
-Keep Python distribution, analyzer CLI and published typepact crate versions aligned. Versions express planned scope; they are not calendar commitments. Estimates follow implementation evidence and available maintainers.
+Keep Python distribution, analyzer CLI and published codepact crate versions aligned. Versions express planned scope; they are not calendar commitments. Estimates follow implementation evidence and available maintainers.
 
 The existing workflow publishes only exact stable-format tags such as v0.2.0. Candidate revisions are reviewed as commits/build artifacts; suffix tags such as v0.2.0rc1 do not pass its validation. Automated prerelease publishing would require a separate workflow change.
 

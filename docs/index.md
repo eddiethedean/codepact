@@ -1,13 +1,15 @@
-# TypePact documentation
+# CodePact documentation
 
-TypePact finds conflicting resource declarations and supported lifecycle errors in Python without importing or running your application. It reports each finding with source locations, certainty, and coverage information.
+CodePact finds conflicting resource declarations and supported lifecycle errors in Python without importing or running your application. It reports each finding with source locations, certainty, and coverage information.
 
-**0.2.0 is the current published release** and provides contract inspection and bounded lifecycle checking for the documented synchronous subset. The 0.1.0 release provides contract inspection. APIs, diagnostics, and JSON schema remain provisional during 0.x.
+**CodePact 0.3.0 is an unreleased candidate.** It provides contract inspection, bounded lifecycle checking, and cleanup obligations across supported exits. The previously published 0.1.0 and 0.2.0 releases used the TypePact package names. APIs, diagnostics, and JSON schema remain provisional during 0.x.
 
 ```sh
-uv add typepact==0.2.0
-uv run typepact inspect-contracts connection.py
-uv run typepact check --root src
+git clone https://github.com/eddiethedean/codepact.git
+cd codepact
+uv sync --locked
+uv run codepact inspect-contracts connection.py
+uv run codepact check --root src
 ```
 
 Create `connection.py` with the [quick start](quickstart.md), then read the result using the [JSON reference](output.md).
@@ -21,7 +23,7 @@ Follow the [lifecycle tutorial](lifecycle.md) to use `check`. See the
 | --- | --- |
 | Declare a resource and inspect it | [Quick start](quickstart.md) |
 | Find a supported use after close | [Lifecycle checking](lifecycle.md) |
-| Decide whether my project fits the supported subset | [Adopting TypePact](adopting.md) |
+| Decide whether my project fits the supported subset | [Adopting CodePact](adopting.md) |
 | Resolve imports across my own modules | [Multi-file tutorial](project-guide.md) |
 | Use the inspector in a build pipeline | [Automation and CI](automation.md) and [report handling](ci-reporting.md) |
 | Understand an error or incomplete result | [Troubleshooting](troubleshooting.md) |
@@ -80,9 +82,9 @@ development
 
 ## Project links
 
-- [Source code](https://github.com/eddiethedean/typepact)
-- [Issues and feature requests](https://github.com/eddiethedean/typepact/issues)
-- [PyPI package](https://pypi.org/project/typepact/)
-- [Native CLI package](https://pypi.org/project/typepact-cli/)
-- [MIT license](https://github.com/eddiethedean/typepact/blob/main/LICENSE)
-- [Security reporting instructions](https://github.com/eddiethedean/typepact/blob/main/SECURITY.md)
+- [Source code](https://github.com/eddiethedean/codepact)
+- [Issues and feature requests](https://github.com/eddiethedean/codepact/issues)
+- [PyPI package](https://pypi.org/project/codepact/)
+- [Native CLI package](https://pypi.org/project/codepact-cli/)
+- [MIT license](https://github.com/eddiethedean/codepact/blob/main/LICENSE)
+- [Security reporting instructions](https://github.com/eddiethedean/codepact/blob/main/SECURITY.md)

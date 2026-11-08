@@ -66,7 +66,7 @@ Proposed CLI exit codes: 0 means no findings above the configured threshold; 1 m
 
 ## Declaration semantics and incremental queries
 
-The [migration specification](analyzer-migration.md) defines the semantic index and Salsa query graph. Ruff supplies parsed structure through an adapter; TypePact owns declaration, binding and contract identities. Aliases capture resolved declarations and metadata at the appropriate evaluation point. Rebinding a name cannot rewrite earlier captured views. Deferred annotations and unsupported scope forms produce explicit unknowns until specified.
+The [migration specification](analyzer-migration.md) defines the semantic index and Salsa query graph. Ruff supplies parsed structure through an adapter; CodePact owns declaration, binding and contract identities. Aliases capture resolved declarations and metadata at the appropriate evaluation point. Rebinding a name cannot rewrite earlier captured views. Deferred annotations and unsupported scope forms produce explicit unknowns until specified.
 
 Tracked parsing/index/export/contract queries begin in 0.1. From 0.2 add CFG, summary and body-check queries, with callers depending on relevant callee summaries. Exceptions, effects, ownership and typestate extend those summaries in later phases. Query caching must preserve diagnostics, certainty, provenance and coverage. Separate source-location changes from semantic export changes and test both invalidation paths.
 

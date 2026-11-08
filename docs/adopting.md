@@ -1,6 +1,6 @@
-# Evaluate TypePact in an existing project
+# Evaluate CodePact in an existing project
 
-Start with a small, reviewable source slice. TypePact does not import your
+Start with a small, reviewable source slice. CodePact does not import your
 application or discover dependencies from installed packages. Inspection takes
 explicit files; lifecycle checking scans Python files below a selected root.
 
@@ -10,8 +10,8 @@ The current 0.2.0 release inspects declarations in explicitly named files.
 Install it and pass the files that define and use your resource type:
 
 ```sh
-uv add typepact==0.2.0
-uv run typepact inspect-contracts --root src src/data/connection.py src/data/client.py
+uv add codepact==0.3.0
+uv run codepact inspect-contracts --root src src/data/connection.py src/data/client.py
 ```
 
 Use this first to check that resource decorators, access aliases, and direct
@@ -26,7 +26,7 @@ closes through `Borrowed` parameters. Try it on a narrow directory that contains
 only the relevant Python modules:
 
 ```sh
-uv run typepact check --root /path/to/pilot
+uv run codepact check --root /path/to/pilot
 ```
 
 The checker scans every `.py` file under the selected root. A filename argument
@@ -43,7 +43,7 @@ direct synchronous uses. Review:
 1. Whether the expected contract facts were emitted.
 2. Whether each diagnostic points to the operation and related close location.
 3. Whether `coverage.status` is `complete-for-supported-subset` for the pilot.
-4. Whether the source actually closes the runtime resource as declared; TypePact
+4. Whether the source actually closes the runtime resource as declared; CodePact
    does not execute or verify the method implementation.
 
 A clean result covers only the supported subset and normal-flow model. It does
@@ -61,6 +61,6 @@ code, and resources stored in fields or containers. See the full
 before expanding the pilot.
 
 If the pilot depends on these unsupported forms, keep the boundary visible and
-wait for a documented capability that covers the required behavior. TypePact
+wait for a documented capability that covers the required behavior. CodePact
 does not provide a strict-mode switch, baseline file, or suppressions in this
 release line.

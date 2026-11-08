@@ -57,7 +57,7 @@ These operational policies extend the [release plan](releases.md).
 
 ## Python helper and CLI distributions
 
-G5 includes D015: eight native typepact-cli wheels, a pure typepact wheel with exact CLI dependency, and two complete source archives, matching versions and required quality/build/inventory checks. Importing helpers alone does not establish executable compatibility.
+G5 includes D015: eight native codepact-cli wheels, a pure codepact wheel with exact CLI dependency, and two complete source archives, matching versions and required quality/build/inventory checks. Importing helpers alone does not establish executable compatibility.
 
 ## Concurrent scope evidence
 

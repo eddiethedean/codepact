@@ -1445,13 +1445,13 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                         continue;
                     }
                     match module.as_deref() {
-                        Some("typepact.contracts") if metadata.contains(&source.as_str()) => {
+                        Some("codepact.contracts") if metadata.contains(&source.as_str()) => {
                             metadata_names.insert(local.clone());
                         }
-                        Some("typepact") if source == "Resource" => {
+                        Some("codepact") if source == "Resource" => {
                             metadata_names.insert(local.clone());
                         }
-                        Some("typepact") if source == "contracts" => {
+                        Some("codepact") if source == "contracts" => {
                             for name in metadata {
                                 metadata_names.insert(format!("{local}.{name}"));
                             }
@@ -1461,11 +1461,11 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     if matches!(
                         module.as_deref(),
                         Some(
-                            "typing" | "typing_extensions" | "typepact.rust" | "typepact.contracts"
+                            "typing" | "typing_extensions" | "codepact.rust" | "codepact.contracts"
                         )
                     ) {
                         safe_annotation_subscripts.insert(local.clone());
-                    } else if module.as_deref() == Some("typepact")
+                    } else if module.as_deref() == Some("codepact")
                         && matches!(source.as_str(), "rust" | "contracts")
                     {
                         safe_annotation_subscripts.insert(format!("{local}.*"));
@@ -1476,7 +1476,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                         annotated_subscripts.insert(local.clone());
                     }
                     if import.level == 0
-                        && module.as_deref() == Some("typepact")
+                        && module.as_deref() == Some("codepact")
                         && source == "resource"
                     {
                         resource_names.insert(local);
@@ -1497,16 +1497,16 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut resource_names, &local);
                     clear_imported_names(&mut safe_annotation_subscripts, &local);
                     clear_imported_names(&mut annotated_subscripts, &local);
-                    if source == "typepact.contracts" {
+                    if source == "codepact.contracts" {
                         let prefix = alias
                             .asname
                             .as_ref()
                             .map(ToString::to_string)
-                            .unwrap_or_else(|| "typepact.contracts".to_owned());
+                            .unwrap_or_else(|| "codepact.contracts".to_owned());
                         for name in metadata {
                             metadata_names.insert(format!("{prefix}.{name}"));
                         }
-                    } else if source == "typepact" {
+                    } else if source == "codepact" {
                         metadata_names.insert(format!("{local}.Resource"));
                         resource_names.insert(format!("{local}.resource"));
                     }
@@ -1515,9 +1515,9 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                         source.as_str(),
                         "typing"
                             | "typing_extensions"
-                            | "typepact.rust"
-                            | "typepact.contracts"
-                            | "typepact"
+                            | "codepact.rust"
+                            | "codepact.contracts"
+                            | "codepact"
                     ) {
                         safe_annotation_subscripts.insert(format!("{local}.*"));
                     }

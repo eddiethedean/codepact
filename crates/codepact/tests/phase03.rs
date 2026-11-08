@@ -1,6 +1,6 @@
-use typepact::{check, AnalysisSession, Inspection, SourceFile};
+use codepact::{check, AnalysisSession, Inspection, SourceFile};
 
-const RESOURCE: &str = "from typepact import resource\nfrom typepact.rust import Borrowed, Owned\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\n";
+const RESOURCE: &str = "from codepact import resource\nfrom codepact.rust import Borrowed, Owned\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\n";
 
 fn check_source(source: &str) -> Inspection {
     check(&[SourceFile::new("phase03.py", "phase03", source)], "3.11")
@@ -30,7 +30,7 @@ fn v03_01_local_acquisition_creates_one_exit_duty() {
 
 #[test]
 fn v03_01_failed_initialization_creates_no_object_duty() {
-    let source = "from typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def __init__(self):\n        raise RuntimeError\n    def close(self): pass\ndef fail():\n    resource = C()\n";
+    let source = "from codepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def __init__(self):\n        raise RuntimeError\n    def close(self): pass\ndef fail():\n    resource = C()\n";
     let result = check_source(source);
     assert!(
         !result
@@ -44,7 +44,7 @@ fn v03_01_failed_initialization_creates_no_object_duty() {
 
 #[test]
 fn v03_01_constructor_argument_failure_creates_no_object_duty() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def __init__(self, marker): pass\n    def close(self): pass\ndef fail() -> int:\n    raise RuntimeError()\ndef cleanup():\n    resource = C(fail())\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def __init__(self, marker): pass\n    def close(self): pass\ndef fail() -> int:\n    raise RuntimeError()\ndef cleanup():\n    resource = C(fail())\n";
     let result = check_source(source);
     assert!(
         !result
@@ -87,7 +87,7 @@ fn v03_01_failed_later_initialization_preserves_earlier_duty_on_raise() {
 
 #[test]
 fn v03_01_custom_new_boundary_preserves_the_prior_duty_as_possible() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass Stable:\n    def close(self): pass\n@resource(closed_by='close')\nclass Broken:\n    def __new__(cls):\n        raise RuntimeError()\n    def close(self): pass\ndef fail():\n    first = Stable()\n    second = Broken()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass Stable:\n    def close(self): pass\n@resource(closed_by='close')\nclass Broken:\n    def __new__(cls):\n        raise RuntimeError()\n    def close(self): pass\ndef fail():\n    first = Stable()\n    second = Broken()\n";
     let result = check_source(source);
     let leaks = result
         .diagnostics
@@ -180,7 +180,7 @@ fn v03_07_branching_finally_replacement_keeps_abandoned_and_raised_duties() {
         "{RESOURCE}def make(flag) -> Owned[C]:\n    abandoned = C()\n    replacement = C()\n    try:\n        return abandoned\n    finally:\n        if flag:\n            return replacement\n        else:\n            raise RuntimeError()\n"
     );
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = report
         .diagnostics
         .iter()
@@ -398,7 +398,7 @@ fn v03_03_nested_finally_exit_matrix_preserves_completion_and_cleanup_span() {
             let source = format!(
                 "{RESOURCE}def scenario():\n    resource = C()\n    try:\n        try:\n            {body}\n        finally:\n            {cleanup}\n    finally:\n        pass\n"
             );
-            let report = typepact::check_report(
+            let report = codepact::check_report(
                 &[SourceFile::new("phase03.py", "phase03", source.clone())],
                 "3.11",
             );
@@ -469,6 +469,114 @@ fn v03_03_nested_finally_exit_matrix_preserves_completion_and_cleanup_span() {
 }
 
 #[test]
+fn v03_03_three_nested_finalizers_preserve_single_close_and_replacement_matrix() {
+    let cleanups = ["pass", "resource.close()", "raise ValueError()"];
+    for (body, body_completion) in [
+        ("pass", "fallthrough"),
+        ("return", "return"),
+        ("raise RuntimeError()", "raise"),
+    ] {
+        for inner in cleanups {
+            for middle in cleanups {
+                for outer in cleanups {
+                    let cleanup = [inner, middle, outer];
+                    if cleanup
+                        .iter()
+                        .filter(|statement| **statement == "resource.close()")
+                        .count()
+                        > 1
+                    {
+                        // Repeat-close behavior is a separate unknown policy boundary.
+                        continue;
+                    }
+                    let source = format!(
+                        "{RESOURCE}def scenario():\n    resource = C()\n    try:\n        try:\n            try:\n                {body}\n            finally:\n                {inner}\n        finally:\n            {middle}\n    finally:\n        {outer}\n"
+                    );
+                    let report = codepact::check_report(
+                        &[SourceFile::new("phase03.py", "phase03", source.clone())],
+                        "3.11",
+                    );
+                    let leaks = report
+                        .diagnostics
+                        .iter()
+                        .filter(|diagnostic| diagnostic.code == "TP1002")
+                        .collect::<Vec<_>>();
+                    if cleanup.contains(&"resource.close()") {
+                        assert!(
+                            leaks.is_empty(),
+                            "{body} / {inner} / {middle} / {outer}: {report:#?}"
+                        );
+                        assert_eq!(
+                            report.coverage.status, "complete-for-supported-subset",
+                            "{body} / {inner} / {middle} / {outer}: {report:#?}"
+                        );
+                        continue;
+                    }
+
+                    assert_eq!(
+                        leaks.len(),
+                        1,
+                        "{body} / {inner} / {middle} / {outer}: {report:#?}"
+                    );
+                    let cleanup_raise = cleanup
+                        .iter()
+                        .rev()
+                        .find(|statement| statement.starts_with("raise "));
+                    let expected_completion = if cleanup_raise.is_some() {
+                        "raise"
+                    } else {
+                        body_completion
+                    };
+                    let exit_statement = cleanup_raise.copied().unwrap_or(body);
+                    let expected_exit_line = if expected_completion == "fallthrough" {
+                        source
+                            .lines()
+                            .position(|line| line.trim() == "def scenario():")
+                            .unwrap()
+                            + 1
+                    } else {
+                        source
+                            .lines()
+                            .enumerate()
+                            .filter(|(_, line)| line.trim() == exit_statement)
+                            .map(|(index, _)| index + 1)
+                            .last()
+                            .unwrap()
+                    };
+                    let acquisition_line = source
+                        .lines()
+                        .position(|line| line.trim() == "resource = C()")
+                        .unwrap()
+                        + 1;
+                    let leak = leaks[0];
+                    assert_eq!(
+                        leak.completion.as_deref(),
+                        Some(expected_completion),
+                        "{body} / {inner} / {middle} / {outer}: {report:#?}"
+                    );
+                    assert_eq!(
+                        leak.certainty, "definite",
+                        "{body} / {inner} / {middle} / {outer}: {report:#?}"
+                    );
+                    assert_eq!(
+                        leak.primary.line, expected_exit_line,
+                        "{body} / {inner} / {middle} / {outer}: {report:#?}"
+                    );
+                    assert_eq!(
+                        leak.related[0].line, acquisition_line,
+                        "{body} / {inner} / {middle} / {outer}: {report:#?}"
+                    );
+                    assert_eq!(
+                        report.coverage.status, "complete-for-supported-subset",
+                        "{body} / {inner} / {middle} / {outer}: {report:#?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn v03_03_finally_replacements_keep_the_actual_exit_and_duty_origin() {
     let source = format!(
         "{RESOURCE}def raise_from_finally():\n    resource = C()\n    try:\n        return 1\n    finally:\n        raise RuntimeError()\ndef return_from_finally():\n    resource = C()\n    try:\n        raise ValueError()\n    finally:\n        return 1\n"
@@ -514,7 +622,7 @@ fn v03_03_nested_finally_replacement_stack_keeps_each_actual_exit() {
     let first_acquisition_line = source_line("first = C()");
     let second_acquisition_line = source_line("second = C()");
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = report
         .diagnostics
         .iter()
@@ -770,7 +878,7 @@ fn v03_09_owned_helper_return_restores_the_same_duty_identity() {
 
 #[test]
 fn v03_09_repeated_owned_argument_positions_share_one_duty() {
-    let source = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef consume(first: Owned[C], second: Owned[C]):\n    first.close()\n    second.status()\ndef cleanup():\n    resource = C()\n    consume(resource, resource)\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef consume(first: Owned[C], second: Owned[C]):\n    first.close()\n    second.status()\ndef cleanup():\n    resource = C()\n    consume(resource, resource)\n";
     let result = check_source(source);
     assert_eq!(
         result
@@ -866,7 +974,7 @@ fn v03_09_owned_helper_cleanup_effects_survive_raising_exits() {
 
 #[test]
 fn v03_09_owned_helper_close_failure_keeps_the_duty_on_raise() {
-    let source = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass Failing:\n    def close(self):\n        raise OSError()\ndef finish(resource: Owned[Failing]):\n    resource.close()\ndef caller():\n    resource = Failing()\n    try:\n        finish(resource)\n    except OSError:\n        pass\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by='close')\nclass Failing:\n    def close(self):\n        raise OSError()\ndef finish(resource: Owned[Failing]):\n    resource.close()\ndef caller():\n    resource = Failing()\n    try:\n        finish(resource)\n    except OSError:\n        pass\n";
     let result = check_source(source);
     let leaks = result
         .diagnostics
@@ -903,7 +1011,7 @@ fn v03_09_owned_helper_return_without_caller_cleanup_keeps_one_duty() {
 
 #[test]
 fn v03_04_close_raise_preserves_the_open_duty() {
-    let source = "from typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = C()\n    resource.close()\n";
+    let source = "from codepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = C()\n    resource.close()\n";
     let result = check_source(source);
     let leaks = result
         .diagnostics
@@ -1096,7 +1204,7 @@ fn v03_05_unmatched_raise_replaced_by_finally_raise_keeps_actual_exit() {
         .unwrap()
         + 1;
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = report
         .diagnostics
         .iter()
@@ -1212,7 +1320,7 @@ fn v03_11_contextlib_module_qualified_import_uses_the_reviewed_model() {
 #[test]
 fn v03_11_contextlib_closing_aliases_the_entered_resource() {
     let result = check_source(
-        "import contextlib as ctx\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource) as entered:\n        entered.status()\n",
+        "import contextlib as ctx\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource) as entered:\n        entered.status()\n",
     );
     assert!(
         !result
@@ -1230,7 +1338,7 @@ fn v03_11_contextlib_closing_aliases_the_entered_resource() {
 #[test]
 fn v03_11_contextlib_closing_preserves_body_exception_routing() {
     let result = check_source(
-        "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    primary = C()\n    handler_resource = C()\n    try:\n        with closing(primary):\n            raise ValueError()\n    except ValueError:\n        handler_resource.close()\n",
+        "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    primary = C()\n    handler_resource = C()\n    try:\n        with closing(primary):\n            raise ValueError()\n    except ValueError:\n        handler_resource.close()\n",
     );
     assert!(
         !result
@@ -1374,7 +1482,7 @@ fn v03_10_unknown_context_keeps_duties_across_return_break_and_continue() {
         .filter_map(|(index, line)| (line.trim() == "resource = C()").then_some(index + 1))
         .collect::<std::collections::BTreeSet<_>>();
     let result =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = result
         .diagnostics
         .iter()
@@ -1450,7 +1558,7 @@ fn v03_12_unknown_context_manager_cannot_discharge_a_duty() {
 
 #[test]
 fn v03_12_finalizer_does_not_establish_deterministic_cleanup() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def __del__(self): self.close()\n@resource(closed_by='close')\nclass Plain(object):\n    def close(self): pass\ndef cleanup():\n    finalizable = C()\n    plain = Plain()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def __del__(self): self.close()\n@resource(closed_by='close')\nclass Plain(object):\n    def close(self): pass\ndef cleanup():\n    finalizable = C()\n    plain = Plain()\n";
     let result = check_source(source);
     let leaks = result
         .diagnostics
@@ -1485,7 +1593,7 @@ fn v03_12_finalizer_does_not_establish_deterministic_cleanup() {
     );
 
     let explicit_close = check_source(
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def __del__(self): self.close()\ndef cleanup():\n    resource = C()\n    resource.close()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def __del__(self): self.close()\ndef cleanup():\n    resource = C()\n    resource.close()\n",
     );
     assert!(
         explicit_close
@@ -1500,7 +1608,7 @@ fn v03_12_finalizer_does_not_establish_deterministic_cleanup() {
     );
 
     let inherited_finalizer = check_source(
-        "from typepact import resource\nclass Base:\n    def __del__(self): pass\n@resource(closed_by='close')\nclass C(Base):\n    def close(self): pass\ndef cleanup():\n    resource = C()\n",
+        "from codepact import resource\nclass Base:\n    def __del__(self): pass\n@resource(closed_by='close')\nclass C(Base):\n    def close(self): pass\ndef cleanup():\n    resource = C()\n",
     );
     assert!(
         inherited_finalizer
@@ -1832,7 +1940,7 @@ fn v03_14_generated_break_and_continue_paths_route_loop_else_correctly() {
         .unwrap()
         + 1;
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = report
         .diagnostics
         .iter()
@@ -1905,7 +2013,7 @@ fn v03_14_break_and_continue_from_finally_replace_exits_and_route_loop_else() {
     let source = format!(
         "{RESOURCE}def break_from_finally():\n    resource = C()\n    for item in (None,):\n        try:\n            raise RuntimeError()\n        finally:\n            break\n    else:\n        resource.close()\ndef continue_from_finally():\n    resource = C()\n    for item in (None,):\n        try:\n            raise RuntimeError()\n        finally:\n            continue\n    else:\n        resource.close()\n"
     );
-    let report = typepact::check_report(
+    let report = codepact::check_report(
         &[SourceFile::new("phase03.py", "phase03", source.clone())],
         "3.11",
     );
@@ -1944,7 +2052,7 @@ fn v03_14_nested_loop_transfers_from_finally_use_the_nearest_target() {
     let source = format!(
         "{RESOURCE}def break_inner():\n    outer_resource = C()\n    inner_resource = C()\n    for outer_item in (None,):\n        for inner_item in (None,):\n            try:\n                raise RuntimeError()\n            finally:\n                break\n        else:\n            inner_resource.close()\n    else:\n        outer_resource.close()\ndef continue_inner():\n    outer_resource = C()\n    inner_resource = C()\n    for outer_item in (None,):\n        for inner_item in (None,):\n            try:\n                raise RuntimeError()\n            finally:\n                continue\n        else:\n            inner_resource.close()\n    else:\n        outer_resource.close()\n"
     );
-    let report = typepact::check_report(
+    let report = codepact::check_report(
         &[SourceFile::new("phase03.py", "phase03", source.clone())],
         "3.11",
     );
@@ -1968,6 +2076,47 @@ fn v03_14_nested_loop_transfers_from_finally_use_the_nearest_target() {
     assert_eq!(
         report.coverage.status, "complete-for-supported-subset",
         "continue reaches inner else and both outer/inner cleanup blocks execute: {report:#?}"
+    );
+}
+
+#[test]
+fn v03_14_outer_finally_transfers_target_the_outer_loop_after_inner_exhaustion() {
+    let source = format!(
+        "{RESOURCE}def break_outer():\n    outer_resource = C()\n    for outer_item in (None,):\n        inner_resource = C()\n        try:\n            for inner_item in (None,):\n                pass\n            inner_resource.close()\n        finally:\n            break\n    else:\n        outer_resource.close()\ndef continue_outer():\n    outer_resource = C()\n    for outer_item in (None,):\n        inner_resource = C()\n        try:\n            for inner_item in (None,):\n                pass\n            inner_resource.close()\n        finally:\n            continue\n    else:\n        outer_resource.close()\n"
+    );
+    let report = codepact::check_report(
+        &[SourceFile::new("phase03.py", "phase03", source.clone())],
+        "3.11",
+    );
+    let leaks = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(leaks.len(), 1, "{report:#?}");
+    assert_eq!(leaks[0].certainty, "definite", "{report:#?}");
+    assert_eq!(leaks[0].completion.as_deref(), Some("fallthrough"));
+    assert_eq!(
+        leaks[0].primary.line,
+        source
+            .lines()
+            .position(|line| line.trim() == "def break_outer():")
+            .unwrap()
+            + 1,
+        "break from the outer finally skips the outer loop's else: {report:#?}"
+    );
+    assert_eq!(
+        leaks[0].related[0].line,
+        source
+            .lines()
+            .position(|line| line.trim() == "outer_resource = C()")
+            .unwrap()
+            + 1,
+        "only the break path leaves its outer resource open: {report:#?}"
+    );
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "the continue path reaches the outer loop else and closes its resource: {report:#?}"
     );
 }
 
@@ -2034,7 +2183,7 @@ fn v03_16_loop_fixed_point_budget_keeps_cleanup_incomplete() {
 
 #[test]
 fn v03_17_unawaited_async_cleanup_does_not_discharge_a_duty() {
-    let source = "from typepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def leak():\n    resource = C()\n    resource.aclose()\n";
+    let source = "from codepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def leak():\n    resource = C()\n    resource.aclose()\n";
     let result = check_source(source);
     assert!(
         result
@@ -2052,7 +2201,7 @@ fn v03_17_unawaited_async_cleanup_does_not_discharge_a_duty() {
 
 #[test]
 fn v03_18_async_coroutine_creation_does_not_delegate_an_owned_duty() {
-    let source = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\nasync def finish(resource: Owned[C]):\n    resource.close()\ndef caller():\n    resource = C()\n    pending = finish(resource)\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\nasync def finish(resource: Owned[C]):\n    resource.close()\ndef caller():\n    resource = C()\n    pending = finish(resource)\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2071,7 +2220,7 @@ fn v03_18_async_coroutine_creation_does_not_delegate_an_owned_duty() {
 
 #[test]
 fn v03_18_cancellation_before_coroutine_entry_keeps_only_caller_duties() {
-    let source = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def close_local():\n    local = C()\n    local.close()\nasync def close_owned(resource: Owned[C]):\n    resource.close()\nasync def caller():\n    await close_local()\n    resource = C()\n    await close_owned(resource)\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def close_local():\n    local = C()\n    local.close()\nasync def close_owned(resource: Owned[C]):\n    resource.close()\nasync def caller():\n    await close_local()\n    resource = C()\n    await close_owned(resource)\n";
     let result = check_source(source);
     let leaks = result
         .diagnostics
@@ -2091,7 +2240,7 @@ fn v03_18_cancellation_before_coroutine_entry_keeps_only_caller_duties() {
 
 #[test]
 fn v03_20_task_scheduling_does_not_infer_completion_or_cleanup() {
-    let source = "from typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\nasync def finish(resource):\n    resource.close()\ndef caller():\n    resource = C()\n    pending = finish(resource)\n    asyncio.create_task(pending)\n";
+    let source = "from codepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\nasync def finish(resource):\n    resource.close()\ndef caller():\n    resource = C()\n    pending = finish(resource)\n    asyncio.create_task(pending)\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete");
     assert!(
@@ -2118,7 +2267,7 @@ fn v03_20_asyncio_handoff_helpers_remain_explicit_boundaries() {
         "asyncio.wait_for(pending, timeout=1)",
     ] {
         let source = format!(
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def finish(resource):\n    resource.close()\ndef caller():\n    resource = C()\n    pending = finish(resource)\n    {scheduler}\n"
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def finish(resource):\n    resource.close()\ndef caller():\n    resource = C()\n    pending = finish(resource)\n    {scheduler}\n"
         );
         let result = check_source(&source);
         assert_eq!(
@@ -2279,9 +2428,9 @@ fn v03_26_pending_coroutine_budget_edit_recovers_with_fresh_result_parity() {
 
 #[test]
 fn v03_17_awaited_async_cleanup_tracks_cancellation_as_uncertain() {
-    let source = "from typepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    await resource.aclose()\n";
+    let source = "from codepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    await resource.aclose()\n";
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let cleanup_duties = report
         .diagnostics
         .iter()
@@ -2305,7 +2454,7 @@ fn v03_17_awaited_async_cleanup_tracks_cancellation_as_uncertain() {
 
 #[test]
 fn v03_17_awaited_local_coroutine_alias_keeps_cancellation_uncertain() {
-    let source = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def finish(resource: Owned[C]):\n    await resource.aclose()\nasync def cleanup():\n    resource = C()\n    pending = finish(resource)\n    alias = pending\n    await alias\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def finish(resource: Owned[C]):\n    await resource.aclose()\nasync def cleanup():\n    resource = C()\n    pending = finish(resource)\n    alias = pending\n    await alias\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2322,7 +2471,7 @@ fn v03_17_awaited_local_coroutine_alias_keeps_cancellation_uncertain() {
 
 #[test]
 fn v03_18_cancellation_during_use_enters_finally_and_can_interrupt_awaited_close() {
-    let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    finally:\n        await resource.aclose()\n";
+    let source = "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    finally:\n        await resource.aclose()\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2339,7 +2488,7 @@ fn v03_18_cancellation_during_use_enters_finally_and_can_interrupt_awaited_close
 
 #[test]
 fn v03_18_unknown_sync_context_can_suppress_await_cancellation() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    with UnknownManager():\n        await resource.pause()\n        resource.close()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    with UnknownManager():\n        await resource.pause()\n        resource.close()\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2364,7 +2513,7 @@ fn v03_18_unknown_sync_context_can_suppress_await_cancellation() {
 
 #[test]
 fn v03_17_repeated_coroutine_await_is_an_explicit_boundary() {
-    let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def finish(resource):\n    await resource.aclose()\nasync def cleanup():\n    resource = C()\n    pending = finish(resource)\n    await pending\n    await pending\n";
+    let source = "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def finish(resource):\n    await resource.aclose()\nasync def cleanup():\n    resource = C()\n    pending = finish(resource)\n    await pending\n    await pending\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2404,7 +2553,7 @@ fn v03_17_ambiguous_coroutine_join_keeps_captured_duties_unknown() {
 
 #[test]
 fn v03_19_async_context_cleanup_keeps_the_cancellation_exit() {
-    let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    async with aclosing(resource):\n        pass\n";
+    let source = "from contextlib import aclosing\nfrom codepact import resource\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    async with aclosing(resource):\n        pass\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2421,7 +2570,7 @@ fn v03_19_async_context_cleanup_keeps_the_cancellation_exit() {
 
 #[test]
 fn v03_19_async_context_entry_failure_unwinds_prior_manager() {
-    let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\ndef fail() -> C:\n    raise RuntimeError()\nasync def cleanup():\n    resource = C()\n    try:\n        async with aclosing(resource), aclosing(fail()):\n            pass\n    except RuntimeError:\n        pass\n";
+    let source = "from contextlib import aclosing\nfrom codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\ndef fail() -> C:\n    raise RuntimeError()\nasync def cleanup():\n    resource = C()\n    try:\n        async with aclosing(resource), aclosing(fail()):\n            pass\n    except RuntimeError:\n        pass\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2438,7 +2587,7 @@ fn v03_19_async_context_entry_failure_unwinds_prior_manager() {
 
 #[test]
 fn v03_19_unknown_async_context_keeps_exit_cancellation_visible() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return False\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        pass\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return False\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        pass\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2453,9 +2602,9 @@ fn v03_19_unknown_async_context_keeps_exit_cancellation_visible() {
 
 #[test]
 fn v03_19_unknown_async_exit_can_suppress_body_cancellation() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        await resource.pause()\n        resource.close()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        await resource.pause()\n        resource.close()\n";
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
     let leaks = report
         .diagnostics
@@ -2547,7 +2696,7 @@ fn v03_19_unknown_async_context_keeps_duties_across_return_break_and_continue() 
         .filter_map(|(index, line)| (line.trim() == "resource = C()").then_some(index + 1))
         .collect::<std::collections::BTreeSet<_>>();
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = report
         .diagnostics
         .iter()
@@ -2612,14 +2761,14 @@ fn v03_19_unknown_async_context_keeps_duties_across_return_break_and_continue() 
 
 #[test]
 fn v03_19_reviewed_async_context_cleanup_runs_on_return_break_and_continue() {
-    let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def return_path():\n    resource = C()\n    async with aclosing(resource):\n        return\nasync def break_path():\n    resource = C()\n    for item in (None,):\n        async with aclosing(resource):\n            break\nasync def continue_path():\n    resource = C()\n    for item in (None,):\n        async with aclosing(resource):\n            continue\n";
+    let source = "from contextlib import aclosing\nfrom codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def return_path():\n    resource = C()\n    async with aclosing(resource):\n        return\nasync def break_path():\n    resource = C()\n    for item in (None,):\n        async with aclosing(resource):\n            break\nasync def continue_path():\n    resource = C()\n    for item in (None,):\n        async with aclosing(resource):\n            continue\n";
     let acquisition_lines = source
         .lines()
         .enumerate()
         .filter_map(|(index, line)| (line.trim() == "resource = C()").then_some(index + 1))
         .collect::<std::collections::BTreeSet<_>>();
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = report
         .diagnostics
         .iter()
@@ -2651,7 +2800,7 @@ fn v03_19_reviewed_async_context_cleanup_runs_on_return_break_and_continue() {
 
 #[test]
 fn v03_19_nested_async_contexts_unwind_and_preserve_cancellation() {
-    let source = "from contextlib import aclosing\nfrom typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        async with aclosing(resource):\n            await resource.pause()\n";
+    let source = "from contextlib import aclosing\nfrom codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        async with aclosing(resource):\n            await resource.pause()\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2681,7 +2830,7 @@ fn v03_19_nested_async_contexts_unwind_and_preserve_cancellation() {
 fn v03_16_context_exit_partition_budget_keeps_duties_unknown() {
     let managers = ["UnknownManager()"; 8].join(", ");
     let source = format!(
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with {managers}:\n        pass\n"
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with {managers}:\n        pass\n"
     );
     let result = check_source(&source);
 
@@ -2711,7 +2860,7 @@ fn v03_16_context_exit_partition_budget_keeps_duties_unknown() {
 #[test]
 fn v03_26_coroutine_and_async_exit_budgets_keep_cleanup_unknown_together() {
     let managers = ["UnknownManager()"; 8].join(", ");
-    let mut source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def hold(resource: Borrowed[C]):\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n".to_owned();
+    let mut source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def hold(resource: Borrowed[C]):\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n".to_owned();
     for index in 0..129 {
         source.push_str(&format!("    pending_{index} = hold(resource)\n"));
     }
@@ -2783,7 +2932,7 @@ fn v03_16_context_exit_partition_budget_edit_recovers_with_fresh_result_parity()
         "phase03.py",
         "phase03",
         format!(
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with {managers}:\n        pass\n"
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with {managers}:\n        pass\n"
         ),
     );
     let mut session = AnalysisSession::default();
@@ -2800,7 +2949,7 @@ fn v03_16_context_exit_partition_budget_edit_recovers_with_fresh_result_parity()
     let recovered_file = SourceFile::new(
         "phase03.py",
         "phase03",
-        "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
+        "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
     );
     let recovered = session.check(std::slice::from_ref(&recovered_file), "3.11");
     assert_eq!(
@@ -2820,7 +2969,7 @@ fn v03_16_context_exit_partition_budget_edit_recovers_with_fresh_result_parity()
 
 #[test]
 fn v03_19_unknown_async_entry_cancellation_skips_the_body() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return False\nasync def cleanup():\n    before = C()\n    async with UnknownManager():\n        before.close()\n        local = C()\n        local.close()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return False\nasync def cleanup():\n    before = C()\n    async with UnknownManager():\n        before.close()\n        local = C()\n        local.close()\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2845,8 +2994,8 @@ fn v03_19_unknown_async_entry_cancellation_skips_the_body() {
 #[test]
 fn v03_21_contextlib_model_is_disabled_for_unlisted_python_targets() {
     for source in [
-        "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
-        "import contextlib as ctx\nfrom typepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n",
+        "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
+        "import contextlib as ctx\nfrom codepact import resource\n@resource(closed_by=\"close\")\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n",
     ] {
         let result = check_source_version(source, "3.14");
         assert!(
@@ -2856,7 +3005,7 @@ fn v03_21_contextlib_model_is_disabled_for_unlisted_python_targets() {
             "{result:#?}"
         );
         assert_eq!(result.coverage.status, "incomplete");
-        let report = typepact::CheckResult::from_inspection(result, "3.14");
+        let report = codepact::CheckResult::from_inspection(result, "3.14");
         assert!(report.available_models.is_empty());
         assert_eq!(report.model_catalog_version, 2);
     }
@@ -2864,20 +3013,20 @@ fn v03_21_contextlib_model_is_disabled_for_unlisted_python_targets() {
 
 #[test]
 fn v03_21_missing_python_version_input_disables_contextlib_models() {
-    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n";
+    let source = "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n";
     let result = check_source_version(source, "");
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(result
         .diagnostics
         .iter()
         .any(|diagnostic| { diagnostic.code == "TP1002" && diagnostic.certainty != "definite" }));
-    let report = typepact::CheckResult::from_inspection(result, "");
+    let report = codepact::CheckResult::from_inspection(result, "");
     assert!(report.available_models.is_empty());
 }
 
 #[test]
 fn v03_22_incremental_body_edit_matches_a_fresh_check() {
-    let mut session = typepact::AnalysisSession::default();
+    let mut session = codepact::AnalysisSession::default();
     for body in ["pass", "resource.close()", "raise RuntimeError"] {
         let source = format!("{RESOURCE}def cleanup():\n    resource = C()\n    {body}\n");
         let files = [SourceFile::new("phase03.py", "phase03", source)];
@@ -2888,7 +3037,7 @@ fn v03_22_incremental_body_edit_matches_a_fresh_check() {
 
 #[test]
 fn v03_10_contextlib_closing_preserves_a_checked_close_raise() {
-    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = C()\n    try:\n        with closing(resource):\n            pass\n    except RuntimeError:\n        pass\n";
+    let source = "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = C()\n    try:\n        with closing(resource):\n            pass\n    except RuntimeError:\n        pass\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2924,7 +3073,7 @@ fn v03_16_unknown_effect_cannot_improve_cleanup_certainty() {
 
 #[test]
 fn v03_18_nested_awaited_cleanup_keeps_cancellation_uncertain() {
-    let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    finally:\n        try:\n            await resource.pause()\n        finally:\n            await resource.aclose()\n";
+    let source = "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    finally:\n        try:\n            await resource.pause()\n        finally:\n            await resource.aclose()\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -2941,7 +3090,7 @@ fn v03_18_nested_awaited_cleanup_keeps_cancellation_uncertain() {
 
 #[test]
 fn v03_26_closing_a_capture_does_not_complete_its_pending_coroutine() {
-    let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    await resource.pause()\ndef cleanup():\n    resource = C()\n    pending = use(resource)\n    resource.close()\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    await resource.pause()\ndef cleanup():\n    resource = C()\n    pending = use(resource)\n    resource.close()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -2963,7 +3112,7 @@ fn v03_26_closing_a_capture_does_not_complete_its_pending_coroutine() {
 
 #[test]
 fn v03_26_pending_capture_across_async_context_exit_keeps_cancellation_visible() {
-    let source = "from contextlib import aclosing\nfrom typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n    pending = use(resource)\n    async with aclosing(resource):\n        await pending\n";
+    let source = "from contextlib import aclosing\nfrom codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by=\"aclose\")\nclass C:\n    async def aclose(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n    pending = use(resource)\n    async with aclosing(resource):\n        await pending\n";
     let result = check_source(source);
 
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
@@ -3000,7 +3149,7 @@ fn v03_26_pending_capture_across_async_context_exit_keeps_cancellation_visible()
 
 #[test]
 fn v03_26_unknown_actor_across_suspension_keeps_cleanup_uncertain() {
-    let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    opaque_effect(resource)\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n    unrelated = C()\n    try:\n        await use(resource)\n    finally:\n        resource.close()\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    opaque_effect(resource)\n    await resource.pause()\nasync def cleanup():\n    resource = C()\n    unrelated = C()\n    try:\n        await use(resource)\n    finally:\n        resource.close()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -3044,9 +3193,9 @@ fn v03_09_owned_helper_raise_reports_one_callee_obligation() {
 
 #[test]
 fn v03_10_contextlib_close_raise_replaces_body_raise_without_discharging() {
-    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise OSError()\ndef cleanup():\n    resource = C()\n    try:\n        with closing(resource):\n            raise ValueError()\n    except OSError:\n        pass\n";
+    let source = "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise OSError()\ndef cleanup():\n    resource = C()\n    try:\n        with closing(resource):\n            raise ValueError()\n    except OSError:\n        pass\n";
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = report
         .diagnostics
         .iter()
@@ -3063,7 +3212,7 @@ fn v03_10_contextlib_close_raise_replaces_body_raise_without_discharging() {
 
 #[test]
 fn v03_10_unknown_suppression_cannot_hide_the_resource_exit() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager():\n        raise RuntimeError()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager():\n        raise RuntimeError()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -3076,7 +3225,7 @@ fn v03_10_unknown_suppression_cannot_hide_the_resource_exit() {
 
 #[test]
 fn v03_10_unknown_suppression_keeps_propagation_and_continuation_paths() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    before = C()\n    with UnknownManager():\n        raise RuntimeError()\n    after = C()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    before = C()\n    with UnknownManager():\n        raise RuntimeError()\n    after = C()\n";
     let result = check_source(source);
     let leaks = result
         .diagnostics
@@ -3109,7 +3258,7 @@ fn v03_10_unknown_suppression_keeps_propagation_and_continuation_paths() {
 
 #[test]
 fn v03_10_unknown_outer_suppression_can_continue_after_inner_entry_failure() {
-    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef fail() -> C:\n    raise RuntimeError()\ndef cleanup():\n    outer = C()\n    with closing(outer), UnknownManager(), closing(fail()):\n        pass\n    after = C()\n";
+    let source = "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef fail() -> C:\n    raise RuntimeError()\ndef cleanup():\n    outer = C()\n    with closing(outer), UnknownManager(), closing(fail()):\n        pass\n    after = C()\n";
     let result = check_source(source);
     let leaks = result
         .diagnostics
@@ -3139,7 +3288,7 @@ fn v03_10_unknown_outer_suppression_can_continue_after_inner_entry_failure() {
 
 #[test]
 fn v03_10_unknown_outer_suppression_can_continue_after_inner_cleanup_failure() {
-    let source = "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise RuntimeError()\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager(), closing(resource):\n        pass\n    after = C()\n";
+    let source = "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self):\n        raise RuntimeError()\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager(), closing(resource):\n        pass\n    after = C()\n";
     let result = check_source(source);
     let leaks = result
         .diagnostics
@@ -3172,7 +3321,7 @@ fn v03_10_unknown_outer_suppression_can_continue_after_inner_cleanup_failure() {
 
 #[test]
 fn v03_20_taskgroup_and_executor_handoffs_remain_unknown() {
-    let task_group = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def finish(resource):\n    resource.close()\nasync def caller():\n    resource = C()\n    pending = finish(resource)\n    async with asyncio.TaskGroup() as group:\n        group.create_task(pending)\n";
+    let task_group = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def finish(resource):\n    resource.close()\nasync def caller():\n    resource = C()\n    pending = finish(resource)\n    async with asyncio.TaskGroup() as group:\n        group.create_task(pending)\n";
     let task_group_result = check_source(task_group);
     assert_eq!(task_group_result.coverage.status, "incomplete");
     assert!(
@@ -3184,7 +3333,7 @@ fn v03_20_taskgroup_and_executor_handoffs_remain_unknown() {
 
     for executor in ["ThreadPoolExecutor", "ProcessPoolExecutor"] {
         let source = format!(
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef consume(resource):\n    resource.close()\ndef caller():\n    resource = C()\n    pool = {executor}()\n    pool.submit(consume, resource)\n"
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef consume(resource):\n    resource.close()\ndef caller():\n    resource = C()\n    pool = {executor}()\n    pool.submit(consume, resource)\n"
         );
         let result = check_source(&source);
         assert_eq!(
@@ -3210,7 +3359,7 @@ fn v03_20_taskgroup_and_executor_handoffs_remain_unknown() {
 
 #[test]
 fn v03_24_custom_awaitable_does_not_infer_coroutine_execution() {
-    let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nclass CustomAwaitable:\n    def __await__(self): pass\nasync def cleanup():\n    resource = C()\n    await CustomAwaitable()\n";
+    let source = "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nclass CustomAwaitable:\n    def __await__(self): pass\nasync def cleanup():\n    resource = C()\n    await CustomAwaitable()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -3255,7 +3404,7 @@ fn v03_24_generator_and_except_star_flow_remain_visible_boundaries() {
 
 #[test]
 fn v03_13_callback_escape_keeps_captured_cleanup_unknown() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef leak(register):\n    resource = C()\n    register(lambda: resource.close())\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef leak(register):\n    resource = C()\n    register(lambda: resource.close())\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -3454,9 +3603,9 @@ fn v03_02_only_explicit_owned_parameters_create_incoming_duties() {
 
 #[test]
 fn v03_03_nested_cleanup_raise_still_runs_outer_cleanup_once() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n@resource(closed_by='close')\nclass Failing:\n    def close(self):\n        raise OSError()\ndef cleanup():\n    outer = C()\n    inner = Failing()\n    try:\n        try:\n            raise ValueError()\n        finally:\n            inner.close()\n    finally:\n        outer.close()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n@resource(closed_by='close')\nclass Failing:\n    def close(self):\n        raise OSError()\ndef cleanup():\n    outer = C()\n    inner = Failing()\n    try:\n        try:\n            raise ValueError()\n        finally:\n            inner.close()\n    finally:\n        outer.close()\n";
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = report
         .diagnostics
         .iter()
@@ -3495,7 +3644,7 @@ fn v03_08_ambiguous_return_alias_keeps_the_local_duty_and_unknown_boundary() {
 
 #[test]
 fn v03_06_check_report_retains_each_return_and_raise_completion() {
-    let report = typepact::check_report(
+    let report = codepact::check_report(
         &[SourceFile::new(
             "phase03.py",
             "phase03",
@@ -3546,9 +3695,9 @@ fn v03_14_conditional_loop_cleanup_keeps_the_zero_iteration_witness() {
 
 #[test]
 fn v03_18_exception_handler_does_not_swallow_cancellation() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    except Exception:\n        resource.close()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    except Exception:\n        resource.close()\n";
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     assert!(
         report.diagnostics.iter().any(|diagnostic| {
             diagnostic.code == "TP1002"
@@ -3562,9 +3711,9 @@ fn v03_18_exception_handler_does_not_swallow_cancellation() {
 
 #[test]
 fn v03_18_base_exception_handler_catches_cancellation_but_keeps_state_unknown() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    except BaseException:\n        resource.close()\n    else:\n        resource.close()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def cleanup():\n    resource = C()\n    try:\n        await resource.pause()\n    except BaseException:\n        resource.close()\n    else:\n        resource.close()\n";
     let report =
-        typepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
     let leaks = report
         .diagnostics
         .iter()
@@ -3594,7 +3743,7 @@ fn v03_18_base_exception_handler_catches_cancellation_but_keeps_state_unknown() 
 
 #[test]
 fn v03_02_shorthand_and_verbose_parameter_access_forms_share_duty_semantics() {
-    let source = "from typing import Annotated\nfrom typepact import resource\nfrom typepact.rust import Owned, Borrowed\nfrom typepact.contracts import OwnedAccess, Resource, SharedBorrow\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef owned_short(value: Owned[C]):\n    pass\ndef owned_verbose(value: Annotated[C, OwnedAccess()]):\n    pass\ndef borrowed_short(value: Borrowed[C]):\n    pass\ndef borrowed_verbose(value: Annotated[C, SharedBorrow()]):\n    pass\ndef ordinary(value: C):\n    pass\nclass D:\n    def close(self): pass\nDResource = Annotated[D, Resource(closed_by='close')]\ndef explicit_owned_short(value: Owned[DResource]):\n    pass\ndef explicit_owned_verbose(value: Annotated[DResource, OwnedAccess()]):\n    pass\ndef explicit_borrowed(value: Borrowed[DResource]):\n    pass\n";
+    let source = "from typing import Annotated\nfrom codepact import resource\nfrom codepact.rust import Owned, Borrowed\nfrom codepact.contracts import OwnedAccess, Resource, SharedBorrow\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef owned_short(value: Owned[C]):\n    pass\ndef owned_verbose(value: Annotated[C, OwnedAccess()]):\n    pass\ndef borrowed_short(value: Borrowed[C]):\n    pass\ndef borrowed_verbose(value: Annotated[C, SharedBorrow()]):\n    pass\ndef ordinary(value: C):\n    pass\nclass D:\n    def close(self): pass\nDResource = Annotated[D, Resource(closed_by='close')]\ndef explicit_owned_short(value: Owned[DResource]):\n    pass\ndef explicit_owned_verbose(value: Annotated[DResource, OwnedAccess()]):\n    pass\ndef explicit_borrowed(value: Borrowed[DResource]):\n    pass\n";
     let result = check_source(source);
     let leaks = result
         .diagnostics

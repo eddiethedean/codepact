@@ -1,19 +1,19 @@
 # Rust API reference
 
-The `typepact` crate exposes the same inspector and lifecycle checker used by the command-line program. It can be installed as a Rust library or used to build the CLI.
+The `codepact` crate exposes the same inspector and lifecycle checker used by the command-line program. CodePact 0.3.0 is an unreleased candidate; the crate has not been published.
 
 ## Install
 
-Add the crate to a Rust application:
+Build the crate from the repository root:
 
 ```sh
-cargo add typepact@0.2.0
+cargo build --locked -p codepact
 ```
 
-Or install the command from crates.io:
+Run the CLI from the checkout:
 
 ```sh
-cargo install typepact --version 0.2.0 --locked
+cargo run --locked -p codepact -- --version
 ```
 
 Source builds require Rust 1.96 or newer. Python CLI wheels do not require a Rust toolchain at installation time.
@@ -23,12 +23,12 @@ Source builds require Rust 1.96 or newer. Python CLI wheels do not require a Rus
 Create `SourceFile` values with a display path, a logical module name, and the source text. Pass all files that should participate in import resolution to `inspect`:
 
 ```rust
-use typepact::{inspect, SourceFile};
+use codepact::{inspect, SourceFile};
 
 fn main() {
     let source = r#"
-from typepact import resource
-from typepact.rust import Borrowed
+from codepact import resource
+from codepact.rust import Borrowed
 
 @resource(closed_by="close")
 class Connection:
@@ -47,7 +47,7 @@ def read(conn: Borrowed[Connection]) -> str: ...
 
 ## Lifecycle checking
 
-The published 0.2.0 crate exposes `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. They return the same `Inspection` shape with lifecycle findings and `assurance` set to `lifecycle-checking-for-supported-normal-flow`. This path tracks supported local constructions, aliases, branches, synchronous calls, and imported helpers through acyclic named re-exports. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
+The historical TypePact 0.2.0 crate exposed `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. The CodePact candidate retains those methods and adds cleanup-aware checking. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
 
 The host supplies all
 `SourceFile` values for checking: filesystem discovery belongs to the CLI adapter,
@@ -73,7 +73,7 @@ for source compatibility. This API is pre-release and does not qualify 0.3.
 Use `AnalysisSession` when inputs change repeatedly. It stores source in a Salsa database, tracks input revisions, and invalidates computations from changed files while retaining reusable work for unchanged files.
 
 ```rust
-use typepact::{AnalysisSession, SourceFile};
+use codepact::{AnalysisSession, SourceFile};
 
 fn inspect_edits() {
     let mut session = AnalysisSession::default();
@@ -97,7 +97,7 @@ Lifecycle body checks use tracked per-file queries with their supplied import
 dependencies. An edit to an unrelated file can reuse unaffected body checks;
 editing an imported effect refreshes that module and its callers. The 0.2
 validation matrix records query-execution evidence for both cases; see the
-[release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md) for qualification results.
+[release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md) for qualification results.
 
 ## Session operations
 
@@ -124,8 +124,9 @@ An `Ok` return does not establish successful declaration analysis. Check the ret
 ## Public types and limits
 
 The crate root exports the following result and input types. The 0.x API is
-provisional; the [`typepact` 0.2.0 rustdoc](https://docs.rs/typepact/0.2.0/typepact/)
-documents the published crate.
+provisional. Rustdoc for the published TypePact 0.2.0 crate remains at
+[`typepact` 0.2.0](https://docs.rs/typepact/0.2.0/typepact/); CodePact rustdoc
+will be available after the new crate is published.
 
 | Type or function | Purpose |
 | --- | --- |

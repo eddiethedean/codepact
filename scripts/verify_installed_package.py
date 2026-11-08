@@ -21,34 +21,34 @@ class CheckResult(TypedDict):
 
 
 def main() -> None:
-    version = importlib.metadata.version("typepact-cli")
-    assert importlib.metadata.metadata("typepact-cli")["Requires-Python"] == ">=3.11"
+    version = importlib.metadata.version("codepact-cli")
+    assert importlib.metadata.metadata("codepact-cli")["Requires-Python"] == ">=3.11"
     if "--cli-only" not in sys.argv:
-        import typepact
+        import codepact
 
-        assert importlib.metadata.version("typepact") == version
-        assert f"typepact-cli=={version}" in (
-            importlib.metadata.requires("typepact") or []
+        assert importlib.metadata.version("codepact") == version
+        assert f"codepact-cli=={version}" in (
+            importlib.metadata.requires("codepact") or []
         )
-        assert typepact.__file__ is not None
-        package = Path(typepact.__file__).parent
+        assert codepact.__file__ is not None
+        package = Path(codepact.__file__).parent
         assert package.is_relative_to(Path(sys.prefix))
         assert (package / "py.typed").is_file()
-        assert "typepact._native" not in sys.modules
+        assert "codepact._native" not in sys.modules
     executable = Path(sysconfig.get_path("scripts")) / (
-        "typepact.exe" if sys.platform == "win32" else "typepact"
+        "codepact.exe" if sys.platform == "win32" else "codepact"
     )
     assert executable.is_file(), executable
     result = subprocess.run(
         [str(executable), "--version"], check=True, capture_output=True, text=True
     )
-    assert result.stdout.strip() == f"typepact {version}", result.stdout
+    assert result.stdout.strip() == f"codepact {version}", result.stdout
     subprocess.run([str(executable), "--help"], check=True, capture_output=True)
     with tempfile.TemporaryDirectory() as temporary:
         source = Path(temporary) / "contracts.py"
         source.write_text(
-            "from typepact import resource\n"
-            "from typepact.rust import Borrowed\n"
+            "from codepact import resource\n"
+            "from codepact.rust import Borrowed\n"
             "@resource(closed_by='close')\n"
             "class Connection: pass\n"
             "def use(conn: Borrowed[Connection]): pass\n",
@@ -82,7 +82,7 @@ def main() -> None:
         lifecycle_marker = check_root / "executed"
         lifecycle_source.write_text(
             f"open({str(lifecycle_marker)!r}, 'w').close()\n"
-            "from typepact import resource\n"
+            "from codepact import resource\n"
             "@resource(closed_by='close')\n"
             "class Connection:\n"
             "    def close(self): pass\n"

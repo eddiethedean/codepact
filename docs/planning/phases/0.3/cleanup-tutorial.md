@@ -7,7 +7,7 @@ these files as source and never imports or executes the example program.
 The supported declaration says which method represents a successful close:
 
 ```python
-from typepact import resource
+from codepact import resource
 
 @resource(closed_by="close")
 class Connection:

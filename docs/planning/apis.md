@@ -20,8 +20,8 @@ Ownership metadata should use standard Annotated-compatible aliases when the com
 ## First vertical slice
 
 ~~~python
-from typepact import resource
-from typepact.rust import Borrowed
+from codepact import resource
+from codepact.rust import Borrowed
 
 @resource(closed_by="close")
 class Connection:
@@ -59,7 +59,7 @@ Borrowed views cannot escape into globals, containers, returned closures or unmo
 Proposed runtime values: `Ok(value)`, `Err(error)`, `Some(value)`, and `Nothing()`. Public types are typed unions of ordinary variant classes, with generic variance selected after mutation rules are settled. Payloads are exposed consistently for pattern matching. Classes may be immutable while their payloads remain mutable.
 
 ~~~python
-from typepact.rust import Result, Ok, Err
+from codepact.rust import Result, Ok, Err
 
 def parse_count(text: str) -> Result[int, ValueError]:
     try:
@@ -76,11 +76,11 @@ Result-to-exception conversion requires an explicit error mapping. No automatic 
 
 Metadata decorators must preserve object identity, signatures, inheritance behavior and descriptors where possible, without wrapping every method. Runtime enforcement is a separate opt-in capability with its own overhead and limitations. Metadata use must not load the native analyzer.
 
-Conflicting metadata is a declaration error; frontend order must not silently choose a winner. Imported aliases and re-exports resolve by symbol identity, not spelling alone. A user-defined function named resource must not receive TypePact semantics.
+Conflicting metadata is a declaration error; frontend order must not silently choose a winner. Imported aliases and re-exports resolve by symbol identity, not spelling alone. A user-defined function named resource must not receive CodePact semantics.
 
 ## Analyzer identity boundary
 
-Public Python spellings lower through the Ruff adapter and TypePact declaration/binding index described in the [migration plan](analyzer-migration.md). Supported eager aliases capture the class and metadata present at assignment; subsequent name rebinding cannot rewrite them. Internal Salsa identities are not public Rust/JSON identities. Preserve the one-shot inspector API while introducing a reusable analysis session; schema changes require an explicit compatibility decision.
+Public Python spellings lower through the Ruff adapter and CodePact declaration/binding index described in the [migration plan](analyzer-migration.md). Supported eager aliases capture the class and metadata present at assignment; subsequent name rebinding cannot rewrite them. Internal Salsa identities are not public Rust/JSON identities. Preserve the one-shot inspector API while introducing a reusable analysis session; schema changes require an explicit compatibility decision.
 
 ## Planned async and process contracts
 

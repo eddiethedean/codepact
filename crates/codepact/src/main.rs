@@ -1,12 +1,12 @@
+use codepact::{
+    inspect, is_python_identifier, CheckResult, Inspection, SourceFile, DEFAULT_MAX_SOURCE_BYTES,
+};
 use std::{
     env,
     fs::{self, File},
     io::Read,
     path::{Component, Path, PathBuf},
     process::ExitCode,
-};
-use typepact::{
-    inspect, is_python_identifier, CheckResult, Inspection, SourceFile, DEFAULT_MAX_SOURCE_BYTES,
 };
 
 fn print_inspection_diagnostics(out: &Inspection) {
@@ -109,7 +109,7 @@ fn discover_python_files(
 }
 
 fn usage() {
-    eprintln!("Usage: typepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       typepact check [--root DIR] [--python-version VERSION] [--json] [FILE...]\n       typepact --version\n\nInspect declarations or check the supported resource lifecycle subset without executing Python source.\ncheck discovers Python files under its root; inspect-contracts requires explicit files.");
+    eprintln!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--python-version VERSION] [--json] [FILE...]\n       codepact --version\n\nInspect declarations or check the supported resource lifecycle subset without executing Python source.\ncheck discovers Python files under its root; inspect-contracts requires explicit files.");
 }
 
 fn module_from_relative_path(path: &Path, python_version: &str) -> Result<String, String> {
@@ -158,7 +158,7 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
     if command == "--version" || command == "-V" {
-        println!("typepact {}", env!("CARGO_PKG_VERSION"));
+        println!("codepact {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
     }
     if command == "--help" || command == "-h" {
@@ -242,7 +242,7 @@ fn main() -> ExitCode {
         if let Err(error) = discover_python_files(
             project_root,
             &mut discovered,
-            typepact::DEFAULT_MAX_INPUT_FILES,
+            codepact::DEFAULT_MAX_INPUT_FILES,
         ) {
             eprintln!("{error}");
             return ExitCode::from(2);
@@ -257,10 +257,10 @@ fn main() -> ExitCode {
         paths.extend(discovered);
         paths.sort();
         paths.dedup();
-        if paths.len() > typepact::DEFAULT_MAX_INPUT_FILES {
+        if paths.len() > codepact::DEFAULT_MAX_INPUT_FILES {
             eprintln!(
                 "project input exceeds the {} file limit",
-                typepact::DEFAULT_MAX_INPUT_FILES
+                codepact::DEFAULT_MAX_INPUT_FILES
             );
             return ExitCode::from(2);
         }
@@ -383,7 +383,7 @@ fn main() -> ExitCode {
     }
 
     let mut out = if checking {
-        typepact::check(&files, &python_version)
+        codepact::check(&files, &python_version)
     } else {
         inspect(&files, &python_version)
     };

@@ -5,10 +5,10 @@ with the published 0.2.0 release.
 
 | Example | What it demonstrates | How to run |
 | --- | --- | --- |
-| [`examples/contracts.py`](https://github.com/eddiethedean/typepact/blob/main/examples/contracts.py) | Resource, `Borrowed`, and `Owned` declarations | `uv run typepact inspect-contracts --root . examples/contracts.py` |
-| [`docs/_examples/connection.py`](https://github.com/eddiethedean/typepact/blob/main/docs/_examples/connection.py) | Quick-start contract facts and JSON snapshot | `uv run typepact inspect-contracts --root docs/_examples docs/_examples/connection.py` |
-| [`docs/_examples/project/`](https://github.com/eddiethedean/typepact/tree/main/docs/_examples/project) | Direct absolute imports across supplied modules | See the [multi-file tutorial](project-guide.md) |
-| [`examples/lifecycle.py`](https://github.com/eddiethedean/typepact/blob/main/examples/lifecycle.py) | Supported use-after-close finding with the related close location | `uv run typepact check --root examples` |
+| [`examples/contracts.py`](https://github.com/eddiethedean/codepact/blob/main/examples/contracts.py) | Resource, `Borrowed`, and `Owned` declarations | `uv run codepact inspect-contracts --root . examples/contracts.py` |
+| [`docs/_examples/connection.py`](https://github.com/eddiethedean/codepact/blob/main/docs/_examples/connection.py) | Quick-start contract facts and JSON snapshot | `uv run codepact inspect-contracts --root docs/_examples docs/_examples/connection.py` |
+| [`docs/_examples/project/`](https://github.com/eddiethedean/codepact/tree/main/docs/_examples/project) | Direct absolute imports across supplied modules | See the [multi-file tutorial](project-guide.md) |
+| [`examples/lifecycle.py`](https://github.com/eddiethedean/codepact/blob/main/examples/lifecycle.py) | Supported use-after-close finding with the related close location | `uv run codepact check --root examples` |
 
 The lifecycle example intentionally exits with status `1`. Removing its final
 use produces a valid counterpart with no lifecycle finding or coverage boundary

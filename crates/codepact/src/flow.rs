@@ -1258,7 +1258,7 @@ fn assigned_names(statements: &[FlowStatement]) -> BTreeSet<String> {
 }
 
 fn synthetic_name(state: &State, role: &str, range: SourceRange, index: usize) -> String {
-    let base = format!("__typepact_{role}_{}_{}", range.start, index);
+    let base = format!("__codepact_{role}_{}_{}", range.start, index);
     let mut candidate = base.clone();
     let mut suffix = 0usize;
     while state.places.contains_key(&candidate)
@@ -2215,7 +2215,7 @@ fn capture_coroutine_place(
     };
     let Some(targets) = env.places.get(name) else {
         let unknown = env.unknown_places.contains(name);
-        let synthetic = format!("__typepact_coro_{}_{}", id, *next_capture);
+        let synthetic = format!("__codepact_coro_{}_{}", id, *next_capture);
         *next_capture = next_capture.saturating_add(1);
         captures.insert(
             synthetic.clone(),
@@ -2228,7 +2228,7 @@ fn capture_coroutine_place(
         return unknown;
     };
     let unknown = env.unknown_places.contains(name);
-    let synthetic = format!("__typepact_coro_{}_{}", id, *next_capture);
+    let synthetic = format!("__codepact_coro_{}_{}", id, *next_capture);
     *next_capture = next_capture.saturating_add(1);
     captures.insert(
         synthetic.clone(),
@@ -2270,7 +2270,7 @@ fn register_pending_coroutine(
             AstExprKind::Name(callee) => {
                 let binding =
                     binding_override.or_else(|| env.function_bindings.get(callee).cloned());
-                let synthetic = format!("__typepact_coro_func_{id}");
+                let synthetic = format!("__codepact_coro_func_{id}");
                 if let Some(binding) = binding {
                     env.function_bindings.insert(synthetic.clone(), binding);
                 } else {
@@ -5530,7 +5530,7 @@ fn execute_non_if_statement(
         FlowStatement::Return { value, .. } => {
             env.pending_return_targets = None;
             if let Some(value) = value {
-                let temporary = format!("__typepact_return_{}", value.range.start);
+                let temporary = format!("__codepact_return_{}", value.range.start);
                 let constructor = match &value.kind {
                     AstExprKind::Call { function, .. } => expr_name(function).is_some_and(|name| {
                         env.class_bindings.get(name).is_some_and(Option::is_some)
@@ -6401,7 +6401,7 @@ mod tests {
 
     #[test]
     fn low_flow_budget_preserves_a_visible_duty_against_a_finite_high_budget_reference() {
-        let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    resource.close()\n";
+        let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    resource.close()\n";
         let reference = source_with_flow_budget(source, 100);
         assert_eq!(
             reference.coverage.status, "complete-for-supported-subset",
@@ -6432,7 +6432,7 @@ mod tests {
 
     #[test]
     fn unknown_context_unwind_worklist_obeys_the_flow_budget() {
-        let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager(), UnknownManager(), UnknownManager(), UnknownManager():\n        raise RuntimeError()\n";
+        let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nclass UnknownManager:\n    def __enter__(self): return self\n    def __exit__(self, exc_type, exc, traceback): return True\ndef cleanup():\n    resource = C()\n    with UnknownManager(), UnknownManager(), UnknownManager(), UnknownManager():\n        raise RuntimeError()\n";
         let bounded = source_with_flow_budget(source, 2);
 
         assert_eq!(bounded.coverage.status, "incomplete", "{bounded:#?}");

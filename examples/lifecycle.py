@@ -1,7 +1,7 @@
-"""Small lifecycle example for `typepact check --root examples`."""
+"""Small lifecycle example for `codepact check --root examples`."""
 
-from typepact import resource
-from typepact.rust import Borrowed
+from codepact import resource
+from codepact.rust import Borrowed
 
 
 @resource(closed_by="close")

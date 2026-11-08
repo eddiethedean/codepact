@@ -5,9 +5,15 @@
 This unreleased candidate extends lifecycle checking with bounded cleanup
 obligations. Release qualification is pending; this section describes candidate
 behavior and must not be read as a published support claim. See the [phase
-plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3-cleanup.md), [supported subset and
-limitations](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/specification.md), [validation
-matrix](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/validation.md), [candidate evidence record](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.3.0-evidence.md), and [candidate tutorial](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md).
+plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md), [supported subset and
+limitations](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/specification.md), [validation
+matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/validation.md), [candidate evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md), and [candidate tutorial](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md).
+
+This is also the first CodePact release candidate. The Python distributions and
+import, CLI distribution and executable, Rust crate and import, and GitHub
+repository use the `codepact` name. The previous 0.1.0 and 0.2.0 TypePact
+artifacts remain documented under their original names; compatibility aliases
+are not part of this candidate.
 
 ### Candidate behavior
 
@@ -39,7 +45,7 @@ report incomplete coverage. Resource declarations remain static contracts, not
 proof that an external close operation succeeds at runtime.
 
 TP1002 is a new default diagnostic in the candidate and can make existing
-`typepact check` commands exit with status 1 for definite outstanding duties.
+`codepact check` commands exit with status 1 for definite outstanding duties.
 Possible findings and boundary-only reports continue to return 0; malformed or
 unrecoverable input returns 2. The candidate has not yet passed the 0.3
 qualification gates, and no package version has been published for this

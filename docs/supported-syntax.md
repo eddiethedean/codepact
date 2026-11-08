@@ -3,18 +3,18 @@
 The inspector handles a deliberately limited set of Python declarations. It parses source with the selected Python grammar, resolves only the supported static relationships, and marks coverage incomplete when a relevant construct falls outside that set.
 
 The declaration sections describe the published inspector. Version 0.2.0 adds
-the lifecycle-checking subset below; the [release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md)
+the lifecycle-checking subset below; the [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md)
 records its qualification.
 
 ## Recognized declarations
 
 - Module-level classes.
-- A literal `@resource(closed_by="method")` from `typepact`.
+- A literal `@resource(closed_by="method")` from `codepact`.
 - Simple class and assignment aliases, including supported `typing.Annotated`, `Borrowed`, `Owned`, and `BorrowedMut` forms.
 - Function parameter and return annotations that resolve to supported classes or aliases.
 - Lifecycle metadata using `Resource(closed_by="method")` and access metadata using `SharedBorrow()`, `OwnedAccess()`, or `ExclusiveBorrow()`.
 - Direct absolute imports of classes and supported assignment aliases between source files supplied in the same invocation.
-- Imported names and aliases of the supported TypePact symbols, including `from typepact import rust` and `from typepact import contracts`.
+- Imported names and aliases of the supported CodePact symbols, including `from codepact import rust` and `from codepact import contracts`.
 - Literal `None` parameter and return annotations, which emit no resource contract.
 
 Class lifecycle and function access declarations compose independently. Compatible declarations are merged; conflicts include source locations and make coverage incomplete.
@@ -65,7 +65,7 @@ subset. Consult [limitations](limitations.md).
 
 The current worktree extends cleanup checking across supported synchronous exit
 paths. These behaviors are implemented and covered by candidate tests, but are
-not release-qualified until the maintainer completes the [V03 matrix](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/validation.md)
+not release-qualified until the maintainer completes the [V03 matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/validation.md)
 and release gates.
 
 - `try`/`except`/`else`/`finally`, explicit returns and raises, and ordinary
@@ -129,13 +129,13 @@ The 0.3 candidate also caps loop fixed-point analysis at 16 passes, exact
 static tuple iteration at 16 items, and pending coroutine records at 128 per
 flow state. Exceeding a bound widens affected state and reports incomplete
 coverage. These 0.3 values are candidate defaults, not accepted release
-budgets; see the [phase plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3-cleanup.md).
+budgets; see the [phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
 
 When a flow limit is reached, the checker drops the affected exact facts,
 weakens reachable resource state, and reports a TP9001 boundary with incomplete
 coverage. It does not truncate an alias set and continue as if the remaining
 objects were exact. These are the accepted 0.2.0 defaults; the phase plan and
-[performance record](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2/performance.md)
+[performance record](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.2/performance.md)
 contain their qualification fixtures and measurements.
 The request-wide flow limit is split evenly among files; unused work in one file
 is not reassigned. An edit in one file therefore cannot shift another file's

@@ -57,7 +57,7 @@ def main() -> None:
     root = Path(__file__).resolve().parent.parent
     path = (
         root
-        / "crates/typepact/src/identifiers"
+        / "crates/codepact/src/identifiers"
         / (f"python{version[0]}{version[1]}.rs")
     )
     if check:

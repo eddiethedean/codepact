@@ -1,4 +1,4 @@
-//! Bounded, non-executing inspection of TypePact declarations in Python source.
+//! Bounded, non-executing inspection of CodePact declarations in Python source.
 pub mod db;
 pub use db::{
     AnalysisCancelled, AnalysisSession, CancellationToken, SessionCheckResult, SessionInputError,
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn recognizes_resource_and_borrowed() {
-        let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by=\"close\")\nclass Connection:\n    def close(self): pass\ndef inspect(conn: Borrowed[Connection]): pass\n";
+        let source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by=\"close\")\nclass Connection:\n    def close(self): pass\ndef inspect(conn: Borrowed[Connection]): pass\n";
         let result = inspect(&[SourceFile::new("example.py", "example", source)], "3.11");
         assert_eq!(result.contracts.len(), 2, "{result:#?}");
         assert!(result.contracts.iter().any(|contract| {

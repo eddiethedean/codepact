@@ -32,7 +32,7 @@ Initial scope is lifecycle checking, cross-interface normalization, a CLI and st
 
 A general replacement for mypy or Pyright, a Python compiler, and a universal memory-safety proof are outside the initial product. Native Python exceptions remain available. Users do not need to rewrite every return value into Result.
 
-The optional [typepact-pyrefly-cli prototype](typepact-pyrefly-cli.md) explores one command for ordinary type checking and TypePact resource checks by embedding upstream Pyrefly alongside the core analyzer. General Python type semantics remain upstream-owned; this separate experimental distribution does not expand the core engine into a general type checker.
+The optional [codepact-pyrefly-cli prototype](codepact-pyrefly-cli.md) explores one command for ordinary type checking and CodePact resource checks by embedding upstream Pyrefly alongside the core analyzer. General Python type semantics remain upstream-owned; this separate experimental distribution does not expand the core engine into a general type checker.
 
 ## Adoption path
 
@@ -48,7 +48,7 @@ Track runtime import cost, cold analysis time, incremental latency, memory and i
 
 ## Analyzer foundation
 
-The implementation direction is a Ruff AST frontend, TypePact-owned declaration and contract semantics, and Salsa incremental queries following ty's architectural separation. The [migration plan](analyzer-migration.md) makes correctness and observable reuse foundation requirements. This direction improves the basis for contract analysis without promising general Python type-checker coverage or Rust safety guarantees.
+The implementation direction is a Ruff AST frontend, CodePact-owned declaration and contract semantics, and Salsa incremental queries following ty's architectural separation. The [migration plan](analyzer-migration.md) makes correctness and observable reuse foundation requirements. This direction improves the basis for contract analysis without promising general Python type-checker coverage or Rust safety guarantees.
 
 ## Concurrent resource safety direction
 

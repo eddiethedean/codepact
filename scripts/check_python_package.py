@@ -36,14 +36,14 @@ def main() -> None:
         assert len(artifacts) == 4
         for artifact in artifacts:
             if artifact.suffix == ".whl":
-                cli = artifact.name.startswith("typepact_cli-")
+                cli = artifact.name.startswith("codepact_cli-")
                 assert artifact.name.endswith("none-any.whl") != cli
                 with zipfile.ZipFile(artifact) as archive:
                     names = archive.namelist()
                     assert (
-                        any(".data/scripts/typepact" in name for name in names) == cli
+                        any(".data/scripts/codepact" in name for name in names) == cli
                     )
-                    assert ("typepact/py.typed" in names) != cli
+                    assert ("codepact/py.typed" in names) != cli
         subprocess.run(
             [sys.executable, "-m", "twine", "check", "--strict", *map(str, artifacts)],
             check=True,
@@ -56,7 +56,7 @@ def main() -> None:
             interpreter = venv / (
                 "Scripts/python.exe" if os.name == "nt" else "bin/python"
             )
-            cli = artifact.name.startswith("typepact_cli-")
+            cli = artifact.name.startswith("codepact_cli-")
             options = (
                 ["--no-deps"]
                 if cli

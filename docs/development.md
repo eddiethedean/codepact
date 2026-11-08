@@ -1,12 +1,12 @@
 # Development guide
 
-TypePact development spans a typed Python helper package and a Rust analyzer. Use `uv` for the Python workspace and Rust 1.96 or newer for the analyzer.
+CodePact development spans a typed Python helper package and a Rust analyzer. Use `uv` for the Python workspace and Rust 1.96 or newer for the analyzer.
 
 ## Set up a checkout
 
 ```sh
-git clone git@github.com:eddiethedean/typepact.git
-cd typepact
+git clone git@github.com:eddiethedean/codepact.git
+cd codepact
 uv sync --locked
 ```
 
@@ -69,17 +69,17 @@ in `docs/releases/0.1.0-evidence.md` and `docs/releases/0.2.0-evidence.md`.
 Documentation of implemented patterns does not by itself mark phase validation
 rows or release gates as passed.
 
-Read the Docs uses `.readthedocs.yaml` at the repository root. Connect the GitHub repository to the `typepact` Read the Docs project and enable the desired branches or release tags there. The checked-in configuration selects the build tools, requirements, and Sphinx entry point. GitHub's docs job runs the same strict local build target on pushes and pull requests.
+Read the Docs uses `.readthedocs.yaml` at the repository root. Connect the GitHub repository to the `codepact` Read the Docs project and enable the desired branches or release tags there. The checked-in configuration selects the build tools, requirements, and Sphinx entry point. GitHub's docs job runs the same strict local build target on pushes and pull requests.
 
 ## Contribution notes
 
 - Add analyzer fixtures for supported behavior and explicit incomplete-coverage boundaries.
 - Keep unsupported source visible; do not silently treat unknown declarations as resolved.
-- Preserve Python 3.11 compatibility for the helpers and type strictness in `python/typepact`.
+- Preserve Python 3.11 compatibility for the helpers and type strictness in `python/codepact`.
 - Update documentation when changing the contract API, CLI, schema, supported Python targets, or limits.
 - Do not execute inspected Python files as part of analysis.
 
-See [CONTRIBUTING.md](https://github.com/eddiethedean/typepact/blob/main/CONTRIBUTING.md) for repository guidance. The current 0.2.0 release procedure is in [the release checklist](https://github.com/eddiethedean/typepact/blob/main/docs/planning/release-0.2.0-checklist.md).
+See [CONTRIBUTING.md](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) for repository guidance. The historical TypePact 0.2.0 release procedure is in [the release checklist](https://github.com/eddiethedean/codepact/blob/main/docs/planning/release-0.2.0-checklist.md); the CodePact 0.3.0 candidate record tracks the current workflow.
 
 ## Measure the release baseline
 
@@ -90,4 +90,4 @@ cargo build --release --locked
 uv run --locked python scripts/benchmark_inspector.py
 ```
 
-The report records median/range for fresh CLI processes and helper imports, corpus size, host information, and maximum child RSS. Process startup and OS cache effects are included. Query-reuse correctness is established separately by the Salsa execution-counter tests. Candidate results and gate decisions are tracked in the [0.1.0 evidence record](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.1.0-evidence.md).
+The report records median/range for fresh CLI processes and helper imports, corpus size, host information, and maximum child RSS. Process startup and OS cache effects are included. Query-reuse correctness is established separately by the Salsa execution-counter tests. Candidate results and gate decisions are tracked in the [0.1.0 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.1.0-evidence.md).

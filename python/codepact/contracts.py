@@ -1,4 +1,4 @@
-"""Typing metadata understood by the TypePact source inspector."""
+"""Typing metadata understood by the CodePact source inspector."""
 
 from dataclasses import dataclass
 from typing import Annotated, TypeAlias, TypeVar

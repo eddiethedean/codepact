@@ -1,6 +1,6 @@
-use typepact::{check, Diagnostic, Inspection, SourceFile};
+use codepact::{check, Diagnostic, Inspection, SourceFile};
 
-const RESOURCE: &str = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n";
+const RESOURCE: &str = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n";
 
 fn check_source(source: &str) -> Inspection {
     check(&[SourceFile::new("main.py", "main", source)], "3.11")
@@ -130,8 +130,8 @@ fn unpacking_variadic_and_omitted_default_bindings_remain_visible_boundaries() {
 #[test]
 fn helper_effects_use_the_actual_objects_resource_identity() {
     for (operation, expected) in [("close", 0), ("release", 1)] {
-        let provider = format!("from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef wrap(value):\n    temp = C()\n    value.{operation}()\n");
-        let caller = "from typepact import resource\nfrom provider import wrap\n@resource(closed_by='release')\nclass C:\n    def close(self): pass\n    def release(self): pass\n    def status(self): pass\nc = C()\nwrap(c)\nc.status()\n";
+        let provider = format!("from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef wrap(value):\n    temp = C()\n    value.{operation}()\n");
+        let caller = "from codepact import resource\nfrom provider import wrap\n@resource(closed_by='release')\nclass C:\n    def close(self): pass\n    def release(self): pass\n    def status(self): pass\nc = C()\nwrap(c)\nc.status()\n";
         let result = check(
             &[
                 SourceFile::new("caller.py", "caller", caller),
@@ -154,9 +154,9 @@ fn helper_effects_use_the_actual_objects_resource_identity() {
 #[test]
 fn imported_constructor_aliases_in_helpers_use_provider_scope() {
     let files = [
-        SourceFile::new("model.py", "model", "from typepact import resource\n@resource(closed_by='close')\nclass Actual:\n    def __init__(self, value): value.close()\n    def close(self): pass\n"),
+        SourceFile::new("model.py", "model", "from codepact import resource\n@resource(closed_by='close')\nclass Actual:\n    def __init__(self, value): value.close()\n    def close(self): pass\n"),
         SourceFile::new("provider.py", "provider", "from model import Actual as C\ndef wrap(value):\n    temp = C(value)\n"),
-        SourceFile::new("caller.py", "caller", "from typepact import resource\nfrom provider import wrap\n@resource(closed_by='close')\nclass C:\n    def __init__(self): pass\n    def close(self): pass\n    def status(self): pass\nc = C()\nwrap(c)\nc.status()\n"),
+        SourceFile::new("caller.py", "caller", "from codepact import resource\nfrom provider import wrap\n@resource(closed_by='close')\nclass C:\n    def __init__(self): pass\n    def close(self): pass\n    def status(self): pass\nc = C()\nwrap(c)\nc.status()\n"),
     ];
     let result = check(&files, "3.11");
     assert_eq!(findings(&result).len(), 1, "{result:#?}");
@@ -183,7 +183,7 @@ fn default_constructors_reject_arguments_without_creating_normal_successors() {
 
 #[test]
 fn signature_edits_refresh_incremental_call_effects() {
-    let mut session = typepact::AnalysisSession::default();
+    let mut session = codepact::AnalysisSession::default();
     let caller = SourceFile::new(
         "caller.py",
         "caller",
@@ -300,7 +300,7 @@ fn return_states_exclude_the_raising_fallthrough_state() {
 
 #[test]
 fn redefined_functions_keep_their_own_parameter_contracts() {
-    let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef f(value: C): pass\ndef f(value: Borrowed[C]): value.close()\nc = C()\nf(c)\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef f(value: C): pass\ndef f(value: Borrowed[C]): value.close()\nc = C()\nf(c)\n";
     let result = check_source(source);
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
@@ -310,7 +310,7 @@ fn redefined_functions_keep_their_own_parameter_contracts() {
     );
     assert_eq!(result.coverage.status, "complete-for-supported-subset");
 
-    let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef f(value: Borrowed[C]): pass\ndef f(value: C): value.close()\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef f(value: Borrowed[C]): pass\ndef f(value: C): value.close()\n";
     let result = check_source(source);
     assert!(
         result
@@ -323,7 +323,7 @@ fn redefined_functions_keep_their_own_parameter_contracts() {
 
 #[test]
 fn same_module_helpers_resolve_global_classes_without_callers_local_aliases() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Closer:\n    def __init__(self, value): value.close()\n    def close(self): pass\n@resource(closed_by='close')\nclass Safe:\n    def __init__(self, value): pass\n    def close(self): pass\ndef helper(value: C):\n    temp = Closer(value)\ndef caller(value: C):\n    Closer = Safe\n    helper(value)\nc = C()\nunused = caller(c)\nunused = c.status()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Closer:\n    def __init__(self, value): value.close()\n    def close(self): pass\n@resource(closed_by='close')\nclass Safe:\n    def __init__(self, value): pass\n    def close(self): pass\ndef helper(value: C):\n    temp = Closer(value)\ndef caller(value: C):\n    Closer = Safe\n    helper(value)\nc = C()\nunused = caller(c)\nunused = c.status()\n";
     let result = check_source(source);
     assert_eq!(findings(&result).len(), 1, "{result:#?}");
     assert_eq!(findings(&result)[0].certainty, "definite", "{result:#?}");
@@ -332,7 +332,7 @@ fn same_module_helpers_resolve_global_classes_without_callers_local_aliases() {
 
 #[test]
 fn resource_instances_do_not_recover_stale_class_identity_through_aliases() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Factory:\n    def __init__(self, value): pass\n    def __call__(self, value): value.close()\n    def close(self): pass\nc = C()\nFactory = Factory(c)\nalias = Factory\nother = alias(c)\nc.status()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Factory:\n    def __init__(self, value): pass\n    def __call__(self, value): value.close()\n    def close(self): pass\nc = C()\nFactory = Factory(c)\nalias = Factory\nother = alias(c)\nc.status()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete");
     assert!(
@@ -346,7 +346,7 @@ fn resource_instances_do_not_recover_stale_class_identity_through_aliases() {
 
 #[test]
 fn arbitrary_annotation_subscripts_create_a_boundary() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nclass Hook:\n    def __class_getitem__(cls, arg):\n        c.close()\n        return int\nc = C()\ndef f(value: Hook[int]): pass\nc.status()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nclass Hook:\n    def __class_getitem__(cls, arg):\n        c.close()\n        return int\nc = C()\ndef f(value: Hook[int]): pass\nc.status()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -360,7 +360,7 @@ fn arbitrary_annotation_subscripts_create_a_boundary() {
 
 #[test]
 fn attribute_evaluation_in_annotations_creates_a_boundary() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Hook:\n    def __getattribute__(self, name):\n        c.close()\n        return int\n    def close(self): pass\nhook = Hook()\nc = C()\ndef f(value: hook.annotation): pass\nc.status()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Hook:\n    def __getattribute__(self, name):\n        c.close()\n        return int\n    def close(self): pass\nhook = Hook()\nc = C()\ndef f(value: hook.annotation): pass\nc.status()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -399,8 +399,8 @@ fn nested_helpers_share_the_control_flow_stack_budget() {
 
 #[test]
 fn imported_and_explicit_resource_constructors_preserve_resource_imports() {
-    let provider = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n";
-    let imported = "from provider import C\nfrom typepact import resource\nc = C()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nc.close()\nc.status()\n";
+    let provider = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n";
+    let imported = "from provider import C\nfrom codepact import resource\nc = C()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nc.close()\nc.status()\n";
     let result = check(
         &[
             SourceFile::new("main.py", "main", imported),
@@ -411,7 +411,7 @@ fn imported_and_explicit_resource_constructors_preserve_resource_imports() {
     assert_eq!(findings(&result).len(), 1, "{result:#?}");
     assert_eq!(findings(&result)[0].certainty, "definite", "{result:#?}");
 
-    let explicit = "from typing import Annotated\nfrom typepact.contracts import Resource\nfrom typepact import resource\nclass C:\n    def close(self): pass\n    def status(self): pass\nView = Annotated[C, Resource(closed_by='close')]\nc = View()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nc.close()\nc.status()\n";
+    let explicit = "from typing import Annotated\nfrom codepact.contracts import Resource\nfrom codepact import resource\nclass C:\n    def close(self): pass\n    def status(self): pass\nView = Annotated[C, Resource(closed_by='close')]\nc = View()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nc.close()\nc.status()\n";
     let result = check_source(explicit);
     assert_eq!(findings(&result).len(), 1, "{result:#?}");
     assert_eq!(findings(&result)[0].certainty, "definite", "{result:#?}");
@@ -419,7 +419,7 @@ fn imported_and_explicit_resource_constructors_preserve_resource_imports() {
 
 #[test]
 fn recursive_constructors_stop_at_a_boundary() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def __init__(self): nested = C()\n    def close(self): pass\nc = C()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def __init__(self): nested = C()\n    def close(self): pass\nc = C()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -435,7 +435,7 @@ fn recursive_constructors_stop_at_a_boundary() {
 
 #[test]
 fn reassignment_constructor_rhs_keeps_the_old_class_binding_during_evaluation() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nC = C()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nC.close()\nC.status()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nC = C()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nC.close()\nC.status()\n";
     let result = check_source(source);
     assert_eq!(findings(&result).len(), 1, "{result:#?}");
     assert_eq!(findings(&result)[0].certainty, "definite", "{result:#?}");
@@ -443,7 +443,7 @@ fn reassignment_constructor_rhs_keeps_the_old_class_binding_during_evaluation() 
 
 #[test]
 fn annotation_metadata_hashing_creates_a_boundary() {
-    let source = "from typepact import resource\nfrom typing import Annotated\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Hook:\n    def __hash__(self):\n        c.close()\n        return 1\n    def close(self): pass\nhook = Hook()\nc = C()\ndef f(value: Annotated[C, {hook}]): pass\nc.status()\n";
+    let source = "from codepact import resource\nfrom typing import Annotated\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Hook:\n    def __hash__(self):\n        c.close()\n        return 1\n    def close(self): pass\nhook = Hook()\nc = C()\ndef f(value: Annotated[C, {hook}]): pass\nc.status()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -463,7 +463,7 @@ fn aliased_annotated_metadata_hashing_creates_a_boundary() {
         ("from typing_extensions import Annotated as A", "A"),
     ] {
         let source = format!(
-            "from typepact import resource\n{import}\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Hook:\n    def __hash__(self):\n        c.close()\n        return 1\n    def close(self): pass\nhook = Hook()\nc = C()\ndef f(value: {annotation}[C, hook]): pass\nc.status()\n"
+            "from codepact import resource\n{import}\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n@resource(closed_by='close')\nclass Hook:\n    def __hash__(self):\n        c.close()\n        return 1\n    def close(self): pass\nhook = Hook()\nc = C()\ndef f(value: {annotation}[C, hook]): pass\nc.status()\n"
         );
         let result = check_source(&source);
         assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
@@ -480,7 +480,7 @@ fn aliased_annotated_metadata_hashing_creates_a_boundary() {
 
 #[test]
 fn unknown_effects_do_not_restore_shadowed_builtin_annotation_names() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nclass list:\n    def __class_getitem__(cls, item):\n        c.close()\n        return item\nunknown()\nc = C()\ndef f(value: list[C]): pass\nc.status()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nclass list:\n    def __class_getitem__(cls, item):\n        c.close()\n        return item\nunknown()\nc = C()\ndef f(value: list[C]): pass\nc.status()\n";
     let result = check_source(source);
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(
@@ -495,7 +495,7 @@ fn unknown_effects_do_not_restore_shadowed_builtin_annotation_names() {
 
 #[test]
 fn modeled_resource_construction_preserves_the_resource_decorator_import() {
-    let source = "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nc = C()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nc.close()\nc.status()\n";
+    let source = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\nc = C()\n@resource(closed_by='close')\nclass D:\n    def close(self): pass\nc.close()\nc.status()\n";
     let result = check_source(source);
     assert_eq!(
         result.coverage.status, "complete-for-supported-subset",

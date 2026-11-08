@@ -1,72 +1,63 @@
 # Release and capability availability
 
-TypePact 0.2.0 is published on PyPI and crates.io. Its release and artifact
-evidence is recorded in the [0.2.0 release record](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md).
+CodePact 0.3.0 is an unreleased candidate. It is the first release candidate
+under the CodePact name and the new `codepact` Python packages, CLI, and Rust
+crate. Qualification is pending; none of those 0.3.0 artifacts has been
+published.
+
+The published 0.1.0 and 0.2.0 releases used the former TypePact name. Their
+historical records remain available in the [0.1.0](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.1.0-evidence.md)
+and [0.2.0](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md) release evidence.
+
+The documentation site still uses the existing `typepact.readthedocs.io`
+address. Its visible title and repository content use CodePact; the hosting
+project slug has not been renamed.
 
 ## Current releases
 
-| Version | Status | Available behavior |
-| --- | --- | --- |
-| 0.2.0 | Published on PyPI and crates.io | Declaration inspection and bounded lifecycle checking for the documented synchronous subset |
-| 0.1.0 | Published on PyPI and crates.io | Contract declaration inspection with `inspect-contracts` |
-
-The published Python packages and Rust crate report version `0.2.0`. Use a
-source commit when you need to identify unreleased development changes.
-
-## Capability by installation
-
-| Install | `inspect-contracts` | `check` | Version identifier |
+| Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
-| PyPI `typepact==0.2.0` and matching `typepact-cli==0.2.0` | Yes | Yes, for the documented subset | `0.2.0` |
-| crates.io `typepact==0.2.0` | Rust inspection API and CLI | Rust API and CLI | `0.2.0` |
-| PyPI `typepact==0.1.0` and matching `typepact-cli==0.1.0` | Yes | No | `0.1.0` |
-| crates.io `typepact==0.1.0` | Rust inspection API and CLI | No | `0.1.0` |
-| Source checkout | Yes | Yes, for the implemented subset | Record the Git commit |
+| CodePact 0.3.0 | Candidate; not published | `codepact`, `codepact-cli`, Rust crate `codepact` | Cleanup obligations, lifecycle checking, and declaration inspection; see the candidate specification |
+| TypePact 0.2.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Declaration inspection and bounded synchronous lifecycle checking |
+| TypePact 0.1.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Contract declaration inspection |
 
-Install the current Python packages with:
+CodePact source checkouts use version `0.3.0` and package names in their build
+metadata. Those values identify the candidate; they do not mean it is available
+from a package registry. Record the full Git commit when identifying candidate
+results.
+
+## Try the CodePact candidate
+
+Build from the repository checkout with Python 3.11+ and Rust 1.96+:
 
 ```sh
-uv add typepact==0.2.0
+git clone https://github.com/eddiethedean/codepact.git
+cd codepact
+uv sync --locked
+uv run --locked codepact --version
+uv run --locked codepact check --root examples
 ```
 
-The helper pins the matching CLI package. To install only the command, use
-`uv tool install typepact-cli==0.2.0`. For Rust applications, add
-`typepact = "0.2.0"` or run `cargo install typepact --version 0.2.0 --locked`.
+After the maintainer completes qualification and publishes 0.3.0, the matching
+Python packages will be installed with `uv add codepact==0.3.0`; install only
+the command with `uv tool install codepact-cli==0.3.0`. Rust applications will
+use the `codepact` crate. Do not use those registry commands for the current
+unreleased candidate.
 
 ## Platform and runtime evidence
 
-The 0.2.0 helper wheel is pure Python and requires Python 3.11 or newer. The CLI
-release built and smoke-tested eight native wheels:
+The candidate configures a universal pure Python helper wheel and eight native
+CLI wheel targets:
 
 | Platform | x86-64 | ARM64 |
 | --- | --- | --- |
 | Linux glibc | glibc 2.17+ | glibc 2.28+ |
 | Linux musl | musl 1.2+ | musl 1.2+ |
 | macOS | 10.13+ | 11.0+ |
-| Windows | Native x86-64 wheel | Native ARM64 wheel |
+| Windows | Supported | Supported |
 
-The exact release workflow built and ran platform install/smokes for every CLI
-wheel. See the [0.2.0 release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md) for the
-artifact hashes and qualification results.
-
-The Python helpers support Python 3.11 and later; CI checked CPython 3.11–3.14.
-The analyzer grammar supports source targets Python 3.11, 3.12, and 3.13. The
-selected source target is independent of the interpreter running the command.
-Building the CLI from source requires Rust 1.96 or newer and a linker.
-
-## Build from the release source
-
-To reproduce the published source build:
-
-```sh
-git clone https://github.com/eddiethedean/typepact.git
-cd typepact
-git checkout v0.2.0
-cargo run --locked -- check --root examples
-```
-
-The example intentionally reports a definite use after close and exits `1`.
-Follow the [lifecycle tutorial](lifecycle.md) for the expected result and a valid
-counterpart. The checker does not establish cleanup on every exit, general
-ownership safety, or runtime behavior of declared close methods. See
-[supported syntax](supported-syntax.md) and [limitations](limitations.md).
+The candidate's exact artifact build, inventory, metadata, and install results
+will be recorded in the [0.3.0 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md).
+The Python helpers target Python 3.11 and later; the analyzer source grammar
+targets Python 3.11–3.13. Building the CLI from source requires Rust 1.96+ and a
+linker.

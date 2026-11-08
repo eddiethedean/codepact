@@ -1,6 +1,6 @@
+use codepact::{AnalysisSession, SourceFile};
 use std::process::Command;
 use std::time::{Duration, Instant};
-use typepact::{AnalysisSession, SourceFile};
 
 const REPEATS: usize = 7;
 
@@ -19,7 +19,7 @@ fn source_files(objects: usize, provider: &str) -> Vec<SourceFile> {
 
 fn provider(effect: &str, prefix_lines: usize, unused_value: Option<usize>) -> String {
     let mut source = String::from(
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
     );
     for _ in 0..prefix_lines {
         source.push('\n');
@@ -59,7 +59,7 @@ fn main() {
     let close_effect = "    value.close()\n";
     let initial = source_files(objects, &provider(close_effect, 0, None));
 
-    if std::env::var_os("TYPEPACT_RETAINED_MEMORY_PROBE").is_some() {
+    if std::env::var_os("CODEPACT_RETAINED_MEMORY_PROBE").is_some() {
         let Some(baseline_rss) = current_rss_kib() else {
             eprintln!("Retained-memory probe requires `ps` and a Unix-like host.");
             return;

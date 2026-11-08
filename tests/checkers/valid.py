@@ -1,7 +1,7 @@
 from typing import assert_type
 
-from typepact.contracts import Borrowed, Owned
-from typepact.rust import Borrowed as ExplicitBorrowed
+from codepact.contracts import Borrowed, Owned
+from codepact.rust import Borrowed as ExplicitBorrowed
 
 
 class Connection:

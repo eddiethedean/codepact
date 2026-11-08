@@ -15,8 +15,8 @@ The default scope includes obligations for resource acquisitions inside supporte
 This is proposed 0.3 behavior, using existing declaration spellings:
 
 ```python
-from typepact import resource
-from typepact.rust import Borrowed, Owned
+from codepact import resource
+from codepact.rust import Borrowed, Owned
 
 @resource(closed_by="close")
 class Connection:
@@ -138,7 +138,7 @@ TaskGroup/create_task, detached tasks, gather/shield/timeouts, futures, thread o
 
 ## Models and query inputs
 
-Resource close-effect records use a stable ID and exact qualified resource/method identity, source revision/URL, trust, reviewer and exact Python-version bounds. They retain platform assumptions, argument/result alias facts, duty handoff, suppression, valid/invalid/unknown conformance cases, and separate normal, exceptional and cancelled lifecycle postconditions, async status, repeat-close policy and a named post-close operation allowlist. The close-effect record binds its outcome to the receiver identity; it requires no argument/result alias, duty transfer or manager suppression. Overlapping records for the same symbol/method/version are rejected; missing or unsupported versions do not match. These TypePact-owned records enter the incremental checker as a tracked input and are scoped to each file's resolved resource symbols, so a model edit refreshes affected flow queries while unrelated file checks can be reused. The close-effect record does not add public annotation syntax. Context-manager models separately define wrapper/result aliases, duty handoff and suppression. Keep supported-version and trust claims tied to conformance evidence. Do not import installed targets to discover model versions or execute model hooks; unresolved host-supplied version inputs remain a boundary.
+Resource close-effect records use a stable ID and exact qualified resource/method identity, source revision/URL, trust, reviewer and exact Python-version bounds. They retain platform assumptions, argument/result alias facts, duty handoff, suppression, valid/invalid/unknown conformance cases, and separate normal, exceptional and cancelled lifecycle postconditions, async status, repeat-close policy and a named post-close operation allowlist. The close-effect record binds its outcome to the receiver identity; it requires no argument/result alias, duty transfer or manager suppression. Overlapping records for the same symbol/method/version are rejected; missing or unsupported versions do not match. These CodePact-owned records enter the incremental checker as a tracked input and are scoped to each file's resolved resource symbols, so a model edit refreshes affected flow queries while unrelated file checks can be reused. The close-effect record does not add public annotation syntax. Context-manager models separately define wrapper/result aliases, duty handoff and suppression. Keep supported-version and trust claims tied to conformance evidence. Do not import installed targets to discover model versions or execute model hooks; unresolved host-supplied version inputs remain a boundary.
 
 Model content, selection/version inputs, target Python, root/module map and budgets are tracked inputs. Separate semantic effects from origin locations. Body checks depend on applicable exceptional/cancellation/cleanup/return summaries, not only normal lifecycle state. Location edits must refresh related spans even when semantic summaries compare equal. Fresh/reused results agree on duties, aliases, findings, certainty, provenance, coverage and revisions; unrelated checks reuse work, proven by query events.
 

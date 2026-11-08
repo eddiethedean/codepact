@@ -4,9 +4,9 @@ Status: **Planned**. Owner: maintainer to assign before implementation. This pro
 
 ## User outcome
 
-An AI coding agent can discover TypePact's supported checks, inspect resource contracts, locate and explain findings, edit the user's code through its existing editing tools, and rerun analysis to verify the result. Findings include enough evidence to distinguish a definite violation from a possible violation or unsupported analysis boundary. A clean supported-subset result must not be presented as a general resource-safety proof.
+An AI coding agent can discover CodePact's supported checks, inspect resource contracts, locate and explain findings, edit the user's code through its existing editing tools, and rerun analysis to verify the result. Findings include enough evidence to distinguish a definite violation from a possible violation or unsupported analysis boundary. A clean supported-subset result must not be presented as a general resource-safety proof.
 
-CLI agents, IDE agents and MCP clients use one semantic engine and the same project settings. Initial integration works through the CLI without an account, hosted model or network service. TypePact remains a deterministic analyzer; the agent supplies reasoning and code edits.
+CLI agents, IDE agents and MCP clients use one semantic engine and the same project settings. Initial integration works through the CLI without an account, hosted model or network service. CodePact remains a deterministic analyzer; the agent supplies reasoning and code edits.
 
 ## Delivery sequence
 
@@ -40,7 +40,7 @@ Source snippets are optional, bounded and attributed to their file/snapshot. Tre
 
 ## Check–edit–recheck workflow
 
-1. Resolve the project root, installed TypePact version, supported capabilities and effective configuration. Capture the initial findings, coverage and source snapshot through structured output.
+1. Resolve the project root, installed CodePact version, supported capabilities and effective configuration. Capture the initial findings, coverage and source snapshot through structured output.
 2. Read the relevant rule explanation and related source locations. Use the agent's ordinary editing tools to make the smallest justified change within the user's requested scope.
 3. Rerun checks on the updated project and affected dependents, using the same target/settings. A changed-file filter may limit presentation but must not silently skip dependencies needed for analysis.
 4. Compare findings and coverage against the initial result. Confirm the intended finding cleared, identify new findings and report unresolved boundaries or execution failures. Expanding exclusions, weakening rules, adding baselines or suppressing findings is a policy change, not evidence of a corrected program.
@@ -50,14 +50,14 @@ The planned project instruction snippet documents these steps, version selection
 
 ## MCP adapter and client targets
 
-Use the official [MCP tool specification](https://modelcontextprotocol.io/specification/latest/server/tools) and [transport specification](https://modelcontextprotocol.io/specification/latest/basic/transports) to qualify a supported protocol revision and client matrix at implementation time. Start with local stdio and structured tool results; protocol errors and tool execution failures remain distinguishable from successfully reported TypePact findings. Support negotiated capabilities and bounded cancellation/recovery as required by the selected revision.
+Use the official [MCP tool specification](https://modelcontextprotocol.io/specification/latest/server/tools) and [transport specification](https://modelcontextprotocol.io/specification/latest/basic/transports) to qualify a supported protocol revision and client matrix at implementation time. Start with local stdio and structured tool results; protocol errors and tool execution failures remain distinguishable from successfully reported CodePact findings. Support negotiated capabilities and bounded cancellation/recovery as required by the selected revision.
 
 | Proposed tool | Purpose | Contract |
 | --- | --- | --- |
-| `typepact_capabilities` | Discover engine/schema versions, supported analysis and available tools. | Read-only; versioned output |
-| `typepact_check` | Check files/project scope and return findings, coverage and snapshot identity. | Read-only; same semantics/settings as CLI; bounded detail and continuation |
-| `typepact_inspect_contracts` | Read declared contracts and provenance for a selected source scope. | Read-only; preserve inspection assurance boundaries |
-| `typepact_explain` | Retrieve canonical rule guidance and evidence for a finding in a known snapshot. | Read-only; reject stale finding references or clearly request reanalysis |
+| `codepact_capabilities` | Discover engine/schema versions, supported analysis and available tools. | Read-only; versioned output |
+| `codepact_check` | Check files/project scope and return findings, coverage and snapshot identity. | Read-only; same semantics/settings as CLI; bounded detail and continuation |
+| `codepact_inspect_contracts` | Read declared contracts and provenance for a selected source scope. | Read-only; preserve inspection assurance boundaries |
+| `codepact_explain` | Retrieve canonical rule guidance and evidence for a finding in a known snapshot. | Read-only; reject stale finding references or clearly request reanalysis |
 
 Validate tool arguments and enforce configured workspace roots, path containment including symlinks, exclusions and work budgets. Tool annotations describe behavior; actual implementation must enforce the read-only contract. Do not accept arbitrary shell commands, install packages or modify source/configuration through these tools. Agents retain their existing edit permissions and workflow.
 

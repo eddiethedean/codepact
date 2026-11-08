@@ -5,7 +5,7 @@ use std::{
 };
 
 fn fixture_root() -> PathBuf {
-    std::env::temp_dir().join(format!("typepact-cli-{}", std::process::id()))
+    std::env::temp_dir().join(format!("codepact-cli-{}", std::process::id()))
 }
 
 fn run(root: &PathBuf, paths: &[&str]) -> Output {
@@ -13,7 +13,7 @@ fn run(root: &PathBuf, paths: &[&str]) -> Output {
 }
 
 fn run_for_version(root: &PathBuf, paths: &[&str], version: &str) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_typepact"))
+    Command::new(env!("CARGO_BIN_EXE_codepact"))
         .current_dir(root)
         .arg("inspect-contracts")
         .arg("--python-version")
@@ -26,7 +26,7 @@ fn run_for_version(root: &PathBuf, paths: &[&str], version: &str) -> Output {
 }
 
 fn run_check(root: &PathBuf) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_typepact"))
+    Command::new(env!("CARGO_BIN_EXE_codepact"))
         .current_dir(root)
         .args(["check", "--root"])
         .arg(root)
@@ -36,7 +36,7 @@ fn run_check(root: &PathBuf) -> Output {
 }
 
 fn run_check_text(root: &PathBuf) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_typepact"))
+    Command::new(env!("CARGO_BIN_EXE_codepact"))
         .current_dir(root)
         .args(["check", "--root"])
         .arg(root)
@@ -51,7 +51,7 @@ fn phase03_text_and_json_reports_agree_on_cleanup_diagnostics() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("main.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef leak():\n    resource = C()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef leak():\n    resource = C()\n",
     )
     .unwrap();
 
@@ -92,25 +92,25 @@ fn phase03_interfaces_agree_for_possible_and_unknown_cleanup_results() {
     for (name, source, expected_code, expected_certainty) in [
         (
             "possible",
-            "from typepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    await resource.aclose()\n",
+            "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = C()\n    await resource.aclose()\n",
             "TP1002",
             "possible",
         ),
         (
             "unknown",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    opaque_effect(resource)\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    opaque_effect(resource)\n",
             "TP9001",
             "unknown",
         ),
         (
             "finalizer",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def __del__(self): self.close()\ndef cleanup():\n    resource = C()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def __del__(self): self.close()\ndef cleanup():\n    resource = C()\n",
             "TP9001",
             "unknown",
         ),
         (
             "async-context-cancellation-suppression",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        await resource.pause()\n        resource.close()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nclass UnknownManager:\n    async def __aenter__(self): return self\n    async def __aexit__(self, exc_type, exc, traceback): return True\nasync def cleanup():\n    resource = C()\n    async with UnknownManager():\n        await resource.pause()\n        resource.close()\n",
             "TP9001",
             "unknown",
         ),
@@ -142,14 +142,14 @@ fn phase03_interfaces_agree_for_possible_and_unknown_cleanup_results() {
             "{name}: {report:#?}"
         );
 
-        let rust_result = typepact::check_report(
-            &[typepact::SourceFile::new("main.py", "main", source)],
+        let rust_result = codepact::check_report(
+            &[codepact::SourceFile::new("main.py", "main", source)],
             "3.11",
         );
         assert_eq!(report, serde_json::to_value(rust_result).unwrap(), "{name}");
     }
 
-    let invalid = std::process::Command::new(env!("CARGO_BIN_EXE_typepact"))
+    let invalid = std::process::Command::new(env!("CARGO_BIN_EXE_codepact"))
         .current_dir(&root)
         .args(["check", "--root"])
         .arg(&root)
@@ -165,7 +165,7 @@ fn phase03_module_qualified_contextlib_model_is_reported_in_text_and_json() {
     let root = fixture_root().with_extension("phase03-contextlib-model");
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
-    let source = "import contextlib as ctx\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n";
+    let source = "import contextlib as ctx\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with ctx.closing(resource):\n        pass\n";
     fs::write(root.join("main.py"), source).unwrap();
 
     let text = run_check_text(&root);
@@ -190,8 +190,8 @@ fn phase03_module_qualified_contextlib_model_is_reported_in_text_and_json() {
         .any(|model| {
             model["id"] == "TPM-CTX-001" && model["source_revisions"].as_array().unwrap().len() == 3
         }));
-    let rust_result = typepact::check_report(
-        &[typepact::SourceFile::new("main.py", "main", source)],
+    let rust_result = codepact::check_report(
+        &[codepact::SourceFile::new("main.py", "main", source)],
         "3.11",
     );
     assert_eq!(report, serde_json::to_value(rust_result).unwrap());
@@ -203,7 +203,7 @@ fn check_reports_one_use_after_close_at_the_call_site() {
     let root = fixture_root().with_extension("lifecycle");
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
-    let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass Connection:\n    def status(self): return 'ready'\n    def close(self): pass\ndef inspect(conn: Borrowed[Connection]):\n    return conn.status()\nconn = Connection()\ninspect(conn)\nconn.close()\ninspect(conn)\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass Connection:\n    def status(self): return 'ready'\n    def close(self): pass\ndef inspect(conn: Borrowed[Connection]):\n    return conn.status()\nconn = Connection()\ninspect(conn)\nconn.close()\ninspect(conn)\n";
     fs::write(root.join("connection.py"), source).unwrap();
 
     let output = run_check(&root);
@@ -215,15 +215,15 @@ fn check_reports_one_use_after_close_at_the_call_site() {
     );
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let source = fs::read_to_string(root.join("connection.py")).unwrap();
-    let api = typepact::check(
-        &[typepact::SourceFile::new(
+    let api = codepact::check(
+        &[codepact::SourceFile::new(
             "connection.py",
             "connection",
             source.clone(),
         )],
         "3.11",
     );
-    let report = typepact::CheckResult::from_inspection(api, "3.11");
+    let report = codepact::CheckResult::from_inspection(api, "3.11");
     assert_eq!(result, serde_json::to_value(report).unwrap());
     let diagnostics = result["diagnostics"].as_array().unwrap();
     let findings: Vec<_> = diagnostics
@@ -244,8 +244,8 @@ fn check_reports_one_use_after_close_at_the_call_site() {
         "lifecycle-checking-for-supported-exit-flow"
     );
     let valid_source = source.strip_suffix("inspect(conn)\n").unwrap();
-    let valid = typepact::check(
-        &[typepact::SourceFile::new(
+    let valid = codepact::check(
+        &[codepact::SourceFile::new(
             "connection.py",
             "connection",
             valid_source,
@@ -264,7 +264,7 @@ fn constructor_assignment_shadows_the_resource_class_binding() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("main.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def status(self): pass\n    def close(self): pass\nC = C()\nvalue = C()\nvalue.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def status(self): pass\n    def close(self): pass\nC = C()\nvalue = C()\nvalue.status()\n",
     )
     .unwrap();
 
@@ -283,7 +283,7 @@ fn class_body_executable_effects_mark_coverage_incomplete() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("main.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def status(self): pass\n    def close(self): pass\nc = C()\nclass Config:\n    c.close()\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def status(self): pass\n    def close(self): pass\nc = C()\nclass Config:\n    c.close()\nc.status()\n",
     )
     .unwrap();
 
@@ -302,7 +302,7 @@ fn raise_stops_normal_flow_and_does_not_report_unreachable_use() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("main.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def status(self): pass\n    def close(self): pass\nc = C()\nraise RuntimeError()\nc.close()\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def status(self): pass\n    def close(self): pass\nc = C()\nraise RuntimeError()\nc.close()\nc.status()\n",
     )
     .unwrap();
 
@@ -326,12 +326,12 @@ fn helper_constructor_resolution_uses_the_provider_class() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("provider.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def __init__(self, other): other.close()\n    def close(self): pass\ndef wrap(value: C):\n    temp = C(value)\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def __init__(self, other): other.close()\n    def close(self): pass\ndef wrap(value: C):\n    temp = C(value)\n",
     )
     .unwrap();
     fs::write(
         root.join("caller.py"),
-        "from typepact import resource\nfrom provider import wrap\n@resource(closed_by='close')\nclass C:\n    def __init__(self): pass\n    def status(self): pass\n    def close(self): pass\nc = C()\nwrap(c)\nc.status()\n",
+        "from codepact import resource\nfrom provider import wrap\n@resource(closed_by='close')\nclass C:\n    def __init__(self): pass\n    def status(self): pass\n    def close(self): pass\nc = C()\nwrap(c)\nc.status()\n",
     )
     .unwrap();
 
@@ -354,7 +354,7 @@ fn check_branch_join_is_possible_and_borrowed_close_is_rejected() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("connection.py"),
-        "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass Connection:\n    def status(self): return 'ready'\n    def close(self): pass\ndef inspect(conn: Borrowed[Connection]):\n    conn.close()\nconn = Connection()\nif flag:\n    conn.close()\nconn.status()\n",
+        "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass Connection:\n    def status(self): return 'ready'\n    def close(self): pass\ndef inspect(conn: Borrowed[Connection]):\n    conn.close()\nconn = Connection()\nif flag:\n    conn.close()\nconn.status()\n",
     )
     .unwrap();
 
@@ -387,7 +387,7 @@ fn check_alias_rebinding_and_uncertain_joins_preserve_object_state() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("aliases.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class Connection:
     def close(self): pass
@@ -456,7 +456,7 @@ fn check_exposes_unbound_aliases_and_alias_budget_exhaustion() {
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
     let mut source = String::from(
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\nshared = Connection()\nif maybe_defined:\n    maybe = shared\nalias = maybe\nalias.close()\nshared.status()\nselected = Connection()\nselected.close()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\nshared = Connection()\nif maybe_defined:\n    maybe = shared\nalias = maybe\nalias.close()\nshared.status()\nselected = Connection()\nselected.close()\n",
     );
     for index in 0..(64 + 1) {
         source.push_str(&format!(
@@ -498,8 +498,8 @@ fn close_through_an_aliased_helper_reports_the_borrow_origin() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("borrowed.py"),
-        r#"from typepact import resource
-from typepact.rust import Borrowed
+        r#"from codepact import resource
+from codepact.rust import Borrowed
 @resource(closed_by='close')
 class Connection:
     def close(self): pass
@@ -540,7 +540,7 @@ fn check_follows_acyclic_named_reexports_without_losing_resource_identity() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("models.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class Connection:
     def close(self): pass
@@ -598,7 +598,7 @@ fn check_preserves_call_effects_and_reports_unknown_qualified_calls() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("calls.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\ndef ignore(value): pass\nconnection = Connection()\nshutdown(connection)\nconnection.status()\nignore(connection.close())\nconnection.status()\nexternal.mutate(connection)\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\ndef ignore(value): pass\nconnection = Connection()\nshutdown(connection)\nconnection.status()\nignore(connection.close())\nconnection.status()\nexternal.mutate(connection)\n",
     )
     .unwrap();
 
@@ -629,7 +629,7 @@ fn recursive_summaries_stop_with_an_incomplete_boundary() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("recursive.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef recurse(value):\n    recurse(value)\n    recurse(value)\nconnection = Connection()\nrecurse(connection)\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef recurse(value):\n    recurse(value)\n    recurse(value)\nconnection = Connection()\nrecurse(connection)\n",
     )
     .unwrap();
 
@@ -656,7 +656,7 @@ fn check_applies_a_reexported_helper_and_retains_its_provider_location() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("resources.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
     )
     .unwrap();
     fs::write(
@@ -697,13 +697,13 @@ fn check_applies_a_reexported_helper_and_retains_its_provider_location() {
         .into_iter()
         .map(|path| {
             let source = fs::read_to_string(root.join(path)).unwrap();
-            typepact::SourceFile::new(path, path.trim_end_matches(".py"), source)
+            codepact::SourceFile::new(path, path.trim_end_matches(".py"), source)
         })
         .collect();
     assert_eq!(
         result,
-        serde_json::to_value(typepact::CheckResult::from_inspection(
-            typepact::check(&sources, "3.11"),
+        serde_json::to_value(codepact::CheckResult::from_inspection(
+            codepact::check(&sources, "3.11"),
             "3.11",
         ))
         .unwrap()
@@ -719,9 +719,9 @@ fn lifecycle_metadata_forms_share_flow_semantics() {
     fs::write(
         root.join("metadata.py"),
         r#"from typing import Annotated
-from typepact import resource
-from typepact.contracts import Resource, SharedBorrow
-from typepact.rust import Borrowed
+from codepact import resource
+from codepact.contracts import Resource, SharedBorrow
+from codepact.rust import Borrowed
 @resource(closed_by='close')
 class Decorated:
     def close(self): pass
@@ -784,7 +784,7 @@ fn helper_effects_preserve_alias_order_returns_and_branch_certainty() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("helpers.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class Connection:
     def close(self): pass
@@ -838,7 +838,7 @@ fn unknown_effects_escape_and_unsupported_flow_keep_results_incomplete() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("unknown.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class Connection:
     def close(self): pass
@@ -888,7 +888,7 @@ fn repeat_close_is_an_unknown_boundary_without_a_double_close_finding() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("repeat.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\nconnection = Connection()\nconnection.close()\nconnection.close()\nconnection.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\nconnection = Connection()\nconnection.close()\nconnection.close()\nconnection.status()\n",
     )
     .unwrap();
 
@@ -924,7 +924,7 @@ fn possible_findings_exit_zero_while_invalid_project_input_exits_two() {
     fs::create_dir_all(&invalid_root).unwrap();
     fs::write(
         root.join("possible.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\nconnection = Connection()\nif maybe:\n    connection.close()\nconnection.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\nconnection = Connection()\nif maybe:\n    connection.close()\nconnection.status()\n",
     )
     .unwrap();
 
@@ -954,8 +954,8 @@ fn loops_and_async_bodies_are_checked_while_unknown_regions_stay_incomplete() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("unsupported.py"),
-        r#"from typepact import resource
-from typepact.rust import Borrowed
+        r#"from codepact import resource
+from codepact.rust import Borrowed
 @resource(closed_by='close')
 class Connection:
     def close(self): pass
@@ -1015,7 +1015,7 @@ fn project_discovery_rejects_module_collisions_and_skips_symlink_escapes() {
     fs::write(root.join("pkg/__init__.py"), "value = 2\n").unwrap();
     fs::write(
         outside.join("escaped.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\nc.close()\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\nc.close()\nc.status()\n",
     )
     .unwrap();
     let collision = run_check(&root);
@@ -1042,7 +1042,7 @@ fn project_check_is_stable_across_file_creation_order_and_never_executes_source(
     fs::create_dir_all(&root).unwrap();
     let marker = root.join("executed");
     let provider = format!(
-        "open({:?}, 'w').close()\nfrom typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
+        "open({:?}, 'w').close()\nfrom codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
         marker.to_string_lossy()
     );
     let consumer = "from provider import Connection\nconnection = Connection()\nconnection.close()\nconnection.status()\n";
@@ -1072,7 +1072,7 @@ fn project_import_cycles_return_deterministic_incomplete_checks() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("models.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
     )
     .unwrap();
     fs::write(root.join("left.py"), "from right import Connection\n").unwrap();
@@ -1109,12 +1109,12 @@ fn logical_module_identity_is_stable_for_relative_and_absolute_paths() {
     fs::create_dir_all(root.join("pkg")).unwrap();
     fs::write(
         root.join("pkg/models.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection: pass\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection: pass\n",
     )
     .unwrap();
     fs::write(
         root.join("pkg/client.py"),
-        "from pkg.models import Connection\nfrom typepact.rust import Borrowed\ndef use(value: Borrowed[Connection]): pass\n",
+        "from pkg.models import Connection\nfrom codepact.rust import Borrowed\ndef use(value: Borrowed[Connection]): pass\n",
     )
     .unwrap();
 
@@ -1191,7 +1191,7 @@ fn unicode_module_names_follow_the_selected_python_target() {
 fn completeness_regressions_have_the_documented_exit_status() {
     let root = fixture_root().with_extension("completeness");
     fs::create_dir_all(&root).unwrap();
-    let prefix = "from typepact import rust\nclass C: pass\n";
+    let prefix = "from codepact import rust\nclass C: pass\n";
     for (index, (body, expected_status)) in [
         ("def use(value: rust.Owned[C]) -> None: pass\n", 0),
         ("def use(value: list[rust.Borrowed[C]]): pass\n", 1),
@@ -1225,7 +1225,7 @@ fn lifecycle_method_aliases_use_base_identity_and_uncertain_receivers_join_effec
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("view.py"),
-        "from typing import Annotated\nfrom typepact.contracts import Resource\nclass C:\n    def close(self): pass\n    def status(self): pass\nV = Annotated[C, Resource(closed_by='close')]\nc = V()\nc.status()\n",
+        "from typing import Annotated\nfrom codepact.contracts import Resource\nclass C:\n    def close(self): pass\n    def status(self): pass\nV = Annotated[C, Resource(closed_by='close')]\nc = V()\nc.status()\n",
     )
     .unwrap();
     let output = run_check(&root);
@@ -1238,7 +1238,7 @@ fn lifecycle_method_aliases_use_base_identity_and_uncertain_receivers_join_effec
 
     fs::write(
         root.join("view.py"),
-        "from typing import Annotated\nfrom typepact.contracts import Resource\nclass C:\n    def close(self): pass\n    def status(self): pass\nV = Annotated[C, Resource(closed_by='close')]\nc = V()\nc.close()\nc.status()\n",
+        "from typing import Annotated\nfrom codepact.contracts import Resource\nclass C:\n    def close(self): pass\n    def status(self): pass\nV = Annotated[C, Resource(closed_by='close')]\nc = V()\nc.close()\nc.status()\n",
     )
     .unwrap();
     let output = run_check(&root);
@@ -1257,7 +1257,7 @@ fn lifecycle_method_aliases_use_base_identity_and_uncertain_receivers_join_effec
 
     fs::write(
         root.join("view.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n    def shutdown(self): self.close()\na = C()\nb = C()\nif flag:\n    x = a\nelse:\n    x = b\nx.shutdown()\na.status()\nb.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n    def shutdown(self): self.close()\na = C()\nb = C()\nif flag:\n    x = a\nelse:\n    x = b\nx.shutdown()\na.status()\nb.status()\n",
     )
     .unwrap();
     let output = run_check(&root);
@@ -1282,7 +1282,7 @@ fn assignment_evaluates_nested_effects_once_and_function_rebinding_drops_old_bod
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("main.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\ndef shutdown(value):\n    value.close()\ndef noop(value): pass\nshutdown = noop\nc = C()\nresult = noop(c.close())\nshutdown(c)\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\ndef shutdown(value):\n    value.close()\ndef noop(value): pass\nshutdown = noop\nc = C()\nresult = noop(c.close())\nshutdown(c)\nc.status()\n",
     )
     .unwrap();
     let output = run_check(&root);
@@ -1310,8 +1310,8 @@ fn helper_resolution_uses_provider_scope_and_borrowed_preconditions() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("provider.py"),
-        r#"from typepact import resource
-from typepact.rust import Borrowed
+        r#"from codepact import resource
+from codepact.rust import Borrowed
 @resource(closed_by='close')
 class C:
     def close(self): pass
@@ -1327,7 +1327,7 @@ def inspect(value: Borrowed[C]):
     .unwrap();
     fs::write(
         root.join("client.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 from provider import C, inspect, shutdown
 def finish(value):
     pass
@@ -1364,7 +1364,7 @@ fn constructor_close_body_and_early_return_effects_reach_callers() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("effects.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class B:
     def close(self): pass
@@ -1457,7 +1457,7 @@ fn assignment_rhs_keeps_the_previous_binding_until_its_effects_finish() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("assignment.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class C:
     def close(self): pass
@@ -1508,7 +1508,7 @@ fn unsupported_call_argument_expressions_create_a_boundary() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("argument.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef noop(value): pass\nc = C()\nnoop(c.close() or None)\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef noop(value): pass\nc = C()\nnoop(c.close() or None)\nc.status()\n",
     )
     .unwrap();
 
@@ -1529,7 +1529,7 @@ fn function_defaults_with_resource_effects_create_a_boundary() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("default.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\ndef f(value=c.close()): pass\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\ndef f(value=c.close()): pass\nc.status()\n",
     )
     .unwrap();
 
@@ -1550,7 +1550,7 @@ fn class_method_defaults_with_resource_effects_create_a_boundary() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("default.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\nclass Holder:\n    def __init__(self, value=c.close()): pass\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\nclass Holder:\n    def __init__(self, value=c.close()): pass\nc.status()\n",
     )
     .unwrap();
 
@@ -1571,7 +1571,7 @@ fn function_parameters_shadow_resource_class_names() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("shadow.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef use(C):\n    value = C()\n    value.close()\n    value.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef use(C):\n    value = C()\n    value.close()\n    value.status()\n",
     )
     .unwrap();
 
@@ -1595,7 +1595,7 @@ fn annotated_method_parameters_are_visible_as_an_incomplete_boundary() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("method.py"),
-        "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def consume(self, other: Borrowed['C']): other.close()\n",
+        "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def consume(self, other: Borrowed['C']): other.close()\n",
     )
     .unwrap();
 
@@ -1622,7 +1622,7 @@ fn annotated_close_method_still_enforces_borrowed_close_rule() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("method.py"),
-        "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self, force: bool = False): pass\ndef bad(value: Borrowed[C]): value.close()\n",
+        "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self, force: bool = False): pass\ndef bad(value: Borrowed[C]): value.close()\n",
     )
     .unwrap();
 
@@ -1644,7 +1644,7 @@ fn escaped_resource_state_reaches_unknown_calls_in_callees() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("escaped.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef f(value): external()\nc = C()\nunknown(c)\nc.close()\nf(c)\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef f(value): external()\nc = C()\nunknown(c)\nc.close()\nf(c)\nc.status()\n",
     )
     .unwrap();
 
@@ -1670,7 +1670,7 @@ fn escaped_resource_state_reaches_zero_argument_callees() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("escaped.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef f(): external()\nc = C()\nunknown(c)\nc.close()\nf()\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef f(): external()\nc = C()\nunknown(c)\nc.close()\nf()\nc.status()\n",
     )
     .unwrap();
 
@@ -1696,7 +1696,7 @@ fn assignment_of_a_resource_returning_close_method_keeps_identity_and_flags_unow
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("close_return.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): return self\n    def status(self): return 'ready'\nc = C()\nalias = c\nc = c.close()\nalias.status()\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): return self\n    def status(self): return 'ready'\nc = C()\nalias = c\nc = c.close()\nalias.status()\nc.status()\n",
     )
     .unwrap();
 
@@ -1729,7 +1729,7 @@ fn close_body_runs_before_the_designated_close_transition() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("close_body.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def flush(self): pass\n    def close(self): self.flush()\n    def status(self): return 'ready'\nc = C()\nc.close()\nc.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def flush(self): pass\n    def close(self): self.flush()\n    def status(self): return 'ready'\nc = C()\nc.close()\nc.status()\n",
     )
     .unwrap();
 
@@ -1758,7 +1758,7 @@ fn decorated_methods_report_a_boundary_without_assuming_instance_binding() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("decorated.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class C:
     def close(self): pass
@@ -1800,7 +1800,7 @@ fn decorated_init_reports_boundary_without_assuming_receiver_binding() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("decorated_init.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class R:
     def close(self): pass
@@ -1848,7 +1848,7 @@ fn custom_new_effects_are_reported_as_unknown() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("custom_new.py"),
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class C:
     def __new__(cls, other):
@@ -1889,7 +1889,7 @@ fn inline_annotated_borrowed_resource_rejects_close() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("borrowed.py"),
-        "from typing import Annotated\nfrom typepact.contracts import Resource, SharedBorrow\nclass C:\n    def close(self): pass\ndef consume(value: Annotated[C, Resource(closed_by='close'), SharedBorrow()]):\n    value.close()\n",
+        "from typing import Annotated\nfrom codepact.contracts import Resource, SharedBorrow\nclass C:\n    def close(self): pass\ndef consume(value: Annotated[C, Resource(closed_by='close'), SharedBorrow()]):\n    value.close()\n",
     )
     .unwrap();
 
@@ -1914,7 +1914,7 @@ fn unknown_method_effect_weakens_tracked_resource_arguments() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("unknown_method.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\na = C()\nb = C()\nb.close()\na.external(b)\nb.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\na = C()\nb = C()\nb.close()\na.external(b)\nb.status()\n",
     )
     .unwrap();
 
@@ -1941,7 +1941,7 @@ fn unknown_method_effect_is_applied_when_receiver_is_closed() {
     fs::create_dir_all(&root).unwrap();
     fs::write(
         root.join("unknown_method.py"),
-        "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\na = C()\nb = C()\na.close()\nb.close()\na.external(b)\nb.status()\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\na = C()\nb = C()\na.close()\nb.close()\na.external(b)\nb.status()\n",
     )
     .unwrap();
 

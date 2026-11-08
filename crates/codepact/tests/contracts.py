@@ -1,9 +1,9 @@
-"""Paired declarations used by the TypePact 0.1 inspector."""
+"""Paired declarations used by the CodePact 0.1 inspector."""
 from typing import Annotated
 
-from typepact import resource
-from typepact.contracts import Resource, SharedBorrow
-from typepact.rust import Borrowed
+from codepact import resource
+from codepact.contracts import Resource, SharedBorrow
+from codepact.rust import Borrowed
 
 
 @resource(closed_by="close")

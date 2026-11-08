@@ -898,7 +898,7 @@ mod tests {
         let file = SourceFile::new(
             "module.py",
             "module",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n",
         );
 
         let first = session.check(std::slice::from_ref(&file), "3.11");
@@ -918,7 +918,7 @@ mod tests {
         let file = SourceFile::new(
             "module.py",
             "module",
-            "from contextlib import closing\nfrom typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
+            "from contextlib import closing\nfrom codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    with closing(resource):\n        pass\n",
         );
         let mut session = AnalysisSession::default();
         let supported = session
@@ -971,7 +971,7 @@ mod tests {
                 "phase03.py",
                 "phase03",
                 format!(
-                    "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    {body}\n"
+                    "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    {body}\n"
                 ),
             )
         };
@@ -1030,7 +1030,7 @@ mod tests {
 
     #[test]
     fn reviewed_exceptional_close_outcomes_flow_through_session_results() {
-        let source = "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n";
+        let source = "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n";
         let file = SourceFile::new("model.py", "model", source);
         let cleanup_exit_line = source
             .lines()
@@ -1137,7 +1137,7 @@ mod tests {
 
     #[test]
     fn reviewed_normal_close_outcomes_flow_through_session_results() {
-        let source = "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n";
+        let source = "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n";
         let file = SourceFile::new("model.py", "model", source);
         let cleanup_exit_line = source
             .lines()
@@ -1250,7 +1250,7 @@ mod tests {
 
     #[test]
     fn reviewed_async_cancelled_close_outcomes_flow_through_session_results() {
-        let source = "from typepact import resource\n@resource(closed_by='aclose')\nclass Connection:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = Connection()\n    await resource.aclose()\n";
+        let source = "from codepact import resource\n@resource(closed_by='aclose')\nclass Connection:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = Connection()\n    await resource.aclose()\n";
         let file = SourceFile::new("model.py", "model", source);
         let await_line = source
             .lines()
@@ -1360,7 +1360,7 @@ mod tests {
                     .push(format!("{database_key:?}"));
             }
         })));
-        let source = "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n    resource.close()\n";
+        let source = "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n    resource.close()\n";
         let file = SourceFile::new("model.py", "model", source);
         let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
         let mut session = AnalysisSession {
@@ -1516,7 +1516,7 @@ mod tests {
         let file = SourceFile::new(
             "model.py",
             "model",
-            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef cleanup():\n    resource = Connection()\n    resource.close()\n",
         );
         let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
         let mut session = AnalysisSession {
@@ -1649,7 +1649,7 @@ mod tests {
         let file = SourceFile::new(
             "model.py",
             "model",
-            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self):\n        raise RuntimeError()\ndef cleanup():\n    resource = Connection()\n    try:\n        resource.close()\n    except RuntimeError:\n        pass\n",
         );
         let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
         let mut session = AnalysisSession {
@@ -1775,7 +1775,7 @@ mod tests {
         let file = SourceFile::new(
             "model.py",
             "model",
-            "from typepact import resource\n@resource(closed_by='aclose')\nclass Connection:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = Connection()\n    await resource.aclose()\n",
+            "from codepact import resource\n@resource(closed_by='aclose')\nclass Connection:\n    async def aclose(self): pass\nasync def cleanup():\n    resource = Connection()\n    await resource.aclose()\n",
         );
         let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
         let mut session = AnalysisSession {
@@ -1912,7 +1912,7 @@ mod tests {
         let consumer = SourceFile::new(
             "consumer.py",
             "consumer",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nvalue = C()\nvalue.close()\nvalue.status()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nvalue = C()\nvalue.close()\nvalue.status()\n",
         );
         let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
         let first = session.check(&[consumer.clone(), unrelated.clone()], "3.11");
@@ -1967,7 +1967,7 @@ mod tests {
         let provider = SourceFile::new(
             "provider.py",
             "provider",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\n",
         );
         let client = SourceFile::new(
             "client.py",
@@ -1991,7 +1991,7 @@ mod tests {
         let edited_provider = SourceFile::new(
             "provider.py",
             "provider",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    pass\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    pass\n",
         );
         let after = session.check(
             &[edited_provider.clone(), client.clone(), unrelated.clone()],
@@ -2030,7 +2030,7 @@ mod tests {
         );
         let provider_source = |lifecycle: &str, effect: &str| {
             format!(
-                "from typepact import resource\n@resource(closed_by='{lifecycle}')\nclass C:\n    def close(self): pass\n    def finish(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n{effect}"
+                "from codepact import resource\n@resource(closed_by='{lifecycle}')\nclass C:\n    def close(self): pass\n    def finish(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n{effect}"
             )
         };
         let open_provider = SourceFile::new(
@@ -2106,7 +2106,7 @@ mod tests {
         let provider = SourceFile::new(
             "provider.py",
             "provider",
-            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
         );
         let added = session.check(&[client.clone(), provider.clone()], "3.11");
         assert!(added
@@ -2148,7 +2148,7 @@ mod tests {
         let provider = SourceFile::new(
             "provider.py",
             "provider",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\n",
         );
         let client = SourceFile::new(
             "client.py",
@@ -2175,7 +2175,7 @@ mod tests {
         let moved_provider = SourceFile::new(
             "provider.py",
             "provider",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\n\ndef shutdown(value):\n    value.close()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\n\ndef shutdown(value):\n    value.close()\n",
         );
         let moved = session.check(&[moved_provider.clone(), client.clone()], "3.11");
         let moved_use = moved
@@ -2237,7 +2237,7 @@ mod tests {
                 "phase03.py",
                 "phase03",
                 format!(
-                    "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup(flag):\n    resource = C()\n    if flag:\n{}        resource.close()\n",
+                    "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup(flag):\n    resource = C()\n    if flag:\n{}        resource.close()\n",
                     if blank { "\n" } else { "" }
                 ),
             )
@@ -2293,7 +2293,7 @@ mod tests {
 
     #[test]
     fn moving_acquisition_and_owned_annotation_spans_matches_fresh_cleanup_results() {
-        let resource_header = "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n";
+        let resource_header = "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n";
         let source = format!("{resource_header}def cleanup(owner: Owned[C]):\n    local = C()\n");
         let file = SourceFile::new("phase03.py", "phase03", source.clone());
         let mut session = AnalysisSession::default();
@@ -2348,7 +2348,7 @@ mod tests {
         let before = SourceFile::new(
             "module.py",
             "module",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\nconnection = C()\nshutdown(connection)\nconnection.status()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    value.close()\nconnection = C()\nshutdown(connection)\nconnection.status()\n",
         );
         let first = session.check(std::slice::from_ref(&before), "3.11");
         assert!(first
@@ -2359,7 +2359,7 @@ mod tests {
         let after = SourceFile::new(
             "module.py",
             "module",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    pass\nconnection = C()\nshutdown(connection)\nconnection.status()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\ndef shutdown(value):\n    pass\nconnection = C()\nshutdown(connection)\nconnection.status()\n",
         );
         let updated = session.check(std::slice::from_ref(&after), "3.11");
 
@@ -2396,7 +2396,7 @@ mod tests {
                 "phase03.py",
                 "phase03",
                 format!(
-                    "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef make(){}:\n    return C()\ndef leak():\n    value = make()\n",
+                    "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef make(){}:\n    return C()\ndef leak():\n    value = make()\n",
                     if owned { " -> Owned[C]" } else { "" },
                 ),
             )
@@ -2469,7 +2469,7 @@ mod tests {
                 "phase03.py",
                 "phase03",
                 format!(
-                    "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    {body}\nasync def cleanup():\n    resource = C()\n    try:\n        await use(resource)\n    finally:\n        resource.close()\n"
+                    "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    async def pause(self): pass\nasync def use(resource: Borrowed[C]):\n    {body}\nasync def cleanup():\n    resource = C()\n    try:\n        await use(resource)\n    finally:\n        resource.close()\n"
                 ),
             )
         };
@@ -2545,7 +2545,7 @@ mod tests {
                 "phase03.py",
                 "phase03",
                 format!(
-                    "from typepact import resource\nfrom typepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def close_owned(resource: Owned[C]):\n    resource.close()\nasync def cleanup():\n    first = C()\n    second = C()\n    await close_owned({captured})\n"
+                    "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\nasync def close_owned(resource: Owned[C]):\n    resource.close()\nasync def cleanup():\n    first = C()\n    second = C()\n    await close_owned({captured})\n"
                 ),
             )
         };
@@ -2699,7 +2699,7 @@ mod tests {
         let provider = SourceFile::new(
             "provider.py",
             "provider",
-            "from typepact import resource\n@resource(closed_by=\"close\")\nclass C: pass\n",
+            "from codepact import resource\n@resource(closed_by=\"close\")\nclass C: pass\n",
         );
         let consumer = SourceFile::new(
             "consumer.py",
@@ -2720,7 +2720,7 @@ mod tests {
         let updated_provider = SourceFile::new(
             "provider.py",
             "provider",
-            "from typepact import resource\n@resource(closed_by=\"dispose\")\nclass C: pass\n",
+            "from codepact import resource\n@resource(closed_by=\"dispose\")\nclass C: pass\n",
         );
         let second = session.inspect(&[updated_provider.clone(), consumer.clone()], "3.11");
         let consumer_contract = second
@@ -2759,7 +2759,7 @@ mod tests {
         let provider = SourceFile::new(
             "provider.py",
             "provider",
-            "from typepact import resource\n@resource(closed_by=\"close\")\nclass C: pass\n",
+            "from codepact import resource\n@resource(closed_by=\"close\")\nclass C: pass\n",
         );
         let consumer = SourceFile::new(
             "consumer.py",
@@ -2785,7 +2785,7 @@ mod tests {
         let moved_provider = SourceFile::new(
             "provider.py",
             "provider",
-            "# shifted\nfrom typepact import resource\n@resource(closed_by=\"close\")\nclass C: pass\n",
+            "# shifted\nfrom codepact import resource\n@resource(closed_by=\"close\")\nclass C: pass\n",
         );
         let moved = session.inspect(&[moved_provider, consumer], "3.11");
         let moved_provider_span = moved
@@ -2835,7 +2835,7 @@ mod tests {
         let leaking = SourceFile::new(
             "module.py",
             "module",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n",
         );
         assert!(matches!(
             session.check_report_cancellable(std::slice::from_ref(&leaking), "3.11"),
@@ -2845,7 +2845,7 @@ mod tests {
         let cleaned = SourceFile::new(
             "module.py",
             "module",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    resource.close()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\ndef cleanup():\n    resource = C()\n    resource.close()\n",
         );
         let recovered = session
             .check_report_cancellable(std::slice::from_ref(&cleaned), "3.11")
@@ -2916,7 +2916,7 @@ mod tests {
         let resource = SourceFile::new(
             "resource.py",
             "resource",
-            "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef leak():\n    connection = Connection()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\ndef leak():\n    connection = Connection()\n",
         );
         let unrelated = SourceFile::new("unrelated.py", "unrelated", "value = 1\n");
         let mut session = AnalysisSession::default();
@@ -3053,7 +3053,7 @@ mod tests {
         let resource = SourceFile::new(
             "b.py",
             "b",
-            "from typepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\nc.close()\nc.status()\n",
+            "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): return 'ready'\nc = C()\nc.close()\nc.status()\n",
         );
         let first = session.check(&[expensive.clone(), resource.clone()], "3.11");
         assert_eq!(first.coverage.status, "incomplete");

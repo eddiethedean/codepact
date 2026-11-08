@@ -1,4 +1,4 @@
-# Contributing to TypePact
+# Contributing to CodePact
 
 Version 0.1.0 is published. The current source also contains a lifecycle
 checking preview for the upcoming 0.2.0 release; its qualification gates remain
@@ -29,8 +29,8 @@ Linux. Use focused targets while iterating; see the
 The repository has no published list of beginner issues. A contained first
 contribution is to clarify an existing guide, add a minimal supported or
 boundary example, or improve a diagnostic explanation. The source lives in
-`crates/typepact/src`, Python helper declarations live in `python/typepact`,
-fixture tests live in `crates/typepact/tests`, and user docs live in `docs`.
+`crates/codepact/src`, Python helper declarations live in `python/codepact`,
+fixture tests live in `crates/codepact/tests`, and user docs live in `docs`.
 
 For analyzer work, describe the source pattern, add a positive or negative
 fixture, and add an explicit incomplete-coverage case when behavior is unknown.

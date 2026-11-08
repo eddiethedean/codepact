@@ -1,6 +1,6 @@
 # Performance guidance
 
-TypePact sets explicit source and work limits. See the
+CodePact sets explicit source and work limits. See the
 [supported syntax and limits](supported-syntax.md#input-and-work-limits). The
 CLI starts a new process per invocation; the Rust `AnalysisSession` can reuse
 work when a host updates a project repeatedly.
@@ -18,14 +18,14 @@ macOS 26.5.2 ARM64, CPython 3.11.15, and rustc 1.96.0:
 | Maximum child-process RSS across scenarios | 18.61 MiB |
 
 CLI measurements include process startup and operating-system cache effects.
-The [baseline record](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.1.0-baseline.md) contains ranges and the
+The [baseline record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.1.0-baseline.md) contains ranges and the
 measurement method. Salsa query reuse is tested separately; cold timings do not
 measure incremental editor latency. These figures describe one host and are not
 performance guarantees.
 
 The 0.2.0 lifecycle timings, retained-session RSS, and accepted flow limits are
-recorded in the [phase performance record](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2/performance.md)
-and [release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md). The maintainer accepted the
+recorded in the [phase performance record](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.2/performance.md)
+and [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md). The maintainer accepted the
 measured regression with its limitations; these results describe one host and
 are not performance guarantees. Do not apply the 0.1.0 numbers to lifecycle
 checking or another platform.

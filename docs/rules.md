@@ -24,8 +24,8 @@ The following alias declares a different close method from its resource class:
 ```python
 from typing import Annotated
 
-from typepact import resource
-from typepact.contracts import Resource
+from codepact import resource
+from codepact.contracts import Resource
 
 
 @resource(closed_by="close")
@@ -41,7 +41,7 @@ The inspector reports `TP4002` at the alias and relates it to the class
 declaration. If the alias is meant to describe the same lifecycle, use
 `Resource(closed_by="close")`. If it describes a different runtime type, declare
 that type and its lifecycle separately. The valid source may then be rechecked
-with `typepact inspect-contracts`.
+with `codepact inspect-contracts`.
 
 ## Certainty and coverage
 

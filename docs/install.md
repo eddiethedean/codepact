@@ -1,88 +1,74 @@
 # Installation
 
-TypePact is distributed as two version-matched Python packages. The `typepact` package contains pure Python declaration helpers and depends on `typepact-cli`, which provides the Rust-powered `typepact` command.
-
-## Install the package and command
-
-Add the current release to an application with [uv](https://docs.astral.sh/uv/):
+CodePact 0.3.0 is an unreleased candidate. The `codepact` and `codepact-cli`
+Python distributions and the Rust `codepact` crate have not been published.
+Build the candidate from a checkout:
 
 ```sh
-uv add typepact==0.2.0
+git clone https://github.com/eddiethedean/codepact.git
+cd codepact
+uv sync --locked
+uv run --locked codepact --version
 ```
 
-With pip, install the same published helper and its matching CLI dependency:
-
-```sh
-python -m pip install 'typepact==0.2.0'
-```
-
-This installs both distributions at version 0.2.0. Your Python program can
-import the helper without starting the analyzer:
+`uv sync` installs the pure Python helper and the native command from the local
+workspace. Python programs can import declarations without starting the
+analyzer:
 
 ```python
-from typepact import resource
-from typepact.rust import Borrowed, Owned
+from codepact import resource
+from codepact.rust import Borrowed, Owned
 ```
 
-The `typepact` command is available in the project environment:
+To run the candidate checker:
 
 ```sh
-uv run typepact --version
-uv run typepact inspect-contracts app.py
+uv run --locked codepact inspect-contracts app.py
+uv run --locked codepact check --root src
 ```
 
-## Install only the command
-
-To use the analyzer without adding the Python helper to a project:
+After the maintainer qualifies and publishes 0.3.0, install the Python helper
+and matching CLI with:
 
 ```sh
-uv tool install typepact-cli==0.2.0
-typepact --version
+uv add codepact==0.3.0
 ```
 
-## Build requirements
+To install only the command after publication, use:
 
-Prebuilt CLI wheels include the executable and do not require a Rust compiler. The CLI source distribution requires Rust 1.96 or newer, a linker, and access to the locked Cargo dependencies. The helper package is pure Python in either wheel or source form.
+```sh
+uv tool install codepact-cli==0.3.0
+codepact --version
+```
 
-Python 3.11 or newer is required to install either distribution. CLI wheels are available for Linux glibc and musl, macOS, and Windows on x86-64 and ARM64. The helper wheel is platform-independent. See [compatibility](supported-syntax.md#python-version-support) for the analyzer source-target versions.
+The helper wheel is platform-independent and requires Python 3.11 or newer.
+Prebuilt CLI wheels include the executable and do not require a Rust compiler.
+Source builds require Rust 1.96+, a linker, and access to the locked Cargo
+dependencies. The candidate configures wheels for Linux glibc and musl, macOS,
+and Windows on x86-64 and ARM64. See [compatibility](supported-syntax.md#python-version-support)
+for the analyzer source targets.
 
 ## Build the checker from source
 
-The published 0.2.0 release includes `check`. To build the release source
-yourself, use Rust 1.96+ and a linker:
+The CLI and Rust library share the same analyzer. From the repository root:
 
 ```sh
-git clone https://github.com/eddiethedean/typepact.git
-cd typepact
-git checkout v0.2.0
 cargo run --locked -- check --root examples
 ```
 
-The example intentionally reports a use after close and exits `1`. See the
-[lifecycle tutorial](lifecycle.md) for an isolated example and expected output.
-For unreleased changes, build from `main` and record the commit SHA.
-
-## Platform compatibility
-
-| Operating system | x86-64 minimum | ARM64 minimum |
-| --- | --- | --- |
-| Linux with glibc | glibc 2.17 | glibc 2.28 |
-| Linux with musl | musl 1.2 | musl 1.2 |
-| macOS | 10.13 | 11.0 |
-| Windows | Native x86-64 wheel | Native ARM64 wheel |
-
-CLI wheels contain a standalone executable and use platform tags without a CPython ABI dependency. Installing the helper's universal wheel still installs its native CLI dependency, so the combined installation requires a compatible CLI wheel or a working Rust source-build environment.
+The lifecycle example intentionally reports a use after close and exits `1`.
+The [cleanup tutorial](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md) demonstrates
+the candidate's exit-obligation diagnostics. Record the full Git commit when
+sharing candidate results.
 
 ## Confirm the installation
 
 ```sh
-uv run typepact --version
-uv run python -c "from typepact import resource; from typepact.rust import Borrowed, Owned"
+uv run --locked codepact --version
+uv run --locked python -c "from codepact import resource; from codepact.rust import Borrowed, Owned"
 ```
 
-The command should print `typepact 0.2.0`; the Python import should exit successfully. The analyzer target is selected separately with `--python-version`. Running the helpers on Python 3.14 does not add analyzer support for the Python 3.14 grammar.
-
-For platform availability and which release includes lifecycle checking, see
-[release availability](availability.md).
-
-Continue with the [quick start](quickstart.md). If installation falls back to a source build or the command cannot be found, see [troubleshooting](troubleshooting.md).
+The command should print `codepact 0.3.0`; the Python import should exit
+successfully. The analyzer target is selected separately with
+`--python-version`. Running the helpers on Python 3.14 does not add analyzer
+support for Python 3.14 grammar.

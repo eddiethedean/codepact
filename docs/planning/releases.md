@@ -1,10 +1,11 @@
 # Packaging and release plan
 
-TypePact 0.1.0 and 0.2.0 have been published and verified. See the
-[0.1.0 evidence record](../releases/0.1.0-evidence.md) and
-[0.2.0 evidence record](../releases/0.2.0-evidence.md) for release results; the
-[0.2.0 release checklist](release-0.2.0-checklist.md) records its completed
-candidate and verification process.
+The predecessor TypePact 0.1.0 and 0.2.0 releases were published and verified
+under their original package and crate names. CodePact 0.3.0 is the first
+candidate using the new names; its release is not authorized. See the
+[historical 0.1.0 evidence](../releases/0.1.0-evidence.md),
+[historical 0.2.0 evidence](../releases/0.2.0-evidence.md), and current
+[0.3.0 candidate evidence](../releases/0.3.0-evidence.md).
 
 ## Release authority
 
@@ -12,9 +13,12 @@ The accountable maintainer can validate and approve a release alone, including t
 
 ## Artifacts
 
-Deliver a pure Python typepact package built with Hatchling and an exact dependency on typepact-cli at the same version (D015). Maturin bin bindings build typepact-cli with the Rust command. Publish eight CLI platform wheels, one universal helper wheel and two complete source archives. Retain the reusable typepact Rust crate and optional Cargo CLI installation. The Ruff/Salsa migration must retain reproducible registry-compatible dependencies and documented Rust prerequisites; qualify these before selecting dependency versions.
+Deliver a pure Python codepact package built with Hatchling and an exact dependency on codepact-cli at the same version (D015). Maturin bin bindings build codepact-cli with the Rust command. Publish eight CLI platform wheels, one universal helper wheel and two complete source archives. Retain the reusable codepact Rust crate and optional Cargo CLI installation. The Ruff/Salsa migration must retain reproducible registry-compatible dependencies and documented Rust prerequisites; qualify these before selecting dependency versions.
 
-Confirm ownership and availability of PyPI and crates.io names before publication. Repository access does not imply registry access. Select and add a license before the first distributable release.
+Confirm ownership and availability of the new `codepact` and `codepact-cli`
+PyPI projects and the `codepact` crates.io name before publication. Repository
+access does not imply registry access. The MIT license selected under D007
+applies to the new package names as well.
 
 ## Versioning
 
@@ -40,9 +44,9 @@ Publishing is a separate authorized release action. Creating these planning docu
 
 ## Optional combined Pyrefly prototype
 
-The [typepact-pyrefly-cli plan](typepact-pyrefly-cli.md) defines a third, optional distribution combining embedded Pyrefly type checking with the TypePact Rust engine. It has a distinct `typepact-pyrefly` executable, independent prerelease versions and a planned `release-pyrefly.yml` workflow using environment `pypi`. The PyPI trusted publisher is project `typepact-pyrefly-cli`, owner `eddiethedean`, repository `typepact`, workflow filename `release-pyrefly.yml`, environment `pypi`. A maintainer-supplied screenshot confirms this configuration on 2026-10-30; workflow implementation and successful OIDC publication remain outstanding.
+The [codepact-pyrefly-cli plan](codepact-pyrefly-cli.md) defines a third, optional distribution combining embedded Pyrefly type checking with the CodePact Rust engine. It has a distinct `codepact-pyrefly` executable, independent prerelease versions and a planned `release-pyrefly.yml` workflow using environment `pypi`. The PyPI trusted publisher is project `codepact-pyrefly-cli`, owner `eddiethedean`, repository `codepact`, workflow filename `release-pyrefly.yml`, environment `pypi`. A maintainer-supplied screenshot confirms this configuration on 2026-10-30; workflow implementation and successful OIDC publication remain outstanding.
 
-Qualify the PF01–PF05 work and PF-V01–PF-V08 gates before releasing it. The first proposed version is `0.1.0a1`, tagged `typepact-pyrefly-v0.1.0a1`; manual candidate builds do not publish. Start with verified Linux glibc x86-64, macOS ARM64 and Windows x86-64 wheels plus a buildable source archive; additional targets need evidence. Use a separate artifact verifier and publishing job. The existing two-project version pins, artifact counts and `release.yml` publication retain their D015 contract. The combined prototype remains planned, and this document does not implement its workflow or authorize publication.
+Qualify the PF01–PF05 work and PF-V01–PF-V08 gates before releasing it. The first proposed version is `0.1.0a1`, tagged `codepact-pyrefly-v0.1.0a1`; manual candidate builds do not publish. Start with verified Linux glibc x86-64, macOS ARM64 and Windows x86-64 wheels plus a buildable source archive; additional targets need evidence. Use a separate artifact verifier and publishing job. The existing two-project version pins, artifact counts and `release.yml` publication retain their D015 contract. The combined prototype remains planned, and this document does not implement its workflow or authorize publication.
 
 ## Recovery and support
 
@@ -56,24 +60,24 @@ Every release note states added rules, behavior changes, support versions, known
 
 ## Tag-triggered GitHub workflow
 
-The implemented workflow `.github/workflows/release.yml` validates stable tags of the exact form `v1.2.3`. Manual dispatch and `codex/release-*` branches build candidates without publishing. Eight matrix jobs build native `typepact-cli` wheels. The source job builds the helper wheel and both source archives and runs a Cargo dry run. Publication requires the reusable quality workflow, all builds, complete artifact inventory and matching version/metadata checks. All three publishers consume the same validated candidate revision and verified artifacts. `typepact-cli` publishes before `typepact` so the exact dependency is available. The 0.1.0 and 0.2.0 evidence records retain the completed releases; repeat this process for each candidate.
+The implemented workflow `.github/workflows/release.yml` validates stable tags of the exact form `v1.2.3`. Manual dispatch and `codex/release-*` branches build candidates without publishing. Eight matrix jobs build native `codepact-cli` wheels. The source job builds the helper wheel and both source archives and runs a Cargo dry run. Publication requires the reusable quality workflow, all builds, complete artifact inventory and matching version/metadata checks. All three publishers consume the same validated candidate revision and verified artifacts. `codepact-cli` publishes before `codepact` so the exact dependency is available. The TypePact 0.1.0 and 0.2.0 evidence records retain those completed releases; repeat this process for each CodePact candidate.
 
 Before tagging a subsequent release:
 
-- Set the root Python project, `cli/pyproject.toml`, and Rust crate version to the tag version without the leading `v`; pin `typepact-cli` to that exact version in the helper dependency and refresh `uv.lock`.
+- Set the root Python project, `cli/pyproject.toml`, and Rust crate version to the tag version without the leading `v`; pin `codepact-cli` to that exact version in the helper dependency and refresh `uv.lock`.
 - Confirm the PyPI trusted publishers for both projects and the `CARGO_REGISTRY_TOKEN` GitHub secret are configured. Never put credential values in evidence or logs.
 - Use the pinned build tools and committed `uv.lock`/`Cargo.lock`. Require the eight CLI platform wheels, one pure helper wheel and both source archives; validate version metadata and dependency pins.
 - Complete exact-candidate release evidence, maintainer approval, local checks, and CI review. The [0.2.0 release checklist](release-0.2.0-checklist.md) records the last release process and can guide later checklists.
 
-Push the version tag to trigger publication. Both PyPI publish jobs use Trusted Publishing: grant job-scoped `id-token: write`, omit username/password inputs, and enable attestations. Keep the `pypi` environment on both jobs, with no protection rule requiring another person's approval. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; typepact publication also depends on successful typepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
+Push the version tag to trigger publication. Both PyPI publish jobs use Trusted Publishing: grant job-scoped `id-token: write`, omit username/password inputs, and enable attestations. Keep the `pypi` environment on both jobs, with no protection rule requiring another person's approval. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; codepact publication also depends on successful codepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
 
 This workflow does not publish anything until a matching tag is pushed. Manual dispatch is build-only. The current Quality workflow is wired into release validation; a successful run on an unrelated revision is not candidate evidence.
 
 ## Analyzer dependency updates
 
-A Ruff or Salsa update requires a pinned dependency record, license/notice review, MSRV and target-version checks, AST/resolution regressions, incremental parity/reuse evidence and clean Cargo packaging. Never infer a published crate can build from a successful workspace build with Git/path dependencies. Serialize only TypePact-owned public data; database-local IDs and cache schemas carry no public stability guarantee. Changes to external declaration identity require explicit schema and migration review.
+A Ruff or Salsa update requires a pinned dependency record, license/notice review, MSRV and target-version checks, AST/resolution regressions, incremental parity/reuse evidence and clean Cargo packaging. Never infer a published crate can build from a successful workspace build with Git/path dependencies. Serialize only CodePact-owned public data; database-local IDs and cache schemas carry no public stability guarantee. Changes to external declaration identity require explicit schema and migration review.
 
-## Required typepact-cli native wheel matrix (D015)
+## Required codepact-cli native wheel matrix (D015)
 
 | Platform | Rust target | Runner | Minimum compatibility |
 | --- | --- | --- | --- |
@@ -88,16 +92,23 @@ A Ruff or Salsa update requires a pinned dependency record, license/notice revie
 
 The build matrix follows [robin-sparkless release CI](https://github.com/eddiethedean/robin-sparkless/blob/main/.github/workflows/release.yml); its test topology is not copied. Linux builds use Zig for explicit libc compatibility. Maturin 1.9.6 and Rust 1.96.0 build the release wheels. Python tags are py3-none with platform tags, constrained by Requires-Python >=3.11; no per-CPython ABI rebuild is needed for a standalone executable. Python 3.11–3.14 helper compatibility remains covered by quality CI. The analyzer's supported source grammar is a distinct capability.
 
-The typepact source archive contains only its Python helpers, py.typed, metadata and license; installing it resolves the matching CLI dependency. The typepact-cli source archive contains Rust sources, workspace/crate manifests, Cargo.lock, CLI metadata and license files. Only CLI source installs compile Rust locally and require Rust 1.96+, a linker and network/cache access to locked Cargo dependencies. CLI platform wheels contain the executable and require no Rust compiler at installation. Runtime imports never start the analyzer or download executables. A user may explicitly choose Cargo installation for Rust library/CLI use.
+The codepact source archive contains only its Python helpers, py.typed, metadata and license; installing it resolves the matching CLI dependency. The codepact-cli source archive contains Rust sources, workspace/crate manifests, Cargo.lock, CLI metadata and license files. Only CLI source installs compile Rust locally and require Rust 1.96+, a linker and network/cache access to locked Cargo dependencies. CLI platform wheels contain the executable and require no Rust compiler at installation. Runtime imports never start the analyzer or download executables. A user may explicitly choose Cargo installation for Rust library/CLI use.
 
 All later phases inherit this distribution contract. Changes to the matrix, minimum platform versions or bundling model must update D015, this plan, the workflow and artifact verifier together. Cross-platform builds remain unqualified until their candidate jobs succeed; a successful local macOS build does not establish another target's compatibility.
 
 
 ## Two-project PyPI publication
 
-The first 0.1.0 release used the repository secret `PYPI_API_TOKEN` because two pending trusted publishers for the same GitHub project could not be configured. Both projects now have separate trusted publishers for repository `eddiethedean/typepact`, workflow `release.yml` and environment `pypi`. The 0.2.0 release successfully exercised OIDC: each publishing job used job-scoped `id-token: write`, omitted username/password inputs and enabled attestations. The unused `PYPI_API_TOKEN` GitHub secret has been removed; revoking its PyPI account token remains a maintainer cleanup action. Keep the pure helper dependency exact to prevent skew with the native analyzer. Standalone users can install `typepact-cli` without the Python helpers.
+The TypePact 0.1.0 release used `PYPI_API_TOKEN`; its 0.2.0 release exercised
+OIDC for the old `typepact` and `typepact-cli` projects. CodePact's new PyPI
+projects require trusted publisher entries for owner `eddiethedean`, repository
+`codepact`, workflow `release.yml`, and environment `pypi`; the existing
+TypePact publisher setup does not qualify these new names. Confirm that setup
+before a tag release. Keep the helper dependency exact to prevent skew with the
+native analyzer. Standalone users can install `codepact-cli` without the
+Python helpers.
 
-The uv workspace contains the root helper project and cli project; workspace source mapping resolves the CLI locally during development. Standard published metadata uses the ordinary registry dependency typepact-cli==X.Y.Z. Updating versions requires changing all three manifests and the helper dependency together, then refreshing uv.lock. A partial publication leaves the candidate incomplete; resume only missing projects, preserving published bytes.
+The uv workspace contains the root helper project and cli project; workspace source mapping resolves the CLI locally during development. Standard published metadata uses the ordinary registry dependency codepact-cli==X.Y.Z. Updating versions requires changing all three manifests and the helper dependency together, then refreshing uv.lock. A partial publication leaves the candidate incomplete; resume only missing projects, preserving published bytes.
 
 ## Concurrent capability release claims
 

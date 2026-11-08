@@ -1,6 +1,6 @@
 # Command-line reference
 
-The `typepact` command inspects declarations or checks resource lifecycles in Python source without importing or executing the project.
+The `codepact` command inspects declarations or checks resource lifecycles in Python source without importing or executing the project.
 
 Both `inspect-contracts` and the bounded lifecycle-checking `check` command are
 available in the published 0.2.0 release. See the [availability guide](availability.md),
@@ -9,9 +9,9 @@ available in the published 0.2.0 release. See the [availability guide](availabil
 ## Commands
 
 ```text
-typepact --version
-typepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] [--json] FILE...
-typepact check [--root DIR] [--python-version 3.11|3.12|3.13] [--json] [FILE...]
+codepact --version
+codepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] [--json] FILE...
+codepact check [--root DIR] [--python-version 3.11|3.12|3.13] [--json] [FILE...]
 ```
 
 `inspect-contracts` requires explicit files and writes JSON. `check` discovers Python files under its root, defaults to readable diagnostics and accepts `--json` for the structured inspection result with lifecycle findings. Use `--root` to bound discovery; without it, the current directory is the root. Explicit files are included alongside discovered files. `--help` describes the invocation.
@@ -19,8 +19,8 @@ typepact check [--root DIR] [--python-version 3.11|3.12|3.13] [--json] [FILE...]
 ## Check resource lifecycles
 
 ```sh
-typepact check --root src
-typepact check --root src --python-version 3.12 src/app.py
+codepact check --root src
+codepact check --root src --python-version 3.12 src/app.py
 ```
 
 The current checking subset tracks direct resource construction, local aliases, straight-line synchronous code, `if`/`else`, returns, resolved local helpers, and acyclic named re-exports. It reports use after a known close as TP1001 and close through a Borrowed parameter as TP2001. Unsupported statements and unknown effects are shown as incomplete coverage. A possible violation is a warning and does not by itself make the command fail.
@@ -32,7 +32,7 @@ This is bounded lifecycle checking, not a guarantee of runtime safety, leak free
 The default source target is Python 3.11. Select Python 3.11, 3.12, or 3.13 with `--python-version`:
 
 ```sh
-typepact inspect-contracts --python-version 3.13 app.py
+codepact inspect-contracts --python-version 3.13 app.py
 ```
 
 This controls which Python grammar and identifier rules are used to parse the input. It does not change the Python interpreter running your application. Unsupported target versions produce incomplete coverage.
@@ -42,7 +42,7 @@ This controls which Python grammar and identifier rules are used to parse the in
 For source files inside a package or `src` directory, set a root and pass every file that should be analyzed:
 
 ```sh
-typepact inspect-contracts --root src src/models.py src/client.py
+codepact inspect-contracts --root src src/models.py src/client.py
 ```
 
 With a root, paths below it form the logical module name. For example, `src/my_app/models.py` under `src` becomes `my_app.models`. Without a root, the filename stem is used as the module name. Input files must map to distinct module names.
@@ -81,5 +81,5 @@ completion, certainty, trust, coverage reason and repair guidance. With
 described in the [output reference](output.md); `inspect-contracts` keeps its
 inspection schema. These behaviors and the new check result remain unqualified
 until the maintainer completes the 0.3 matrix and release gates. See the [0.3
-cleanup plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3-cleanup.md).
+cleanup plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
 It does not provide a general lifetime, escape, or task-completion proof.

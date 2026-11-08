@@ -1,5 +1,5 @@
+use codepact::{AnalysisSession, Inspection, SourceFile};
 use std::time::{Duration, Instant};
-use typepact::{AnalysisSession, Inspection, SourceFile};
 
 const REPEATS: usize = 7;
 const MAX_RESOURCES: usize = 512;
@@ -8,7 +8,7 @@ fn provider() -> SourceFile {
     SourceFile::new(
         "provider.py",
         "provider",
-        r#"from typepact import resource
+        r#"from codepact import resource
 @resource(closed_by='close')
 class Connection:
     def close(self): pass

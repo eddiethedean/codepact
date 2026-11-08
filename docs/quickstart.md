@@ -2,7 +2,7 @@
 
 This example declares that a `Connection` is closed by `close`, then describes how two functions intend to access it.
 
-From a Python project, install the helpers and command with `uv add typepact==0.2.0`. See [installation](install.md) for pip, standalone CLI, and platform requirements.
+The CodePact 0.3.0 candidate is not published yet. Clone the [repository](https://github.com/eddiethedean/codepact), run `uv sync --locked`, and use the local `codepact` command. After publication, install the helpers and command with `uv add codepact==0.3.0`. See [installation](install.md) for standalone CLI and platform requirements.
 
 Save the code as `connection.py`:
 
@@ -13,14 +13,14 @@ Save the code as `connection.py`:
 Inspect the declarations:
 
 ```sh
-uv run typepact inspect-contracts connection.py
+uv run codepact inspect-contracts connection.py
 ```
 
 A successful run exits with status `0`, has an empty `diagnostics` list, and reports `coverage.status` as `complete-for-supported-subset`.
 
 The JSON result contains a resource contract for `Connection` and access contracts for `read.conn` and `consume.conn`. The first parameter is shared; the second is owned. Both inherit the class lifecycle metadata.
 
-The source is parsed without importing `connection.py`. TypePact records the declared method name; the lifecycle checker can analyze supported calls to it, but does not verify that the method actually releases a runtime resource.
+The source is parsed without importing `connection.py`. CodePact records the declared method name; the lifecycle checker can analyze supported calls to it, but does not verify that the method actually releases a runtime resource.
 
 The inspector also catches inconsistent declarations. For example, if a view
 uses `Resource(closed_by="release")` while its class declares
@@ -43,17 +43,18 @@ All three facts refer to `connection.Connection`. The `source` field locates eac
 Pass all source files that should participate in direct import resolution. Use `--root` to derive package-qualified module names:
 
 ```sh
-uv run typepact inspect-contracts --root src src/models.py src/client.py
+uv run codepact inspect-contracts --root src src/models.py src/client.py
 ```
 
-The root is used to name modules; TypePact does not discover files or follow imports automatically. For the full option and input behavior, see the [CLI reference](cli.md). For supported declarations and lifecycle flow, see [supported syntax](supported-syntax.md).
+The root is used to name modules; CodePact does not discover files or follow imports automatically. For the full option and input behavior, see the [CLI reference](cli.md). For supported declarations and lifecycle flow, see [supported syntax](supported-syntax.md).
 
 Continue with the [multi-file tutorial](project-guide.md) to resolve declarations across modules, or [automation](automation.md) to check an explicit source set in CI.
 
 ## Try lifecycle checking next
 
-The 0.2.0 release also includes `typepact check` for direct construction, local
-aliases, normal synchronous calls, and `if`/`else` joins.
+The historical TypePact 0.2.0 release introduced `check` for direct
+construction, local aliases, normal synchronous calls, and `if`/`else` joins.
+The CodePact 0.3.0 candidate expands checking to cleanup and exceptional exits.
 
 Follow the [lifecycle tutorial](lifecycle.md) to reproduce a use after close,
 read its related close location, and make the example pass.

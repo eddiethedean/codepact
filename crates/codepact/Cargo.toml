@@ -1,12 +1,12 @@
 [package]
-name = "typepact"
+name = "codepact"
 version = "0.3.0"
-description = "Inspect TypePact contracts in Python source without executing it"
+description = "Inspect CodePact contracts in Python source without executing it"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 readme = "../../README.md"
-repository = "https://github.com/eddiethedean/typepact"
+repository = "https://github.com/eddiethedean/codepact"
 keywords = ["python", "static-analysis", "typing"]
 categories = ["development-tools"]
 
@@ -19,7 +19,7 @@ ruff_text_size = "=0.0.12"
 salsa = "=0.28.5"
 
 [[bin]]
-name = "typepact"
+name = "codepact"
 path = "src/main.rs"
 
 [lints.rust]

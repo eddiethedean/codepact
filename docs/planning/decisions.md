@@ -4,7 +4,7 @@
 
 | ID | Decision | Rationale |
 | --- | --- | --- |
-| D001 | TypePact product name, `typepact` Python package, `typepact.rust` explicit namespace | One project usable by Python and Rust-oriented developers |
+| D001 | CodePact product name, `codepact` Python package, `codepact.rust` explicit namespace (the project originally shipped as TypePact with `typepact` names; see D019) | One project usable by Python and Rust-oriented developers |
 | D002 | One canonical semantic engine | Equivalent declarations need consistent behavior |
 | D003 | Pythonic and explicit APIs are first-class | Teams can mix styles across boundaries |
 | D004 | Gradual, opt-in adoption | Existing Python applications must remain usable |
@@ -12,29 +12,31 @@
 | D006 | Mixed-interface resource slice first | Demonstrates the project's defining interoperability early |
 | D007 | MIT license retained; RustPython 0.4 and line scanning were the prototype frontend, superseded by D009 | Permissive source and dependency terms; parser preserves source-only inspection without embedding Python |
 | D008 | Prototype analyzer target 3.11–3.13; helper runtime target 3.11–3.14; Ruff migration range requires fresh qualification | RustPython 0.4 has a fixed grammar; defer 3.14 analysis until parser compatibility is verified |
-| D009 | Ruff parser/AST adapter and TypePact declaration/binding index replace line scanning | Correct source structure and captured identities; evaluate ruff_python_semantic reuse rather than assuming ty semantics |
+| D009 | Ruff parser/AST adapter and CodePact declaration/binding index replace line scanning | Correct source structure and captured identities; evaluate ruff_python_semantic reuse rather than assuming ty semantics |
 | D010 | Salsa inputs and tracked queries are 0.1 foundations | Reusable sessions with explicit dependencies; incremental correctness tested from the start |
 | D011 | Follow ty query architecture while owning contract semantics | Avoid requiring a general type checker or coupling public APIs to upstream internals |
 | D012 | In-memory incrementality in 0.1; persistent caches/editor hardening in 0.8 | Establish correctness early and defer storage/editor complexity |
 | D013 | Pin Ruff parser/AST 0.0.12 and Salsa 0.28.5; raise Rust MSRV to 1.96 | crates.io packages and published metadata report these versions; exact lockfile and archive build are required |
-| D014 | Do not depend on `ruff_python_semantic` in 0.1; keep a TypePact-owned binding index for the supported declaration subset | Ruff labels the component API unstable and frequently breaking; its semantic model adds Ruff-specific scope and reference behavior that does not define TypePact's eager captured-contract semantics |
+| D014 | Do not depend on `ruff_python_semantic` in 0.1; keep a CodePact-owned binding index for the supported declaration subset | Ruff labels the component API unstable and frequently breaking; its semantic model adds Ruff-specific scope and reference behavior that does not define CodePact's eager captured-contract semantics |
 
-| D015 | Keep typepact pure Python and depend on typepact-cli==the same version; build typepact-cli with maturin bin wheels from 0.1 and retain the Cargo crate | One Python installation resolves annotations and analysis; typepact stays pure Python and pins the matching typepact-cli version. Publish eight CLI wheels, one universal helper wheel and two source archives, following the robin-sparkless release build matrix |
+| D015 | Keep codepact pure Python and depend on codepact-cli==the same version; build codepact-cli with maturin bin wheels from 0.1 and retain the Cargo crate | One Python installation resolves annotations and analysis; codepact stays pure Python and pins the matching codepact-cli version. Publish eight CLI wheels, one universal helper wheel and two source archives, following the robin-sparkless release build matrix |
 
 D009–D012 establish direction, not implementation completion. [AM01–AM06](analyzer-migration.md) define the evidence and rollout; D007's MIT choice remains in force.
 
-**D016 — Optional Pyrefly composition prototype.** Plan a separate `typepact-pyrefly-cli` PyPI distribution and `typepact-pyrefly` command combining ordinary type checking from embedded Pyrefly with the existing TypePact resource engine. The maintainer selected Pyrefly for this experiment and supplied a screenshot confirming its trusted publisher configuration on 2026-10-30. Exact dependency/API selection, source packaging and supported targets remain evidence-dependent under [PF01–PF05 and PF-V01–PF-V08](typepact-pyrefly-cli.md). Use independent prerelease versions and the configured `release-pyrefly.yml`/`pypi` publisher identity; workflow implementation and publication remain pending. This adds an optional host; D002/D011/D014/D015 continue to govern the core engine and existing packages.
+**D016 — Optional Pyrefly composition prototype.** Plan a separate `codepact-pyrefly-cli` PyPI distribution and `codepact-pyrefly` command combining ordinary type checking from embedded Pyrefly with the existing CodePact resource engine. The maintainer selected Pyrefly for this experiment and supplied a screenshot confirming its trusted publisher configuration on 2026-10-30. Exact dependency/API selection, source packaging and supported targets remain evidence-dependent under [PF01–PF05 and PF-V01–PF-V08](codepact-pyrefly-cli.md). Use independent prerelease versions and the configured `release-pyrefly.yml`/`pypi` publisher identity; workflow implementation and publication remain pending. This adds an optional host; D002/D011/D014/D015 continue to govern the core engine and existing packages.
 
 **D017 — Structured async resource safety first.** Adopt the [concurrency plan](concurrency.md) on 2026-10-31: stage CS01–CS07 through 0.3–0.9, beginning with intratask cancellation/cleanup and reviewed asyncio.TaskGroup lifetime models. Reuse the canonical ownership/borrow/typestate/effect engine. Keep 0.2 synchronous. Process/thread handoffs remain conservative escape boundaries until reviewed models distinguish serialization, handles, start methods and worker failure. No Send/Sync, race-freedom, deadlock-freedom or general cross-process ownership guarantee is introduced; implementation and qualification remain pending.
 
 **D018 — Maintainer-only release validation and approval.** At the maintainer's explicit direction, the accountable maintainer may implement, validate, review and approve every release alone, including semantic decisions, models and performance evidence. No independent reviewer, second-person sign-off, or independent-review waiver is required. Additional review is optional at the maintainer's discretion. This applies to all phase and patch releases; it supersedes any implication that owner, validator, reviewer and approver must be different people. Required tests, exact-candidate gate evidence and explicit maintainer release authorization remain in force. See the [maintainer authority policy](release-gates.md#maintainer-authority).
+
+**D019 — Rename TypePact to CodePact for 0.3.0.** At the maintainer's direction, the product, GitHub repository, Python distribution/import, CLI distribution/executable, and Rust crate/import use the CodePact name. The new package identifiers are `codepact` and `codepact-cli`; the Rust package and CLI executable are `codepact`. Do not carry compatibility aliases for the published 0.1.0 or 0.2.0 TypePact names. Keep those release records factually unchanged, document the required source/dependency rename, and qualify the new 0.3.0 artifacts under the new identifiers before publication.
 
 ## Proposed decisions requiring evidence
 
 | Question | Starting proposal | Evidence needed |
 | --- | --- | --- |
 | Metadata representation | Annotated aliases with compatible stubs | Interpreter and checker matrix |
-| Analyzer dependencies | Pinned Ruff parser/AST and Salsa, TypePact-owned adapter/index per D014 | AM01 API, license, MSRV, registry-package and target-version evidence |
+| Analyzer dependencies | Pinned Ruff parser/AST and Salsa, CodePact-owned adapter/index per D014 | AM01 API, license, MSRV, registry-package and target-version evidence |
 | Ownership scope | Explicit moves and lexical borrows | Alias/escape counterexamples and diagnostics |
 | Async task models | Bounded TaskGroup captures, completion and cancellation effects | CS01–CS04 model truth tables, owner/borrow and interrupted-cleanup counterexamples |
 | Process handoffs | Conservative unknown/escape until separately qualified | Serialization, start-method, handle/shared-memory and worker-failure model proposal; no general safety claim |
@@ -59,7 +61,7 @@ D009–D012 establish direction, not implementation completion. [AM01–AM06](an
 
 ## Technical references
 
-These sources ground existing language behavior; TypePact's designs and support commitments remain proposals. Consult current specifications during implementation and pin tool versions in compatibility reports.
+These sources ground existing language behavior; CodePact's designs and support commitments remain proposals. Consult current specifications during implementation and pin tool versions in compatibility reports.
 
 - [Python typing qualifiers and Annotated](https://typing.python.org/en/latest/spec/qualifiers.html): metadata interpretation and underlying typing behavior.
 - [Distributing Python type information](https://typing.python.org/en/latest/spec/distributing.html): stubs, typing markers and compatibility constraints.

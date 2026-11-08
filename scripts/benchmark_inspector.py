@@ -17,7 +17,7 @@ import time
 
 
 class Arguments(argparse.Namespace):
-    binary: Path = Path("target/release/typepact")
+    binary: Path = Path("target/release/codepact")
     repeats: int = 7
     classes: int = 1000
 
@@ -43,7 +43,7 @@ def main() -> None:
     if sys.platform not in {"darwin", "linux"}:
         parser.error("RSS reporting is qualified only on macOS and Linux")
     binary = args.binary.resolve(strict=True)
-    prefix = "from typepact import resource\nfrom typepact.rust import Borrowed\n"
+    prefix = "from codepact import resource\nfrom codepact.rust import Borrowed\n"
     source = prefix + "".join(
         f"@resource(closed_by='close')\nclass C{index}: pass\n"
         f"def use{index}(value: Borrowed[C{index}]) -> None: pass\n"
@@ -60,7 +60,7 @@ def main() -> None:
         cases = [
             ("Small CLI", [str(binary), "inspect-contracts", "small.py"]),
             ("Synthetic CLI", [str(binary), "inspect-contracts", "synthetic.py"]),
-            ("Helper import", [sys.executable, "-I", "-c", "import typepact"]),
+            ("Helper import", [sys.executable, "-I", "-c", "import codepact"]),
         ]
         print("# Cold-process baseline (corpus v1)")
         print(f"\nHost: {platform.platform()}, {platform.machine()}")

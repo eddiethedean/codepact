@@ -1,14 +1,14 @@
 # Automation and CI
 
-Use `inspect-contracts` as a declaration check for an explicit set of supported source files. Pin version 0.2.0, the current release, so the helper and analyzer stay aligned. The same package provides bounded lifecycle checking with `check`.
+Use `inspect-contracts` as a declaration check for an explicit set of supported source files. CodePact 0.3.0 is not published yet; after qualification, pin `codepact` 0.3.0 so the helper and analyzer stay aligned. The candidate also provides bounded lifecycle and cleanup checking with `check`.
 
 ## Run in a uv project
 
-Commit your project's `pyproject.toml` and `uv.lock` after adding TypePact. A reproducible invocation is:
+Commit your project's `pyproject.toml` and `uv.lock` after adding CodePact. A reproducible invocation is:
 
 ```sh
 uv sync --locked
-uv run --locked typepact inspect-contracts \
+uv run --locked codepact inspect-contracts \
   --python-version 3.11 --root src src/models.py src/client.py
 ```
 
@@ -19,7 +19,7 @@ This command uses the layout in the [multi-file tutorial](project-guide.md). Inc
 This job installs only the CLI tool and inspects that same source layout:
 
 ```yaml
-name: TypePact declarations
+name: CodePact declarations
 on: [push, pull_request]
 
 permissions:
@@ -37,18 +37,18 @@ jobs:
           python-version: '3.11'
       - name: Inspect declarations
         run: >-
-          uv tool run --from typepact-cli==0.2.0 typepact inspect-contracts
+          uv tool run --from codepact-cli==0.3.0 codepact inspect-contracts
           --python-version 3.11 --root src src/models.py src/client.py
 ```
 
-Adapt the root and file list to your repository. Projects that need the helpers for other steps can instead install their locked uv environment and use `uv run --locked typepact`.
+Adapt the root and file list to your repository. Projects that need the helpers for other steps can instead install their locked uv environment and use `uv run --locked codepact`.
 
 ## Save and consume inspection JSON
 
 Redirect standard output to preserve a report:
 
 ```sh
-uv run --locked typepact inspect-contracts \
+uv run --locked codepact inspect-contracts \
   --root src src/models.py src/client.py > inspection.json
 ```
 
@@ -63,16 +63,16 @@ policy, see [report handling](ci-reporting.md).
 
 ## Check lifecycle behavior
 
-Install the current release and use a narrow root for the project to be
-analyzed:
+After CodePact 0.3.0 is published, install it and use a narrow root for the
+project to be analyzed:
 
 ```sh
-uv add typepact==0.2.0
-uv run --locked typepact check --root path/to/source --json > checking.json
+uv add codepact==0.3.0
+uv run --locked codepact check --root path/to/source --json > checking.json
 ```
 
-Replace the input path with your project's source directory. To test unreleased
-changes, build from a TypePact checkout with Rust 1.96+ and record its Git SHA.
+Replace the input path with your project's source directory. To test the current
+candidate, build from a CodePact checkout with Rust 1.96+ and record its Git SHA.
 
 Checking differs from inspection: possible findings and incomplete coverage alone
 return `0`. A report consumer must inspect certainty and coverage, preserve exit

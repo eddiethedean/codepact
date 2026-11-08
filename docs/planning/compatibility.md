@@ -2,7 +2,7 @@
 
 ## Python typing
 
-Use standard types, Protocol, unions, generics and Annotated metadata where possible. The Python typing specification permits tools to interpret Annotated metadata while consumers that do not understand it use the underlying type. TypePact-specific enforcement still requires TypePact.
+Use standard types, Protocol, unions, generics and Annotated metadata where possible. The Python typing specification permits tools to interpret Annotated metadata while consumers that do not understand it use the underlying type. CodePact-specific enforcement still requires CodePact.
 
 Prototype public aliases against pinned mypy and Pyright versions before freezing syntax. Include imported aliases, re-exports, nested generics, forward references, overloads and annotation evaluation behavior. Do not promise support because an annotation happens to import successfully.
 
@@ -34,7 +34,7 @@ Use public typing and stub formats. Avoid relying on private mypy or Pyright int
 ## Configuration proposal
 
 ~~~toml
-[tool.typepact]
+[tool.codepact]
 python-version = "3.11"
 mode = "advisory"
 include = ["src"]
@@ -53,7 +53,7 @@ The [migration plan](analyzer-migration.md) requires a jointly compatible Ruff p
 
 ## Python helper and CLI distributions
 
-The typepact distribution remains pure Python and pins its typepact-cli dependency, which supplies native platform wheels containing the Rust CLI (D015). Installation supports Python 3.11+; qualify helper behavior on 3.11–3.14 independently of the analyzer grammar target. See the eight-target release matrix and Rust prerequisites for source installs in [releases](releases.md).
+The codepact distribution remains pure Python and pins its codepact-cli dependency, which supplies native platform wheels containing the Rust CLI (D015). Installation supports Python 3.11+; qualify helper behavior on 3.11–3.14 independently of the analyzer grammar target. See the eight-target release matrix and Rust prerequisites for source installs in [releases](releases.md).
 
 ## Concurrency model compatibility
 

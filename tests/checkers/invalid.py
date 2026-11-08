@@ -1,4 +1,4 @@
-from typepact.rust import Borrowed
+from codepact.rust import Borrowed
 
 
 class Connection:

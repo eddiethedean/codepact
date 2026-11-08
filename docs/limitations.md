@@ -1,8 +1,10 @@
 # Current limitations
 
-Published TypePact 0.2.0 provides declaration inspection and a bounded synchronous
-lifecycle checker. The release was qualified for its documented subset; it does
-not model every Python lifecycle pattern or establish general resource safety.
+The published TypePact 0.2.0 release provided declaration inspection and a
+bounded synchronous lifecycle checker. CodePact 0.3.0 is an unreleased
+candidate that adds cleanup checks across supported exits. Its phase
+qualification remains pending; neither release models every Python lifecycle
+pattern or establishes general resource safety.
 
 The lifecycle checker tracks direct construction, local aliases, ordinary synchronous calls, local helpers, `if`/`else` joins, and acyclic named re-exports from local modules. It can report use after close and closing a `Borrowed` parameter. Decorated methods, including `staticmethod` and `classmethod`, do not have modeled Python binding and produce an incomplete-coverage boundary. Method parameter annotations and function defaults are also outside the modeled summary; their declarations produce incomplete-coverage boundaries. Unsupported call argument expressions weaken tracked resources and produce boundaries. A custom `__new__` allocation also produces a boundary because its effects are not modeled. The checker does not precisely model loops, exception handlers, `finally`, context managers, async suspension, dynamic dispatch, arbitrary fields/containers, or returned resource aliases. Unsupported regions can produce boundaries and weaken tracked state; unmodeled alias and boundary combinations are not proven safe. Recursive calls recover to unknown summaries. Unknown methods and calls do not establish purity. A clean run does not prove leak freedom, cleanup on every exit, or correctness of declared resource models.
 
@@ -11,7 +13,7 @@ local alias at a join, 4,096 tracked objects in one function or module body, and
 8 nested call/effect evaluations. Exhaustion produces an incomplete-coverage
 boundary and weakens affected facts. The defaults are documented in the
 [supported syntax guide](supported-syntax.md#input-and-work-limits); their
-measured qualification is recorded in the [0.2.0 release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md).
+measured qualification is recorded in the [0.2.0 release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md).
 
 Repeat close has no general policy and is reported as a coverage boundary rather
 than a dedicated double-close error. Project checking scans all `.py` files below
@@ -50,7 +52,7 @@ normal state transition even when its illustrative body is empty. It does not
 certify that the runtime method releases a resource. Borrowed checks do not
 provide general lifetime or escape proofs.
 
-The current, unreleased 0.3 worktree implements a bounded exit-flow candidate:
+The CodePact 0.3.0 candidate implements bounded exit-flow analysis:
 it tracks `finally`, supported exception handlers, `while`, finite tuple `for`
 loops, Owned return handoff, exact imported, module-qualified, and re-exported
 `contextlib.closing`/`aclosing` identities, and
@@ -70,7 +72,7 @@ with a non-`object` base also remains possible with an incomplete-coverage
 boundary.
 Async-generator finalization and general task lifetime analysis remain outside
 this candidate. See [supported syntax](supported-syntax.md#unreleased-03-candidate-behavior)
-and the [0.3 validation map](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/validation.md);
+and the [0.3 validation map](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/validation.md);
 this candidate description does not qualify the release.
 
 ## Provisional interfaces

@@ -26,7 +26,7 @@ Every reported bug should add the smallest relevant fixture and, where meaningfu
 
 Test that equivalent syntax lowers to equivalent semantic facts, renaming locals preserves results, diagnostic order is deterministic, and cached versus fresh analysis agrees. Adding an unknown path must not strengthen certainty. Use generated small CFGs to test joins and termination.
 
-Ordinary checkers validate base typing compatibility, not TypePact ownership semantics. Differential results are evidence to investigate, not a substitute oracle for new rules.
+Ordinary checkers validate base typing compatibility, not CodePact ownership semantics. Differential results are evidence to investigate, not a substitute oracle for new rules.
 
 ## Performance
 
@@ -54,7 +54,7 @@ The current source suite has 32 Rust unit tests, 34 lifecycle CLI integration te
 
 ## Python helper and CLI distributions
 
-Packaging checks require a pure helper wheel declaring the exact native typepact-cli dependency, eight CLI platform wheels and separate helper/CLI source archives. The local make check gate builds both packages through their sdists and installs all four local artifacts into fresh uv environments outside the checkout, then verifies CLI version/help, inspection, lifecycle checking and source non-execution. Release CI builds all eight targets and validates inventory/metadata. The [0.2.0 evidence record](../releases/0.2.0-evidence.md) contains exact candidate and publication results.
+Packaging checks require a pure helper wheel declaring the exact native codepact-cli dependency, eight CLI platform wheels and separate helper/CLI source archives. The local make check gate builds both packages through their sdists and installs all four local artifacts into fresh uv environments outside the checkout, then verifies CLI version/help, inspection, lifecycle checking and source non-execution. Release CI builds all eight targets and validates inventory/metadata. The [0.2.0 evidence record](../releases/0.2.0-evidence.md) contains exact candidate and publication results.
 
 ## Planned concurrent resource qualification
 

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/typepact"]
+members = ["crates/codepact"]
 resolver = "2"
 
 [workspace.package]

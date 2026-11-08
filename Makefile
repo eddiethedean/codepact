@@ -20,8 +20,8 @@ check-python:
 	$(PYTHON) scripts/generate_identifier_tables.py --check
 	PYTHONPATH=python $(PYTHON) -m unittest discover -s tests/python -v
 	basedpyright
-	ruff check python/typepact scripts
-	ruff format --check python/typepact scripts
+	ruff check python/codepact scripts
+	ruff format --check python/codepact scripts
 	MYPYPATH=python mypy --strict tests/checkers/valid.py
 	@diagnostics="$$(mktemp)"; \
 	if MYPYPATH=python mypy --strict tests/checkers/invalid.py >"$$diagnostics" 2>&1; then \
@@ -56,28 +56,28 @@ check-msrv:
 
 check-rust-package:
 	@set -eu; \
-	package_metadata="$$($(CARGO) metadata --format-version 1 --no-deps | python3 -c 'import json, sys; metadata = json.load(sys.stdin); package = next(item for item in metadata["packages"] if item["name"] == "typepact"); print(metadata["target_directory"]); print(package["version"])')"; \
+	package_metadata="$$($(CARGO) metadata --format-version 1 --no-deps | python3 -c 'import json, sys; metadata = json.load(sys.stdin); package = next(item for item in metadata["packages"] if item["name"] == "codepact"); print(metadata["target_directory"]); print(package["version"])')"; \
 	target_directory="$$(printf '%s\n' "$$package_metadata" | sed -n '1p')"; \
 	package_version="$$(printf '%s\n' "$$package_metadata" | sed -n '2p')"; \
-	$(CARGO) package -p typepact --locked --allow-dirty; \
+	$(CARGO) package -p codepact --locked --allow-dirty; \
 	tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
-	crate="$$target_directory/package/typepact-$$package_version.crate"; \
+	crate="$$target_directory/package/codepact-$$package_version.crate"; \
 	test -f "$$crate"; \
 	mkdir -p "$$tmp/archive"; \
 	tar -xzf "$$crate" -C "$$tmp/archive"; \
-	package_dir="$$tmp/archive/typepact-$$package_version"; \
+	package_dir="$$tmp/archive/codepact-$$package_version"; \
 	test -f "$$package_dir/Cargo.toml"; \
 	$(CARGO) test --manifest-path "$$package_dir/Cargo.toml" --locked; \
 	$(CARGO) install --path "$$package_dir" --root "$$tmp/install" --locked --force; \
-	version_output="$$($$tmp/install/bin/typepact --version)"; \
-	test "$$version_output" = "typepact $$package_version"; \
+	version_output="$$($$tmp/install/bin/codepact --version)"; \
+	test "$$version_output" = "codepact $$package_version"; \
 	printf '%s\n' "$$version_output"; \
-	(cd "$$package_dir" && "$$tmp/install/bin/typepact" inspect-contracts tests/contracts.py); \
+	(cd "$$package_dir" && "$$tmp/install/bin/codepact" inspect-contracts tests/contracts.py); \
 	mkdir "$$tmp/lifecycle"; \
 	printf '%s\n' \
 		"open('$$tmp/lifecycle/executed', 'w').close()" \
-		"from typepact import resource" \
+		"from codepact import resource" \
 		"@resource(closed_by='close')" \
 		"class Connection:" \
 		"    def close(self): pass" \
@@ -85,7 +85,7 @@ check-rust-package:
 		"connection = Connection()" \
 		"connection.close()" \
 		"connection.status()" >"$$tmp/lifecycle/connection.py"; \
-	if "$$tmp/install/bin/typepact" check --root "$$tmp/lifecycle" --json >"$$tmp/lifecycle.json"; then status=0; else status="$$?"; fi; \
+	if "$$tmp/install/bin/codepact" check --root "$$tmp/lifecycle" --json >"$$tmp/lifecycle.json"; then status=0; else status="$$?"; fi; \
 	test "$$status" -eq 1; \
 	grep -Fq '"code": "TP1001"' "$$tmp/lifecycle.json"; \
 	grep -Fq '"certainty": "definite"' "$$tmp/lifecycle.json"; \
@@ -96,7 +96,7 @@ check-inspector:
 	@set -eu; \
 	tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
-	if TYPEPACT_SIDE_EFFECT_MARKER="$$tmp/marker" $(CARGO) run -q -p typepact -- inspect-contracts tests/fixtures/side_effect.py >"$$tmp/inspection.json"; then \
+	if CODEPACT_SIDE_EFFECT_MARKER="$$tmp/marker" $(CARGO) run -q -p codepact -- inspect-contracts tests/fixtures/side_effect.py >"$$tmp/inspection.json"; then \
 		echo "expected the unsupported fixture to report incomplete coverage" >&2; exit 1; \
 	else \
 		status="$$?"; \

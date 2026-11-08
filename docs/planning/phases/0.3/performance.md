@@ -43,7 +43,7 @@ Resolved-call transfer now visits only caller-reachable keys in the callee resul
 
 ## Inspector and query reuse
 
-The inspector comparison ran `scripts/benchmark_inspector.py --binary target/release/typepact --repeats 7 --classes 1000`: small CLI 3.000 ms median (2.624–491.295), 1,000 classes 48.737 ms (47.450–54.047), helper import 23.893 ms (23.653–25.993), maximum child RSS 20.44 MiB. The small CLI range includes process-launch outliers. This is a separate workload from lifecycle checking.
+The inspector comparison ran `scripts/benchmark_inspector.py --binary target/release/codepact --repeats 7 --classes 1000`: small CLI 3.000 ms median (2.624–491.295), 1,000 classes 48.737 ms (47.450–54.047), helper import 23.893 ms (23.653–25.993), maximum child RSS 20.44 MiB. The small CLI range includes process-launch outliers. This is a separate workload from lifecycle checking.
 
 Query tests assert reuse independently of timing: `unchanged_session_check_reuses_the_check_query`, `unrelated_edit_reuses_other_file_lifecycle_checks`, `imported_effect_edits_refresh_callers_but_reuse_unrelated_checks`, `moving_an_imported_close_refreshes_the_related_lifecycle_span`, `resource_model_edits_invalidate_reused_cleanup_queries`, `reviewed_exceptional_close_outcomes_flow_through_session_results`, and `v03_22_incremental_body_edit_matches_a_fresh_check`.
 
@@ -64,7 +64,7 @@ Query tests assert reuse independently of timing: `unchanged_session_check_reuse
 Reproduce from the repository root:
 
 ```sh
-cargo build --release --locked -p typepact --bins --examples
+cargo build --release --locked -p codepact --bins --examples
 target/release/examples/benchmark_phase03 1
 target/release/examples/benchmark_phase03 16
 target/release/examples/benchmark_phase03 64
@@ -72,6 +72,6 @@ target/release/examples/benchmark_lifecycle 1
 target/release/examples/benchmark_lifecycle 250
 target/release/examples/benchmark_lifecycle 1000
 /usr/bin/time -l target/release/examples/benchmark_lifecycle 1000
-TYPEPACT_RETAINED_MEMORY_PROBE=1 target/release/examples/benchmark_lifecycle 1000
-uv run --locked python scripts/benchmark_inspector.py --binary target/release/typepact --repeats 7 --classes 1000
+CODEPACT_RETAINED_MEMORY_PROBE=1 target/release/examples/benchmark_lifecycle 1000
+uv run --locked python scripts/benchmark_inspector.py --binary target/release/codepact --repeats 7 --classes 1000
 ```

@@ -1,6 +1,6 @@
 # Security policy
 
-TypePact parses selected Python source locally without importing or executing
+CodePact parses selected Python source locally without importing or executing
 the analyzed application. See the [security and data-handling guide](docs/security.md)
 for input scope, report contents, and limits.
 

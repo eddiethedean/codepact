@@ -1,6 +1,6 @@
 # Architecture
 
-Status: the 0.1.0 inspector and 0.2.0 lifecycle checker are implemented and released; their qualification is recorded in the [0.1.0](../releases/0.1.0-evidence.md) and [0.2.0](../releases/0.2.0-evidence.md) release records. The inspector lowers structured Ruff AST declarations through a TypePact-owned binding and contract-view resolver. Salsa tracks per-file frontend results, per-module semantic analysis and semantic-only export summaries. Session cancellation, revisions and work/cache limits are implemented.
+Status: the 0.1.0 inspector and 0.2.0 lifecycle checker are implemented and released; their qualification is recorded in the [0.1.0](../releases/0.1.0-evidence.md) and [0.2.0](../releases/0.2.0-evidence.md) release records. The inspector lowers structured Ruff AST declarations through a CodePact-owned binding and contract-view resolver. Salsa tracks per-file frontend results, per-module semantic analysis and semantic-only export summaries. Session cancellation, revisions and work/cache limits are implemented.
 
 ## Dependency direction
 
@@ -28,16 +28,16 @@ Salsa tracks the inputs read by each query in this pipeline. Frontends translate
 
 | Component | Responsibility |
 | --- | --- |
-| python/typepact/ | Lightweight runtime declarations and typing metadata |
-| crates/typepact/ frontend adapter | Pinned Ruff parser/AST APIs, ranges, target-version options and syntax diagnostics |
-| Semantic index | TypePact declaration identities, scope/binding rules and captured aliases; evaluate Ruff semantic primitives through AM01 |
+| python/codepact/ | Lightweight runtime declarations and typing metadata |
+| crates/codepact/ frontend adapter | Pinned Ruff parser/AST APIs, ranges, target-version options and syntax diagnostics |
+| Semantic index | CodePact declaration identities, scope/binding rules and captured aliases; evaluate Ruff semantic primitives through AM01 |
 | Salsa database | Explicit file/settings inputs, tracked parsing/index/resolution/inspection queries and revision management |
 | Contract and flow engine | Canonical metadata, provenance and diagnostics; CFGs/summaries from 0.2 |
 | CLI host | File input, configuration, invocation errors and deterministic presentation; current binary remains in the same crate |
 | Future editor host | Reuse the database and semantic APIs with revision-aware updates and cancellation |
 | tests and benchmarks | Semantic counterexamples, incremental parity and execution-count evidence, packaging and performance |
 
-Use internal module boundaries first; additional crates require a demonstrated build or API benefit. Keep Ruff and Salsa internals behind TypePact-owned interfaces. The Python helper package never initializes the analyzer. Delivery uses two Python distributions: typepact is a pure Python helper wheel built by Hatchling, with an exact dependency on typepact-cli at the same version. Maturin bin bindings package the compiled Rust inspector as the typepact command in typepact-cli. CLI wheels have py3-none platform tags because the executable does not depend on the Python ABI. Importing helpers does not launch the CLI. Separate source archives provide helper code and the CLI Rust workspace/manifests/Cargo.lock; Cargo remains an additional delivery route. D015 and the release matrix govern all phases.
+Use internal module boundaries first; additional crates require a demonstrated build or API benefit. Keep Ruff and Salsa internals behind CodePact-owned interfaces. The Python helper package never initializes the analyzer. Delivery uses two Python distributions: codepact is a pure Python helper wheel built by Hatchling, with an exact dependency on codepact-cli at the same version. Maturin bin bindings package the compiled Rust inspector as the codepact command in codepact-cli. CLI wheels have py3-none platform tags because the executable does not depend on the Python ABI. Importing helpers does not launch the CLI. Separate source archives provide helper code and the CLI Rust workspace/manifests/Cargo.lock; Cargo remains an additional delivery route. D015 and the release matrix govern all phases.
 
 ## Incremental computation
 

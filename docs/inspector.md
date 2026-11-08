@@ -12,7 +12,7 @@ The selected source target also controls Unicode identifier validation. This is 
 
 ## Declaration identities and rebinding
 
-The semantic layer recognizes TypePact APIs through their imported identity. An unrelated local function named `resource` does not become a TypePact decorator merely because its name matches. Imported aliases of supported APIs can retain their canonical meaning until rebound.
+The semantic layer recognizes CodePact APIs through their imported identity. An unrelated local function named `resource` does not become a CodePact decorator merely because its name matches. Imported aliases of supported APIs can retain their canonical meaning until rebound.
 
 Supported assignments capture a class or alias view at the point of declaration. Later rebinding of the original name does not change the class and metadata already captured by an earlier alias. Conversely, new annotations use the bindings that are visible at their own declaration point.
 
@@ -20,7 +20,7 @@ Lifecycle and access facts compose independently. Compatible metadata can be inh
 
 ## Imports across supplied modules
 
-TypePact plans direct absolute imports between supplied files, analyzes providers before their consumers, and gives consumers semantic export summaries. Classes and supported assignment aliases can carry lifecycle and access metadata across these boundaries.
+CodePact plans direct absolute imports between supplied files, analyzes providers before their consumers, and gives consumers semantic export summaries. Classes and supported assignment aliases can carry lifecycle and access metadata across these boundaries.
 
 The inspector does not discover files or search installed packages. Relative imports, import re-export chains, ambiguous module identities, and supplied-module cycles produce incomplete coverage. The [multi-file tutorial](project-guide.md) shows a complete supported example.
 
@@ -38,4 +38,4 @@ Unsupported declarations are visible in diagnostics and coverage rather than sil
 
 All contracts carry `declared-unverified` trust. The inspector records metadata without proving that the implementation honors it. Function body flow, cleanup obligations, use-after-close, ownership transfer, and exclusive access enforcement remain outside 0.1. See the [JSON reference](output.md), [limitations](limitations.md), and [roadmap](roadmap.md).
 
-Implementation and qualification plans are maintained in the [repository planning directory](https://github.com/eddiethedean/typepact/tree/main/docs/planning).
+Implementation and qualification plans are maintained in the [repository planning directory](https://github.com/eddiethedean/codepact/tree/main/docs/planning).

@@ -583,9 +583,9 @@ fn summary_uses_contract_wrapper(summary: &ParseSummary) -> bool {
                     matches!(
                         identity.as_str(),
                         "typing::Annotated"
-                            | "typepact::Borrowed"
-                            | "typepact::Owned"
-                            | "typepact::BorrowedMut"
+                            | "codepact::Borrowed"
+                            | "codepact::Owned"
+                            | "codepact::BorrowedMut"
                     )
                 }) || expression_uses_wrapper(container, imports)
                     || arguments
@@ -949,16 +949,16 @@ fn process_import_from(
 fn register_import(original: &str, local: &str, module: &str, state: &mut FileState) {
     let canonical = match format!("{module}.{original}").as_str() {
         "typing.Annotated" => "typing::Annotated",
-        "typepact.rust" => "typepact::rust",
-        "typepact.contracts" => "typepact::contracts",
-        "typepact.resource" => "typepact::resource",
-        "typepact.Resource" | "typepact.contracts.Resource" => "typepact::contracts::Resource",
-        "typepact.contracts.SharedBorrow" => "typepact::contracts::SharedBorrow",
-        "typepact.contracts.OwnedAccess" => "typepact::contracts::OwnedAccess",
-        "typepact.contracts.ExclusiveBorrow" => "typepact::contracts::ExclusiveBorrow",
-        "typepact.contracts.Borrowed" | "typepact.rust.Borrowed" => "typepact::Borrowed",
-        "typepact.contracts.Owned" | "typepact.rust.Owned" => "typepact::Owned",
-        "typepact.contracts.BorrowedMut" | "typepact.rust.BorrowedMut" => "typepact::BorrowedMut",
+        "codepact.rust" => "codepact::rust",
+        "codepact.contracts" => "codepact::contracts",
+        "codepact.resource" => "codepact::resource",
+        "codepact.Resource" | "codepact.contracts.Resource" => "codepact::contracts::Resource",
+        "codepact.contracts.SharedBorrow" => "codepact::contracts::SharedBorrow",
+        "codepact.contracts.OwnedAccess" => "codepact::contracts::OwnedAccess",
+        "codepact.contracts.ExclusiveBorrow" => "codepact::contracts::ExclusiveBorrow",
+        "codepact.contracts.Borrowed" | "codepact.rust.Borrowed" => "codepact::Borrowed",
+        "codepact.contracts.Owned" | "codepact.rust.Owned" => "codepact::Owned",
+        "codepact.contracts.BorrowedMut" | "codepact.rust.BorrowedMut" => "codepact::BorrowedMut",
         _ => "",
     };
     state.imports.insert(local.to_owned(), canonical.to_owned());
@@ -988,7 +988,7 @@ fn register_supplied_module_import(
         state.callables.insert(local.to_owned());
         return;
     }
-    if module == "typepact" || module.starts_with("typepact.") {
+    if module == "codepact" || module.starts_with("codepact.") {
         return;
     }
     if ambiguous_modules.contains(module) {
@@ -1096,7 +1096,7 @@ fn lower_class(
                 keywords,
             } => (function.as_ref(), arguments.as_slice(), keywords.as_slice()),
             _ => {
-                if canonical(decorator, &state.imports).as_deref() == Some("typepact::resource") {
+                if canonical(decorator, &state.imports).as_deref() == Some("codepact::resource") {
                     unsupported(
                         result,
                         file,
@@ -1110,7 +1110,7 @@ fn lower_class(
                 continue;
             }
         };
-        if canonical(function, &state.imports).as_deref() != Some("typepact::resource") {
+        if canonical(function, &state.imports).as_deref() != Some("codepact::resource") {
             unsupported_decorator.get_or_insert(decorator.range);
             continue;
         }
@@ -1159,7 +1159,7 @@ fn lower_class(
             result,
             file,
             range,
-            "class decorator expression is outside the supported TypePact resource subset",
+            "class decorator expression is outside the supported CodePact resource subset",
         );
         state.clear_module(&file.module, bindings);
         return;
@@ -1247,13 +1247,13 @@ fn lower_assignment(
         if matches!(
             expression.kind,
             AstExprKind::Subscript(..) | AstExprKind::Tuple(_)
-        ) && contains_typepact_contract(expression, state)
+        ) && contains_codepact_contract(expression, state)
         {
             unsupported(
                 result,
                 file,
                 expression.range,
-                "nested TypePact contracts are unsupported in this annotation form",
+                "nested CodePact contracts are unsupported in this annotation form",
             );
         }
         state.clear_name(name, &file.module, bindings);
@@ -1493,9 +1493,9 @@ fn is_alias_candidate(expression: &AstExpr, imports: &BTreeMap<String, String>) 
                 matches!(
                     identity.as_str(),
                     "typing::Annotated"
-                        | "typepact::Borrowed"
-                        | "typepact::Owned"
-                        | "typepact::BorrowedMut"
+                        | "codepact::Borrowed"
+                        | "codepact::Owned"
+                        | "codepact::BorrowedMut"
                 )
             })
         }
@@ -1646,9 +1646,9 @@ fn parse_annotation(
         if let Some(path) = expression_path(expression) {
             if let Some(identity) = canonical(expression, imports) {
                 let access = match identity.as_str() {
-                    "typepact::Borrowed" => Access::Shared,
-                    "typepact::Owned" => Access::Owned,
-                    "typepact::BorrowedMut" => Access::Exclusive,
+                    "codepact::Borrowed" => Access::Shared,
+                    "codepact::Owned" => Access::Owned,
+                    "codepact::BorrowedMut" => Access::Exclusive,
                     _ => Access::Unspecified,
                 };
                 if access != Access::Unspecified {
@@ -1689,8 +1689,8 @@ fn parse_annotation(
                 AstExprKind::Call { .. } | AstExprKind::Other => {
                     Some("computed annotation expressions are unsupported")
                 }
-                AstExprKind::Tuple(_) if contains_typepact_contract(expression, state) => {
-                    Some("nested TypePact contracts are unsupported in this annotation form")
+                AstExprKind::Tuple(_) if contains_codepact_contract(expression, state) => {
+                    Some("nested CodePact contracts are unsupported in this annotation form")
                 }
                 _ => None,
             },
@@ -1701,9 +1701,9 @@ fn parse_annotation(
     };
     let base = arguments.first().and_then(expression_path);
     let access = match identity.as_str() {
-        "typepact::Borrowed" => Access::Shared,
-        "typepact::Owned" => Access::Owned,
-        "typepact::BorrowedMut" => Access::Exclusive,
+        "codepact::Borrowed" => Access::Shared,
+        "codepact::Owned" => Access::Owned,
+        "codepact::BorrowedMut" => Access::Exclusive,
         _ => Access::Unspecified,
     };
     if access != Access::Unspecified {
@@ -1762,7 +1762,7 @@ fn parse_annotation(
             continue;
         };
         match identity.as_str() {
-            "typepact::contracts::Resource" => {
+            "codepact::contracts::Resource" => {
                 let closed_by = parse_resource_metadata_call(call_arguments, keywords);
                 if closed_by.is_none() {
                     unsupported_reason =
@@ -1773,12 +1773,12 @@ fn parse_annotation(
                     crate::source_span(&file.path, &file.source, metadata.range),
                 ));
             }
-            "typepact::contracts::SharedBorrow"
-            | "typepact::contracts::OwnedAccess"
-            | "typepact::contracts::ExclusiveBorrow" => {
+            "codepact::contracts::SharedBorrow"
+            | "codepact::contracts::OwnedAccess"
+            | "codepact::contracts::ExclusiveBorrow" => {
                 let access = match identity.as_str() {
-                    "typepact::contracts::SharedBorrow" => Access::Shared,
-                    "typepact::contracts::OwnedAccess" => Access::Owned,
+                    "codepact::contracts::SharedBorrow" => Access::Shared,
+                    "codepact::contracts::OwnedAccess" => Access::Owned,
                     _ => Access::Exclusive,
                 };
                 access_values.push((
@@ -1884,10 +1884,10 @@ fn canonical(expression: &AstExpr, imports: &BTreeMap<String, String>) -> Option
     let root_identity = imports.get(root).filter(|value| !value.is_empty())?;
     let identity = format!("{root_identity}::{suffix}");
     Some(match identity.as_str() {
-        "typepact::rust::Borrowed" | "typepact::contracts::Borrowed" => "typepact::Borrowed".into(),
-        "typepact::rust::Owned" | "typepact::contracts::Owned" => "typepact::Owned".into(),
-        "typepact::rust::BorrowedMut" | "typepact::contracts::BorrowedMut" => {
-            "typepact::BorrowedMut".into()
+        "codepact::rust::Borrowed" | "codepact::contracts::Borrowed" => "codepact::Borrowed".into(),
+        "codepact::rust::Owned" | "codepact::contracts::Owned" => "codepact::Owned".into(),
+        "codepact::rust::BorrowedMut" | "codepact::contracts::BorrowedMut" => {
+            "codepact::BorrowedMut".into()
         }
         _ => identity,
     })
@@ -1895,24 +1895,24 @@ fn canonical(expression: &AstExpr, imports: &BTreeMap<String, String>) -> Option
 
 fn opaque_annotation(expression: &AstExpr, state: &FileState) -> ParsedAnnotation {
     let mut parsed = ParsedAnnotation::plain(None);
-    if contains_typepact_contract(expression, state) {
+    if contains_codepact_contract(expression, state) {
         parsed.unsupported_reason =
-            Some("nested TypePact contracts are unsupported in this annotation form");
+            Some("nested CodePact contracts are unsupported in this annotation form");
     }
     parsed
 }
 
-fn contains_typepact_contract(expression: &AstExpr, state: &FileState) -> bool {
+fn contains_codepact_contract(expression: &AstExpr, state: &FileState) -> bool {
     if canonical(expression, &state.imports).is_some_and(|identity| {
         matches!(
             identity.as_str(),
-            "typepact::Borrowed"
-                | "typepact::Owned"
-                | "typepact::BorrowedMut"
-                | "typepact::contracts::Resource"
-                | "typepact::contracts::SharedBorrow"
-                | "typepact::contracts::OwnedAccess"
-                | "typepact::contracts::ExclusiveBorrow"
+            "codepact::Borrowed"
+                | "codepact::Owned"
+                | "codepact::BorrowedMut"
+                | "codepact::contracts::Resource"
+                | "codepact::contracts::SharedBorrow"
+                | "codepact::contracts::OwnedAccess"
+                | "codepact::contracts::ExclusiveBorrow"
         )
     }) {
         return true;
@@ -1928,29 +1928,29 @@ fn contains_typepact_contract(expression: &AstExpr, state: &FileState) -> bool {
         return true;
     }
     match &expression.kind {
-        AstExprKind::Attribute(value, _) => contains_typepact_contract(value, state),
+        AstExprKind::Attribute(value, _) => contains_codepact_contract(value, state),
         AstExprKind::Subscript(container, arguments) => {
-            contains_typepact_contract(container, state)
+            contains_codepact_contract(container, state)
                 || arguments
                     .iter()
-                    .any(|argument| contains_typepact_contract(argument, state))
+                    .any(|argument| contains_codepact_contract(argument, state))
         }
         AstExprKind::Call {
             function,
             arguments,
             keywords,
         } => {
-            contains_typepact_contract(function, state)
+            contains_codepact_contract(function, state)
                 || arguments
                     .iter()
-                    .any(|argument| contains_typepact_contract(argument, state))
+                    .any(|argument| contains_codepact_contract(argument, state))
                 || keywords
                     .iter()
-                    .any(|(_, value)| contains_typepact_contract(value, state))
+                    .any(|(_, value)| contains_codepact_contract(value, state))
         }
         AstExprKind::Tuple(values) => values
             .iter()
-            .any(|value| contains_typepact_contract(value, state)),
+            .any(|value| contains_codepact_contract(value, state)),
         _ => false,
     }
 }
@@ -2163,7 +2163,7 @@ mod tests {
 
     #[test]
     fn ast_ranges_use_one_based_utf8_byte_columns() {
-        let source = "from typepact.rust import Borrowed\nclass C: pass\ndef use(label: str = 'é', *, value: Borrowed[C]): pass\n";
+        let source = "from codepact.rust import Borrowed\nclass C: pass\ndef use(label: str = 'é', *, value: Borrowed[C]): pass\n";
         let output = crate::frontend::parse_frontend(source, "test", "3.11").unwrap();
         let Declaration::Function { parameters, .. } = output
             .declarations
@@ -2183,7 +2183,7 @@ mod tests {
 
     #[test]
     fn ast_expressions_retain_multiline_source_ranges() {
-        let source = "from typepact.rust import Borrowed\nclass C: pass\ndef use(\n    value: Borrowed[C],\n): pass\n";
+        let source = "from codepact.rust import Borrowed\nclass C: pass\ndef use(\n    value: Borrowed[C],\n): pass\n";
         let output = crate::frontend::parse_frontend(source, "test", "3.11").unwrap();
         let Declaration::Function {
             parameters, range, ..

@@ -1,4 +1,4 @@
-use typepact::{check, inspect, AnalysisSession, SourceFile};
+use codepact::{check, inspect, AnalysisSession, SourceFile};
 
 #[test]
 fn eager_class_global_writes_invalidate_module_bindings() {
@@ -8,7 +8,7 @@ fn eager_class_global_writes_invalidate_module_bindings() {
         "    class Nested:\n        global C\n        C = int\n",
         "    global C\n    value = (C := int)\n",
     ] {
-        let source = format!("from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C: pass\nclass Change:\n{suite}def use(value: Borrowed[C]): pass\n");
+        let source = format!("from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C: pass\nclass Change:\n{suite}def use(value: Borrowed[C]): pass\n");
         for version in ["3.11", "3.12", "3.13"] {
             let result = inspect(
                 &[SourceFile::new("global_write.py", "global_write", &source)],
@@ -29,7 +29,7 @@ fn eager_class_global_writes_invalidate_module_bindings() {
 
 #[test]
 fn deferred_method_globals_do_not_invalidate_module_bindings() {
-    let source = "from typepact.rust import Borrowed\nclass C: pass\nclass Change:\n    def later(self):\n        global C\n        C = int\ndef use(value: Borrowed[C]): pass\n";
+    let source = "from codepact.rust import Borrowed\nclass C: pass\nclass Change:\n    def later(self):\n        global C\n        C = int\ndef use(value: Borrowed[C]): pass\n";
     let result = inspect(
         &[SourceFile::new("deferred.py", "deferred", source)],
         "3.11",
@@ -46,7 +46,7 @@ fn deferred_method_globals_do_not_invalidate_module_bindings() {
 
 #[test]
 fn nested_contracts_are_visible_unsupported_boundaries() {
-    let prefix = "from typepact import resource\nfrom typepact.rust import Borrowed\nfrom typepact.contracts import Resource\nfrom typing import Annotated\n@resource(closed_by='close')\nclass C: pass\nView = Borrowed[C]\n";
+    let prefix = "from codepact import resource\nfrom codepact.rust import Borrowed\nfrom codepact.contracts import Resource\nfrom typing import Annotated\n@resource(closed_by='close')\nclass C: pass\nView = Borrowed[C]\n";
     for declaration in [
         "def use(value: list[Borrowed[C]]): pass\n",
         "def use() -> list[Annotated[C, Resource(closed_by='close')]]: pass\n",
@@ -73,7 +73,7 @@ fn nested_contracts_are_visible_unsupported_boundaries() {
                 result
                     .diagnostics
                     .iter()
-                    .any(|d| d.message.contains("nested TypePact contracts")),
+                    .any(|d| d.message.contains("nested CodePact contracts")),
                 "{result:#?}"
             );
             assert!(!result
@@ -97,8 +97,8 @@ fn nested_contracts_are_visible_unsupported_boundaries() {
 }
 
 #[test]
-fn typepact_submodule_imports_resolve_metadata_and_access_aliases() {
-    let source = "from typepact import rust as r, contracts as ct\nfrom typing import Annotated\nclass C: pass\nView = Annotated[C, ct.Resource(closed_by='close')]\ndef use(value: r.Borrowed[View]) -> ct.Owned[C]: pass\ndef mutate(value: ct.BorrowedMut[C]) -> None: pass\n";
+fn codepact_submodule_imports_resolve_metadata_and_access_aliases() {
+    let source = "from codepact import rust as r, contracts as ct\nfrom typing import Annotated\nclass C: pass\nView = Annotated[C, ct.Resource(closed_by='close')]\ndef use(value: r.Borrowed[View]) -> ct.Owned[C]: pass\ndef mutate(value: ct.BorrowedMut[C]) -> None: pass\n";
     for version in ["3.11", "3.12", "3.13"] {
         let result = inspect(&[SourceFile::new("modules.py", "modules", source)], version);
         assert_eq!(
@@ -125,7 +125,7 @@ fn typepact_submodule_imports_resolve_metadata_and_access_aliases() {
 
 #[test]
 fn submodule_import_rebinding_removes_canonical_identity() {
-    let source = "from typepact import rust as r, contracts as ct\nfrom typing import Annotated\nclass C: pass\nr = list\nct = list\ndef use(value: r.Borrowed[C], other: Annotated[C, ct.Resource(closed_by='close')]): pass\n";
+    let source = "from codepact import rust as r, contracts as ct\nfrom typing import Annotated\nclass C: pass\nr = list\nct = list\ndef use(value: r.Borrowed[C], other: Annotated[C, ct.Resource(closed_by='close')]): pass\n";
     let result = inspect(&[SourceFile::new("rebound.py", "rebound", source)], "3.11");
     assert!(
         result
@@ -141,9 +141,9 @@ fn submodule_metadata_conflicts_retain_imported_origins() {
     let provider = SourceFile::new(
         "provider.py",
         "provider",
-        "from typepact import rust\nclass C: pass\nView = rust.Borrowed[C]\n",
+        "from codepact import rust\nclass C: pass\nView = rust.Borrowed[C]\n",
     );
-    let consumer = SourceFile::new("consumer.py", "consumer", "from provider import View\nfrom typepact import contracts\nfrom typing import Annotated\ndef use(value: Annotated[View, contracts.OwnedAccess()]): pass\n");
+    let consumer = SourceFile::new("consumer.py", "consumer", "from provider import View\nfrom codepact import contracts\nfrom typing import Annotated\ndef use(value: Annotated[View, contracts.OwnedAccess()]): pass\n");
     let result = inspect(&[consumer, provider], "3.11");
     let conflict = result
         .diagnostics
@@ -157,7 +157,7 @@ fn submodule_metadata_conflicts_retain_imported_origins() {
 
 #[test]
 fn none_annotations_are_ordinary_non_resource_types() {
-    let source = "from typepact.rust import Owned\nclass C: pass\ndef consume(conn: Owned[C], value: None) -> None: pass\nasync def finish(value: None) -> None: pass\n";
+    let source = "from codepact.rust import Owned\nclass C: pass\ndef consume(conn: Owned[C], value: None) -> None: pass\nasync def finish(value: None) -> None: pass\n";
     for version in ["3.11", "3.12", "3.13"] {
         let result = inspect(&[SourceFile::new("none.py", "none", source)], version);
         assert_eq!(
@@ -169,20 +169,20 @@ fn none_annotations_are_ordinary_non_resource_types() {
         assert_eq!(result.contracts[0].display_name, "consume.conn");
     }
     for annotation in ["'None'", "Owned[None]", "(lambda: None)()"] {
-        let source = format!("from typepact.rust import Owned\ndef use() -> {annotation}: pass\n");
+        let source = format!("from codepact.rust import Owned\ndef use() -> {annotation}: pass\n");
         let result = inspect(&[SourceFile::new("unknown.py", "unknown", source)], "3.11");
         assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     }
-    let result = inspect(&[SourceFile::new("rebind_none.py", "rebind_none", "from typepact.rust import Owned\nclass C: pass\nC = None\ndef use(value: Owned[C]): pass\n")], "3.11");
+    let result = inspect(&[SourceFile::new("rebind_none.py", "rebind_none", "from codepact.rust import Owned\nclass C: pass\nC = None\ndef use(value: Owned[C]): pass\n")], "3.11");
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
     assert!(result.contracts.is_empty());
 }
 
 #[test]
 fn class_global_edits_invalidate_cached_consumers_and_recover() {
-    let before = "from typepact import resource\n@resource(closed_by='close')\nclass C: pass\n";
+    let before = "from codepact import resource\n@resource(closed_by='close')\nclass C: pass\n";
     let after = format!("{before}class Change:\n    global C\n    C = int\n");
-    let consumer = SourceFile::new("consumer.py", "consumer", "from provider import C\nfrom typepact import rust\ndef use(value: rust.Borrowed[C]) -> None: pass\n");
+    let consumer = SourceFile::new("consumer.py", "consumer", "from provider import C\nfrom codepact import rust\ndef use(value: rust.Borrowed[C]) -> None: pass\n");
     let mut session = AnalysisSession::default();
     for source in [before, after.as_str(), before] {
         let files = [
@@ -202,7 +202,7 @@ fn class_global_edits_invalidate_cached_consumers_and_recover() {
 #[test]
 fn long_alias_chains_flatten_without_losing_contracts() {
     let mut source =
-        String::from("from typepact.rust import Borrowed\nclass C: pass\nView0 = Borrowed[C]\n");
+        String::from("from codepact.rust import Borrowed\nclass C: pass\nView0 = Borrowed[C]\n");
     for index in 1..2000 {
         source.push_str(&format!("View{index} = View{}\n", index - 1));
     }
@@ -219,10 +219,10 @@ fn long_alias_chains_flatten_without_losing_contracts() {
 
 #[test]
 fn pythonic_and_explicit_access_lower_to_same_fact() {
-    let source = r#"from typepact import resource
+    let source = r#"from codepact import resource
 from typing import Annotated
-from typepact.contracts import OwnedAccess, Resource, SharedBorrow
-from typepact.rust import Borrowed, Owned
+from codepact.contracts import OwnedAccess, Resource, SharedBorrow
+from codepact.rust import Borrowed, Owned
 @resource(closed_by="close")
 class Connection:
     def close(self): pass
@@ -273,7 +273,7 @@ fn lookalike_resource_decorator_is_not_trusted() {
 
 #[test]
 fn unsupported_decorators_do_not_leave_class_or_function_contracts() {
-    let class_source = "from typepact import resource\nfrom typepact.rust import Borrowed\ndef replace(cls): return int\n@replace\n@resource(closed_by='close')\nclass C: pass\ndef use(value: Borrowed[C]): pass\n";
+    let class_source = "from codepact import resource\nfrom codepact.rust import Borrowed\ndef replace(cls): return int\n@replace\n@resource(closed_by='close')\nclass C: pass\ndef use(value: Borrowed[C]): pass\n";
     let class_result = inspect(
         &[SourceFile::new(
             "class_decorator.py",
@@ -291,7 +291,7 @@ fn unsupported_decorators_do_not_leave_class_or_function_contracts() {
         .iter()
         .any(|contract| contract.display_name == "C" || contract.display_name == "use.value"));
 
-    let function_source = "from typepact.rust import Borrowed\nclass C: pass\ndef replace(function): return None\n@replace\ndef use(value: Borrowed[C]): pass\n";
+    let function_source = "from codepact.rust import Borrowed\nclass C: pass\ndef replace(function): return None\n@replace\ndef use(value: Borrowed[C]): pass\n";
     let function_result = inspect(
         &[SourceFile::new(
             "function_decorator.py",
@@ -313,9 +313,9 @@ fn unsupported_decorators_do_not_leave_class_or_function_contracts() {
 #[test]
 fn module_level_walrus_expressions_invalidate_stale_bindings() {
     let sources = [
-        "from typepact.rust import Borrowed\nclass C: pass\nvalue = (C := int)\ndef use(value: Borrowed[C]): pass\n",
-        "from typepact.rust import Borrowed\nclass C: pass\ndef initialize(value: Borrowed[C] = (C := int)): pass\ndef use(value: Borrowed[C]): pass\n",
-        "from typepact.rust import Borrowed\nclass C: pass\ndef initialize(factory=lambda value=(C := int): value): pass\ndef use(value: Borrowed[C]): pass\n",
+        "from codepact.rust import Borrowed\nclass C: pass\nvalue = (C := int)\ndef use(value: Borrowed[C]): pass\n",
+        "from codepact.rust import Borrowed\nclass C: pass\ndef initialize(value: Borrowed[C] = (C := int)): pass\ndef use(value: Borrowed[C]): pass\n",
+        "from codepact.rust import Borrowed\nclass C: pass\ndef initialize(factory=lambda value=(C := int): value): pass\ndef use(value: Borrowed[C]): pass\n",
     ];
     for (index, source) in sources.iter().enumerate() {
         let module = format!("walrus_{index}");
@@ -335,7 +335,7 @@ fn module_level_walrus_expressions_invalidate_stale_bindings() {
 
 #[test]
 fn walrus_in_a_lambda_body_does_not_invalidate_module_bindings() {
-    let source = "from typepact.rust import Borrowed\nclass C: pass\ndef use(value: Borrowed[C], factory=lambda: (C := int)): pass\ndef later(value: Borrowed[C]): pass\n";
+    let source = "from codepact.rust import Borrowed\nclass C: pass\ndef use(value: Borrowed[C], factory=lambda: (C := int)): pass\ndef later(value: Borrowed[C]): pass\n";
     let result = inspect(&[SourceFile::new("lambda.py", "lambda", source)], "3.11");
     assert_eq!(
         result.coverage.status, "complete-for-supported-subset",
@@ -361,9 +361,9 @@ fn lifecycle_identifiers_follow_the_selected_python_unicode_version() {
         ("\u{1c89}", &[][..]),
     ] {
         let sources = [
-            format!("from typepact import resource\n@resource(closed_by='{method}')\nclass C: pass\n"),
-            format!("from typing import Annotated\nfrom typepact import Resource\nclass C: pass\nView = Annotated[C, Resource(closed_by='{method}')]\n"),
-            format!("from typing import Annotated\nfrom typepact import Resource\nclass C: pass\ndef use(value: Annotated[C, Resource(closed_by='{method}')]): pass\n"),
+            format!("from codepact import resource\n@resource(closed_by='{method}')\nclass C: pass\n"),
+            format!("from typing import Annotated\nfrom codepact import Resource\nclass C: pass\nView = Annotated[C, Resource(closed_by='{method}')]\n"),
+            format!("from typing import Annotated\nfrom codepact import Resource\nclass C: pass\ndef use(value: Annotated[C, Resource(closed_by='{method}')]): pass\n"),
         ];
         for version in ["3.11", "3.12", "3.13"] {
             let valid = valid_versions.contains(&version);
@@ -390,7 +390,7 @@ fn lifecycle_identifiers_follow_the_selected_python_unicode_version() {
 
 #[test]
 fn future_annotations_are_reported_and_not_lowered_eagerly() {
-    let source = "from __future__ import annotations\nfrom typepact.rust import Borrowed\nclass C: pass\ndef use(value: Borrowed[C]): pass\n";
+    let source = "from __future__ import annotations\nfrom codepact.rust import Borrowed\nclass C: pass\ndef use(value: Borrowed[C]): pass\n";
     let result = inspect(&[SourceFile::new("future.py", "future", source)], "3.11");
 
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
@@ -405,7 +405,7 @@ fn future_annotations_are_reported_and_not_lowered_eagerly() {
 
 #[test]
 fn unicode_resource_method_names_match_python_identifiers() {
-    let source = "from typepact import resource\n@resource(closed_by='关闭')\nclass C: pass\n";
+    let source = "from codepact import resource\n@resource(closed_by='关闭')\nclass C: pass\n";
     let result = inspect(&[SourceFile::new("unicode.py", "unicode", source)], "3.11");
 
     assert_eq!(
@@ -439,7 +439,7 @@ fn annotated_requires_a_base_type_and_metadata() {
 
 #[test]
 fn aliased_imports_resolve_by_import_identity() {
-    let source = "from typepact import resource as pact_resource\nfrom typepact.rust import Borrowed as Shared\n@pact_resource(closed_by='close')\nclass C: pass\ndef use(value: Shared[C]): pass\n";
+    let source = "from codepact import resource as pact_resource\nfrom codepact.rust import Borrowed as Shared\n@pact_resource(closed_by='close')\nclass C: pass\ndef use(value: Shared[C]): pass\n";
     let result = inspect(&[SourceFile::new("alias.py", "alias", source)], "3.11");
     assert_eq!(result.contracts.len(), 2, "{:#?}", result);
     assert!(result.contracts.iter().any(|c| c.access == "shared"));
@@ -480,7 +480,7 @@ fn duplicate_source_paths_are_visible_configuration_errors() {
 
 #[test]
 fn incompatible_metadata_reports_both_origins() {
-    let source = "from typing import Annotated\nfrom typepact.contracts import SharedBorrow, OwnedAccess\nclass C: pass\ndef f(value: Annotated[C, SharedBorrow(), OwnedAccess()]): pass\n";
+    let source = "from typing import Annotated\nfrom codepact.contracts import SharedBorrow, OwnedAccess\nclass C: pass\ndef f(value: Annotated[C, SharedBorrow(), OwnedAccess()]): pass\n";
     let result = inspect(
         &[SourceFile::new("conflict.py", "conflict", source)],
         "3.11",
@@ -509,7 +509,7 @@ fn example_matches_the_schema_v0_golden_snapshot() {
 
 #[test]
 fn docstrings_and_shadowed_imports_do_not_create_contracts() {
-    let source = "\"\"\"\nfrom typepact import resource\n@resource(closed_by='close')\nclass Phantom: pass\n\"\"\"\nfrom typepact.rust import Borrowed\nBorrowed = list\nclass C: pass\ndef f(x: Borrowed[C]): pass\n";
+    let source = "\"\"\"\nfrom codepact import resource\n@resource(closed_by='close')\nclass Phantom: pass\n\"\"\"\nfrom codepact.rust import Borrowed\nBorrowed = list\nclass C: pass\ndef f(x: Borrowed[C]): pass\n";
     let result = inspect(&[SourceFile::new("shadow.py", "shadow", source)], "3.11");
     assert!(result.contracts.is_empty(), "{:#?}", result);
     assert_eq!(result.coverage.status, "complete-for-supported-subset");
@@ -517,14 +517,14 @@ fn docstrings_and_shadowed_imports_do_not_create_contracts() {
 
 #[test]
 fn shadowed_annotated_is_not_treated_as_typing_metadata() {
-    let source="from typing import Annotated\nfrom typepact.contracts import SharedBorrow\nclass C: pass\nAnnotated = list\ndef f(x: Annotated[C, SharedBorrow()]): pass\n";
+    let source="from typing import Annotated\nfrom codepact.contracts import SharedBorrow\nclass C: pass\nAnnotated = list\ndef f(x: Annotated[C, SharedBorrow()]): pass\n";
     let result = inspect(&[SourceFile::new("shadow.py", "shadow", source)], "3.11");
     assert!(result.contracts.is_empty());
 }
 
 #[test]
 fn aliases_keep_access_and_lifecycle_and_returns_are_inspected() {
-    let source = "from typepact import resource\nfrom typepact.rust import Borrowed, Owned\nfrom typing import Annotated\nfrom typepact.contracts import Resource, SharedBorrow\n@resource(closed_by='close')\nclass C: pass\nView = Annotated[C, Resource(closed_by='close'), SharedBorrow()]\nShortView = Borrowed[C]\ndef f(x: View): pass\ndef g(x: ShortView): pass\ndef make() -> Owned[C]: pass\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Borrowed, Owned\nfrom typing import Annotated\nfrom codepact.contracts import Resource, SharedBorrow\n@resource(closed_by='close')\nclass C: pass\nView = Annotated[C, Resource(closed_by='close'), SharedBorrow()]\nShortView = Borrowed[C]\ndef f(x: View): pass\ndef g(x: ShortView): pass\ndef make() -> Owned[C]: pass\n";
     let result = inspect(&[SourceFile::new("aliases.py", "aliases", source)], "3.11");
     assert!(result
         .contracts
@@ -544,7 +544,7 @@ fn aliases_keep_access_and_lifecycle_and_returns_are_inspected() {
 
 #[test]
 fn unresolved_qualified_types_and_multiline_declarations_are_incomplete() {
-    let source = "from typepact.rust import Borrowed\ndef f(x: Borrowed[missing.Connection]): pass\ndef g(\n    x: Borrowed[missing.Connection],\n): pass\n";
+    let source = "from codepact.rust import Borrowed\ndef f(x: Borrowed[missing.Connection]): pass\ndef g(\n    x: Borrowed[missing.Connection],\n): pass\n";
     let result = inspect(
         &[SourceFile::new("unresolved.py", "unresolved", source)],
         "3.11",
@@ -566,7 +566,7 @@ fn bindings_from_another_file_do_not_resolve_implicitly() {
     let a = SourceFile::new(
         "a.py",
         "a",
-        "from typepact.rust import Borrowed\nclass C: pass\n",
+        "from codepact.rust import Borrowed\nclass C: pass\n",
     );
     let b = SourceFile::new("b.py", "b", "def f(x: Borrowed[C]): pass\n");
     let result = inspect(&[a, b], "3.11");
@@ -578,12 +578,12 @@ fn direct_supplied_module_imports_resolve_independent_of_file_order() {
     let provider = SourceFile::new(
         "models.py",
         "models",
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection: pass\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection: pass\n",
     );
     let consumer = SourceFile::new(
         "client.py",
         "client",
-        "from models import Connection as Conn\nfrom typepact.rust import Borrowed\ndef use(value: Borrowed[Conn]): pass\n",
+        "from models import Connection as Conn\nfrom codepact.rust import Borrowed\ndef use(value: Borrowed[Conn]): pass\n",
     );
     let forward = inspect(&[provider.clone(), consumer.clone()], "3.11");
     let reverse = inspect(&[consumer, provider], "3.11");
@@ -609,7 +609,7 @@ fn qualified_names_do_not_bypass_explicit_imports() {
     let consumer = SourceFile::new(
         "client.py",
         "client",
-        "from typepact.rust import Borrowed\ndef use(value: Borrowed[models.Connection]): pass\n",
+        "from codepact.rust import Borrowed\ndef use(value: Borrowed[models.Connection]): pass\n",
     );
     let result = inspect(&[provider, consumer], "3.11");
     assert!(result.contracts.is_empty(), "{result:#?}");
@@ -635,7 +635,7 @@ fn acyclic_named_reexports_preserve_contract_and_lifecycle_identity() {
     let origin = SourceFile::new(
         "models.py",
         "models",
-        "from typepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 'ready'\n",
     );
     let facade = SourceFile::new(
         "facade.py",
@@ -650,7 +650,7 @@ fn acyclic_named_reexports_preserve_contract_and_lifecycle_identity() {
     let consumer = SourceFile::new(
         "client.py",
         "client",
-        "from api import Connection as Conn\nfrom typepact.rust import Borrowed\ndef use(value: Borrowed[Conn]): return value.status()\nconnection = Conn()\nconnection.close()\nconnection.status()\n",
+        "from api import Connection as Conn\nfrom codepact.rust import Borrowed\ndef use(value: Borrowed[Conn]): return value.status()\nconnection = Conn()\nconnection.close()\nconnection.status()\n",
     );
     let result = check(
         &[
@@ -693,7 +693,7 @@ fn acyclic_named_reexports_preserve_contract_and_lifecycle_identity() {
 
 #[test]
 fn conflicting_resource_decorators_are_rejected() {
-    let source="from typepact import resource\n@resource(closed_by='close')\n@resource(closed_by='shutdown')\nclass C: pass\n";
+    let source="from codepact import resource\n@resource(closed_by='close')\n@resource(closed_by='shutdown')\nclass C: pass\n";
     let result = inspect(
         &[SourceFile::new("conflict.py", "conflict", source)],
         "3.11",
@@ -705,7 +705,7 @@ fn conflicting_resource_decorators_are_rejected() {
 
 #[test]
 fn eager_alias_reassignments_capture_the_original_declaration() {
-    let source = "from typing import Annotated\nclass C: pass\nA = Annotated[C, 'opaque']\nB = Annotated[A, 'opaque']\nA = Annotated[B, 'opaque']\nfrom typepact.rust import Borrowed\ndef f(x: Borrowed[A]): pass\n";
+    let source = "from typing import Annotated\nclass C: pass\nA = Annotated[C, 'opaque']\nB = Annotated[A, 'opaque']\nA = Annotated[B, 'opaque']\nfrom codepact.rust import Borrowed\ndef f(x: Borrowed[A]): pass\n";
     let result = inspect(&[SourceFile::new("cycle.py", "cycle", source)], "3.11");
     assert!(
         result
@@ -721,7 +721,7 @@ fn eager_alias_reassignments_capture_the_original_declaration() {
 
 #[test]
 fn calls_in_function_bodies_do_not_hide_parameter_or_return_annotations() {
-    let source = "from typepact.rust import Borrowed, Owned\nclass C: pass\ndef use(x: Borrowed[C]): print(x)\nasync def make() -> Owned[C]: return C()\n";
+    let source = "from codepact.rust import Borrowed, Owned\nclass C: pass\ndef use(x: Borrowed[C]): print(x)\nasync def make() -> Owned[C]: return C()\n";
     let result = inspect(&[SourceFile::new("calls.py", "calls", source)], "3.11");
     assert!(
         result
@@ -743,7 +743,7 @@ fn calls_in_function_bodies_do_not_hide_parameter_or_return_annotations() {
 
 #[test]
 fn comment_quotes_do_not_mask_following_declarations() {
-    let source = "from typepact.rust import Owned\n# triple quote: \\\"\\\"\\\"\nclass C: pass\ndef f(x: Owned[C]): pass\n";
+    let source = "from codepact.rust import Owned\n# triple quote: \\\"\\\"\\\"\nclass C: pass\ndef f(x: Owned[C]): pass\n";
     let result = inspect(&[SourceFile::new("comment.py", "comment", source)], "3.11");
     assert!(
         result.contracts.iter().any(|c| c.display_name == "f.x"),
@@ -754,7 +754,7 @@ fn comment_quotes_do_not_mask_following_declarations() {
 
 #[test]
 fn triple_quote_text_inside_ordinary_strings_does_not_mask_code() {
-    let source = "from typepact.rust import Owned\ntext = '\"\"\"'\nclass C: pass\ndef f(x: Owned[C]): pass\n";
+    let source = "from codepact.rust import Owned\ntext = '\"\"\"'\nclass C: pass\ndef f(x: Owned[C]): pass\n";
     let result = inspect(&[SourceFile::new("string.py", "string", source)], "3.11");
     assert!(
         result.contracts.iter().any(|c| c.display_name == "f.x"),
@@ -765,7 +765,7 @@ fn triple_quote_text_inside_ordinary_strings_does_not_mask_code() {
 
 #[test]
 fn return_metadata_conflicts_are_rejected() {
-    let source = "from typing import Annotated\nfrom typepact.contracts import OwnedAccess, SharedBorrow\nclass C: pass\ndef f() -> Annotated[C, OwnedAccess(), SharedBorrow()]: pass\n";
+    let source = "from typing import Annotated\nfrom codepact.contracts import OwnedAccess, SharedBorrow\nclass C: pass\ndef f() -> Annotated[C, OwnedAccess(), SharedBorrow()]: pass\n";
     let result = inspect(
         &[SourceFile::new(
             "return_conflict.py",
@@ -780,7 +780,7 @@ fn return_metadata_conflicts_are_rejected() {
 
 #[test]
 fn conflicting_alias_metadata_is_an_error() {
-    let source = "from typing import Annotated\nfrom typepact.contracts import SharedBorrow, OwnedAccess\nclass C: pass\nView = Annotated[C, SharedBorrow(), OwnedAccess()]\ndef f(x: View): pass\n";
+    let source = "from typing import Annotated\nfrom codepact.contracts import SharedBorrow, OwnedAccess\nclass C: pass\nView = Annotated[C, SharedBorrow(), OwnedAccess()]\ndef f(x: View): pass\n";
     let result = inspect(
         &[SourceFile::new(
             "conflict_alias.py",
@@ -794,8 +794,8 @@ fn conflicting_alias_metadata_is_an_error() {
 }
 
 #[test]
-fn rebound_classes_and_imports_lose_their_typepact_identity() {
-    let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C: pass\nC = int\ndef use(x: Borrowed[C]): pass\nfrom typepact import resource\nfrom other import resource\n@resource(closed_by='close')\nclass D: pass\n";
+fn rebound_classes_and_imports_lose_their_codepact_identity() {
+    let source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C: pass\nC = int\ndef use(x: Borrowed[C]): pass\nfrom codepact import resource\nfrom other import resource\n@resource(closed_by='close')\nclass D: pass\n";
     let result = inspect(&[SourceFile::new("rebind.py", "rebind", source)], "3.11");
     assert!(
         result
@@ -809,7 +809,7 @@ fn rebound_classes_and_imports_lose_their_typepact_identity() {
 
 #[test]
 fn annotated_import_alias_is_resolved_by_canonical_identity() {
-    let source = "from typing import Annotated as A\nfrom typepact.contracts import SharedBorrow\nclass C: pass\ndef use(x: A[C, SharedBorrow()]): pass\n";
+    let source = "from typing import Annotated as A\nfrom codepact.contracts import SharedBorrow\nclass C: pass\ndef use(x: A[C, SharedBorrow()]): pass\n";
     let result = inspect(
         &[SourceFile::new(
             "annotated_alias.py",
@@ -830,7 +830,7 @@ fn annotated_import_alias_is_resolved_by_canonical_identity() {
 
 #[test]
 fn root_and_contracts_reexports_share_canonical_metadata_identities() {
-    let source = "from typing import Annotated\nfrom typepact import Resource as RootResource\nfrom typepact.contracts import Borrowed, BorrowedMut, Owned, Resource\nclass C: pass\nRootView = Annotated[C, RootResource(closed_by='close')]\nContractView = Annotated[C, Resource(closed_by='close')]\ndef root(value: RootView): pass\ndef borrowed(value: Borrowed[C]): pass\ndef owned(value: Owned[C]): pass\ndef mutable(value: BorrowedMut[C]): pass\n";
+    let source = "from typing import Annotated\nfrom codepact import Resource as RootResource\nfrom codepact.contracts import Borrowed, BorrowedMut, Owned, Resource\nclass C: pass\nRootView = Annotated[C, RootResource(closed_by='close')]\nContractView = Annotated[C, Resource(closed_by='close')]\ndef root(value: RootView): pass\ndef borrowed(value: Borrowed[C]): pass\ndef owned(value: Owned[C]): pass\ndef mutable(value: BorrowedMut[C]): pass\n";
     let result = inspect(&[SourceFile::new("aliases.py", "aliases", source)], "3.11");
     assert_eq!(
         result.coverage.status, "complete-for-supported-subset",
@@ -867,7 +867,7 @@ fn root_and_contracts_reexports_share_canonical_metadata_identities() {
 
 #[test]
 fn inline_resource_metadata_is_lowered_on_function_annotations() {
-    let source = "from typing import Annotated\nfrom typepact.contracts import Resource\nclass C: pass\ndef keyword(value: Annotated[C, Resource(closed_by='close')]): pass\ndef positional(value: Annotated[C, Resource('release')]): pass\n";
+    let source = "from typing import Annotated\nfrom codepact.contracts import Resource\nclass C: pass\ndef keyword(value: Annotated[C, Resource(closed_by='close')]): pass\ndef positional(value: Annotated[C, Resource('release')]): pass\n";
     let result = inspect(&[SourceFile::new("inline.py", "inline", source)], "3.11");
     assert_eq!(
         result.coverage.status, "complete-for-supported-subset",
@@ -891,7 +891,7 @@ fn inline_resource_metadata_is_lowered_on_function_annotations() {
 
 #[test]
 fn inherited_lifecycle_and_access_conflicts_report_both_origins() {
-    let lifecycle_source = "from typing import Annotated\nfrom typepact import resource\nfrom typepact.contracts import Resource\n@resource(closed_by='close')\nclass C: pass\nView = Annotated[C, Resource(closed_by='release')]\n";
+    let lifecycle_source = "from typing import Annotated\nfrom codepact import resource\nfrom codepact.contracts import Resource\n@resource(closed_by='close')\nclass C: pass\nView = Annotated[C, Resource(closed_by='release')]\n";
     let lifecycle = inspect(
         &[SourceFile::new(
             "lifecycle.py",
@@ -909,7 +909,7 @@ fn inherited_lifecycle_and_access_conflicts_report_both_origins() {
     assert_eq!(lifecycle_diagnostic.primary.line, 6);
     assert_eq!(lifecycle_diagnostic.related[0].line, 4);
 
-    let access_source = "from typepact.rust import Borrowed, Owned\nclass C: pass\nView = Borrowed[C]\ndef use(value: Owned[View]): pass\n";
+    let access_source = "from codepact.rust import Borrowed, Owned\nclass C: pass\nView = Borrowed[C]\ndef use(value: Owned[View]): pass\n";
     let access = inspect(
         &[SourceFile::new("access.py", "access", access_source)],
         "3.11",
@@ -929,12 +929,12 @@ fn imported_metadata_conflict_points_to_the_dependency_declaration() {
     let provider = SourceFile::new(
         "provider.py",
         "provider",
-        "from typepact import resource\n@resource(closed_by='close')\nclass C: pass\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C: pass\n",
     );
     let consumer = SourceFile::new(
         "consumer.py",
         "consumer",
-        "from provider import C\nfrom typing import Annotated\nfrom typepact.contracts import Resource\ndef use(value: Annotated[C, Resource(closed_by='release')]): pass\n",
+        "from provider import C\nfrom typing import Annotated\nfrom codepact.contracts import Resource\ndef use(value: Annotated[C, Resource(closed_by='release')]): pass\n",
     );
     let result = inspect(&[consumer, provider], "3.11");
     let diagnostic = result
@@ -954,12 +954,12 @@ fn later_import_shadowing_preserves_earlier_dependency_provenance() {
     let provider = SourceFile::new(
         "provider.py",
         "provider",
-        "from typepact import resource\n@resource(closed_by='close')\nclass C: pass\n",
+        "from codepact import resource\n@resource(closed_by='close')\nclass C: pass\n",
     );
     let consumer = SourceFile::new(
         "consumer.py",
         "consumer",
-        "from provider import C\nfrom typing import Annotated as A\nfrom typepact.contracts import Resource\ndef use(value: A[C, Resource(closed_by='release')]): pass\nfrom somewhere import A\n",
+        "from provider import C\nfrom typing import Annotated as A\nfrom codepact.contracts import Resource\ndef use(value: A[C, Resource(closed_by='release')]): pass\nfrom somewhere import A\n",
     );
     let mut session = AnalysisSession::default();
     let result = session.inspect(&[consumer, provider], "3.11");
@@ -978,7 +978,7 @@ fn later_import_shadowing_preserves_earlier_dependency_provenance() {
 
 #[test]
 fn assignments_resolve_the_old_binding_and_annotation_only_does_not_rebind() {
-    let reassignment = "from typepact.rust import Borrowed\nclass C: pass\nC = Borrowed[C]\ndef use(value: C): pass\n";
+    let reassignment = "from codepact.rust import Borrowed\nclass C: pass\nC = Borrowed[C]\ndef use(value: C): pass\n";
     let result = inspect(
         &[SourceFile::new("rebind.py", "rebind", reassignment)],
         "3.11",
@@ -993,7 +993,7 @@ fn assignments_resolve_the_old_binding_and_annotation_only_does_not_rebind() {
             && contract.access == "shared"
     }));
 
-    let annotated = "from typepact.rust import Borrowed\nclass C: pass\nC: type\ndef use(value: Borrowed[C]): pass\n";
+    let annotated = "from codepact.rust import Borrowed\nclass C: pass\nC: type\ndef use(value: Borrowed[C]): pass\n";
     let result = inspect(
         &[SourceFile::new("annotated.py", "annotated", annotated)],
         "3.11",
@@ -1021,8 +1021,8 @@ fn unresolved_imported_annotation_makes_coverage_incomplete() {
 #[test]
 fn unexpected_resource_arguments_are_not_accepted_as_contracts() {
     for source in [
-        "from typepact import resource\n@resource(closed_by='close', surprise=True)\nclass C: pass\n",
-        "from typing import Annotated\nfrom typepact.contracts import Resource\nclass C: pass\nView = Annotated[C, Resource(closed_by='close', surprise=True)]\n",
+        "from codepact import resource\n@resource(closed_by='close', surprise=True)\nclass C: pass\n",
+        "from typing import Annotated\nfrom codepact.contracts import Resource\nclass C: pass\nView = Annotated[C, Resource(closed_by='close', surprise=True)]\n",
     ] {
         let result = inspect(&[SourceFile::new("malformed.py", "malformed", source)], "3.11");
         assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
@@ -1051,11 +1051,11 @@ fn syntax_error_ranges_cover_multibyte_characters_without_panicking() {
 
 #[test]
 fn reusable_session_matches_fresh_inspection_after_file_updates() {
-    let mut session = typepact::AnalysisSession::default();
+    let mut session = codepact::AnalysisSession::default();
     let first = SourceFile::new(
         "one.py",
         "one",
-        "from typepact.rust import Borrowed\nclass C: pass\ndef f(x: Borrowed[C]): pass\n",
+        "from codepact.rust import Borrowed\nclass C: pass\ndef f(x: Borrowed[C]): pass\n",
     );
     let cached = session.inspect(std::slice::from_ref(&first), "3.11");
     assert_eq!(cached, inspect(std::slice::from_ref(&first), "3.11"));
@@ -1068,11 +1068,11 @@ fn reusable_session_matches_fresh_inspection_after_file_updates() {
 
 #[test]
 fn session_resolves_a_dependency_added_after_an_initial_missing_import() {
-    let mut session = typepact::AnalysisSession::default();
+    let mut session = codepact::AnalysisSession::default();
     let consumer = SourceFile::new(
         "client.py",
         "client",
-        "from models import Connection\nfrom typepact.rust import Borrowed\ndef use(value: Borrowed[Connection]): pass\n",
+        "from models import Connection\nfrom codepact.rust import Borrowed\ndef use(value: Borrowed[Connection]): pass\n",
     );
     let missing = session.inspect(std::slice::from_ref(&consumer), "3.11");
     assert_eq!(missing.coverage.status, "incomplete");
@@ -1096,7 +1096,7 @@ fn session_resolves_a_dependency_added_after_an_initial_missing_import() {
 
 #[test]
 fn eager_alias_keeps_its_class_after_the_name_is_rebound() {
-    let source = "from typepact.rust import Borrowed\nclass C: pass\nView = Borrowed[C]\nC = int\ndef use(value: View): pass\n";
+    let source = "from codepact.rust import Borrowed\nclass C: pass\nView = Borrowed[C]\nC = int\ndef use(value: View): pass\n";
     let result = inspect(&[SourceFile::new("capture.py", "capture", source)], "3.11");
     assert!(
         result
@@ -1112,7 +1112,7 @@ fn eager_alias_keeps_its_class_after_the_name_is_rebound() {
 
 #[test]
 fn function_annotations_read_the_old_binding_before_the_function_rebinds_it() {
-    let source = "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass C: pass\ndef C(value: Borrowed[C]): pass\ndef use(value: Borrowed[C]): pass\n";
+    let source = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass C: pass\ndef C(value: Borrowed[C]): pass\ndef use(value: Borrowed[C]): pass\n";
     let result = inspect(
         &[SourceFile::new(
             "function_rebind.py",
@@ -1138,7 +1138,7 @@ fn function_annotations_read_the_old_binding_before_the_function_rebinds_it() {
 
 #[test]
 fn deleting_a_name_removes_its_current_contract_binding() {
-    let source = "from typepact.rust import Borrowed\nclass C: pass\ndel C\ndef use(value: Borrowed[C]): pass\n";
+    let source = "from codepact.rust import Borrowed\nclass C: pass\ndel C\ndef use(value: Borrowed[C]): pass\n";
     let result = inspect(&[SourceFile::new("deleted.py", "deleted", source)], "3.11");
     assert!(result.contracts.is_empty(), "{result:#?}");
     assert_eq!(result.coverage.status, "incomplete");
@@ -1175,7 +1175,7 @@ fn eval_text_in_a_string_does_not_look_like_execution() {
 
 #[test]
 fn multiline_signatures_are_lowered_from_ast_ranges() {
-    let source = "from typepact.rust import Borrowed\nclass C: pass\ndef use(\n    value: Borrowed[\n        C\n    ],\n) -> C: pass\n";
+    let source = "from codepact.rust import Borrowed\nclass C: pass\ndef use(\n    value: Borrowed[\n        C\n    ],\n) -> C: pass\n";
     let result = inspect(
         &[SourceFile::new("multiline.py", "multiline", source)],
         "3.11",
@@ -1194,7 +1194,7 @@ fn multiline_signatures_are_lowered_from_ast_ranges() {
 
 #[test]
 fn repeated_identical_access_metadata_is_not_a_conflict() {
-    let source = "from typing import Annotated\nfrom typepact.contracts import SharedBorrow\nclass C: pass\ndef use(value: Annotated[C, SharedBorrow(), SharedBorrow()]): pass\n";
+    let source = "from typing import Annotated\nfrom codepact.contracts import SharedBorrow\nclass C: pass\ndef use(value: Annotated[C, SharedBorrow(), SharedBorrow()]): pass\n";
     let result = inspect(
         &[SourceFile::new("same_access.py", "same_access", source)],
         "3.11",
@@ -1214,7 +1214,7 @@ fn direct_module_imports_preserve_exported_alias_views() {
     let provider = SourceFile::new(
         "models.py",
         "models",
-        "from typepact import resource\nfrom typepact.rust import Borrowed\n@resource(closed_by='close')\nclass Connection: pass\nConnectionView = Borrowed[Connection]\n",
+        "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass Connection: pass\nConnectionView = Borrowed[Connection]\n",
     );
     let consumer = SourceFile::new(
         "client.py",

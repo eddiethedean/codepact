@@ -2,9 +2,9 @@
 
 ## Assurance model
 
-TypePact proposes checks over a documented subset of Python with declared and inferred contracts. A finding can establish a modeled violation. Absence of findings establishes only that configured checks found no violations within analyzed paths and assumptions.
+CodePact proposes checks over a documented subset of Python with declared and inferred contracts. A finding can establish a modeled violation. Absence of findings establishes only that configured checks found no violations within analyzed paths and assumptions.
 
-Python execution retains its normal object model. Ownership annotations do not change reference counting, garbage collection, aliasing, memory layout or interpreter behavior. Rust's compiler ownership system governs a different execution model; TypePact must not advertise an equivalent memory-safety guarantee.
+Python execution retains its normal object model. Ownership annotations do not change reference counting, garbage collection, aliasing, memory layout or interpreter behavior. Rust's compiler ownership system governs a different execution model; CodePact must not advertise an equivalent memory-safety guarantee.
 
 ## Boundaries that must be visible
 

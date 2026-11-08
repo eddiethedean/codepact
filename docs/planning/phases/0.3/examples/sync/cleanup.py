@@ -1,4 +1,4 @@
-from typepact import resource
+from codepact import resource
 
 
 @resource(closed_by="close")

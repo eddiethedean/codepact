@@ -1,20 +1,20 @@
 # Architecture
 
-TypePact separates Python declarations, source parsing, declaration inspection,
+CodePact separates Python declarations, source parsing, declaration inspection,
 and lifecycle checking:
 
-1. The `typepact` Python package offers `resource` and `Annotated` metadata. Importing it does not load or launch the analyzer.
-2. The `typepact-cli` package distributes the native Rust `typepact` command.
+1. The `codepact` Python package offers `resource` and `Annotated` metadata. Importing it does not load or launch the analyzer.
+2. The `codepact-cli` package distributes the native Rust `codepact` command.
 3. The Rust library parses supplied source text, resolves supported declaration relationships, and emits contracts, diagnostics, and coverage.
 4. The 0.2.0 checker runs a bounded flow pass over module statements and synchronous bodies to produce lifecycle findings.
 
 ## Source is not executed
 
-The analyzer reads UTF-8 source files as text. It does not import the analyzed project, evaluate annotations, invoke decorators, or run build hooks. A declaration therefore contributes only the static facts that TypePact can resolve from its syntax and the other files supplied in the request.
+The analyzer reads UTF-8 source files as text. It does not import the analyzed project, evaluate annotations, invoke decorators, or run build hooks. A declaration therefore contributes only the static facts that CodePact can resolve from its syntax and the other files supplied in the request.
 
 ## Parser and semantic queries
 
-The frontend uses pinned Ruff Python parser and AST components to convert each file into typed module declarations and source ranges. The semantic layer resolves TypePact names, class/alias identities, direct supplied-module imports, lifecycle metadata, and access metadata. Constructs outside the supported set produce incomplete coverage.
+The frontend uses pinned Ruff Python parser and AST components to convert each file into typed module declarations and source ranges. The semantic layer resolves CodePact names, class/alias identities, direct supplied-module imports, lifecycle metadata, and access metadata. Constructs outside the supported set produce incomplete coverage.
 
 The library uses Salsa to track parsing, module inspection, and export summaries. An `AnalysisSession` can reuse unaffected work when files change. Consumers depend on semantic export summaries, so a provider body edit that does not change a relevant export need not invalidate dependent module results. Session cancellation prevents a stale or partial result from being published.
 
@@ -28,7 +28,7 @@ apply body effects to passed objects; recursive calls recover to unknown summari
 The current implementation uses a project checking query. Phase 0.2 qualified
 its invalidation and reuse behavior; the inspection query cache alone does not
 provide that guarantee. See the
-[phase plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2-lifecycle.md).
+[phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.2-lifecycle.md).
 
 ## Shared engine
 

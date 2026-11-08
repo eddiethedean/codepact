@@ -1,4 +1,4 @@
-# TypePact planning index
+# CodePact planning index
 
 Planning baseline: 2026-10-31. These documents record the direction from the “Design Rust Typing Python” discussion and concrete proposals for implementation. They do not assert that planned features exist; current release facts are linked to the evidence records.
 
@@ -20,7 +20,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [Compatibility](compatibility.md) | Python typing, versions and ecosystem integration |
 | [Linting and IDE diagnostics](linting-and-editors.md) | Lint command, shared language server, editor targets and validation gates |
 | [AI-agent integration](ai-agent-integration.md) | Structured findings, repair context, check–edit–recheck workflows and MCP tools |
-| [Pyrefly combined CLI prototype](typepact-pyrefly-cli.md) | Optional `typepact-pyrefly-cli` package, ordinary typing plus resource checks, packaging and publisher setup |
+| [Pyrefly combined CLI prototype](codepact-pyrefly-cli.md) | Optional `codepact-pyrefly-cli` package, ordinary typing plus resource checks, packaging and publisher setup |
 | [Roadmap](roadmap.md) | Priorities, dependencies and release scope |
 | [Implementation](implementation.md) | Work packages and completion gates |
 | [Testing and performance](testing.md) | Correctness, interoperability, benchmarks and CI |
@@ -31,7 +31,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 
 ## Status vocabulary
 
-**Direction** is established by the project discussion: TypePact branding and `typepact` Python package name; one semantic engine; two interoperable interfaces; gradual adoption; compatibility with ordinary Python typing.
+**Direction** is established by the project discussion: CodePact branding and `codepact` Python package name; one semantic engine; two interoperable interfaces; gradual adoption; compatibility with ordinary Python typing.
 
 **Proposal** is an implementable starting point awaiting prototype evidence. Public API spellings, package layout, support versions and milestone targets are proposals. **Research** covers capabilities whose feasibility is unresolved. A feature becomes **implemented** only when code, tests, documentation and release notes establish its supported scope.
 
@@ -39,12 +39,12 @@ Documents use “must” for a proposed acceptance requirement, not a claim of p
 
 ## Repository baseline
 
-A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The 0.1.0 release evidence records passing G1–G8 and F01–F08 gates, the V01–V24 mapping, cross-platform build results, registry verification, and the maintainer release decision. The 0.2.0 lifecycle checker is published and qualified; see its phase plan, validation matrix, and release evidence.
+A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The predecessor TypePact's 0.1.0 and 0.2.0 releases are published and qualified under the `typepact` names; see their historical phase plans, validation matrices, and release evidence. CodePact 0.3.0 is the first candidate using the renamed packages and crate.
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The 0.1.0 and 0.2.0 releases are complete; later release gates remain pending until candidate evidence and a maintainer decision are recorded. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete; CodePact 0.3.0 gates remain pending until candidate evidence and the maintainer's decision are recorded. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 
-D015 keeps typepact pure Python and pins the matching typepact-cli package from 0.1, with eight CLI platform builds, one pure helper wheel and two source archives. Cargo distribution remains available. The release plan is authoritative for the target matrix; later phases inherit it.
+D015 keeps codepact pure Python and pins the matching codepact-cli package from 0.1, with eight CLI platform builds, one pure helper wheel and two source archives. Cargo distribution remains available. The release plan is authoritative for the target matrix; later phases inherit it.

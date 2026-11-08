@@ -2,23 +2,24 @@
 
 ## Which version can I install now?
 
-Version 0.2.0 is the current release. It provides declaration inspection through
-`typepact inspect-contracts` and bounded lifecycle checking through `typepact
-check`. See [availability](availability.md).
+CodePact 0.3.0 is an unreleased candidate. It provides declaration inspection,
+lifecycle checking, and bounded cleanup obligations. The last published
+release was TypePact 0.2.0 under the former package names. See
+[availability](availability.md).
 
-## Does TypePact import or run my application?
+## Does CodePact import or run my application?
 
 No. The analyzer parses the selected Python source as text. It does not import
 the application, evaluate annotations, or invoke decorators. The Python
 `resource` decorator itself attaches metadata when your application imports it;
-TypePact's CLI does not import that application.
+CodePact's CLI does not import that application.
 
 ## Does a clean result prove my resources are safe?
 
-No. Contract facts have `declared-unverified` provenance. The lifecycle checker
-checks a bounded synchronous subset. Neither mode proves that a method releases
-a runtime resource, that cleanup occurs on every exit, or that ownership is
-generally safe.
+No. Contract facts have `declared-unverified` provenance. The CodePact
+candidate checks a bounded subset of lifecycle and cleanup flow. Neither mode
+proves that a method releases a runtime resource, that cleanup occurs on every
+possible exit, or that ownership is generally safe.
 
 ## Why does the command exit successfully when I see a warning?
 

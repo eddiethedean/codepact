@@ -37,7 +37,7 @@ jobs:
           import tomllib
           from pathlib import Path
           version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
-          crate = tomllib.loads(Path('crates/typepact/Cargo.toml').read_text())['package']['version']
+          crate = tomllib.loads(Path('crates/codepact/Cargo.toml').read_text())['package']['version']
           cli = tomllib.loads(Path('cli/pyproject.toml').read_text())['project']['version']
           if version != crate or version != cli or not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
               raise SystemExit('Python helper, CLI and Rust versions must match and use stable X.Y.Z form')
@@ -113,7 +113,7 @@ jobs:
         with:
           python-version: '3.11'
           architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
-      - name: Build typepact-cli native wheel
+      - name: Build codepact-cli native wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment-target }}
@@ -139,7 +139,7 @@ jobs:
             python /scripts/smoke_release_cli.py --wheel-dir /dist
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: typepact-dist-${{ matrix.name }}
+          name: codepact-dist-${{ matrix.name }}
           path: dist/*.whl
           if-no-files-found: error
 
@@ -162,10 +162,10 @@ jobs:
           uv sync --locked --no-install-workspace
           uv run --locked --no-sync python -m build --no-isolation
           uv run --locked --no-sync python -m build --sdist --no-isolation cli --outdir dist
-          cargo publish --package typepact --registry crates-io --locked --dry-run
+          cargo publish --package codepact --registry crates-io --locked --dry-run
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: typepact-dist-source
+          name: codepact-dist-source
           path: dist/*
           if-no-files-found: error
 
@@ -181,7 +181,7 @@ jobs:
           python-version: '3.11'
       - uses: actions/download-artifact@v8.0.2
         with:
-          pattern: typepact-dist-*
+          pattern: codepact-dist-*
           merge-multiple: true
           path: dist
       - name: Require eight CLI wheels, a pure helper wheel and both source archives
@@ -191,7 +191,7 @@ jobs:
           uv run --locked --no-sync python -m twine check --strict dist/*
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: verified-typepact-distributions
+          name: verified-codepact-distributions
           path: dist/*
           if-no-files-found: error
 
@@ -203,20 +203,20 @@ jobs:
       id-token: write
     environment:
       name: pypi
-      url: https://pypi.org/p/typepact-cli
+      url: https://pypi.org/p/codepact-cli
     steps:
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: verified-typepact-distributions
+          name: verified-codepact-distributions
           path: dist/
       - name: Select native CLI distributions
-        run: mkdir cli-dist && mv dist/typepact_cli-* cli-dist/
+        run: mkdir cli-dist && mv dist/codepact_cli-* cli-dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: cli-dist/
           attestations: true
 
-  publish-typepact:
+  publish-codepact:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: [validate-artifacts, publish-cli]
     runs-on: ubuntu-latest
@@ -224,14 +224,14 @@ jobs:
       id-token: write
     environment:
       name: pypi
-      url: https://pypi.org/p/typepact
+      url: https://pypi.org/p/codepact
     steps:
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: verified-typepact-distributions
+          name: verified-codepact-distributions
           path: dist/
       - name: Select pure Python distributions
-        run: mkdir helper-dist && mv dist/typepact-* helper-dist/
+        run: mkdir helper-dist && mv dist/codepact-* helper-dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: helper-dist/
@@ -246,9 +246,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - name: Publish typepact crate
+      - name: Publish codepact crate
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           test -n "$CARGO_REGISTRY_TOKEN"
-          cargo publish --package typepact --registry crates-io --locked
+          cargo publish --package codepact --registry crates-io --locked

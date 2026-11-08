@@ -1,6 +1,6 @@
-# Handle TypePact reports in CI
+# Handle CodePact reports in CI
 
-TypePact does not include a built-in strict-coverage switch, baseline file, or
+CodePact does not include a built-in strict-coverage switch, baseline file, or
 suppression configuration. CI consumers should define how they treat command
 status, diagnostics, and coverage instead of relying on exit status alone.
 
@@ -9,9 +9,9 @@ status, diagnostics, and coverage instead of relying on exit status alone.
 Pin the package version used by automation:
 
 ```sh
-uv tool run --from typepact-cli==0.2.0 \
-  typepact inspect-contracts --root src --json src/app.py src/resources.py \
-  > typepact-inspection.json
+uv tool run --from codepact-cli==0.3.0 \
+  codepact inspect-contracts --root src --json src/app.py src/resources.py \
+  > codepact-inspection.json
 ```
 
 Inspection returns status `1` for declaration errors or incomplete coverage.
@@ -20,9 +20,11 @@ Treat status `2` as an invocation or input failure. See the
 
 ## Check lifecycle behavior
 
-The published 0.2.0 `check` command returns status `1` for definite lifecycle
-violations or declaration errors. Possible findings and incomplete coverage
-alone can return `0`. Do not mistake a successful status for complete coverage.
+The historical TypePact 0.2.0 `check` command returned status `1` for definite
+lifecycle violations or declaration errors. The CodePact 0.3.0 candidate adds
+cleanup obligations to that behavior and has not been published. Possible
+findings and incomplete coverage alone can return `0`; do not mistake a
+successful status for complete coverage.
 
 ## Example policy: fail on any finding or boundary
 
@@ -33,16 +35,16 @@ an undocumented `--strict` option.
 
 ```sh
 set +e
-typepact check --root src --json > typepact-report.json
+codepact check --root src --json > codepact-report.json
 status=$?
 set -e
 
 if [ "$status" -eq 2 ]; then
-  echo "TypePact could not analyze the requested input" >&2
+  echo "CodePact could not analyze the requested input" >&2
   exit 2
 fi
 
-python3 - "$status" typepact-report.json <<'PY'
+python3 - "$status" codepact-report.json <<'PY'
 import json
 import sys
 
@@ -51,20 +53,20 @@ with open(sys.argv[2], encoding="utf-8") as report_file:
     report = json.load(report_file)
 
 if report.get("schema_version") != 0:
-    raise SystemExit("unsupported TypePact report schema")
+    raise SystemExit("unsupported CodePact report schema")
 if exit_status != 0:
-    raise SystemExit(f"TypePact exited with status {exit_status}")
+    raise SystemExit(f"CodePact exited with status {exit_status}")
 if report.get("coverage", {}).get("status") != "complete-for-supported-subset":
-    raise SystemExit("TypePact did not analyze the full supported subset")
+    raise SystemExit("CodePact did not analyze the full supported subset")
 if report.get("diagnostics"):
-    raise SystemExit("TypePact reported one or more diagnostics")
+    raise SystemExit("CodePact reported one or more diagnostics")
 PY
 ```
 
 This is one strict policy. A team that accepts possible findings can filter by
 diagnostic code and certainty, but should still decide how to handle
 `coverage.status == "incomplete"`. Keep that decision in the build configuration
-and review it when upgrading TypePact: the 0.x JSON schema and diagnostic set are
+and review it when upgrading CodePact: the 0.x JSON schema and diagnostic set are
 provisional.
 
 ## Preserve reports safely

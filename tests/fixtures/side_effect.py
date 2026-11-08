@@ -1,4 +1,4 @@
 import os
 from pathlib import Path
 
-Path(os.environ.get("TYPEPACT_SIDE_EFFECT_MARKER", "/tmp/typepact-side-effect-marker")).touch()
+Path(os.environ.get("CODEPACT_SIDE_EFFECT_MARKER", "/tmp/codepact-side-effect-marker")).touch()

@@ -32,4 +32,4 @@ Use the [migration plan](analyzer-migration.md) as the architecture baseline. A 
 
 ## Python helper and CLI distributions
 
-Use uv sync --locked and uv run --locked make check. The uv workspace builds typepact with Hatchling and typepact-cli with maturin. Contributors need Rust 1.96+ for CLI source/development builds; the helper package remains pure Python. The release workflow cross-builds platform wheels; changes to distribution must preserve helpers, typing metadata and installed native command.
+Use uv sync --locked and uv run --locked make check. The uv workspace builds codepact with Hatchling and codepact-cli with maturin. Contributors need Rust 1.96+ for CLI source/development builds; the helper package remains pure Python. The release workflow cross-builds platform wheels; changes to distribution must preserve helpers, typing metadata and installed native command.

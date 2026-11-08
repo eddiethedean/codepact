@@ -42,7 +42,7 @@ Completion: release checklist is satisfied, remaining limitations are published,
 
 ## Optional combined type-checking prototype
 
-The optional [Pyrefly combined CLI prototype](typepact-pyrefly-cli.md) follows PF01–PF05 independently of these phases: embedded-library feasibility, combined reports, compatibility/workflow evidence, package qualification and a dedicated trusted-publishing lane. It reuses the core engine and does not block its phase acceptance. Keep dependency integration gated on the spike and publication gated on PF-V01–PF-V08.
+The optional [Pyrefly combined CLI prototype](codepact-pyrefly-cli.md) follows PF01–PF05 independently of these phases: embedded-library feasibility, combined reports, compatibility/workflow evidence, package qualification and a dedicated trusted-publishing lane. It reuses the core engine and does not block its phase acceptance. Keep dependency integration gated on the spike and publication gated on PF-V01–PF-V08.
 
 ## Work item template
 
@@ -56,7 +56,7 @@ These engineering phases group work by subsystem. The [root ROADMAP](../../ROADM
 
 ## Python helper and CLI distributions
 
-D015 makes the pure typepact to native typepact-cli dependency part of WP02/WP06 in 0.1. Use Hatchling/maturin, two complete sdists, eight CLI release targets and installed-artifact checks before publication; later phases retain this contract.
+D015 makes the pure codepact to native codepact-cli dependency part of WP02/WP06 in 0.1. Use Hatchling/maturin, two complete sdists, eight CLI release targets and installed-artifact checks before publication; later phases retain this contract.
 
 ## Concurrent resource safety work stream
 

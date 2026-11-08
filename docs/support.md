@@ -1,15 +1,15 @@
 # Support and maintenance
 
-TypePact is an early 0.x project. Version 0.2.0 is published with bounded
+CodePact is an early 0.x project. Version 0.2.0 is published with bounded
 lifecycle checking. APIs, diagnostics, and schema remain provisional during the
 0.x series.
 
 ## Ask for help or report a bug
 
-Use the [GitHub issue tracker](https://github.com/eddiethedean/typepact/issues)
+Use the [GitHub issue tracker](https://github.com/eddiethedean/codepact/issues)
 for ordinary questions, reproducible bugs, and feature requests. Include:
 
-- TypePact version, installation source, operating system, and architecture.
+- CodePact version, installation source, operating system, and architecture.
 - Python interpreter version and selected analyzer target.
 - The exact command, exit status, and relevant report fields.
 - A small reproduction with private application data removed.
@@ -23,9 +23,9 @@ Do not post vulnerability details in a public issue; follow the
 The repository does not publish a response-time SLA, a long-term-support
 window, guaranteed backports, or named module owners. Compatibility evidence
 and release scope are recorded per version. The 0.1.0 support matrix and checks
-are in its [release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.1.0-evidence.md).
+are in its [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.1.0-evidence.md).
 The 0.2.0 scope, support matrix, and qualification are in the
-[0.2.0 release evidence](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md).
+[0.2.0 release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md).
 
 Because the APIs, diagnostics, and JSON schema are provisional during 0.x,
 consumers should pin versions and review the release notes before upgrading.

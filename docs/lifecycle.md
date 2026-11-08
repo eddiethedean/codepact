@@ -1,15 +1,17 @@
 # Check a resource lifecycle
 
-The published 0.2.0 release includes `typepact check`. It follows a bounded
-subset of normal synchronous Python execution and reports supported uses after
-close and closes through Borrowed parameters.
+The historical TypePact 0.2.0 release introduced its `typepact check` command
+for a bounded subset of normal synchronous Python execution. The CodePact
+0.3.0 candidate uses the renamed `codepact check` command and adds cleanup
+obligations across supported exits. It has not been published.
 
 ## Install and run
 
-Install the matching helper and CLI packages in your project:
+After CodePact 0.3.0 is published, install the matching helper and CLI packages
+in your project:
 
 ```sh
-uv add typepact==0.2.0
+uv add codepact==0.3.0
 ```
 
 The analyzer reads Python source as text; it does not import the example.
@@ -26,7 +28,7 @@ Create a `demo` directory in the checkout and save this example as
 Run the checker from the checkout root:
 
 ```sh
-uv run typepact check --root demo
+uv run codepact check --root demo
 ```
 
 The first `inspect_connection(conn)` runs while the connection is open. After
@@ -76,13 +78,13 @@ It does not provide a general lifetime or escape proof.
 Readable output is the default. For the provisional structured report:
 
 ```sh
-uv run typepact check --root demo --json
+uv run codepact check --root demo --json
 ```
 
 Read both `diagnostics` and `coverage`. A successful exit can include possible
-findings or incomplete analysis. The published 0.2.0 checker uses
-`assurance: "lifecycle-checking-for-supported-normal-flow"`; the in-progress
-0.3 worktree uses `lifecycle-checking-for-supported-exit-flow`. Declaration
+findings or incomplete analysis. The historical TypePact 0.2.0 checker used
+`assurance: "lifecycle-checking-for-supported-normal-flow"`; the CodePact
+candidate uses `lifecycle-checking-for-supported-exit-flow`. Declaration
 provenance remains `declared-unverified`. Candidate 0.3 additionally bounds
 loop fixed-point analysis to 16 passes, finite tuple loops to 16 items, and
 pending coroutine records to 128 per flow state. These are implementation
@@ -97,18 +99,19 @@ files, and unsupported code outside the selected root. The default root is the
 current directory. The scan skips symlinks and common build and environment
 directories; see the [CLI reference](cli.md).
 
-These limits describe the published 0.2.0 checker. Its released behavior does not
-model loops, exception handlers, `finally`, context managers, async suspension,
-fields and containers, or returned resource aliases precisely. The in-progress
-0.3 worktree extends bounded exit flow and cleanup; exact finite tuple loops,
+These limits describe the historical TypePact 0.2.0 checker. Its released
+behavior did not model loops, exception handlers, `finally`, context managers,
+async suspension, fields and containers, or returned resource aliases
+precisely. The CodePact 0.3.0 candidate extends bounded exit flow and cleanup;
+exact finite tuple loops,
 resolved local close bodies, and directly awaited coroutine calls are included
 in the candidate subset. Its remaining boundaries are listed in the [0.3
-specification](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.3/specification.md).
+specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/specification.md).
 Recursive calls still recover to an unknown summary. A clean result does not
 establish leak freedom, cleanup on every exit, ownership safety, or correctness
 of declared resource models. Read the [limitations](limitations.md) and
 [supported syntax](supported-syntax.md) before using released results in a workflow.
 
 Phase 0.2 qualification and publication evidence are in the
-[phase plan](https://github.com/eddiethedean/typepact/blob/main/docs/planning/phases/0.2-lifecycle.md)
-and [release record](https://github.com/eddiethedean/typepact/blob/main/docs/releases/0.2.0-evidence.md).
+[phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.2-lifecycle.md)
+and [release record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md).

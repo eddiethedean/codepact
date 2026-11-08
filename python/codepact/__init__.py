@@ -1,4 +1,4 @@
-"""Lightweight runtime declarations for TypePact.
+"""Lightweight runtime declarations for CodePact.
 
 Importing this module never loads the Rust inspector or executes analysis.
 """
@@ -34,11 +34,11 @@ def resource(
         raise ValueError("closed_by must be a method name")
 
     def decorate(target: type[T]) -> type[T]:
-        existing = target.__dict__.get("__typepact_resource__")
+        existing = target.__dict__.get("__codepact_resource__")
         contract = Resource(closed_by=closed_by)
         if existing is not None and existing != contract:
-            raise ValueError("conflicting TypePact resource declarations")
-        setattr(target, "__typepact_resource__", contract)
+            raise ValueError("conflicting CodePact resource declarations")
+        setattr(target, "__codepact_resource__", contract)
         return target
 
     return decorate(cls) if cls is not None else decorate

@@ -4,8 +4,8 @@ requires-python = ">=3.11"
 
 [manifest]
 members = [
-    "typepact",
-    "typepact-cli",
+    "codepact",
+    "codepact-cli",
 ]
 
 [[package]]
@@ -909,11 +909,11 @@ wheels = [
 ]
 
 [[package]]
-name = "typepact"
+name = "codepact"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [
-    { name = "typepact-cli" },
+    { name = "codepact-cli" },
 ]
 
 [package.dev-dependencies]
@@ -930,7 +930,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "typepact-cli", editable = "cli" }]
+requires-dist = [{ name = "codepact-cli", editable = "cli" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -946,7 +946,7 @@ dev = [
 ]
 
 [[package]]
-name = "typepact-cli"
+name = "codepact-cli"
 version = "0.3.0"
 source = { editable = "cli" }
 

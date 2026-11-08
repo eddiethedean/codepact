@@ -32,24 +32,24 @@ def verify(directory: Path, version: str) -> None:
     pure = 0
     for wheel in wheels:
         name, artifact_version, _, tags = parse_wheel_filename(wheel.name)
-        if name not in {"typepact", "typepact-cli"} or artifact_version != Version(
+        if name not in {"codepact", "codepact-cli"} or artifact_version != Version(
             version
         ):
             raise ValueError(f"Wrong wheel name/version: {wheel.name}")
-        if name == "typepact":
+        if name == "codepact":
             pure += 1
             if not wheel.name.endswith("-py3-none-any.whl"):
-                raise ValueError("typepact must remain pure Python")
+                raise ValueError("codepact must remain pure Python")
             with zipfile.ZipFile(wheel) as archive:
                 names = archive.namelist()
                 for module in ("__init__.py", "contracts.py", "rust.py", "py.typed"):
-                    if f"typepact/{module}" not in names:
+                    if f"codepact/{module}" not in names:
                         raise ValueError(f"Missing helper: {module}")
                 metadata_file = next(
                     name for name in names if name.endswith(".dist-info/METADATA")
                 )
                 metadata = BytesParser().parsebytes(archive.read(metadata_file))
-                if f"typepact-cli=={version}" not in metadata.get_all(
+                if f"codepact-cli=={version}" not in metadata.get_all(
                     "Requires-Dist", []
                 ):
                     raise ValueError(
@@ -71,7 +71,7 @@ def verify(directory: Path, version: str) -> None:
         found.update(platforms)
         with zipfile.ZipFile(wheel) as archive:
             names = archive.namelist()
-            executable = "typepact.exe" if "win_" in wheel.name else "typepact"
+            executable = "codepact.exe" if "win_" in wheel.name else "codepact"
             if not any(name.endswith(f".data/scripts/{executable}") for name in names):
                 raise ValueError(f"Missing Rust CLI: {wheel.name}")
             metadata_file = next(
@@ -84,14 +84,14 @@ def verify(directory: Path, version: str) -> None:
             ):
                 raise ValueError(f"Invalid wheel metadata: {wheel.name}")
     if pure != 1:
-        raise ValueError("Expected one pure typepact wheel")
+        raise ValueError("Expected one pure codepact wheel")
     if found != PLATFORMS:
         raise ValueError(f"Missing platforms: {PLATFORMS - found}")
     source_names: set[str] = set()
     for source in sources:
         name, artifact_version = parse_sdist_filename(source.name)
         if (
-            name not in {"typepact", "typepact-cli"}
+            name not in {"codepact", "codepact-cli"}
             or name in source_names
             or artifact_version != Version(version)
         ):
@@ -102,11 +102,11 @@ def verify(directory: Path, version: str) -> None:
                 "/Cargo.lock",
                 "/Cargo.toml",
                 "/pyproject.toml",
-                "/crates/typepact/src/main.rs",
-                "/crates/typepact/LICENSE",
+                "/crates/codepact/src/main.rs",
+                "/crates/codepact/LICENSE",
             )
-            if name == "typepact-cli"
-            else ("/pyproject.toml", "/python/typepact/py.typed", "/LICENSE")
+            if name == "codepact-cli"
+            else ("/pyproject.toml", "/python/codepact/py.typed", "/LICENSE")
         )
         with tarfile.open(source) as archive:
             names = archive.getnames()

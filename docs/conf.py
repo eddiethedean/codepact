@@ -5,11 +5,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 
-project = "TypePact"
-author = "TypePact contributors"
-copyright = "2026, TypePact contributors"
-version = "0.2"
-release = "0.2.0"
+project = "CodePact"
+author = "CodePact contributors"
+copyright = "2026, CodePact contributors"
+version = "0.3"
+release = "0.3.0"
 
 extensions = [
     "myst_parser",
@@ -30,11 +30,11 @@ autodoc_member_order = "bysource"
 autodoc_default_options = {"show-inheritance": True}
 nitpick_ignore = [
     ("py:class", "collections.abc.Callable"),
-    ("py:class", "typepact.T"),
+    ("py:class", "codepact.T"),
 ]
 
 html_theme = "sphinx_rtd_theme"
-html_title = "TypePact documentation — 0.2.0"
+html_title = "CodePact documentation — 0.3.0"
 html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 3,
@@ -42,4 +42,4 @@ html_theme_options = {
 }
 html_show_sphinx = False
 html_static_path = ["_static"]
-html_css_files = ["typepact.css"]
+html_css_files = ["codepact.css"]

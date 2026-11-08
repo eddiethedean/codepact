@@ -123,6 +123,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "codepact"
+version = "0.3.0"
+dependencies = [
+ "ruff_python_ast",
+ "ruff_python_parser",
+ "ruff_text_size",
+ "salsa",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "collection_literals"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -929,18 +941,6 @@ name = "typeid"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
-
-[[package]]
-name = "typepact"
-version = "0.3.0"
-dependencies = [
- "ruff_python_ast",
- "ruff_python_parser",
- "ruff_text_size",
- "salsa",
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "unicode-ident"

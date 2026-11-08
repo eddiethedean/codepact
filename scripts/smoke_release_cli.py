@@ -1,4 +1,4 @@
-"""Install and exercise one native TypePact CLI release wheel."""
+"""Install and exercise one native CodePact CLI release wheel."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def main() -> int:
     require(not (args.wheel_dir and args.binary), "choose a wheel directory or binary")
 
     if args.wheel_dir is not None:
-        wheels = sorted(args.wheel_dir.glob("typepact_cli-*.whl"))
+        wheels = sorted(args.wheel_dir.glob("codepact_cli-*.whl"))
         require(len(wheels) == 1, "expected exactly one native CLI wheel")
         subprocess.run(
             [
@@ -47,21 +47,21 @@ def main() -> int:
             check=True,
         )
 
-    expected_version = importlib.metadata.version("typepact-cli")
+    expected_version = importlib.metadata.version("codepact-cli")
     binary = (
         str(args.binary)
         if args.binary is not None
-        else shutil.which("typepact") or shutil.which("typepact.exe")
+        else shutil.which("codepact") or shutil.which("codepact.exe")
     )
     if binary is None:
-        raise SystemExit("installed typepact executable was not found")
+        raise SystemExit("installed codepact executable was not found")
 
     version = subprocess.run(
         [binary, "--version"], capture_output=True, text=True, check=False
     )
     require(
         version.returncode == 0
-        and version.stdout.strip() == f"typepact {expected_version}",
+        and version.stdout.strip() == f"codepact {expected_version}",
         "installed CLI version did not match the wheel metadata",
     )
     help_result = subprocess.run(
@@ -73,11 +73,11 @@ def main() -> int:
         "installed CLI help smoke failed",
     )
 
-    with tempfile.TemporaryDirectory(prefix="typepact-release-smoke-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="codepact-release-smoke-") as temporary:
         root = Path(temporary)
         marker = root / "source-executed"
         source = f"""open({str(marker)!r}, 'w').close()
-from typepact import resource
+from codepact import resource
 
 @resource(closed_by='close')
 class Connection:
@@ -120,7 +120,7 @@ connection.status()
         )
         require(not marker.exists(), "the analyzer executed inspected Python source")
 
-    print(f"Installed TypePact CLI {expected_version}; lifecycle smoke passed")
+    print(f"Installed CodePact CLI {expected_version}; lifecycle smoke passed")
     return 0
 
 
