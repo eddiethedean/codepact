@@ -108,8 +108,9 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 
 ## Candidate-local checks
 
-On 2026-11-08, local validation for the current 0.3 candidate passed
-`uv run --locked make check` on CPython 3.14.3, macOS 26.5.2 ARM64.
+On 2026-11-08, candidate commit
+`d5710cf0bd684e636f210bbdb0e32816aca2a9ae` passed `uv run --locked make check`
+locally on CPython 3.14.3, macOS 26.5.2 ARM64.
 `cargo test --workspace --locked` passed 60 library, 51 CLI, 60 fixture, 26
 lifecycle regression and 169 phase tests (366 Rust tests total); all 21 Python tests passed. Formatting,
 workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and
