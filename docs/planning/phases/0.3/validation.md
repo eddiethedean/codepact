@@ -101,16 +101,18 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 
 ## Candidate-local checks
 
-On 2026-11-08, candidate `189d2b4470035d200c7311694295c3e3c5ead178` passed
+On 2026-11-08, candidate `5a1ba0c33c352cc3df4ba073163470394ac16c3b` passed
 `uv run --locked make check` locally on CPython 3.14.3, macOS 26.5.2 ARM64.
 `cargo test --workspace --locked` passed 59 library, 51 CLI, 60 fixture, 26
-lifecycle regression and 160 phase tests; all 14 Python tests passed. Formatting,
+lifecycle regression and 166 phase tests (362 Rust tests total); all 14 Python tests passed. Formatting,
 workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and
 source builds and install smokes, dependency audits, Rust 1.96 checks/package
 test/install smoke, inspector behavior, documentation links and the
 warnings-as-errors docs build also passed. Exact-commit Quality and Release
 workflow results, the downloaded artifact inventory and strict Twine checks
 are recorded in the [release evidence record](../../../releases/0.3.0-evidence.md).
+The prior evidence-only commit `8e05c2ae96a8b822dec2d899811c2e4be54baf6f`
+passed Quality run [42457187996](https://github.com/eddiethedean/codepact/actions/runs/42457187996); it updates release evidence without changing candidate code.
 
 V03-05 adds known tuple-handler matching and an invalid tuple-type boundary whose
 resource is still discharged by `finally`. Exact exception ancestry is limited
