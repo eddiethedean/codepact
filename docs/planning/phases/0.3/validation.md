@@ -101,10 +101,10 @@ For each V03 row record the implemented fixture/test path, revision, invocation,
 
 ## Candidate-local checks
 
-On 2026-11-07, candidate `6b5ee236ef64a11024194fc8b3f5e8e322c23a09` passed
+On 2026-11-08, candidate `189d2b4470035d200c7311694295c3e3c5ead178` passed
 `uv run --locked make check` locally on CPython 3.14.3, macOS 26.5.2 ARM64.
 `cargo test --workspace --locked` passed 59 library, 51 CLI, 60 fixture, 26
-lifecycle regression and 157 phase tests; all 14 Python tests passed. Formatting,
+lifecycle regression and 160 phase tests; all 14 Python tests passed. Formatting,
 workspace check, Clippy, Python typing/lint, generated checks, 0.3.0 wheel and
 source builds and install smokes, dependency audits, Rust 1.96 checks/package
 test/install smoke, inspector behavior, documentation links and the
@@ -112,7 +112,10 @@ warnings-as-errors docs build also passed. Exact-commit Quality and Release
 workflow results, the downloaded artifact inventory and strict Twine checks
 are recorded in the [release evidence record](../../../releases/0.3.0-evidence.md).
 
-V03-03's `v03_03_three_nested_finalizers_preserve_single_close_and_replacement_matrix`
+V03-05 adds known tuple-handler matching and an invalid tuple-type boundary whose
+resource is still discharged by `finally`; V03-13 confirms an unrelated local
+resource is not treated as escaped by a no-argument unknown call. V03-03's
+`v03_03_three_nested_finalizers_preserve_single_close_and_replacement_matrix`
 checks 60 three-level finalizer combinations for completion, duty origin and
 exit spans; `v03_03_nested_async_finalizers_keep_cancellation_duties_on_each_pending_exit`
 checks three pending exits through nested awaited finalizers and exact
@@ -133,7 +136,7 @@ qualification evidence is pending.
 
 The exact candidate's Quality and non-publishing Release workflow results, local check results, downloaded artifact inventory and strict Twine recheck are recorded in the [release evidence record](../../../releases/0.3.0-evidence.md). These automation results do not themselves qualify behavior or pass a gate.
 
-The [current 0.3 candidate performance record](performance.md) measures cleanup corpora, nested exceptions/loops, multiple managers and direct-await cancellation cases, plus lifecycle/inspection comparisons, query reuse, memory and budgets. Cold and edit medians at 250 and 1,000 resources are at or below the accepted [0.2 baseline](../0.2/performance.md); the 250-resource warm no-op sample is 1.04× baseline. Single-resource timings remain small and noisy. The maintainer's G4 review and any additional qualification measurements remain pending. A completed budget table is not an absolute latency guarantee.
+The [current 0.3 candidate performance record](performance.md) measures cleanup corpora, nested exceptions/loops, multiple managers and direct-await cancellation cases, plus lifecycle/inspection comparisons, query reuse, memory and budgets. Cold and edit medians at 250 and 1,000 resources are at or below the accepted [0.2 baseline](../0.2/performance.md); the 250-resource warm no-op sample is 1.01× baseline. Single-resource timings remain small and noisy. The maintainer's G4 review and any additional qualification measurements remain pending. A completed budget table is not an absolute latency guarantee.
 
 The runnable [candidate cleanup tutorial](cleanup-tutorial.md) demonstrates synchronous exit obligations and async cancellation findings with separate fixtures and expected CLI outcomes.
 
