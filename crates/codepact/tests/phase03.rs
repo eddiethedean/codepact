@@ -1018,6 +1018,40 @@ fn v03_03_nested_async_finalizers_keep_cancellation_duties_on_each_pending_exit(
 }
 
 #[test]
+fn v03_03_handler_expression_failure_crosses_async_finally_and_keeps_cancellation() {
+    let source = "from codepact import resource\n@resource(closed_by='aclose')\nclass C:\n    async def aclose(self): pass\ndef handler_type():\n    raise LookupError()\nasync def cleanup():\n    resource = C()\n    try:\n        try:\n            raise RuntimeError()\n        except handler_type():\n            pass\n    finally:\n        await resource.aclose()\n";
+    let acquisition_line = source
+        .lines()
+        .position(|line| line.trim() == "resource = C()")
+        .unwrap()
+        + 1;
+    let report =
+        codepact::check_report(&[SourceFile::new("phase03.py", "phase03", source)], "3.11");
+    let duties = report
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP1002")
+        .collect::<Vec<_>>();
+    assert_eq!(duties.len(), 1, "{report:#?}");
+    assert_eq!(duties[0].certainty, "possible", "{report:#?}");
+    assert_eq!(duties[0].completion.as_deref(), Some("cancelled"));
+    assert_eq!(duties[0].related[0].line, acquisition_line, "{report:#?}");
+    assert!(
+        duties[0].message.contains("remains open on cancelled"),
+        "the async finally discharges its normal path but cannot assume cancellation completes cleanup: {report:#?}"
+    );
+    assert!(
+        report
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| { reason.contains("cancellation may interrupt the awaited operation") }),
+        "interrupted cleanup remains visible: {report:#?}"
+    );
+    assert_eq!(report.coverage.status, "incomplete", "{report:#?}");
+}
+
+#[test]
 fn v03_06_distinct_return_and_raise_exits_keep_separate_findings() {
     let result = check_source(&format!(
         "{RESOURCE}def leak(flag):\n    resource = C()\n    if flag:\n        return\n    raise RuntimeError()\n"
