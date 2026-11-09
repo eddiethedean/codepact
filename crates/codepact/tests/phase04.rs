@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Output},
 };
 
@@ -10,9 +10,13 @@ fn project(name: &str) -> PathBuf {
     fs::create_dir_all(&path).unwrap();
     path
 }
-fn cli(root: &PathBuf, args: &[&str]) -> Output {
+fn cli(root: &Path, args: &[&str]) -> Output {
+    cli_from(root, args)
+}
+
+fn cli_from(cwd: &std::path::Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_codepact"))
-        .current_dir(root)
+        .current_dir(cwd)
         .args(args)
         .output()
         .expect("CLI starts")
@@ -873,5 +877,410 @@ fn output_policy_keeps_full_counts_and_concise_records_have_seven_fields() {
         &["check", "--no-config", "--json", "--output-format", "text"],
     );
     assert_eq!(conflict.status.code(), Some(2));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn capabilities_and_rule_explanations_publish_the_supported_surface_and_limits() {
+    let root = project("capabilities-and-explanations");
+    let output = cli(&root, &["capabilities", "--json"]);
+    assert_eq!(output.status.code(), Some(0));
+    let capabilities: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(capabilities["capability_schema_version"], 1);
+    assert_eq!(capabilities["checker_schema_version"], 2);
+    assert_eq!(capabilities["inspection_schema_version"], 0);
+    assert_eq!(
+        capabilities["python_targets"],
+        serde_json::json!(["3.11", "3.12", "3.13"])
+    );
+    assert_eq!(capabilities["limits"]["config_bytes"], 65_536);
+    assert_eq!(capabilities["limits"]["baseline_bytes"], 16_777_216);
+    assert_eq!(capabilities["limits"]["baseline_entries"], 100_000);
+    assert_eq!(capabilities["limits"]["report_bytes"], 33_554_432);
+    assert_eq!(capabilities["limits"]["related_sites_per_finding"], 32);
+    assert_eq!(
+        capabilities["limits"]["source_snippet_bytes_per_finding"],
+        2048
+    );
+    assert_eq!(
+        capabilities["limits"]["explanation_bytes_per_finding"],
+        8192
+    );
+    assert_eq!(capabilities["services"]["pagination"], false);
+    assert_eq!(capabilities["services"]["mcp"], false);
+    assert_eq!(capabilities["services"]["language_server"], false);
+    assert_eq!(capabilities["services"]["persistent_cache"], false);
+
+    let rules = capabilities["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 9);
+    for rule in rules {
+        let code = rule["code"].as_str().unwrap();
+        let explanation = cli(&root, &["explain", code, "--json"]);
+        assert_eq!(explanation.status.code(), Some(0), "{code}");
+        let document: serde_json::Value = serde_json::from_slice(&explanation.stdout).unwrap();
+        assert_eq!(document["explanation_schema_version"], 1, "{code}");
+        assert_eq!(document["code"], code, "{code}");
+        assert_eq!(document["explanation_id"], rule["explanation_id"], "{code}");
+        assert_eq!(document["automatic_fix"], false, "{code}");
+        for example in ["valid", "invalid", "unknown"] {
+            assert!(
+                document["examples"][example]
+                    .as_str()
+                    .is_some_and(|text| !text.is_empty()),
+                "{code} {example}"
+            );
+        }
+        assert!(
+            !document["preconditions"].as_array().unwrap().is_empty(),
+            "{code}"
+        );
+        assert!(
+            !document["limitations"].as_array().unwrap().is_empty(),
+            "{code}"
+        );
+    }
+    let unknown = cli(&root, &["explain", "TP9999", "--json"]);
+    assert_eq!(unknown.status.code(), Some(2));
+    let failed: serde_json::Value = serde_json::from_slice(&unknown.stdout).unwrap();
+    assert_eq!(failed["execution_status"], "failed");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn nearest_config_wins_and_invalid_project_settings_fail_before_analysis() {
+    let root = project("config-precedence");
+    let outer = root.join("outer");
+    let nested = outer.join("packages/one");
+    let cwd = nested.join("deep");
+    fs::create_dir_all(&cwd).unwrap();
+    fs::write(
+        outer.join("pyproject.toml"),
+        "[tool.codepact]\nconfig-version=1\nmode='strict'\npython-version='3.13'\n",
+    )
+    .unwrap();
+    fs::write(
+        nested.join("pyproject.toml"),
+        "[tool.codepact]\nconfig-version=1\nmode='advisory'\n",
+    )
+    .unwrap();
+
+    let resolved = cli_from(&cwd, &["check", "--show-settings", "--json"]);
+    assert_eq!(resolved.status.code(), Some(0));
+    let settings: serde_json::Value = serde_json::from_slice(&resolved.stdout).unwrap();
+    assert_eq!(settings["mode"], "advisory");
+    assert_eq!(settings["python_version"], "3.11");
+    assert_eq!(settings["settings_origins"]["mode"], "pyproject.toml");
+    assert_eq!(settings["settings_origins"]["python-version"], "default");
+    assert_eq!(
+        settings["root"],
+        nested.canonicalize().unwrap().to_string_lossy().as_ref()
+    );
+    assert!(settings["config_file"]
+        .as_str()
+        .unwrap()
+        .ends_with("packages/one/pyproject.toml"));
+
+    for config in [
+        "[tool.codepact]\nconfig-version=1\nunknown-key=true\n",
+        "[tool.codepact]\nmode='strict'\n",
+        "[tool.codepact]\nconfig-version=2\n",
+        "[tool.codepact]\nconfig-version=1\npython-version='3.10'\n",
+        "[tool.codepact]\nconfig-version=1\nenabled-rules=['TP9999']\n",
+        "[tool.codepact]\nconfig-version=1\ninclude=['../outside.py']\n",
+        "[tool.codepact]\nconfig-version=1\nmode='unknown'\n",
+        "[tool.codepact]\nconfig-version=1\nenabled-rules=['TP3001','TP3001']\n",
+        "[tool.codepact]\nconfig-version=1\n[tool.codepact.severity]\nTP9001='info'\n",
+        "[tool.codepact]\nconfig-version=1\n[tool.codepact.severity]\nTP3001='off'\n",
+        "[tool.codepact]\nconfig-version=1\nmode='strict'\nmode='advisory'\n",
+    ] {
+        fs::write(nested.join("pyproject.toml"), config).unwrap();
+        let invalid = cli_from(&cwd, &["check", "--json"]);
+        assert_eq!(invalid.status.code(), Some(2), "{config}");
+        let failure: serde_json::Value = serde_json::from_slice(&invalid.stdout).unwrap();
+        assert_eq!(failure["execution_status"], "failed", "{config}");
+        assert!(failure["error"]["message"].as_str().is_some(), "{config}");
+    }
+    fs::write(
+        nested.join("pyproject.toml"),
+        "[tool.other]\nunknown='accepted'\n[tool.codepact]\nconfig-version=1\n",
+    )
+    .unwrap();
+    let unrelated = cli_from(&cwd, &["check", "--show-settings", "--json"]);
+    assert_eq!(unrelated.status.code(), Some(0));
+    let conflict = cli_from(
+        &cwd,
+        &[
+            "check",
+            "--config",
+            "pyproject.toml",
+            "--no-config",
+            "--json",
+        ],
+    );
+    assert_eq!(conflict.status.code(), Some(2));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn includes_and_excludes_define_scope_and_explicit_operands_cannot_bypass_excludes() {
+    let root = project("include-exclude");
+    fs::create_dir_all(root.join("src/generated")).unwrap();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(
+        root.join("pyproject.toml"),
+        "[tool.codepact]\nconfig-version=1\ninclude=['src/**/*.py']\nexclude=['src/generated/**']\n",
+    )
+    .unwrap();
+    fs::write(root.join("src/good.py"), "value = 1\n").unwrap();
+    fs::write(root.join("src/generated/ignored.py"), "def broken(:\n").unwrap();
+    fs::write(root.join("tests/ignored.py"), "def broken(:\n").unwrap();
+
+    let checked = cli(&root, &["check", "--json"]);
+    assert_eq!(
+        checked.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&checked.stdout)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
+    assert_eq!(report["selected_files"], serde_json::json!(["src/good.py"]));
+    assert_eq!(report["coverage"]["source_bytes"], 10);
+
+    let explicit_excluded = cli(&root, &["check", "--json", "src/generated/ignored.py"]);
+    assert_eq!(explicit_excluded.status.code(), Some(2));
+    let failure: serde_json::Value = serde_json::from_slice(&explicit_excluded.stdout).unwrap();
+    assert!(failure["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("excluded"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn policy_truth_table_keeps_severity_certainty_coverage_and_rule_selection_separate() {
+    let root = project("policy-truth-table");
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run(): fetch()\n",
+    )
+    .unwrap();
+
+    for (mode, threshold, severity, expected_exit) in [
+        ("advisory", "error", None, 0),
+        ("strict", "error", None, 0),
+        ("advisory", "warning", None, 1),
+        ("strict", "warning", None, 1),
+        ("advisory", "error", Some("TP3001=info"), 0),
+        ("strict", "error", Some("TP3001=info"), 0),
+    ] {
+        let mut args = vec![
+            "check".to_string(),
+            "--no-config".to_string(),
+            "--json".to_string(),
+            "--mode".to_string(),
+            mode.to_string(),
+            "--fail-on".to_string(),
+            threshold.to_string(),
+        ];
+        if let Some(severity) = severity {
+            args.push("--severity".into());
+            args.push(severity.into());
+        }
+        let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+        let checked = cli(&root, &refs);
+        assert_eq!(checked.status.code(), Some(expected_exit), "{args:?}");
+        let report: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
+        assert_eq!(report["execution_status"], "completed");
+        assert_eq!(report["mode"], mode);
+        let finding = report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|diagnostic| diagnostic["code"] == "TP3001")
+            .unwrap();
+        assert_eq!(finding["certainty"], "definite");
+        assert_eq!(finding["base_severity"], "warning");
+        assert_eq!(finding["actionable"], expected_exit == 1);
+    }
+
+    let disabled = cli(
+        &root,
+        &["check", "--no-config", "--json", "--rules", "TP1002"],
+    );
+    assert_eq!(disabled.status.code(), Some(0));
+    let disabled_report: serde_json::Value = serde_json::from_slice(&disabled.stdout).unwrap();
+    assert_eq!(
+        disabled_report["selected_rules"],
+        serde_json::json!(["TP1002"])
+    );
+    assert_eq!(disabled_report["counts_by_disposition"]["rule-disabled"], 1);
+    assert!(!disabled_report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP3001" && diagnostic["actionable"] == true));
+
+    fs::write(root.join("main.py"), "def run():\n    unknown_effect()\n").unwrap();
+    let incomplete = cli(
+        &root,
+        &["check", "--no-config", "--json", "--mode", "strict"],
+    );
+    assert_eq!(incomplete.status.code(), Some(1));
+    let incomplete_report: serde_json::Value = serde_json::from_slice(&incomplete.stdout).unwrap();
+    assert_eq!(incomplete_report["coverage"]["status"], "incomplete");
+    assert!(incomplete_report["policy_failures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|failure| failure == "analysis coverage is incomplete"));
+    assert!(incomplete_report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP9001" && diagnostic["certainty"] == "unknown"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn suppression_targets_only_the_primary_start_line_and_retains_raw_findings() {
+    let root = project("suppression-primary-line");
+    let source = "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run():\n    fetch()  # codepact: ignore[TP3001] -- reviewed intentional discard\n    fetch()\n";
+    fs::write(root.join("main.py"), source).unwrap();
+    let checked = cli(
+        &root,
+        &["check", "--no-config", "--json", "--fail-on", "warning"],
+    );
+    assert_eq!(checked.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
+    let findings = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP3001")
+        .collect::<Vec<_>>();
+    assert_eq!(findings.len(), 2);
+    assert_eq!(findings[0]["disposition"], "suppressed-inline");
+    assert_eq!(
+        findings[0]["disposition_reason"],
+        "reviewed intentional discard"
+    );
+    assert_eq!(findings[1]["disposition"], "active");
+
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run():\n    fetch(\n    )  # codepact: ignore[TP3001] -- comment is not on the primary start line\n",
+    )
+    .unwrap();
+    let multiline = cli(
+        &root,
+        &["check", "--no-config", "--json", "--fail-on", "warning"],
+    );
+    assert_eq!(multiline.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&multiline.stdout).unwrap();
+    assert!(report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| {
+            diagnostic["code"] == "TP3001" && diagnostic["disposition"] == "active"
+        }));
+    assert!(!report["unused_suppressions"].as_array().unwrap().is_empty());
+
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run():\n    fetch()  # codepact: ignore[TP3001] --\n",
+    )
+    .unwrap();
+    let invalid = cli(&root, &["check", "--no-config", "--json"]);
+    assert_eq!(invalid.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&invalid.stdout).unwrap();
+    assert!(report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| { diagnostic["code"] == "TP4002" && diagnostic["severity"] == "error" }));
+    assert!(report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| {
+            diagnostic["code"] == "TP3001" && diagnostic["disposition"] == "active"
+        }));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn baseline_rejects_unsupported_versions_and_duplicate_entries_without_hiding_findings() {
+    let root = project("baseline-version-and-duplicates");
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run(): fetch()\n",
+    )
+    .unwrap();
+    let create = cli(
+        &root,
+        &[
+            "baseline",
+            "update",
+            "--no-config",
+            "--output",
+            "baseline.json",
+            "--reason",
+            "record existing must-use finding",
+        ],
+    );
+    assert_eq!(create.status.code(), Some(0));
+    let original = fs::read_to_string(root.join("baseline.json")).unwrap();
+    let original_json: serde_json::Value = serde_json::from_str(&original).unwrap();
+    assert_eq!(original_json["entries"].as_array().unwrap().len(), 1);
+
+    let mut unsupported = original_json.clone();
+    unsupported["baseline_schema_version"] = serde_json::json!(2);
+    fs::write(
+        root.join("baseline.json"),
+        serde_json::to_vec(&unsupported).unwrap(),
+    )
+    .unwrap();
+    let invalid_version = cli(
+        &root,
+        &[
+            "check",
+            "--no-config",
+            "--baseline",
+            "baseline.json",
+            "--json",
+        ],
+    );
+    assert_eq!(invalid_version.status.code(), Some(2));
+    let failure: serde_json::Value = serde_json::from_slice(&invalid_version.stdout).unwrap();
+    assert!(failure["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("unsupported baseline schema"));
+
+    let mut duplicate = original_json;
+    let entry = duplicate["entries"][0].clone();
+    duplicate["entries"].as_array_mut().unwrap().push(entry);
+    fs::write(
+        root.join("baseline.json"),
+        serde_json::to_vec(&duplicate).unwrap(),
+    )
+    .unwrap();
+    let duplicate_entry = cli(
+        &root,
+        &[
+            "check",
+            "--no-config",
+            "--baseline",
+            "baseline.json",
+            "--json",
+        ],
+    );
+    assert_eq!(duplicate_entry.status.code(), Some(2));
+    let failure: serde_json::Value = serde_json::from_slice(&duplicate_entry.stdout).unwrap();
+    assert!(failure["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("duplicate entries"));
     fs::remove_dir_all(root).unwrap();
 }

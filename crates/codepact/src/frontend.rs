@@ -1,4 +1,5 @@
 use ruff_python_ast::{
+    token::TokenKind,
     visitor::{walk_expr, walk_pattern, walk_stmt, Visitor},
     AnyParameterRef, Expr, Pattern, PythonVersion, Stmt,
 };
@@ -1682,6 +1683,49 @@ pub(crate) fn parse_frontend(
     })
 }
 
+/// Return a source view with CodePact policy comments removed. These comments
+/// affect report disposition, not semantic analysis, so keeping them out of
+/// Salsa semantic inputs lets policy-only edits reuse parsed and flow facts.
+/// Lexer token ranges keep `#` inside strings untouched. Newlines and code
+/// columns are preserved; absolute parser offsets are private to this view.
+pub(crate) fn semantic_source(source: &str) -> String {
+    let parsed = ruff_python_parser::parse_unchecked(
+        source,
+        ParseOptions::from(Mode::Module).with_target_version(PythonVersion::PY313),
+    );
+    let mut semantic = String::with_capacity(source.len());
+    let mut offset = 0usize;
+    for token in parsed.tokens() {
+        if token.kind() != TokenKind::Comment {
+            continue;
+        }
+        let start = token.start().to_usize();
+        let end = token.end().to_usize();
+        let comment = &source[start..end];
+        if !comment
+            .strip_prefix('#')
+            .unwrap_or(comment)
+            .trim_start()
+            .starts_with("codepact:")
+        {
+            continue;
+        }
+        let prefix = &source[offset..start];
+        let line_start = prefix.rfind(['\n', '\r']).map_or(0, |index| index + 1);
+        let code_end = line_start + prefix[line_start..].trim_end_matches([' ', '\t']).len();
+        semantic.push_str(&prefix[..code_end]);
+        semantic.push_str(
+            &source[start..end]
+                .chars()
+                .filter(|character| matches!(character, '\n' | '\r'))
+                .collect::<String>(),
+        );
+        offset = end;
+    }
+    semantic.push_str(&source[offset..]);
+    semantic
+}
+
 fn function_header_requires_boundary(
     function: &ruff_python_ast::StmtFunctionDef,
     safe_metadata_calls: &std::collections::BTreeSet<String>,
@@ -2385,6 +2429,35 @@ fn class_body_requires_boundary(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn semantic_source_removes_only_lexer_identified_codepact_comments() {
+        let source = concat!(
+            "literal = '# codepact: ignore[TP3001] -- text'\n",
+            "formatted = f\"{'# codepact: ignore[TP3001] -- text'}\"\n",
+            "fetch()  # codepact: ignore[TP3001] -- café\r\n",
+            "# codepact: malformed policy\r\n",
+            "# ordinary comment stays\r\n",
+        );
+        let semantic = semantic_source(source);
+
+        assert_eq!(
+            semantic.bytes().filter(|byte| *byte == b'\n').count(),
+            source.bytes().filter(|byte| *byte == b'\n').count()
+        );
+        assert_eq!(
+            semantic,
+            concat!(
+                "literal = '# codepact: ignore[TP3001] -- text'\n",
+                "formatted = f\"{'# codepact: ignore[TP3001] -- text'}\"\n",
+                "fetch()\r\n",
+                "\r\n",
+                "# ordinary comment stays\r\n",
+            )
+        );
+        assert!(semantic.contains("literal = '# codepact: ignore[TP3001] -- text'"));
+        assert!(semantic.contains("# codepact: ignore[TP3001] -- text"));
+    }
 
     fn snapshot(statements: &[FlowStatement], depth: usize, lines: &mut Vec<String>) {
         let indent = "  ".repeat(depth);

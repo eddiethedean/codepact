@@ -173,6 +173,7 @@ fn main() -> ExitCode {
                 "baseline_entries": 100000,
                 "report_bytes": 33554432,
                 "related_sites_per_finding": 32,
+                "source_snippet_bytes_per_finding": 2048,
                 "explanation_bytes_per_finding": 8192,
                 "max_input_files": codepact::DEFAULT_MAX_INPUT_FILES,
                 "max_source_bytes": DEFAULT_MAX_SOURCE_BYTES

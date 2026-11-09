@@ -48,12 +48,17 @@ before it can be marked Pass.
 | `must_use_forms_report_discard_and_accept_assignment_and_explicit_discard` in `crates/codepact/tests/phase04.rs` | V04-12 |
 | `must_use_tracks_local_captured_and_reexported_callable_identities` and `must_use_resolves_known_instance_static_and_class_methods` | V04-13 |
 | `must_use_reports_unsupported_nested_and_async_uses_without_mislabeling_arguments` | V04-14/15 |
-| `project_config_strict_mode_and_rule_selection_are_applied` and `settings_resolution_is_read_only_and_reports_origins` | V04-01/02, partial V04-03 |
-| `advisory_strict_and_mandatory_severity_follow_policy_contract` | V04-08 |
+| `nearest_config_wins_and_invalid_project_settings_fail_before_analysis`, `project_config_strict_mode_and_rule_selection_are_applied`, and `settings_resolution_is_read_only_and_reports_origins` | V04-01/02, partial V04-03 |
+| `includes_and_excludes_define_scope_and_explicit_operands_cannot_bypass_excludes` | Partial V04-03 |
+| `advisory_strict_and_mandatory_severity_follow_policy_contract` and `policy_truth_table_keeps_severity_certainty_coverage_and_rule_selection_separate` | V04-08 |
 | `line_suppression_is_reasoned_and_does_not_delete_the_audit_finding` and `invalid_suppressions_cannot_be_baselined_and_stale_targets_do_not_hide_findings` | V04-09/10 |
 | `baseline_update_is_explicit_and_baseline_only_hides_matching_results`, `baseline_preserves_unambiguous_sites_and_surfaces_inserted_duplicates`, and `baseline_inputs_and_replace_targets_are_validated_before_source_discovery` | V04-10/11 |
+| `suppression_targets_only_the_primary_start_line_and_retains_raw_findings` and `baseline_rejects_unsupported_versions_and_duplicate_entries_without_hiding_findings` | Partial V04-09/11 |
+| `adoption_policy_and_baseline_edits_reuse_canonical_session_queries` in `crates/codepact/src/db.rs` | Query-event reuse and fresh-result parity for selected V04-20 policy/suppression/baseline edits; partial V04-21 |
 | `output_policy_keeps_full_counts_and_concise_records_have_seven_fields` | Partial V04-06/19 |
 | `legacy_rust_check_keeps_its_rule_set_and_schema` | Compatibility boundary for V04-05 |
+| `capabilities_and_rule_explanations_publish_the_supported_surface_and_limits` | Partial V04-25 |
+| `semantic_source_removes_only_lexer_identified_codepact_comments` in `crates/codepact/src/frontend.rs` | Preserves string contents and line endings while separating policy-comment inputs for V04-20 |
 | `scripts/check_schema_fixtures.py` with `docs/schemas/fixtures/` | Schema syntax and the published valid/invalid examples for V04-05/25 |
 
 The focused Rust suite is `cargo test -p codepact --test phase04`. The schema

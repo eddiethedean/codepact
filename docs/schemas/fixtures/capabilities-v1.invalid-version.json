@@ -18,7 +18,8 @@
     "max_input_files": 10000,
     "max_source_bytes": 1000000,
     "related_sites_per_finding": 32,
-    "report_bytes": 33554432
+    "report_bytes": 33554432,
+    "source_snippet_bytes_per_finding": 2048
   },
   "python_targets": [
     "3.11",

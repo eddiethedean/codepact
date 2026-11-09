@@ -14,6 +14,10 @@ pub struct FileInput {
     pub module: String,
     #[returns(deref)]
     pub source: String,
+    /// Source consumed by semantic queries. Policy-only comments are removed
+    /// while preserving lines and code columns; raw source remains for reports.
+    #[returns(deref)]
+    pub semantic_source: String,
 }
 
 #[salsa::db]
@@ -54,7 +58,8 @@ pub fn parse_file(db: &dyn Db, file: FileInput, python_version: String) -> Parse
             absolute_imports: Vec::new(),
         };
     }
-    let parsed = crate::frontend::parse_frontend(file.source(db), file.module(db), &python_version);
+    let parsed =
+        crate::frontend::parse_frontend(file.semantic_source(db), file.module(db), &python_version);
     db.unwind_if_revision_cancelled();
     match parsed {
         Ok(frontend) => ParseSummary {
@@ -84,7 +89,7 @@ fn inspect_module_query(
     context_json: String,
     run_must_use: bool,
 ) -> String {
-    let source = SourceFile::new(file.path(db), file.module(db), file.source(db));
+    let source = SourceFile::new(file.path(db), file.module(db), file.semantic_source(db));
     let summary = parse_file(db, file, python_version.clone());
     let context: crate::semantic::ModuleContext =
         serde_json::from_str(&context_json).expect("module context serializes");
@@ -151,7 +156,7 @@ fn inspect_project_query(
         .iter()
         .fold(0usize, |total, (_, bytes)| total.saturating_add(*bytes));
     for file in files.iter().copied() {
-        let source = SourceFile::new(file.path(db), file.module(db), file.source(db));
+        let source = SourceFile::new(file.path(db), file.module(db), file.semantic_source(db));
         let summary = parse_file(db, file, python_version.clone());
         total_declarations = total_declarations
             .saturating_add(summary.declarations.as_ref().map_or(0, std::vec::Vec::len));
@@ -218,7 +223,7 @@ fn check_flow_file_query(
             SourceFile::new(
                 dependency.path(db),
                 dependency.module(db),
-                dependency.source(db),
+                dependency.semantic_source(db),
             )
         })
         .collect();
@@ -266,7 +271,7 @@ fn check_flow_query(
         serde_json::from_str(&model_catalog_json).expect("flow model catalog deserializes");
     let sources: Vec<_> = files
         .iter()
-        .map(|file| SourceFile::new(file.path(db), file.module(db), file.source(db)))
+        .map(|file| SourceFile::new(file.path(db), file.module(db), file.semantic_source(db)))
         .collect();
     let summaries: BTreeMap<_, _> = files
         .iter()
@@ -571,7 +576,8 @@ impl AnalysisSession {
         self.db = Database::default();
         self.files.clear();
         for (path, module, source) in inputs {
-            let input = FileInput::new(&self.db, path.clone(), module, source);
+            let semantic_source = crate::frontend::semantic_source(&source);
+            let input = FileInput::new(&self.db, path.clone(), module, source, semantic_source);
             self.files.insert(path, input);
         }
         self.mutations_since_reset = 0;
@@ -584,6 +590,7 @@ impl AnalysisSession {
 
     fn set_file_input(&mut self, path: String, module: String, source: String) -> bool {
         use salsa::Setter;
+        let semantic_source = crate::frontend::semantic_source(&source);
         if let Some(file) = self.files.get(&path).copied() {
             let mut changed = false;
             if file.module(&self.db) != module {
@@ -594,9 +601,13 @@ impl AnalysisSession {
                 file.set_source(&mut self.db).to(source);
                 changed = true;
             }
+            if file.semantic_source(&self.db) != semantic_source {
+                file.set_semantic_source(&mut self.db).to(semantic_source);
+                changed = true;
+            }
             changed
         } else {
-            let file = FileInput::new(&self.db, path.clone(), module, source);
+            let file = FileInput::new(&self.db, path.clone(), module, source, semantic_source);
             self.files.insert(path, file);
             true
         }
@@ -3802,5 +3813,187 @@ mod tests {
             .reasons
             .iter()
             .all(|reason| !reason.contains("flow work budget exceeded")));
+    }
+
+    #[test]
+    fn adoption_policy_and_baseline_edits_reuse_canonical_session_queries() {
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let root = std::env::temp_dir().join(format!(
+            "codepact-phase04-adoption-session-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let baseline_path = root.join("baseline.json");
+        let source = |suppressed: bool| {
+            SourceFile::new(
+                "main.py",
+                "main",
+                if suppressed {
+                    "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run():\n    fetch()  # codepact: ignore[TP3001] -- reviewed intentional discard\n"
+                } else {
+                    "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run():\n    fetch()\n"
+                },
+            )
+        };
+        let files = [source(false)];
+        let first = session.check_with_must_use(&files, "3.11");
+        let first = crate::CheckResult::from_inspection(first, "3.11");
+        assert!(first
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP3001"));
+        let mut config = crate::adoption::resolve_config(
+            &root,
+            &crate::adoption::Overrides {
+                no_config: true,
+                ..crate::adoption::Overrides::default()
+            },
+        )
+        .unwrap();
+        let error_threshold =
+            crate::adoption::build_report(first.clone(), &files, &config, None, None).unwrap();
+        assert_eq!(error_threshold.exit_code, 0);
+
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let reused = session.check_with_must_use(&files, "3.11");
+        let reused = crate::CheckResult::from_inspection(reused, "3.11");
+        let flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .count();
+        assert_eq!(
+            flow_queries, 0,
+            "policy changes must not execute semantic flow queries"
+        );
+        let fresh =
+            crate::CheckResult::from_inspection(crate::check_with_must_use(&files, "3.11"), "3.11");
+        assert_eq!(reused, fresh);
+        config.fail_on = "warning".into();
+        let warning_threshold =
+            crate::adoption::build_report(reused.clone(), &files, &config, None, None).unwrap();
+        assert_eq!(warning_threshold.exit_code, 1);
+        assert_eq!(
+            error_threshold.semantic_fingerprint,
+            warning_threshold.semantic_fingerprint
+        );
+        assert_ne!(
+            error_threshold.policy_fingerprint,
+            warning_threshold.policy_fingerprint
+        );
+        assert_eq!(
+            error_threshold.diagnostics[0].fingerprint,
+            warning_threshold.diagnostics[0].fingerprint
+        );
+
+        crate::adoption::write_baseline(
+            &baseline_path,
+            &reused,
+            &files,
+            &config,
+            false,
+            "capture existing finding",
+        )
+        .unwrap();
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let suppressed_files = [source(true)];
+        let suppressed_result = session.check_with_must_use(&suppressed_files, "3.11");
+        let suppressed_result = crate::CheckResult::from_inspection(suppressed_result, "3.11");
+        let suppressed_flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .count();
+        assert_eq!(
+            suppressed_flow_queries, 0,
+            "a suppression comment must reuse unchanged semantic flow facts"
+        );
+        let inline = crate::adoption::build_report(
+            suppressed_result.clone(),
+            &suppressed_files,
+            &config,
+            Some(&baseline_path),
+            None,
+        )
+        .unwrap();
+        assert!(inline
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.diagnostic.code == "TP3001"
+                && diagnostic.disposition == "suppressed-inline"));
+        let fresh = crate::CheckResult::from_inspection(
+            crate::check_with_must_use(&suppressed_files, "3.11"),
+            "3.11",
+        );
+        assert_eq!(suppressed_result, fresh);
+
+        let mut baseline: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&baseline_path).unwrap()).unwrap();
+        baseline["update_reason"] = serde_json::json!("baseline policy edit");
+        std::fs::write(&baseline_path, serde_json::to_vec(&baseline).unwrap()).unwrap();
+        executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        let unchanged = session.check_with_must_use(&suppressed_files, "3.11");
+        let unchanged = crate::CheckResult::from_inspection(unchanged, "3.11");
+        let baseline_flow_queries = executions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|key| key.contains("check_flow_file_query"))
+            .count();
+        assert_eq!(
+            baseline_flow_queries, 0,
+            "baseline bytes are report-policy inputs only"
+        );
+        let updated_baseline = crate::adoption::build_report(
+            unchanged,
+            &suppressed_files,
+            &config,
+            Some(&baseline_path),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            updated_baseline.baseline.update_reason.as_deref(),
+            Some("baseline policy edit")
+        );
+        assert_eq!(
+            inline.semantic_fingerprint,
+            updated_baseline.semantic_fingerprint
+        );
+        assert_ne!(
+            inline.policy_fingerprint,
+            updated_baseline.policy_fingerprint
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
