@@ -13,7 +13,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [0.1 implementation repair](phases/0.1/remediation.md) | Archived file-level repair plan; see the release evidence for completed work |
 | [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, released scope, V02 matrix and performance record |
 | [0.3 cleanup plan](phases/0.3-cleanup.md) | Maintainer-qualified phase gates, cleanup/async behavior, and pre-tag release evidence; publication not yet completed |
-| [0.4 adoption plan](phases/0.4-adoption.md) | Local implementation candidate, proposed AD01 decision, V04 matrix and pilot protocol; qualification and release pending |
+| [0.4 adoption plan](phases/0.4-adoption.md) | AD01 scope decision accepted; V04 matrix, pilot, qualification and release remain pending |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |

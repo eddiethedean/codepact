@@ -1,6 +1,6 @@
 # 0.4 pilot and onboarding protocol
 
-Status: **Proposed AD01 protocol; no projects selected, observations collected or acceptance claimed.** This defines the evidence needed for [A05/A06/CS02](../0.4-adoption.md) and [V04-26](validation.md), not a promise that every Python project is analyzable.
+Status: **AD01 accepted this protocol on 2026-11-09; no projects are selected and no observations or pilot acceptance are claimed.** It defines the evidence needed for [A05/A06/CS02](../0.4-adoption.md) and [V04-26](validation.md), not a promise that every Python project is analyzable.
 
 ## Selection before evaluation
 

@@ -1,6 +1,6 @@
 # 0.4 validation matrix
 
-Status: **Candidate implementation tests exist; all V04 rows and phase gates remain pending.** The references below are partial automated evidence, not full-row passes. No pilot results or measurements are claimed. IDs are independent of V01/V02/V03. The [specification](specification.md) supplies proposed AD01 oracles; the [phase plan](../0.4-adoption.md) maps work packages and A01–A08/CS02.
+Status: **AD01 scope is accepted; all V04 rows and technical phase gates remain pending.** The references below are partial automated evidence, not full-row passes. No pilot results or measurements are claimed. IDs are independent of V01/V02/V03. The [specification](specification.md) supplies the accepted AD01 contracts; the [phase plan](../0.4-adoption.md) maps work packages and A01–A08/CS02.
 
 ## Required matrix
 
@@ -81,7 +81,7 @@ No 0.4 measurements exist yet. Reuse the [released 0.3 baseline](../0.3/performa
 - Mode/severity/baseline/suppression edits in reused sessions, with query events and semantic-versus-report timings recorded separately.
 - All three pilots, including async cancellation/escape reporting; record supported scope and unknown boundaries alongside timing rather than implying whole-project coverage.
 
-AD01 must retain inherited analyzer budgets and freeze explicit caps for config/baseline bytes and entries, whole-report bytes, related-site/snippet detail and any new identity-matching work. Record precise exhaustion/recovery behavior before qualification; no unlimited parser, matcher or baseline loader is accepted by omission. Review performance and memory regressions against 0.3 before G4; explain accepted changes and retain the maintainer's decision. No latency threshold or result is fabricated by this plan.
+AD01 retains inherited analyzer budgets and freezes explicit caps for config/baseline bytes and entries, whole-report bytes, related-site/snippet detail and any new identity-matching work. Complete near-limit fixtures and record precise exhaustion/recovery behavior before qualification; no unlimited parser, matcher or baseline loader is accepted by omission. Review performance and memory regressions against 0.3 before G4 and explain accepted changes. No latency threshold or result is fabricated by this plan.
 
 ## Evidence ledger and acceptance
 
