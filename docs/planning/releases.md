@@ -2,10 +2,10 @@
 
 The predecessor TypePact 0.1.0 and 0.2.0 releases were published and verified
 under their original package and crate names. CodePact 0.3.0 is the first
-candidate using the new names; its release is not authorized. See the
-[historical 0.1.0 evidence](../releases/0.1.0-evidence.md),
-[historical 0.2.0 evidence](../releases/0.2.0-evidence.md), and current
-[0.3.0 candidate evidence](../releases/0.3.0-evidence.md).
+release using the new names; its published artifacts and passed gates are in
+the [0.3.0 release evidence](../releases/0.3.0-evidence.md). See also the
+[historical 0.1.0 evidence](../releases/0.1.0-evidence.md) and
+[historical 0.2.0 evidence](../releases/0.2.0-evidence.md).
 
 ## Release authority
 

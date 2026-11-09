@@ -1,22 +1,20 @@
 # Release notes
 
-## 0.3.0 — candidate, not released
+## 0.3.0 — published 2026-11-08
 
-This unreleased candidate extends lifecycle checking with bounded cleanup
-obligations. Its pre-tag qualification is recorded in the evidence linked below;
-this section describes candidate behavior and must not be read as a published
-support claim. See the [phase
+CodePact 0.3.0 extends lifecycle checking with bounded cleanup obligations.
+Its qualification and publication evidence are linked below. See the [phase
 plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md), [supported subset and
 limitations](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/specification.md), [validation
-matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/validation.md), [candidate evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md), and [candidate tutorial](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md).
+matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/validation.md), [release evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md), and [tutorial](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md).
 
-This is also the first CodePact release candidate. The Python distributions and
+This is the first CodePact release. The Python distributions and
 import, CLI distribution and executable, Rust crate and import, and GitHub
 repository use the `codepact` name. The previous 0.1.0 and 0.2.0 TypePact
 artifacts remain documented under their original names; compatibility aliases
-are not part of this candidate.
+are not provided.
 
-### Candidate behavior
+### Included behavior
 
 - TP1002 reports owned local resources left outstanding on modeled function
   exits. Direct `Owned[T]` returns and resolved owning helpers transfer the
@@ -34,7 +32,7 @@ are not part of this candidate.
   weakening captured or execution-affected resources.
 - A separate versioned check-result schema carries completion kind, certainty,
   trust, repair guidance, model metadata, and coverage information.
-- The candidate preserves distinct identities for repeated factory results,
+- CodePact preserves distinct identities for repeated factory results,
   executes only the specifically awaited coroutine, clears exception targets
   after their handlers, and routes failures from `raise ... from ...` causes
   through the correct exception path.
@@ -53,12 +51,11 @@ remain explicit boundaries. Exhausted work budgets weaken affected state and
 report incomplete coverage. Resource declarations remain static contracts, not
 proof that an external close operation succeeds at runtime.
 
-TP1002 is a new default diagnostic in the candidate and can make existing
+TP1002 is a new default diagnostic in 0.3.0 and can make existing
 `codepact check` commands exit with status 1 for definite outstanding duties.
 Possible findings and boundary-only reports continue to return 0; malformed or
-unrecoverable input returns 2. The candidate has not yet passed the 0.3
-qualification gates, and no package version has been published for this
-behavior.
+unrecoverable input returns 2. See the linked release evidence for the passed
+qualification gates and the exact published artifact hashes.
 
 ## 0.2.0 — published 2026-11-01
 

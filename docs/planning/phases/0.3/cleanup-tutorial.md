@@ -1,8 +1,8 @@
-# Preview 0.3 cleanup checking
+# 0.3 cleanup tutorial
 
-This tutorial exercises the unreleased phase 0.3 candidate from a source
-checkout. It is not a claim that 0.3 is release-qualified. The analyzer reads
-these files as source and never imports or executes the example program.
+This tutorial exercises published CodePact 0.3.0 cleanup behavior using a
+source checkout. The analyzer reads these files as source and never imports or
+executes the example program.
 
 The supported declaration says which method represents a successful close:
 

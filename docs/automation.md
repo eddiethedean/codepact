@@ -1,6 +1,6 @@
 # Automation and CI
 
-Use `inspect-contracts` as a declaration check for an explicit set of supported source files. CodePact 0.3.0 has passed pre-tag qualification but is not published yet; when installing it after publication, pin `codepact` 0.3.0 so the helper and analyzer stay aligned. The candidate also provides bounded lifecycle and cleanup checking with `check`.
+Use `inspect-contracts` as a declaration check for an explicit set of supported source files. CodePact 0.3.0 is published; pin `codepact` to 0.3.0 so the helper and analyzer stay aligned. The release also provides bounded lifecycle and cleanup checking with `check`.
 
 ## Run in a uv project
 
@@ -14,11 +14,11 @@ uv run --locked codepact inspect-contracts \
 
 This command uses the layout in the [multi-file tutorial](project-guide.md). Include every provider module required by the annotations you want to resolve.
 
-## Run the standalone CLI in GitHub Actions after publication
+## Run the standalone CLI in GitHub Actions
 
-After CodePact 0.3.0 is published, this job installs only the CLI tool and
-inspects that same source layout. To use the unreleased candidate, build from a
-CodePact checkout and record its Git revision:
+This job installs only the published CLI tool and inspects the same source
+layout. To build from source instead, check out a specific revision and record
+its Git SHA:
 
 ```yaml
 name: CodePact declarations
@@ -65,16 +65,15 @@ policy, see [report handling](ci-reporting.md).
 
 ## Check lifecycle behavior
 
-After CodePact 0.3.0 is published, install it and use a narrow root for the
-project to be analyzed:
+Install CodePact 0.3.0 and use a narrow root for the project to be analyzed:
 
 ```sh
 uv add codepact==0.3.0
 uv run --locked codepact check --root path/to/source --json > checking.json
 ```
 
-Replace the input path with your project's source directory. To test the current
-candidate, build from a CodePact checkout with Rust 1.96+ and record its Git SHA.
+Replace the input path with your project's source directory. To build the
+command from source, use Rust 1.96+ and record the checked-out Git SHA.
 
 Checking differs from inspection: possible findings and incomplete coverage alone
 return `0`. A report consumer must inspect certainty and coverage, preserve exit

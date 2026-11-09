@@ -1,8 +1,7 @@
 # Examples
 
-Each example has a narrow purpose. CodePact 0.3.0 is not published yet; run
-these examples from a repository checkout after `uv sync --locked`, using
-`uv run --locked codepact`.
+Each example has a narrow purpose. Install CodePact 0.3.0 with
+`uv add codepact==0.3.0`, then run the examples with `uv run --locked codepact`.
 
 | Example | What it demonstrates | How to run |
 | --- | --- | --- |

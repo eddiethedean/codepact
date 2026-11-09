@@ -6,7 +6,7 @@ and lifecycle checking:
 1. The `codepact` Python package offers `resource` and `Annotated` metadata. Importing it does not load or launch the analyzer.
 2. The `codepact-cli` package distributes the native Rust `codepact` command.
 3. The Rust library parses supplied source text, resolves supported declaration relationships, and emits contracts, diagnostics, and coverage.
-4. The CodePact 0.3 candidate runs a bounded flow pass over module statements and supported synchronous and async bodies to produce lifecycle and cleanup findings.
+4. CodePact 0.3.0 runs a bounded flow pass over module statements and supported synchronous and async bodies to produce lifecycle and cleanup findings.
 
 ## Source is not executed
 

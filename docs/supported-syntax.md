@@ -61,12 +61,11 @@ fields and containers, returned aliases, dynamic dispatch, relative and star
 imports, import cycles, and ambiguous modules remain outside the released
 subset. Consult [limitations](limitations.md).
 
-## Unreleased 0.3 candidate behavior
+## CodePact 0.3.0 cleanup behavior
 
-The current worktree extends cleanup checking across supported synchronous exit
-paths. These behaviors are implemented and covered by candidate tests, but are
-not release-qualified until the maintainer completes the [V03 matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/validation.md)
-and release gates.
+CodePact 0.3.0 extends cleanup checking across supported synchronous exit
+paths. The [V03 matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/validation.md)
+and release gates record the qualified behavior.
 
 - `try`/`except`/`else`/`finally`, explicit returns and raises, and ordinary
   `while` flow retain cleanup duties across modeled exits. Unsupported or
@@ -133,13 +132,13 @@ The published 0.2 checker used these additional conservative flow limits:
 | Nested call/effect evaluation | 8 |
 | Lifecycle statement and expression transfers per analysis request | 100,000 |
 
-The 0.3 candidate additionally caps total nested control-flow depth at 64,
+CodePact 0.3.0 additionally caps total nested control-flow depth at 64,
 loop fixed-point analysis at 16 passes, exact static tuple iteration at 16
 items, context-exit partitions at 256 per unwind, and pending coroutine
 records at 128 per flow state. The 64-depth cap is stricter than the historical
 128 nested-`if` cap. Exceeding any bound widens affected state and reports
-incomplete coverage. CL01 defaults were accepted and pre-tag qualification is
-recorded in the release evidence; the candidate remains unpublished. See the
+incomplete coverage. CL01 defaults were accepted and release qualification is
+recorded in the release evidence. See the
 [phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
 
 When a flow limit is reached, the checker drops the affected exact facts,

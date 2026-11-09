@@ -1,6 +1,6 @@
 # 0.3 validation matrix
 
-Status: **Automated implementation coverage is mapped below; current gate statuses are in the release evidence.** IDs are independent of V01/V02. The [specification](specification.md) is the candidate oracle; the [phase plan](../0.3-cleanup.md) defines CL01–CL08 and C01–C05/C07/CS01. Test presence is implementation evidence only: a mapped row is not itself a passed qualification gate.
+Status: **Automated implementation coverage is mapped below; phase-gate qualification and publication are complete as recorded in the release evidence.** IDs are independent of V01/V02. The [specification](specification.md) defines the released semantic oracle; the [phase plan](../0.3-cleanup.md) defines CL01–CL08 and C01–C05/C07/CS01. Test presence is implementation evidence; the release record contains maintainer qualification for each gate.
 
 ## Required matrix
 
@@ -165,12 +165,11 @@ the final exact-candidate workflow is linked from the
 [release evidence record](../../../releases/0.3.0-evidence.md). The exact-candidate
 artifact qualification and credential confirmation are recorded there.
 
-The [0.3 performance record](performance.md) retains historical pre-fix results and includes fixed-candidate cleanup, lifecycle, inspector and memory measurements. The full local check covers query reuse and budget regressions. The accountable maintainer accepted G4 on 2026-11-08; a completed budget table is not an absolute latency guarantee.
+The [0.3 performance record](performance.md) retains historical pre-fix results and includes released-code cleanup, lifecycle, inspector and memory measurements. The full local check covers query reuse and budget regressions. The accountable maintainer accepted G4 on 2026-11-08; a completed budget table is not an absolute latency guarantee.
 
-The runnable [candidate cleanup tutorial](cleanup-tutorial.md) demonstrates synchronous exit obligations and async cancellation findings with separate fixtures and expected CLI outcomes.
+The runnable [cleanup tutorial](cleanup-tutorial.md) demonstrates synchronous exit obligations and async cancellation findings with separate fixtures and expected CLI outcomes.
 
-The fixed CodePact 0.3 candidate has passed local `make check`, Quality CI and
-non-publishing current-candidate artifact verification. The V03 matrix maps
-automated coverage; phase-specific gate qualification and G1–G7 are recorded
-in the release evidence. Record G8 after authorized publication using the
-[common evidence template](../../release-evidence-template.md).
+CodePact 0.3.0 passed local `make check`, tag-triggered Quality CI and the
+release workflow, including all publisher jobs. The V03 matrix maps automated
+coverage; phase-gate qualification, published artifact digests, clean installs
+and maintainer approval are recorded in the [release evidence](../../../releases/0.3.0-evidence.md).

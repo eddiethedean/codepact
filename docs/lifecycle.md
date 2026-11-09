@@ -1,14 +1,13 @@
 # Check a resource lifecycle
 
 The historical TypePact 0.2.0 release introduced its `typepact check` command
-for a bounded subset of normal synchronous Python execution. The CodePact
-0.3.0 candidate uses the renamed `codepact check` command and adds cleanup
-obligations across supported exits. It has not been published.
+for a bounded subset of normal synchronous Python execution. CodePact 0.3.0
+publishes the renamed `codepact check` command and adds cleanup obligations
+across supported exits.
 
 ## Install and run
 
-After CodePact 0.3.0 is published, install the matching helper and CLI packages
-in your project:
+Install the matching helper and CLI packages in your project:
 
 ```sh
 uv add codepact==0.3.0
@@ -83,12 +82,11 @@ uv run codepact check --root demo --json
 
 Read both `diagnostics` and `coverage`. A successful exit can include possible
 findings or incomplete analysis. The historical TypePact 0.2.0 checker used
-`assurance: "lifecycle-checking-for-supported-normal-flow"`; the CodePact
-candidate uses `lifecycle-checking-for-supported-exit-flow`. Declaration
-provenance remains `declared-unverified`. Candidate 0.3 additionally bounds
-loop fixed-point analysis to 16 passes, finite tuple loops to 16 items, and
-pending coroutine records to 128 per flow state. These are implementation
-defaults awaiting qualification. See the
+`assurance: "lifecycle-checking-for-supported-normal-flow"`; CodePact 0.3.0
+uses `lifecycle-checking-for-supported-exit-flow`. Declaration provenance
+remains `declared-unverified`. CodePact 0.3.0 bounds loop fixed-point analysis
+to 16 passes, finite tuple loops to 16 items, and pending coroutine records to
+128 per flow state. See the
 [output reference](output.md).
 
 ## Choose a narrow project root
@@ -102,10 +100,10 @@ directories; see the [CLI reference](cli.md).
 These limits describe the historical TypePact 0.2.0 checker. Its released
 behavior did not model loops, exception handlers, `finally`, context managers,
 async suspension, fields and containers, or returned resource aliases
-precisely. The CodePact 0.3.0 candidate extends bounded exit flow and cleanup;
+precisely. CodePact 0.3.0 extends bounded exit flow and cleanup;
 exact finite tuple loops,
 resolved local close bodies, and directly awaited coroutine calls are included
-in the candidate subset. Its remaining boundaries are listed in the [0.3
+in the released subset. Its remaining boundaries are listed in the [0.3
 specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/specification.md).
 Recursive calls still recover to an unknown summary. A clean result does not
 establish leak freedom, cleanup on every exit, ownership safety, or correctness

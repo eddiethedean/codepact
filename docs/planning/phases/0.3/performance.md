@@ -1,6 +1,6 @@
-# 0.3 candidate performance record
+# 0.3 performance record
 
-Status: **Fixed-candidate measurements collected and accepted for G4 by the accountable maintainer on 2026-11-08.** The historical tables are retained for comparison. Measurements below use the current analyzer implementation, including the four correctness fixes described later. Current pre-tag decisions are recorded in the release evidence; publication remains pending.
+Status: **Measurements collected and accepted for G4 by the accountable maintainer on 2026-11-08. CodePact 0.3.0 is published.** The historical tables are retained for comparison. Measurements below use the released analyzer implementation, including the four correctness fixes described later. The release qualification and publication are recorded in the release evidence.
 
 ## Environment and method
 

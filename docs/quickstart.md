@@ -2,7 +2,7 @@
 
 This example declares that a `Connection` is closed by `close`, then describes how two functions intend to access it.
 
-The CodePact 0.3.0 candidate is not published yet. Clone the [repository](https://github.com/eddiethedean/codepact), run `uv sync --locked`, and use the local `codepact` command. After publication, install the helpers and command with `uv add codepact==0.3.0`. See [installation](install.md) for standalone CLI and platform requirements.
+Install CodePact 0.3.0 with `uv add codepact==0.3.0`, then run the examples with `uv run codepact`. The helper package installs the matching CLI automatically. See [installation](install.md) for standalone CLI, Rust crate, and platform requirements.
 
 Save the code as `connection.py`:
 
@@ -54,7 +54,7 @@ Continue with the [multi-file tutorial](project-guide.md) to resolve declaration
 
 The historical TypePact 0.2.0 release introduced `check` for direct
 construction, local aliases, normal synchronous calls, and `if`/`else` joins.
-The CodePact 0.3.0 candidate expands checking to cleanup and exceptional exits.
+CodePact 0.3.0 expands checking to cleanup and exceptional exits.
 
 Follow the [lifecycle tutorial](lifecycle.md) to reproduce a use after close,
 read its related close location, and make the example pass.

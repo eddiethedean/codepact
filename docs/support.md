@@ -1,7 +1,7 @@
 # Support and maintenance
 
-CodePact is an early 0.x project. Its 0.3.0 candidate adds bounded cleanup
-checking but is not published. The published 0.1.0 and 0.2.0 releases used the
+CodePact is an early 0.x project. Its published 0.3.0 release adds bounded
+cleanup checking. The 0.1.0 and 0.2.0 releases used the
 TypePact name and package identifiers. APIs, diagnostics, and schema remain
 provisional during the 0.x series.
 

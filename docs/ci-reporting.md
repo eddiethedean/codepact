@@ -21,8 +21,8 @@ Treat status `2` as an invocation or input failure. See the
 ## Check lifecycle behavior
 
 The historical TypePact 0.2.0 `check` command returned status `1` for definite
-lifecycle violations or declaration errors. The CodePact 0.3.0 candidate adds
-cleanup obligations to that behavior and has not been published. Possible
+lifecycle violations or declaration errors. CodePact 0.3.0 adds cleanup
+obligations to that behavior. Possible
 findings and incomplete coverage alone can return `0`; do not mistake a
 successful status for complete coverage.
 

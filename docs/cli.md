@@ -2,9 +2,9 @@
 
 The `codepact` command inspects declarations or checks resource lifecycles in Python source without importing or executing the project.
 
-The published TypePact 0.2.0 release used the `typepact` command. CodePact's
-renamed `codepact` command is in the unreleased 0.3.0 candidate; build it from a
-checkout using [installation instructions](install.md). See the
+The published TypePact 0.2.0 release used the `typepact` command. CodePact 0.3.0
+publishes the renamed `codepact` command; install it using the
+[installation instructions](install.md). See the
 [availability guide](availability.md) and [lifecycle tutorial](lifecycle.md).
 
 ## Commands
@@ -77,9 +77,9 @@ not currently provide dependency-only discovery.
 
 For `check`, status `1` means a definite lifecycle violation or declaration error was found; possible findings and bounded coverage warnings alone return `0`. Status `0` does not establish safety outside the supported subset. See [result fields](output.md) for machine-readable coverage and diagnostic details.
 
-## Unreleased 0.3 worktree
+## CodePact 0.3.0 behavior
 
-The current 0.3 candidate extends `check` to bounded cleanup obligations across
+CodePact 0.3.0 extends `check` to bounded cleanup obligations across
 returns, raises, supported exception handlers, loops, `finally`, exact
 `contextlib.closing`/`aclosing` imports, and resolved local coroutine calls
 that are directly awaited once. Each awaited call is matched to its own
@@ -90,7 +90,6 @@ flow state retains up to 128 pending coroutine records. It prints
 completion, certainty, trust, coverage reason and repair guidance. With
 `--json`, it emits the separately versioned `check_schema_version: 1` result
 described in the [output reference](output.md); `inspect-contracts` keeps its
-inspection schema. These behaviors and the new check result remain unqualified
-until the maintainer completes the 0.3 matrix and release gates. See the [0.3
+inspection schema. The release qualification is recorded in the [0.3
 cleanup plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
 It does not provide a general lifetime, escape, or task-completion proof.

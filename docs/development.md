@@ -79,7 +79,7 @@ Read the Docs uses `.readthedocs.yaml` at the repository root. Connect the GitHu
 - Update documentation when changing the contract API, CLI, schema, supported Python targets, or limits.
 - Do not execute inspected Python files as part of analysis.
 
-See [CONTRIBUTING.md](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) for repository guidance. The historical TypePact 0.2.0 release procedure is in [the release checklist](https://github.com/eddiethedean/codepact/blob/main/docs/planning/release-0.2.0-checklist.md); the CodePact 0.3.0 candidate record tracks the current workflow.
+See [CONTRIBUTING.md](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) for repository guidance. The historical TypePact 0.2.0 release procedure is in [the release checklist](https://github.com/eddiethedean/codepact/blob/main/docs/planning/release-0.2.0-checklist.md); the [CodePact 0.3.0 release record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md) documents its completed qualification and publication workflow.
 
 ## Measure the release baseline
 

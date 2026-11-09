@@ -2,9 +2,9 @@
 
 ## Which version can I install now?
 
-CodePact 0.3.0 is an unreleased candidate. It provides declaration inspection,
-lifecycle checking, and bounded cleanup obligations. The last published
-release was TypePact 0.2.0 under the former package names. See
+CodePact 0.3.0 is published on PyPI and crates.io. It provides declaration
+inspection, lifecycle checking, and bounded cleanup obligations. The previous
+0.1.0 and 0.2.0 releases used the former package names. See
 [availability](availability.md).
 
 ## Does CodePact import or run my application?
@@ -16,8 +16,8 @@ CodePact's CLI does not import that application.
 
 ## Does a clean result prove my resources are safe?
 
-No. Contract facts have `declared-unverified` provenance. The CodePact
-candidate checks a bounded subset of lifecycle and cleanup flow. Neither mode
+No. Contract facts have `declared-unverified` provenance. CodePact checks a
+bounded subset of lifecycle and cleanup flow. Neither mode
 proves that a method releases a runtime resource, that cleanup occurs on every
 possible exit, or that ownership is generally safe.
 
@@ -44,12 +44,11 @@ and [limitations](limitations.md), then inspect `coverage.reasons`.
 
 ## Will I need Rust to install the CodePact command?
 
-The release configuration provides native CLI wheels for supported platforms,
-which do not need Rust at installation. The current 0.3 candidate's wheels and
-source archives have passed the non-publishing build and artifact checks;
-pre-tag qualification is recorded in the [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md).
-Building the candidate from
-source requires Rust 1.96 or newer and a linker. See [installation](install.md).
+The 0.3.0 release provides native CLI wheels for supported platforms, which do
+not need Rust at installation. The published wheels and source archives passed
+build, digest, install, and smoke checks recorded in the [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md).
+Building from source requires Rust 1.96 or newer and a linker. See
+[installation](install.md).
 
 ## Which Python version is analyzed?
 

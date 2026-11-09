@@ -1,10 +1,11 @@
 # Rust API reference
 
-The `codepact` crate exposes the same inspector and lifecycle checker used by the command-line program. CodePact 0.3.0 is an unreleased candidate; the crate has not been published.
+The published `codepact` crate exposes the same inspector and lifecycle checker used by the command-line program. CodePact 0.3.0 is available on crates.io.
 
 ## Install
 
-Build the crate from the repository root:
+Add the released crate to a Cargo project with `cargo add codepact@0.3.0`. To
+build the workspace crate from source, run this from the repository root:
 
 ```sh
 cargo build --locked -p codepact
@@ -47,26 +48,28 @@ def read(conn: Borrowed[Connection]) -> str: ...
 
 ## Lifecycle checking
 
-The historical TypePact 0.2.0 crate exposed `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. The CodePact candidate retains those methods and adds cleanup-aware checking. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
+The historical TypePact 0.2.0 crate exposed `check(files, target)`, `AnalysisSession::check`, and cancellable/revision-tagged `AnalysisSession::check_cancellable`. CodePact 0.3.0 retains those methods and adds cleanup-aware checking. Incomplete coverage and diagnostic certainty remain part of the result; a clean report is not a general resource-safety proof.
 
 The host supplies all
 `SourceFile` values for checking: filesystem discovery belongs to the CLI adapter,
 not to `check`. Consult the [lifecycle tutorial](lifecycle.md) for modeled behavior
 and the [output reference](output.md) for certainty and coverage interpretation.
 
-The unreleased 0.3 worktree extends checking to modeled return, raise, loop and
+CodePact 0.3.0 extends checking to modeled return, raise, loop and
 cleanup exits and uses the provisional assurance string
-`lifecycle-checking-for-supported-exit-flow`. Its cleanup gates remain pending;
-this worktree is not a 0.3 release qualification claim.
+`lifecycle-checking-for-supported-exit-flow`. Its qualified behavior and
+release evidence are recorded in the [0.3.0 release record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md).
 
-The worktree also exposes `check_report(files, target)` and
+The crate also exposes `check_report(files, target)` and
 `AnalysisSession::check_report`, returning `CheckResult` with
 `check_schema_version: 1`. Its checker diagnostics add completion kind, trust,
 coverage reason and repair guidance while declaration inspection remains schema
 version 0. The result includes the selected Python target and versioned built-in
-model catalog. `AnalysisSession::check_report_cancellable` returns a
+model catalog. The [`codepact` 0.3.0 rustdoc](https://docs.rs/codepact/0.3.0/codepact/)
+documents the published API. `AnalysisSession::check_report_cancellable` returns a
 revision-tagged `SessionCheckResult`. `check` continues returning `Inspection`
-for source compatibility. This API is pre-release and does not qualify 0.3.
+for source compatibility. The 0.x API remains provisional and may change in a
+future release.
 
 ## Incremental analysis session
 
@@ -124,16 +127,16 @@ An `Ok` return does not establish successful declaration analysis. Check the ret
 ## Public types and limits
 
 The crate root exports the following result and input types. The 0.x API is
-provisional. Rustdoc for the published TypePact 0.2.0 crate remains at
-[`typepact` 0.2.0](https://docs.rs/typepact/0.2.0/typepact/); CodePact rustdoc
-will be available after the new crate is published.
+provisional. Rustdoc for the historical TypePact 0.2.0 crate remains at
+[`typepact` 0.2.0](https://docs.rs/typepact/0.2.0/typepact/); CodePact 0.3.0
+rustdoc is available at [`codepact` 0.3.0](https://docs.rs/codepact/0.3.0/codepact/).
 
 | Type or function | Purpose |
 | --- | --- |
 | `SourceFile { path, module, source }` | One source snapshot item; `SourceFile::new(path, module, source)` accepts values convertible to `String` |
 | `inspect(files, python_version) -> Inspection` | One-shot declaration inspection |
 | `check(files, python_version) -> Inspection` | Lifecycle checking for the supported subset |
-| `check_report(files, python_version) -> CheckResult` | Unreleased 0.3 checker result with its own schema version and cleanup metadata |
+| `check_report(files, python_version) -> CheckResult` | 0.3.0 checker result with its own schema version and cleanup metadata |
 | `AnalysisSession` | Reusable database for full-snapshot updates, inspection, and checking |
 | `AnalysisSession::check_report(files, target)` | Versioned check result for the current full input snapshot |
 | `SessionInspection { revision, inspection }` | Result plus the session revision used for analysis |
@@ -143,7 +146,7 @@ will be available after the new crate is published.
 | `SessionInputError` | `FileLimitExceeded`, `SourceLimitExceeded`, or `TotalSourceLimitExceeded` from `set_file` |
 | `CancellationToken` | `cancel()` requests cancellation; `is_cancelled()` reports its state |
 | `Span`, `Provenance`, `Lifecycle`, `Contract`, `Diagnostic`, `Coverage`, `Inspection` | Inspection result model types; fields are public and serializable |
-| `CheckResult`, `CheckDiagnostic`, `CheckModelMetadata` | Unreleased 0.3 versioned checker result model |
+| `CheckResult`, `CheckDiagnostic`, `CheckModelMetadata` | 0.3.0 versioned checker result model |
 | `is_python_identifier(value, python_version) -> bool` | Checks an identifier against the selected analyzer target's Unicode rules |
 
 The crate root also exports `SCHEMA_VERSION`, `CHECK_SCHEMA_VERSION`,

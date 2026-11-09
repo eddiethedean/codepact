@@ -30,14 +30,13 @@ measured regression with its limitations; these results describe one host and
 are not performance guarantees. Do not apply the 0.1.0 numbers to lifecycle
 checking or another platform.
 
-## 0.3 candidate measurements
+## 0.3.0 release measurements
 
-The [0.3 performance record](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/performance.md) contains
-cleanup, cancellation, lifecycle, query-reuse, and memory measurements. Those
-timings were collected before the current correctness fixes to allocation
-identity, direct-await matching, exception-target cleanup, and raise-cause
-evaluation. They do not qualify the current analyzer revision; G4 remains
-pending until measurements are refreshed for that revision.
+The [0.3.0 performance record](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/performance.md) contains
+cleanup, cancellation, lifecycle, query-reuse, and memory measurements for the
+released analyzer, including the correctness fixes to allocation identity,
+direct-await matching, exception-target cleanup, and raise-cause evaluation.
+Earlier pre-fix measurements remain available there for historical comparison.
 
 ## Practical guidance
 
