@@ -2,6 +2,8 @@ from pathlib import Path
 import re
 import unittest
 
+from scripts.verify_release_distributions import normalize_license_text
+
 
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/release.yml"
 ROOT = WORKFLOW.parents[2]
@@ -24,6 +26,12 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn('license-files = ["LICENSE"]', project)
         self.assertEqual(
             (ROOT / "cli/LICENSE").read_bytes(), (ROOT / "LICENSE").read_bytes()
+        )
+
+    def test_license_text_comparison_accepts_windows_line_endings(self) -> None:
+        self.assertEqual(
+            normalize_license_text(b"MIT License\r\n\r\nCopyright\r\n"),
+            normalize_license_text(b"MIT License\n\nCopyright\n"),
         )
 
     def test_tag_only_pypi_publishers_fail_closed_on_the_api_token_secret(self) -> None:

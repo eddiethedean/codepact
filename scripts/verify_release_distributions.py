@@ -21,10 +21,15 @@ PLATFORMS = {
 }
 
 
+def normalize_license_text(contents: bytes) -> bytes:
+    return contents.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
 def verify(directory: Path, version: str) -> None:
     root = Path(__file__).resolve().parents[1]
-    license_text = (root / "LICENSE").read_bytes()
-    if (root / "cli/LICENSE").read_bytes() != license_text:
+    license_text = normalize_license_text((root / "LICENSE").read_bytes())
+    cli_license_text = normalize_license_text((root / "cli/LICENSE").read_bytes())
+    if cli_license_text != license_text:
         raise ValueError("CLI license file must match the repository license")
     wheels = sorted(directory.glob("*.whl"))
     sources = sorted(directory.glob("*.tar.gz"))
@@ -60,7 +65,8 @@ def verify(directory: Path, version: str) -> None:
                 ]
                 if (
                     len(license_files) != 1
-                    or archive.read(license_files[0]) != license_text
+                    or normalize_license_text(archive.read(license_files[0]))
+                    != license_text
                     or "LICENSE" not in metadata.get_all("License-File", [])
                 ):
                     raise ValueError("Helper wheel must include the MIT license text")
@@ -98,7 +104,8 @@ def verify(directory: Path, version: str) -> None:
             ]
             if (
                 len(license_files) != 1
-                or archive.read(license_files[0]) != license_text
+                or normalize_license_text(archive.read(license_files[0]))
+                != license_text
                 or "LICENSE" not in metadata.get_all("License-File", [])
             ):
                 raise ValueError(
@@ -144,7 +151,10 @@ def verify(directory: Path, version: str) -> None:
             matching_license = False
             for member_name in license_members:
                 member = archive.extractfile(member_name)
-                if member is not None and member.read() == license_text:
+                if (
+                    member is not None
+                    and normalize_license_text(member.read()) == license_text
+                ):
                     matching_license = True
                     break
             if not matching_license:
