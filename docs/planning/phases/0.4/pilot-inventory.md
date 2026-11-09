@@ -1,8 +1,10 @@
 # 0.4 pilot project inventory and preregistration
 
-Status: **Project set, candidate revision, rules, scope and sampling method
-frozen on 2026-11-09 before any candidate analysis of the selected repositories.**
-This is a preregistration, not a pilot result or A05 pass.
+Status: **The initial project set, candidate revision, rules, scope and sampling
+method were frozen on 2026-11-09 before their analysis.** A dated amendment below
+adds all preregistered expansion candidates after two completed initial scans
+returned no eligible findings and a third failed before analysis. This is not a
+pilot result or A05 pass.
 
 ## Frozen CodePact evaluation
 
@@ -82,8 +84,8 @@ frozen run.
 
 The following facts were recorded from the pinned metadata, README, project
 documentation, test configuration and CI workflow files before the first
-CodePact scan. They characterize the frozen sample; they cannot be used to
-replace a project after seeing findings.
+CodePact scan. They characterize the initial frozen sample; they cannot be used
+to replace a project after seeing findings.
 
 | Project snapshot | Python support and source layout | Documented resource / async patterns | Test and CI route; explicit analysis boundaries |
 | --- | --- | --- | --- |
@@ -92,7 +94,32 @@ replace a project after seeing findings.
 | Uvicorn, commit `a99c1b76ee9caea67ff98e2ccc457bd372db193f`, tree `8fbdd8d45f2ad93f09b5524237d769a524cee086` | `>=3.11`; `uvicorn`: 45 Python files / 279,829 bytes; `tests`: 39 / 349,742 bytes. | Documentation describes ASGI lifespan startup/shutdown resource setup, a sibling lifespan task, waiting for pending requests/background tasks at shutdown, connection limits and cancellation-related behavior. TaskGroup/detached-task ownership remains outside CodePact's accepted scope. | CI covers Python 3.11–3.15 and Windows/Linux/macOS using `scripts/install`, `scripts/check`, `scripts/build`, `scripts/test` and `scripts/coverage`. Runtime dependencies include click and h11; optional protocol, event-loop and watcher dependencies remain external boundaries. No project scripts, tests or dependencies are run. |
 
 The initial source checkouts were clean at these exact revisions. The selected
-target is Python 3.11 for all three. No CodePact output has been examined yet.
-The individual scorecards and raw reports belong in the 0.4 pilot evidence
-folder and must link back to this preregistration and the exact candidate
-revision.
+target is Python 3.11 for all three. No CodePact output had been examined when
+this initial set was frozen. The individual scorecards and raw reports belong
+in the 0.4 pilot evidence folder and must link back to this preregistration and
+the exact candidate revision.
+
+## Expansion amendment — 2026-11-09, before expansion scans
+
+The two completed initial reports (Requests and Uvicorn) contained zero
+definite findings from the five selected stable rules. The pip invocation
+failed before analyzing files: full default discovery included
+`build-project/build-project.py`, but the candidate requires every path
+component to be a Python identifier when deriving a module name. Therefore the
+initial eligible population is **not known** and the preregistered
+`population < 30` condition cannot be asserted. To avoid labeling or selecting
+from an incomplete population, this amendment includes **all three**
+alternatives already listed above before any scan of those alternatives and
+retains every initial project and result. The reason for this nonselective
+expansion is the incomplete initial analysis; it does not establish A05 or
+qualify the path-mapping behavior. Reports from the original candidate remain
+separate from any future candidate rerun.
+
+| Project snapshot | Python support and full-discovery Python files | Documented resource / async patterns | Test and CI route; explicit analysis boundaries |
+| --- | --- | --- | --- |
+| Flask, commit `49943b5a94413a530761350f04e896f76e8d620e`, tree `6751ab7eae06e6f97a157860470fd588920a734b` | `>=3.11`; `src`: 24 files / 350,348 bytes; `tests`: 41 / 217,229 bytes; `examples`: 17 / 20,292 bytes; `docs`: 1 / 3,386 bytes. | Docs describe request/application teardown and closing resources. Async views run in a per-request event loop; unfinished spawned tasks are cancelled when the view completes. | GitHub Actions uses `uv run --locked --no-default-groups --group dev tox run`, including pytest environments and typing checks, across Python and OS matrices. Runtime dependencies, project setup and tests are not run; external extension behavior is not qualified. |
+| Click, commit `8abb77a8432e03ed14a95f972b44f905279415a7`, tree `84808be7a7674fe64b97f058372ae36a14b9eca6` | `>=3.10`; `src`: 17 files / 453,243 bytes; `tests`: 59 / 522,706 bytes; `examples`: 14 / 29,648 bytes; `docs`: 1 / 1,996 bytes. | Docs describe `Context.with_resource` and `Context.call_on_close`; registered resources are closed when the CLI exits. | GitHub Actions uses tox/pytest and typing checks through locked uv environments over Python and OS matrices. Runtime dependencies, project setup and tests are not run; third-party command/resource behavior is not qualified. |
+| FastAPI, commit `534961812bef29ad80d2f7c399e52c688e8a0d57`, tree `3cec183c579a4efb69b34bf737c45631f5ed9271` | `>=3.10`; `fastapi`: 52 files / 834,473 bytes; `tests`: 649 / 3,434,897 bytes; `docs_src`: 485 / 223,100 bytes; `scripts`: 34 / 134,206 bytes. | Docs recommend an async-context-manager lifespan for startup resource setup and shutdown cleanup; legacy startup/shutdown handlers are also documented. | GitHub Actions runs pytest with uv across Python/OS and dependency-source matrices. Runtime dependencies, project setup and tests are not run; external ASGI server, Starlette and Pydantic behavior is not qualified. |
+
+These checkouts were clean at the pinned revisions; their trees and metadata
+were captured before analysis. The same frozen candidate `620656b8a8a28ac57a29e589164dc9b58c8141d8`, Python 3.11 target, rules, policy, full default discovery, execution boundaries, eligibility definition, and sampling method apply to all six projects. No findings, labels, or source-level samples were examined in any expansion project at amendment time. The pip failure is retained as a candidate execution failure; no path exclusion or project-specific configuration is introduced to hide it.
