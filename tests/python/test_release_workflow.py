@@ -54,6 +54,17 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("scripts/verify_release_distributions.py", validate)
         self.assertIn("scripts/smoke_release_distributions.py", validate)
 
+    def test_release_installs_wheels_on_every_supported_python_before_publishing(
+        self,
+    ) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        matrix = job_section(workflow, "smoke-python-wheels")
+        self.assertIn("python-version: ['3.11', '3.12', '3.13', '3.14']", matrix)
+        self.assertIn("--wheel-only", matrix)
+        for publisher in ("publish-cli", "publish-codepact", "publish-crates"):
+            with self.subTest(publisher=publisher):
+                self.assertIn("smoke-python-wheels", job_section(workflow, publisher))
+
 
 if __name__ == "__main__":
     unittest.main()

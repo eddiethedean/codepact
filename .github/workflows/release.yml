@@ -205,7 +205,7 @@ jobs:
 
   publish-cli:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    needs: validate-artifacts
+    needs: [validate-artifacts, smoke-python-wheels]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -232,9 +232,35 @@ jobs:
           password: ${{ secrets.PYPI_API_TOKEN }}
           attestations: false
 
+  smoke-python-wheels:
+    needs: [metadata, validate-artifacts]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: verified-codepact-distributions
+          path: dist
+      - name: Install the locked validation environment and smoke the native and helper wheels
+        run: |
+          uv sync --locked --no-install-workspace
+          uv run --locked --no-sync python scripts/smoke_release_distributions.py dist --version '${{ needs.metadata.outputs.version }}' --wheel-only
+
   publish-codepact:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    needs: [validate-artifacts, publish-cli]
+    needs: [validate-artifacts, smoke-python-wheels, publish-cli]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -263,7 +289,7 @@ jobs:
 
   publish-crates:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    needs: validate-artifacts
+    needs: [validate-artifacts, smoke-python-wheels]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1

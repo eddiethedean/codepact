@@ -86,7 +86,7 @@ def exercise(environment: Path, workdir: Path, env: dict[str, str]) -> None:
     )
 
 
-def smoke(directory: Path, version: str) -> None:
+def smoke(directory: Path, version: str, *, wheel_only: bool = False) -> None:
     helper_wheel, cli_wheel, helper_source, cli_source = release_inputs(
         directory, version
     )
@@ -118,39 +118,47 @@ def smoke(directory: Path, version: str) -> None:
         )
         exercise(venv_path, workdir, environment)
 
-    with tempfile.TemporaryDirectory(prefix="codepact-release-sdist-") as temp:
-        workdir = Path(temp)
-        venv_path = workdir / "venv"
-        venv.EnvBuilder(with_pip=False).create(venv_path)
-        python = environment_python(venv_path)
-        for source in (cli_source, helper_source):
-            run(
-                [
-                    uv,
-                    "pip",
-                    "install",
-                    "--python",
-                    str(python),
-                    "--no-deps",
-                    str(source),
-                ],
-                cwd=workdir,
-                environment=environment,
-            )
-        exercise(venv_path, workdir, environment)
+    if not wheel_only:
+        with tempfile.TemporaryDirectory(prefix="codepact-release-sdist-") as temp:
+            workdir = Path(temp)
+            venv_path = workdir / "venv"
+            venv.EnvBuilder(with_pip=False).create(venv_path)
+            python = environment_python(venv_path)
+            for source in (cli_source, helper_source):
+                run(
+                    [
+                        uv,
+                        "pip",
+                        "install",
+                        "--python",
+                        str(python),
+                        "--no-deps",
+                        str(source),
+                    ],
+                    cwd=workdir,
+                    environment=environment,
+                )
+            exercise(venv_path, workdir, environment)
 
-    print(f"Wheel and source archive install/smoke checks passed: {version}")
+    scope = "wheel" if wheel_only else "wheel and source archive"
+    print(f"{scope.title()} install/smoke checks passed: {version}")
 
 
 class Arguments(argparse.Namespace):
     directory: Path = Path("dist")
     version: str = ""
+    wheel_only: bool
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--version", required=True)
+    parser.add_argument(
+        "--wheel-only",
+        action="store_true",
+        help="skip source archive build/install checks for a Python compatibility run",
+    )
     arguments = Arguments()
     _ = parser.parse_args(namespace=arguments)
-    smoke(arguments.directory, arguments.version)
+    smoke(arguments.directory, arguments.version, wheel_only=arguments.wheel_only)
