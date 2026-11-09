@@ -1,10 +1,11 @@
 # 0.4 pilot and onboarding protocol
 
-Status: **AD01 accepted this protocol and the initial pinned project set on 2026-11-09; no analyzer results, labels, observations or pilot acceptance are claimed.** It defines the evidence needed for [A05/A06/CS02](../0.4-adoption.md) and [V04-26](validation.md), not a promise that every Python project is analyzable.
+Status: **AD01 accepted this protocol and the initial pinned project set on 2026-11-09. Partial scans of the initial projects and all preregistered expansion candidates are recorded in the [pilot results](pilot-results-2026-11-09.md); no findings have been labeled and A05 remains pending.** This protocol defines the evidence needed for [A05/A06/CS02](../0.4-adoption.md), not a promise that every Python project is analyzable.
 
 The project inventory and frozen initial sample settings are recorded in the
-[2026-11-09 pilot preregistration](pilot-inventory.md). That selection is not a
-pilot result; reports and labels must follow the preregistered procedure.
+[2026-11-09 pilot preregistration](pilot-inventory.md). Its selection is
+distinct from the partial scan results; any labels must follow the
+preregistered procedure.
 
 ## Selection before evaluation
 

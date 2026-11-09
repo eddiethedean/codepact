@@ -123,3 +123,7 @@ separate from any future candidate rerun.
 
 These checkouts were clean at the pinned revisions; their trees and metadata
 were captured before analysis. The same frozen candidate `620656b8a8a28ac57a29e589164dc9b58c8141d8`, Python 3.11 target, rules, policy, full default discovery, execution boundaries, eligibility definition, and sampling method apply to all six projects. No findings, labels, or source-level samples were examined in any expansion project at amendment time. The pip failure is retained as a candidate execution failure; no path exclusion or project-specific configuration is introduced to hide it.
+
+The outcomes and retained report artifacts for these six runs are recorded in
+the [2026-11-09 pilot results](pilot-results-2026-11-09.md). They do not
+complete the acceptance sample or establish A05.
