@@ -43,7 +43,7 @@ A Ruff AST-based inspector, Python helpers, package manifests and CI workflows n
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 has accepted CL01 semantics and passing automated code checks; maintainer qualification, refreshed performance and current-candidate distribution evidence, and release authorization remain pending. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 has accepted CL01 semantics, passing automated checks and refreshed candidate performance measurements; maintainer qualification, distribution evidence and release authorization remain pending. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 

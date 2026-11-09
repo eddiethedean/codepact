@@ -16,7 +16,7 @@ Completion: the documented Connection example produces exactly the intended post
 
 ## Phase 2: cover real cleanup and adoption
 
-The [refined 0.3 cleanup plan](phases/0.3-cleanup.md), [cleanup specification](phases/0.3/specification.md) and [V03 matrix](phases/0.3/validation.md) define CL01–CL08 and C01–C05/C07/CS01. The 0.3 candidate implements cleanup duties, exceptional exits, reviewed contexts, loop fixed points and bounded intratask cancellation; its automated code checks pass, while maintainer qualification and current-candidate distribution evidence remain pending. Must-use rules, configuration, baselines, suppressions, broader reporting and pilots belong to [0.4 adoption](phases/0.4-adoption.md).
+The [refined 0.3 cleanup plan](phases/0.3-cleanup.md), [cleanup specification](phases/0.3/specification.md) and [V03 matrix](phases/0.3/validation.md) define CL01–CL08 and C01–C05/C07/CS01. The 0.3 candidate implements cleanup duties, exceptional exits, reviewed contexts, loop fixed points and bounded intratask cancellation; its automated code checks pass and fresh performance measurements are recorded, while maintainer qualification, current-candidate distribution evidence and release authorization remain pending. Must-use rules, configuration, baselines, suppressions, broader reporting and pilots belong to [0.4 adoption](phases/0.4-adoption.md).
 
 The candidate implements exception edges, `finally`, reviewed context-manager models, early returns, loops and cleanup obligations. Finish its V03 technical qualification and current-candidate release evidence. Initial must-use checks, `pyproject` configuration, suppression reasons and baselines, broader reporting and pilot workflows are planned for 0.4.
 

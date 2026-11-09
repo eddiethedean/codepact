@@ -162,13 +162,13 @@ The fixed candidate's local checks and Quality result are recorded in the
 candidate `6e97aed233a59c1854fda650d6ddda0eed6ba7b5`; they do not qualify the
 fixed candidate's distributions. No updated wheel/sdist qualification has run.
 
-The [pre-fix 0.3 performance record](performance.md) measures cleanup corpora, nested exceptions/loops, multiple managers and direct-await cancellation cases, plus lifecycle/inspection comparisons, query reuse, memory and budgets. Its timing and memory results predate the current correctness fixes and do not qualify the fixed candidate. Refresh measurements and complete maintainer G4 review before relying on them. A completed budget table is not an absolute latency guarantee.
+The [0.3 performance record](performance.md) retains historical pre-fix results and now includes fixed-candidate cleanup, lifecycle, inspector and memory measurements. The full local check covers query reuse and budget regressions. Complete maintainer G4 review before relying on these results. A completed budget table is not an absolute latency guarantee.
 
 The runnable [candidate cleanup tutorial](cleanup-tutorial.md) demonstrates synchronous exit obligations and async cancellation findings with separate fixtures and expected CLI outcomes.
 
 The fixed CodePact 0.3 candidate has passed local `make check` and Quality CI.
 The V03 matrix maps automated coverage, but maintainer qualification of
-C01–C05, C07, CS01 and G2–G6 remains pending, along with refreshed performance
-and current-candidate distribution qualification. Complete G2–G6 before
+C01–C05, C07, CS01 and G2–G6 remains pending, along with the G4 performance
+review and current-candidate distribution qualification. Complete G2–G6 before
 recording G7 release authorization; record G8 only after authorized publication
 using the [common evidence template](../../release-evidence-template.md).
