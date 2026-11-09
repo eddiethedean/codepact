@@ -156,13 +156,13 @@ record](contextlib-conformance.md). This is automation evidence only; it does
 not qualify behavior or pass a technical gate. Remaining phase-specific
 qualification evidence is pending.
 
-The fixed candidate's local checks and workflow results are recorded in the
-[release evidence record](../../../releases/0.3.0-evidence.md). Non-publishing
-Release run [42543310512](https://github.com/eddiethedean/codepact/actions/runs/42543310512)
-on candidate commit `139fc01e3aa62853545b06a68f402d6b0a8a5834` built and
-verified the eight CLI wheels, pure helper wheel, both source archives, and
-artifact metadata. All native wheel build/smoke jobs and the aggregate artifact
-verification passed. This is distribution automation evidence; G5 maintainer
+Non-publishing Release run [42544021949](https://github.com/eddiethedean/codepact/actions/runs/42544021949)
+on the preceding documentation candidate `5c21706f9cb62fa2feb45e664f7a0c21b93499ce`
+built and verified the eight CLI wheels, pure helper wheel, both source
+archives, and artifact metadata. All native wheel build/smoke jobs and the
+aggregate artifact verification passed. This is earlier distribution evidence;
+the final exact-candidate workflow is linked from the
+[release evidence record](../../../releases/0.3.0-evidence.md). G5 maintainer
 qualification remains pending.
 
 The [0.3 performance record](performance.md) retains historical pre-fix results and now includes fixed-candidate cleanup, lifecycle, inspector and memory measurements. The full local check covers query reuse and budget regressions. Complete maintainer G4 review before relying on these results. A completed budget table is not an absolute latency guarantee.
