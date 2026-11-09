@@ -22,6 +22,7 @@ def require_one(paths: list[Path], label: str) -> Path:
 
 
 def release_inputs(directory: Path, version: str) -> tuple[Path, Path, Path, Path]:
+    directory = directory.resolve()
     helper_wheel = require_one(
         [path for path in directory.glob("codepact-*.whl")], "helper wheel"
     )
