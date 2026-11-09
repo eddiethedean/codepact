@@ -517,7 +517,7 @@ impl CheckResult {
                 .collect(),
                 selection_rule: "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.".into(),
                 modeled_behavior: "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.".into(),
-                qualification: "Source-reviewed against the listed CPython tags; controlled runtime cases and exact interpreter/source hashes are recorded in docs/planning/phases/0.3/contextlib-conformance.md; 0.3 release qualification pending.".into(),
+                qualification: "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md.".into(),
             },
             CheckModelMetadata {
                 id: "TPM-CTX-002".into(),
@@ -536,7 +536,7 @@ impl CheckResult {
                 .collect(),
                 selection_rule: "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.".into(),
                 modeled_behavior: "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.".into(),
-                qualification: "Source-reviewed against the listed CPython tags; controlled runtime cases and exact interpreter/source hashes are recorded in docs/planning/phases/0.3/contextlib-conformance.md; 0.3 release qualification pending.".into(),
+                qualification: "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md.".into(),
             },
         ];
         let mut available_models = if matches!(target_python_version, "3.11" | "3.12" | "3.13") {

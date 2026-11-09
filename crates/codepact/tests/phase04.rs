@@ -939,6 +939,26 @@ fn capabilities_and_rule_explanations_publish_the_supported_surface_and_limits()
             "{code}"
         );
     }
+
+    fs::write(root.join("main.py"), "value = 1\n").unwrap();
+    let check = cli(&root, &["check", "--no-config", "--json"]);
+    assert_eq!(check.status.code(), Some(0));
+    let report: serde_json::Value = serde_json::from_slice(&check.stdout).unwrap();
+    let models = report["available_models"].as_array().unwrap();
+    for id in ["TPM-CTX-001", "TPM-CTX-002"] {
+        let model = models
+            .iter()
+            .find(|model| model["id"] == id)
+            .unwrap_or_else(|| panic!("missing model {id}: {models:#?}"));
+        let qualification = model["qualification"].as_str().unwrap();
+        assert!(
+            qualification.contains("Qualified for CodePact 0.3.0"),
+            "{id}"
+        );
+        assert!(qualification.contains("3.11–3.13"), "{id}");
+        assert!(!qualification.contains("pending"), "{id}");
+    }
+
     let unknown = cli(&root, &["explain", "TP9999", "--json"]);
     assert_eq!(unknown.status.code(), Some(2));
     let failed: serde_json::Value = serde_json::from_slice(&unknown.stdout).unwrap();
