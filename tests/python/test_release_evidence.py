@@ -6,7 +6,11 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
-from check_release_evidence import release_evidence_errors
+from check_release_evidence import (
+    release_evidence_errors,
+    required_phase_gates,
+    table_rows,
+)
 
 
 VERSION = "0.2.0"
@@ -54,6 +58,23 @@ def write_candidate(
 
 
 class ReleaseEvidenceTest(unittest.TestCase):
+    def test_multi_letter_phase_gate_ids_are_required_and_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            phase_plan = root / "docs/planning/phases/0.4-adoption.md"
+            phase_plan.parent.mkdir(parents=True)
+            phase_plan.write_text("- [ ] **CS02 — Async reporting.**\n")
+            self.assertEqual(required_phase_gates(root, "0.4.0"), ["CS02"])
+
+        rows = table_rows(
+            "## Phase-specific gates\n"
+            "| Gate ID | Status | Evidence | Reviewer |\n"
+            "| --- | --- | --- | --- |\n"
+            "| CS02 — Async reporting | Pending | Evidence needed. | |\n",
+            "Phase-specific gates",
+        )
+        self.assertEqual(rows["CS02"], ("Pending", "Evidence needed.", ""))
+
     def test_maintainer_can_validate_and_approve_every_gate_alone(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
