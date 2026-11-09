@@ -1,6 +1,6 @@
 # Automation and CI
 
-Use `inspect-contracts` as a declaration check for an explicit set of supported source files. CodePact 0.3.0 is not published yet; after qualification, pin `codepact` 0.3.0 so the helper and analyzer stay aligned. The candidate also provides bounded lifecycle and cleanup checking with `check`.
+Use `inspect-contracts` as a declaration check for an explicit set of supported source files. CodePact 0.3.0 has passed pre-tag qualification but is not published yet; when installing it after publication, pin `codepact` 0.3.0 so the helper and analyzer stay aligned. The candidate also provides bounded lifecycle and cleanup checking with `check`.
 
 ## Run in a uv project
 

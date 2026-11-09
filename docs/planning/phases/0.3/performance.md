@@ -1,6 +1,6 @@
 # 0.3 candidate performance record
 
-Status: **Fixed-candidate measurements collected on 2026-11-08; maintainer G4 review and release qualification remain pending.** The historical tables are retained for comparison. Measurements below use the current analyzer implementation, including the four correctness fixes described later; evidence alone does not pass the maintainer's release gate.
+Status: **Fixed-candidate measurements collected and accepted for G4 by the accountable maintainer on 2026-11-08.** The historical tables are retained for comparison. Measurements below use the current analyzer implementation, including the four correctness fixes described later. Current pre-tag decisions are recorded in the release evidence; publication remains pending.
 
 ## Environment and method
 
@@ -40,7 +40,7 @@ A separate `/usr/bin/time -l` sample of the 1,000-resource process reported maxi
 
 The current `scripts/benchmark_inspector.py --binary target/release/codepact --repeats 7 --classes 1000` run used CPython 3.14.3. Small CLI median was 5.304 ms (4.249–558.192), the 1,000-class CLI median was 46.885 ms (46.466–59.848), helper import was 23.159 ms (22.949–41.529), and maximum child RSS across scenarios was 20.44 MiB. The small CLI range includes process-launch outliers.
 
-At 1,000 resources, lifecycle medians are close to the pre-fix run: cold +0.5%, warm -0.9%, unrelated edit -2.7%, imported-effect edit +4.9%, and location-only edit -0.4%. The phase-specific 64-function cold medians are about 5% lower for both sync and async scenarios. These selected local workloads show no material timing change; no absolute latency or retained-memory threshold has been set. Review the ranges, host scope and budgets before recording G4 as passed.
+At 1,000 resources, lifecycle medians are close to the pre-fix run: cold +0.5%, warm -0.9%, unrelated edit -2.7%, imported-effect edit +4.9%, and location-only edit -0.4%. The phase-specific 64-function cold medians are about 5% lower for both sync and async scenarios. These selected local workloads show no material timing change; no absolute latency or retained-memory threshold has been set. The accountable maintainer reviewed the ranges, host scope and budgets and accepted G4 on 2026-11-08. See the [release evidence](../../../releases/0.3.0-evidence.md) for the gate record.
 
 ### Query reuse checks
 
@@ -74,7 +74,7 @@ Milliseconds, median (minimum–maximum), same 1/250/1,000-resource corpus and h
 
 The 1,000-resource source corpus is 78,891 bytes. One `/usr/bin/time -l` sample measured maximum resident set at 39,731,200 bytes (37.89 MiB). A retained-session probe, with diagnostics dropped, measured baseline RSS of 1,968 KiB and retained RSS of 21,712 KiB, an increase of 19,744 KiB (19.28 MiB). These are coarse process measurements, not allocated-byte counts or memory budgets.
 
-Compared with the accepted 0.2 baseline, the 1,000-resource cold median is 0.47×; unrelated body, imported-effect and location edits are 0.64×, 0.70× and 0.62×. Warm no-op is effectively unchanged at 0.99× (1.430 ms vs 1.442 ms). At 250 resources, cold time is 0.74×, warm is 1.03× and edit scenarios range from 0.96× to 1.00×. For one resource the absolute medians are small, but cold and edit samples are noisy and include process-local outliers; the maintainer should consider that spread in the G4 review. The phase plan defines no absolute latency threshold.
+Compared with the accepted 0.2 baseline, the 1,000-resource cold median is 0.47×; unrelated body, imported-effect and location edits are 0.64×, 0.70× and 0.62×. Warm no-op is effectively unchanged at 0.99× (1.430 ms vs 1.442 ms). At 250 resources, cold time is 0.74×, warm is 1.03× and edit scenarios range from 0.96× to 1.00×. For one resource the absolute medians are small, but cold and edit samples are noisy and include process-local outliers; the accountable maintainer reviewed that spread as part of the G4 acceptance on 2026-11-08. The phase plan defines no absolute latency threshold.
 
 Resolved-call transfer now visits only caller-reachable keys in the callee result instead of cloning every caller resource for every helper call. Scoped newline indexes remove repeated source-prefix scans on sources at least 1 KiB; small sources retain the direct scan. These changes reduced the 1,000-resource cold median from 150.5 ms to 29.2 ms and 1,000-resource edit medians from 126–134 ms to 25.9–33.5 ms. The maintainer may review and accept this evidence alone; no independent reviewer is required.
 

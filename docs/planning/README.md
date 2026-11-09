@@ -12,7 +12,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [Analyzer migration](analyzer-migration.md) | Ruff AST, declaration identities, Salsa query graph and AM01–AM06 acceptance |
 | [0.1 implementation repair](phases/0.1/remediation.md) | Archived file-level repair plan; see the release evidence for completed work |
 | [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, released scope, V02 matrix and performance record |
-| [0.3 cleanup plan](phases/0.3-cleanup.md) | Implemented candidate scope, accepted CL01 semantics, cleanup/async behavior and pending maintainer qualification |
+| [0.3 cleanup plan](phases/0.3-cleanup.md) | Maintainer-qualified phase gates, cleanup/async behavior, and pre-tag release evidence; publication not yet completed |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
@@ -43,7 +43,7 @@ A Ruff AST-based inspector, Python helpers, package manifests and CI workflows n
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 has accepted CL01 semantics, passing automated checks, refreshed performance measurements and built/verified candidate distributions; maintainer qualification of G2–G6 and explicit release authorization remain pending. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 has accepted CL01 semantics, passing automated checks, refreshed and maintainer-accepted G4 measurements, maintainer-qualified phase gates and verified candidate distributions. Current G1–G7 status is recorded in the release evidence; G8 is completed after authorized publication. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 

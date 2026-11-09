@@ -47,7 +47,8 @@ and [limitations](limitations.md), then inspect `coverage.reasons`.
 The release configuration provides native CLI wheels for supported platforms,
 which do not need Rust at installation. The current 0.3 candidate's wheels and
 source archives have passed the non-publishing build and artifact checks;
-maintainer release qualification remains pending. Building the candidate from
+pre-tag qualification is recorded in the [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md).
+Building the candidate from
 source requires Rust 1.96 or newer and a linker. See [installation](install.md).
 
 ## Which Python version is analyzed?

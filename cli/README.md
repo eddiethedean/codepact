@@ -36,7 +36,8 @@ The lifecycle example intentionally reports a use after close and exits `1`.
 Checking scans Python files below its root, reports readable diagnostics by default,
 and accepts `--json`. Possible findings and coverage warnings can accompany exit `0`.
 The historical TypePact 0.2.0 CLI does not include the CodePact 0.3 cleanup and
-cancellation behavior. Release gates for CodePact 0.3.0 remain pending.
+cancellation behavior. The 0.3 candidate's pre-tag qualification is recorded in
+the [release evidence](../docs/releases/0.3.0-evidence.md); it is not published yet.
 
 ## Requirements and reference
 

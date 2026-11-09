@@ -1,6 +1,6 @@
 # 0.3 cleanup specification
 
-Status: **Bounded implementation is in the candidate; the maintainer accepted the proposed CL01 semantic defaults on 2026-11-07. Technical and release qualification remain pending.** This is the accepted semantic oracle for [CL01–CL08 and C01–C05/C07/CS01](../0.3-cleanup.md). The [V03 matrix](validation.md) defines required evidence. Preserve existing CodePact behavior except where this specification explicitly extends it.
+Status: **Bounded implementation is in the candidate; the maintainer accepted the proposed CL01 semantic defaults on 2026-11-07. Pre-tag qualification is recorded in the release evidence; publication remains pending.** This is the accepted semantic oracle for [CL01–CL08 and C01–C05/C07/CS01](../0.3-cleanup.md). The [V03 matrix](validation.md) defines required evidence. Preserve existing CodePact behavior except where this specification explicitly extends it.
 
 ## Supported slice
 

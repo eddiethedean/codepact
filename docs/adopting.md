@@ -67,5 +67,5 @@ before expanding the pilot.
 
 If the pilot depends on these unsupported forms, keep the boundary visible and
 wait for a documented capability that covers the required behavior. The
-candidate remains unqualified, and CodePact does not provide a strict-mode
-switch, baseline file, or suppressions.
+0.3.0 candidate has passed pre-tag qualification but is not published yet, and
+CodePact does not provide a strict-mode switch, baseline file, or suppressions.

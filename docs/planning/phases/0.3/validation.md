@@ -1,6 +1,6 @@
 # 0.3 validation matrix
 
-Status: **Automated implementation coverage is mapped below; release qualification is pending.** IDs are independent of V01/V02. The [specification](specification.md) is the candidate oracle; the [phase plan](../0.3-cleanup.md) defines CL01–CL08 and C01–C05/C07/CS01. Test presence is implementation evidence only: a mapped row is not a passed qualification gate.
+Status: **Automated implementation coverage is mapped below; current gate statuses are in the release evidence.** IDs are independent of V01/V02. The [specification](specification.md) is the candidate oracle; the [phase plan](../0.3-cleanup.md) defines CL01–CL08 and C01–C05/C07/CS01. Test presence is implementation evidence only: a mapped row is not itself a passed qualification gate.
 
 ## Required matrix
 
@@ -50,12 +50,11 @@ Cross every supported cleanup construct with each feasible outcome below. Mark a
 
 ## Current automated coverage map
 
-The paths below map each required condition to candidate regression tests,
-including valid, invalid and unknown-boundary controls where applicable. The
-suite records outcomes, certainty, spans, provenance and coverage for the
-bounded subset. This is automated evidence for maintainer review, not a
-qualification Pass; each row remains Pending until the maintainer records the
-exact-candidate review result.
+The paths below map each required condition to exact-candidate regression
+tests, including valid, invalid and unknown-boundary controls where applicable.
+The suite records outcomes, certainty, spans, provenance and coverage for the
+bounded subset. This map is automated evidence; exact-candidate maintainer
+qualification for each row is recorded in the [release evidence](../../../releases/0.3.0-evidence.md).
 
 `make check` runs `scripts/check_phase03_validation.py` to require all 26 IDs in
 both tables, require every named `v03_*` reference to resolve to a declared Rust test,
@@ -64,7 +63,7 @@ missing rows, stale test references and ordinary functions substituted for
 tests. This guards matrix-index drift; it does not qualify behavior or pass a
 gate.
 
-| ID | Current automated paths | Remaining qualification evidence |
+| ID | Current automated paths | Review criteria |
 | --- | --- | --- |
 | V03-01 | `tests/phase03.rs`: local acquisition, failed initialization and `v03_01_constructor_argument_failure_creates_no_object_duty`; a failing later constructor preserves the earlier acquisition duty on the raise exit with exact acquisition span and no duty for the failed object; `v03_01_custom_new_boundary_preserves_the_prior_duty_as_possible` asserts the unsupported custom allocator boundary and keeps the prior duty possible; separate return/raise exits assert distinct findings, certainty and acquisition/exit spans; `v03_01_each_open_obligation_is_reported_at_each_distinct_return_exit` asserts exact exit groups and the acquisition duties retained at each return; `v03_01_module_scope_resource_lifetime_remains_an_explicit_boundary` verifies open and conditional module resources report TP9001 at acquisition, fully closed globals do not report a lifetime boundary, and module completion never reports TP1002; `v03_01_global_resource_store_escapes_function_cleanup_analysis` verifies resource-valued global stores keep possible duties and specific boundaries, without a false boundary for scalar globals | Maintainer qualification review |
 | V03-02 | `tests/phase03.rs`: lost alias and unqualified parameter; explicit `Owned`, `Borrowed` and ordinary resource parameters assert that only `Owned` inherits a duty; shorthand `Owned` and verbose `Annotated[..., OwnedAccess()]` forms create duties for both decorator-declared and `Annotated[..., Resource(...)]` resources, while shorthand/verbose borrowed and ordinary forms do not; a local acquisition inside a Borrowed function retains its own duty; `v03_02_borrowed_alias_cannot_be_closed_directly_or_through_a_wrapper` checks direct and `contextlib.closing` cleanup through a Borrowed alias; `v03_02_borrowed_helper_wrapper_cannot_consume_the_callers_duty` and `v03_02_borrowed_helper_close_on_raise_keeps_the_callers_duty` assert one body violation, no normal/raised state transfer, exact caller duty spans and incomplete dependent coverage; `v03_02_borrowed_helper_forwarding_chain_keeps_owner_duty_and_boundary` and `v03_02_borrowed_helper_forwarding_chain_raise_keeps_owner_duty_and_boundary` check invalid effects across two resolved helper hops on normal and raising exits and confirm the caller still owns the duty; `v03_09_owned_and_borrowed_positions_keep_aliased_duty_uncertain` keeps the shared object's duty possible and reports an incomplete boundary instead of claiming the aliased effect is safe or forbidden; `v03_08_borrowed_alias_cannot_satisfy_an_owned_return_contract` asserts exact return span, definite contract rejection, no fabricated leak/unknown escape and complete coverage; `tests/cli.rs`: Borrowed-close diagnostics `v03_02_borrowed_aclosing_forwarding_chain_keeps_the_owner_duty` checks invalid async cleanup across two awaited helper hops while preserving the caller acquisition. | Maintainer qualification review of access and duty semantics |
@@ -147,14 +146,15 @@ checks that outer-target break and continue retain their intended loop routing
 and exact duty spans after the inner loop is exhausted. V03-16's
 `v03_16_nested_loop_fixed_point_budget_keeps_candidate_duty_unknown` confirms
 nested-loop fixed-point exhaustion remains visible and retains the candidate
-acquisition as an uncertain duty. The remaining tests and
-their outstanding qualification work are mapped row by row above. The tutorial
+acquisition as an uncertain duty. The remaining tests and their qualification
+work are mapped row by row above; the maintainer's phase-gate qualification is
+recorded in the release evidence. The tutorial
 fixtures were rerun with the source CLI and matched the documented definite
 synchronous leak and cancellation-possible async findings. Separate runtime
 model outcomes and source hashes are in the [contextlib conformance
 record](contextlib-conformance.md). This is automation evidence only; it does
-not qualify behavior or pass a technical gate. Remaining phase-specific
-qualification evidence is pending.
+not itself qualify behavior or pass a technical gate. Phase-specific gate
+qualification is recorded in the [release evidence](../../../releases/0.3.0-evidence.md).
 
 Non-publishing Release run [42544021949](https://github.com/eddiethedean/codepact/actions/runs/42544021949)
 on the preceding documentation candidate `5c21706f9cb62fa2feb45e664f7a0c21b93499ce`
@@ -162,16 +162,15 @@ built and verified the eight CLI wheels, pure helper wheel, both source
 archives, and artifact metadata. All native wheel build/smoke jobs and the
 aggregate artifact verification passed. This is earlier distribution evidence;
 the final exact-candidate workflow is linked from the
-[release evidence record](../../../releases/0.3.0-evidence.md). G5 maintainer
-qualification remains pending.
+[release evidence record](../../../releases/0.3.0-evidence.md). The exact-candidate
+artifact qualification and credential confirmation are recorded there.
 
-The [0.3 performance record](performance.md) retains historical pre-fix results and now includes fixed-candidate cleanup, lifecycle, inspector and memory measurements. The full local check covers query reuse and budget regressions. Complete maintainer G4 review before relying on these results. A completed budget table is not an absolute latency guarantee.
+The [0.3 performance record](performance.md) retains historical pre-fix results and includes fixed-candidate cleanup, lifecycle, inspector and memory measurements. The full local check covers query reuse and budget regressions. The accountable maintainer accepted G4 on 2026-11-08; a completed budget table is not an absolute latency guarantee.
 
 The runnable [candidate cleanup tutorial](cleanup-tutorial.md) demonstrates synchronous exit obligations and async cancellation findings with separate fixtures and expected CLI outcomes.
 
 The fixed CodePact 0.3 candidate has passed local `make check`, Quality CI and
 non-publishing current-candidate artifact verification. The V03 matrix maps
-automated coverage, but maintainer qualification of C01–C05, C07, CS01 and
-G2–G6 remains pending, along with G4/G5 review. Complete G2–G6 before
-recording G7 release authorization; record G8 only after authorized publication
-using the [common evidence template](../../release-evidence-template.md).
+automated coverage; phase-specific gate qualification and G1–G7 are recorded
+in the release evidence. Record G8 after authorized publication using the
+[common evidence template](../../release-evidence-template.md).

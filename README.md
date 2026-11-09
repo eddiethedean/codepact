@@ -20,7 +20,7 @@ Build the candidate from source using [installation](#install), then follow [con
 
 ## Install
 
-CodePact 0.3.0 is still in qualification. The renamed Python packages and Rust crate have not been published. To try this candidate from a checkout:
+CodePact 0.3.0 has passed its pre-tag qualification; the renamed Python packages and Rust crate have not been published yet. To try this candidate from a checkout:
 
 ```sh
 git clone https://github.com/eddiethedean/codepact.git
@@ -202,8 +202,8 @@ The historical TypePact 0.2.0 release added bounded lifecycle flow checks. The C
 | Rust source builds | Rust 1.96+ |
 
 The release configuration defines eight native CLI wheel targets. The current
-candidate's build and install evidence is still pending; see the
-[availability guide](docs/availability.md) before relying on a platform claim:
+candidate's build and install evidence is recorded in the
+[availability guide](docs/availability.md):
 
 | Platform | x86-64 | ARM64 |
 | --- | --- | --- |

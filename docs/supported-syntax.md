@@ -138,8 +138,8 @@ loop fixed-point analysis at 16 passes, exact static tuple iteration at 16
 items, context-exit partitions at 256 per unwind, and pending coroutine
 records at 128 per flow state. The 64-depth cap is stricter than the historical
 128 nested-`if` cap. Exceeding any bound widens affected state and reports
-incomplete coverage. CL01 defaults were accepted, while technical and release
-qualification remain pending; see the
+incomplete coverage. CL01 defaults were accepted and pre-tag qualification is
+recorded in the release evidence; the candidate remains unpublished. See the
 [phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
 
 When a flow limit is reached, the checker drops the affected exact facts,

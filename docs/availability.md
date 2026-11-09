@@ -2,8 +2,8 @@
 
 CodePact 0.3.0 is an unreleased candidate. It is the first release candidate
 under the CodePact name and the new `codepact` Python packages, CLI, and Rust
-crate. Qualification is pending; none of those 0.3.0 artifacts has been
-published.
+crate. Its pre-tag qualification is recorded in the [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md);
+none of those 0.3.0 artifacts has been published.
 
 The published 0.1.0 and 0.2.0 releases used the former TypePact name. Their
 historical records remain available in the [0.1.0](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.1.0-evidence.md)

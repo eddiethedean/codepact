@@ -2,7 +2,7 @@
 
 This catalog describes the published TypePact 0.2.0 checker and the CodePact
 0.3.0 candidate cleanup diagnostics. The 0.3 behavior and codes are implemented
-in the unreleased candidate; its qualification gates remain pending. A
+in the unreleased, pre-tag-qualified candidate. A
 diagnostic identifies a modeled problem or boundary; it does not make a runtime
 safety claim.
 
