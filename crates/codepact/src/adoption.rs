@@ -15,6 +15,19 @@ pub const BASELINE_SCHEMA_VERSION: u8 = 1;
 pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 3;
 pub const RULE_SEMANTIC_VERSION: u8 = 1;
 pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"];
+const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+
+fn read_configuration(reader: impl Read) -> Result<String, String> {
+    let mut raw = String::new();
+    reader
+        .take(MAX_CONFIG_BYTES + 1)
+        .read_to_string(&mut raw)
+        .map_err(|error| format!("cannot read UTF-8 configuration: {error}"))?;
+    if raw.len() as u64 > MAX_CONFIG_BYTES {
+        return Err("configuration exceeds the 64 KiB limit".into());
+    }
+    Ok(raw)
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -180,13 +193,17 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
     };
     let mut config = None;
     if let Some(path) = &config_path {
-        let metadata =
-            fs::metadata(path).map_err(|e| format!("cannot inspect {}: {e}", path.display()))?;
-        if metadata.len() > 64 * 1024 {
+        let file = fs::File::open(path)
+            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+        let metadata = file
+            .metadata()
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+        if metadata.len() > MAX_CONFIG_BYTES {
             return Err("configuration exceeds the 64 KiB limit".into());
         }
-        let raw =
-            fs::read_to_string(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        // Bound the read itself as well as the metadata preflight: a file can
+        // grow after its length is checked.
+        let raw = read_configuration(file)?;
         let value: toml::Value =
             toml::from_str(&raw).map_err(|e| format!("invalid TOML configuration: {e}"))?;
         if let Some(table) = value.get("tool").and_then(|v| v.get("codepact")) {
@@ -1790,7 +1807,21 @@ pub fn suppression_diagnostic(
 
 #[cfg(test)]
 mod tests {
-    use super::glob_match;
+    use super::{glob_match, read_configuration, MAX_CONFIG_BYTES};
+
+    #[test]
+    fn configuration_read_accepts_the_byte_limit_and_caps_consumption_on_overflow() {
+        let exact = vec![b' '; MAX_CONFIG_BYTES as usize];
+        assert_eq!(
+            read_configuration(exact.as_slice()).unwrap().len(),
+            exact.len()
+        );
+
+        let mut oversized = std::io::Cursor::new(vec![b' '; 2 * MAX_CONFIG_BYTES as usize]);
+        let error = read_configuration(&mut oversized).unwrap_err();
+        assert!(error.contains("64 KiB limit"));
+        assert_eq!(oversized.position(), MAX_CONFIG_BYTES + 1);
+    }
 
     #[test]
     fn globstar_matching_handles_many_ambiguous_components() {

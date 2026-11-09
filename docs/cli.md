@@ -64,7 +64,12 @@ Include/exclude patterns match root-relative paths using `/`; `*` and `?` match
 within one path component and `**` crosses components. Excludes win. Discovery
 skips symlinks and common build/environment directories. Explicit inputs must
 remain under the root, pass the same include/exclude policy, and map to distinct
-Python module names. CodePact does not search installed packages.
+Python module names. The 10,000-file input limit counts selected Python files.
+Discovery visits at most 100,000 filesystem entries, buffers at most 20,000
+entries from any one directory to keep deterministic sorting bounded, and
+descends at most 256 directories below the root. Exceeding a discovery limit
+fails with status 2 and does not produce a completed check.
+CodePact does not search installed packages.
 
 ## Output modes
 

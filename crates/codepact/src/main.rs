@@ -7,23 +7,87 @@ use std::{
     process::ExitCode,
 };
 
+const MAX_DISCOVERY_ENTRIES: usize = 100_000;
+const MAX_DIRECTORY_ENTRIES: usize = 20_000;
+const MAX_DISCOVERY_DEPTH: usize = 256;
+
+#[derive(Clone, Copy)]
+struct DiscoveryLimits {
+    entries: usize,
+    entries_per_directory: usize,
+    depth: usize,
+}
+
+const DEFAULT_DISCOVERY_LIMITS: DiscoveryLimits = DiscoveryLimits {
+    entries: MAX_DISCOVERY_ENTRIES,
+    entries_per_directory: MAX_DIRECTORY_ENTRIES,
+    depth: MAX_DISCOVERY_DEPTH,
+};
+
 fn discover_python_files(
     root: &Path,
     output: &mut Vec<PathBuf>,
     budget: usize,
+    selected: &impl Fn(&Path) -> bool,
 ) -> Result<(), String> {
-    if output.len() >= budget {
-        return Err(format!("project discovery exceeds the {budget} file limit"));
+    discover_python_files_with_limits(root, output, budget, selected, DEFAULT_DISCOVERY_LIMITS)
+}
+
+fn discover_python_files_with_limits(
+    root: &Path,
+    output: &mut Vec<PathBuf>,
+    budget: usize,
+    selected: &impl Fn(&Path) -> bool,
+    limits: DiscoveryLimits,
+) -> Result<(), String> {
+    let mut visited_entries = 0;
+    discover_python_files_inner(
+        root,
+        output,
+        budget,
+        selected,
+        limits,
+        &mut visited_entries,
+        0,
+    )
+}
+
+fn discover_python_files_inner(
+    root: &Path,
+    output: &mut Vec<PathBuf>,
+    budget: usize,
+    selected: &impl Fn(&Path) -> bool,
+    limits: DiscoveryLimits,
+    visited_entries: &mut usize,
+    depth: usize,
+) -> Result<(), String> {
+    if depth > limits.depth {
+        return Err(format!(
+            "project discovery exceeds the {} directory-depth limit",
+            limits.depth
+        ));
     }
     let entries = fs::read_dir(root)
         .map_err(|error| format!("cannot read project directory {}: {error}", root.display()))?;
-    let mut paths = entries
-        .map(|entry| {
-            entry
-                .map(|entry| entry.path())
-                .map_err(|error| error.to_string())
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut paths = Vec::new();
+    for entry in entries {
+        if *visited_entries >= limits.entries {
+            return Err(format!(
+                "project discovery exceeds the {} directory-entry traversal limit",
+                limits.entries
+            ));
+        }
+        if paths.len() >= limits.entries_per_directory {
+            return Err(format!(
+                "project directory {} exceeds the {} entry limit",
+                root.display(),
+                limits.entries_per_directory
+            ));
+        }
+        let entry = entry.map_err(|error| error.to_string())?;
+        *visited_entries += 1;
+        paths.push(entry.path());
+    }
     paths.sort();
     for path in paths {
         let metadata = fs::symlink_metadata(&path)
@@ -37,13 +101,25 @@ fn discover_python_files(
                 Some(".git" | ".venv" | "venv" | "target" | "build" | "dist" | "__pycache__")
             )
         {
-            discover_python_files(&path, output, budget)?;
-        } else if metadata.is_file() && path.extension().is_some_and(|extension| extension == "py")
+            discover_python_files_inner(
+                &path,
+                output,
+                budget,
+                selected,
+                limits,
+                visited_entries,
+                depth + 1,
+            )?;
+        } else if metadata.is_file()
+            && path.extension().is_some_and(|extension| extension == "py")
+            && selected(&path)
         {
-            output.push(path);
-            if output.len() > budget {
-                return Err(format!("project discovery exceeds the {budget} file limit"));
+            if output.len() >= budget {
+                return Err(format!(
+                    "project discovery exceeds the {budget} selected Python file limit"
+                ));
             }
+            output.push(path);
         }
     }
     Ok(())
@@ -181,6 +257,9 @@ fn main() -> ExitCode {
                 "related_sites_per_finding": 32,
                 "source_snippet_bytes_per_finding": 2048,
                 "explanation_bytes_per_finding": 8192,
+                "max_discovery_entries": MAX_DISCOVERY_ENTRIES,
+                "max_directory_entries": MAX_DIRECTORY_ENTRIES,
+                "max_discovery_depth": MAX_DISCOVERY_DEPTH,
                 "max_input_files": codepact::DEFAULT_MAX_INPUT_FILES,
                 "max_source_bytes": DEFAULT_MAX_SOURCE_BYTES
             },
@@ -584,11 +663,13 @@ fn main() -> ExitCode {
             project_root,
             &mut discovered,
             codepact::DEFAULT_MAX_INPUT_FILES,
+            &|path| {
+                effective
+                    .as_ref()
+                    .is_none_or(|config| adoption::included(config, project_root, path))
+            },
         ) {
             return emit_failure(&output_format, e);
-        }
-        if let Some(c) = effective.as_ref() {
-            discovered.retain(|p| adoption::included(c, project_root, p));
         }
         if paths.is_empty() && discovered.is_empty() {
             return emit_failure(
@@ -1022,4 +1103,137 @@ fn main() -> ExitCode {
         eprint!("{stderr_text}");
     }
     ExitCode::from(report.exit_code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn discovery_project(name: &str) -> PathBuf {
+        let root =
+            env::temp_dir().join(format!("codepact-discovery-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn discovery_counts_only_files_selected_by_project_policy() {
+        let root = discovery_project("policy-limit");
+        fs::create_dir(root.join("generated")).unwrap();
+        fs::write(root.join("generated/first.py"), "").unwrap();
+        fs::write(root.join("generated/second.py"), "").unwrap();
+        fs::write(root.join("main.py"), "").unwrap();
+        fs::write(
+            root.join("pyproject.toml"),
+            "[tool.codepact]\nconfig-version=1\nexclude=['generated/**']\n",
+        )
+        .unwrap();
+        let config = codepact::adoption::resolve_config(&root, &Default::default()).unwrap();
+        let mut files = Vec::new();
+        discover_python_files(&root, &mut files, 1, &|path| {
+            codepact::adoption::included(&config, &root, path)
+        })
+        .unwrap();
+        assert_eq!(files, vec![root.join("main.py")]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovery_accepts_exact_file_limit_with_later_empty_directories() {
+        let root = discovery_project("exact-limit");
+        fs::write(root.join("a.py"), "").unwrap();
+        fs::write(root.join("b.py"), "").unwrap();
+        fs::create_dir_all(root.join("z/empty")).unwrap();
+        let mut files = Vec::new();
+        discover_python_files(&root, &mut files, 2, &|_| true).unwrap();
+        assert_eq!(files, vec![root.join("a.py"), root.join("b.py")]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovery_rejects_the_next_selected_file_without_exceeding_storage_limit() {
+        let root = discovery_project("over-limit");
+        for name in ["a.py", "b.py", "c.py"] {
+            fs::write(root.join(name), "").unwrap();
+        }
+        let mut files = Vec::new();
+        let error = discover_python_files(&root, &mut files, 2, &|_| true).unwrap_err();
+        assert!(error.contains("2 selected Python file limit"));
+        assert_eq!(files, vec![root.join("a.py"), root.join("b.py")]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovery_bounds_total_entries_across_nested_directories() {
+        let root = discovery_project("traversal-limit");
+        fs::write(root.join("a.py"), "").unwrap();
+        fs::create_dir(root.join("sub")).unwrap();
+        fs::write(root.join("sub/b.py"), "").unwrap();
+        fs::write(root.join("z.txt"), "").unwrap();
+        let mut files = Vec::new();
+        let error = discover_python_files_with_limits(
+            &root,
+            &mut files,
+            10,
+            &|_| true,
+            DiscoveryLimits {
+                entries: 3,
+                entries_per_directory: 10,
+                depth: 10,
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("3 directory-entry traversal limit"));
+        assert!(files.len() <= 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovery_bounds_entries_buffered_for_each_directory() {
+        let root = discovery_project("directory-limit");
+        fs::write(root.join("a.py"), "").unwrap();
+        fs::write(root.join("b.txt"), "").unwrap();
+        fs::write(root.join("c.txt"), "").unwrap();
+        let mut files = Vec::new();
+        let error = discover_python_files_with_limits(
+            &root,
+            &mut files,
+            10,
+            &|_| true,
+            DiscoveryLimits {
+                entries: 10,
+                entries_per_directory: 2,
+                depth: 10,
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("exceeds the 2 entry limit"));
+        assert!(files.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovery_bounds_directory_depth_before_recursing_further() {
+        let root = discovery_project("depth-limit");
+        let nested = root.join("one/two/three");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("main.py"), "").unwrap();
+        let mut files = Vec::new();
+        let error = discover_python_files_with_limits(
+            &root,
+            &mut files,
+            10,
+            &|_| true,
+            DiscoveryLimits {
+                entries: 10,
+                entries_per_directory: 10,
+                depth: 2,
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("2 directory-depth limit"));
+        assert!(files.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
 }

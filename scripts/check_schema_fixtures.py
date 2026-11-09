@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import TypeAlias, cast
@@ -71,7 +72,43 @@ def main() -> int:
                 )
             checked += 1
 
-    print(f"Validated {len(schemas)} schemas and {checked} valid/invalid fixtures")
+    capability_schema = schemas.get("capabilities-v1.schema.json")
+    if capability_schema is None:
+        raise ValueError("missing published capabilities-v1 schema")
+    command = [
+        "cargo",
+        "run",
+        "--locked",
+        "--quiet",
+        "-p",
+        "codepact",
+        "--",
+        "capabilities",
+        "--json",
+    ]
+    emitted = subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    emitted_document = cast(JsonValue, json.loads(emitted.stdout))
+    validator = cast(
+        Validator, Draft202012Validator(capability_schema, registry=registry)
+    )
+    errors = list(validator.iter_errors(emitted_document))
+    if errors:
+        error = errors[0]
+        raise ValueError(
+            "the current CLI capabilities output is invalid at "
+            f"{list(error.absolute_path)}: {error.message}"
+        )
+    checked += 1
+
+    print(
+        f"Validated {len(schemas)} schemas, {checked - 1} valid/invalid fixtures, "
+        "and current CLI capabilities output"
+    )
     return 0
 
 

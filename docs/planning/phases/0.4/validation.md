@@ -51,6 +51,8 @@ before it can be marked Pass.
 | `nearest_config_wins_and_invalid_project_settings_fail_before_analysis`, `project_config_strict_mode_and_rule_selection_are_applied`, and `settings_resolution_is_read_only_and_reports_origins` | V04-01/02, partial V04-03 |
 | `explicit_config_and_root_overrides_have_one_deterministic_precedence` and `project_config_wrong_types_and_invalid_values_fail_with_actionable_errors` | Additional V04-01/02/04 assertions for explicit config/root precedence, canonical paths, missing/symlinked roots, wrong TOML value types and invalid settings; partial-row evidence only |
 | `includes_and_excludes_define_scope_and_explicit_operands_cannot_bypass_excludes` | Partial V04-03 |
+| `discovery_counts_only_files_selected_by_project_policy`, `discovery_accepts_exact_file_limit_with_later_empty_directories`, `discovery_rejects_the_next_selected_file_without_exceeding_storage_limit`, `discovery_bounds_total_entries_across_nested_directories`, `discovery_bounds_entries_buffered_for_each_directory`, and `discovery_bounds_directory_depth_before_recursing_further` in `crates/codepact/src/main.rs` | Selected-input counting and independent total/per-directory/depth bounds for V04-03/24; full near-limit, containment and recovery qualification remains open |
+| `configuration_read_accepts_the_byte_limit_and_caps_consumption_on_overflow` in `crates/codepact/src/adoption.rs` and `project_config_byte_limit_is_inclusive_and_failure_recovers` | Bounded configuration read, exact 64 KiB acceptance, one-byte overflow and recovery for V04-02/24 |
 | `advisory_strict_and_mandatory_severity_follow_policy_contract` and `policy_truth_table_keeps_severity_certainty_coverage_and_rule_selection_separate` | V04-08 |
 | `line_suppression_is_reasoned_and_does_not_delete_the_audit_finding` and `invalid_suppressions_cannot_be_baselined_and_stale_targets_do_not_hide_findings` | V04-09/10 |
 | `baseline_update_is_explicit_and_baseline_only_hides_matching_results`, `baseline_preserves_unambiguous_sites_and_surfaces_inserted_duplicates`, and `baseline_inputs_and_replace_targets_are_validated_before_source_discovery` | V04-10/11 |
@@ -90,6 +92,10 @@ Partial 0.4 measurements are recorded in [candidate performance evidence](perfor
 AD01 retains inherited analyzer budgets and freezes explicit caps for config/baseline bytes and entries, whole-report bytes, related-site/snippet detail and any new identity-matching work. Complete near-limit fixtures and record precise exhaustion/recovery behavior before qualification; no unlimited parser, matcher or baseline loader is accepted by omission. Review performance and memory regressions against 0.3 before G4 and explain accepted changes. No latency threshold or result is fabricated by this plan.
 
 ## Evidence ledger and acceptance
+
+The [release readiness work plan](release-readiness.md) orders the remaining
+implementation, pilot, operational and final-candidate tasks. It does not pass
+any row or replace the assertion-level requirements above.
 
 For every V04 row record status (Pending/Pass/Fail), exact candidate revision, fixture/test/command, environment/schema versions, actual result, artifact/log link and maintainer/date. Link one evidence item to multiple rows only with an explanation of which assertions it covers. Add pilot scorecards and raw labeled samples separately from deterministic test logs.
 

@@ -894,6 +894,9 @@ fn capabilities_and_rule_explanations_publish_the_supported_surface_and_limits()
         serde_json::json!(["3.11", "3.12", "3.13"])
     );
     assert_eq!(capabilities["limits"]["config_bytes"], 65_536);
+    assert_eq!(capabilities["limits"]["max_discovery_entries"], 100_000);
+    assert_eq!(capabilities["limits"]["max_directory_entries"], 20_000);
+    assert_eq!(capabilities["limits"]["max_discovery_depth"], 256);
     assert_eq!(capabilities["limits"]["baseline_bytes"], 16_777_216);
     assert_eq!(capabilities["limits"]["baseline_entries"], 100_000);
     assert_eq!(capabilities["limits"]["report_bytes"], 33_554_432);
@@ -1284,6 +1287,37 @@ fn project_config_wrong_types_and_invalid_values_fail_with_actionable_errors() {
             "{config}: {failure:#}"
         );
     }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_config_byte_limit_is_inclusive_and_failure_recovers() {
+    let root = project("config-byte-limit");
+    let path = root.join("pyproject.toml");
+    let mut config = b"[tool.codepact]\nconfig-version=1\nmode='strict'\n".to_vec();
+    config.resize(64 * 1024, b' ');
+    fs::write(&path, &config).unwrap();
+    let exact = cli(&root, &["check", "--show-settings", "--json"]);
+    assert_eq!(exact.status.code(), Some(0));
+    let settings: serde_json::Value = serde_json::from_slice(&exact.stdout).unwrap();
+    assert_eq!(settings["mode"], "strict");
+
+    config.push(b' ');
+    fs::write(&path, &config).unwrap();
+    let oversized = cli(&root, &["check", "--show-settings", "--json"]);
+    assert_eq!(oversized.status.code(), Some(2));
+    let failure: serde_json::Value = serde_json::from_slice(&oversized.stdout).unwrap();
+    assert_eq!(failure["execution_status"], "failed");
+    assert!(failure["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("64 KiB limit"));
+
+    fs::write(&path, "[tool.codepact]\nconfig-version=1\n").unwrap();
+    let recovered = cli(&root, &["check", "--show-settings", "--json"]);
+    assert_eq!(recovered.status.code(), Some(0));
+    let settings: serde_json::Value = serde_json::from_slice(&recovered.stdout).unwrap();
+    assert_eq!(settings["mode"], "advisory");
     fs::remove_dir_all(root).unwrap();
 }
 
