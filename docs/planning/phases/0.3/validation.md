@@ -156,19 +156,22 @@ record](contextlib-conformance.md). This is automation evidence only; it does
 not qualify behavior or pass a technical gate. Remaining phase-specific
 qualification evidence is pending.
 
-The fixed candidate's local checks and Quality result are recorded in the
-[release evidence record](../../../releases/0.3.0-evidence.md). Release run
-42516228974, downloaded artifacts and strict Twine recheck belong to earlier
-candidate `6e97aed233a59c1854fda650d6ddda0eed6ba7b5`; they do not qualify the
-fixed candidate's distributions. No updated wheel/sdist qualification has run.
+The fixed candidate's local checks and workflow results are recorded in the
+[release evidence record](../../../releases/0.3.0-evidence.md). Non-publishing
+Release run [42543310512](https://github.com/eddiethedean/codepact/actions/runs/42543310512)
+on candidate commit `139fc01e3aa62853545b06a68f402d6b0a8a5834` built and
+verified the eight CLI wheels, pure helper wheel, both source archives, and
+artifact metadata. All native wheel build/smoke jobs and the aggregate artifact
+verification passed. This is distribution automation evidence; G5 maintainer
+qualification remains pending.
 
 The [0.3 performance record](performance.md) retains historical pre-fix results and now includes fixed-candidate cleanup, lifecycle, inspector and memory measurements. The full local check covers query reuse and budget regressions. Complete maintainer G4 review before relying on these results. A completed budget table is not an absolute latency guarantee.
 
 The runnable [candidate cleanup tutorial](cleanup-tutorial.md) demonstrates synchronous exit obligations and async cancellation findings with separate fixtures and expected CLI outcomes.
 
-The fixed CodePact 0.3 candidate has passed local `make check` and Quality CI.
-The V03 matrix maps automated coverage, but maintainer qualification of
-C01–C05, C07, CS01 and G2–G6 remains pending, along with the G4 performance
-review and current-candidate distribution qualification. Complete G2–G6 before
+The fixed CodePact 0.3 candidate has passed local `make check`, Quality CI and
+non-publishing current-candidate artifact verification. The V03 matrix maps
+automated coverage, but maintainer qualification of C01–C05, C07, CS01 and
+G2–G6 remains pending, along with G4/G5 review. Complete G2–G6 before
 recording G7 release authorization; record G8 only after authorized publication
 using the [common evidence template](../../release-evidence-template.md).

@@ -45,9 +45,10 @@ and [limitations](limitations.md), then inspect `coverage.reasons`.
 ## Will I need Rust to install the CodePact command?
 
 The release configuration provides native CLI wheels for supported platforms,
-which do not need Rust at installation. Those artifacts are not yet qualified
-for the current candidate. Building the candidate from source requires Rust
-1.96 or newer and a linker. See [installation](install.md).
+which do not need Rust at installation. The current 0.3 candidate's wheels and
+source archives have passed the non-publishing build and artifact checks;
+maintainer release qualification remains pending. Building the candidate from
+source requires Rust 1.96 or newer and a linker. See [installation](install.md).
 
 ## Which Python version is analyzed?
 
