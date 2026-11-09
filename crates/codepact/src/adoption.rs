@@ -160,15 +160,26 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
             }
         }
     };
-    let mut config = None;
-    if let Some(path) = &config_path {
-        reject_symlink_components(path, "configuration")?;
+    let config_path = if let Some(path) = config_path {
+        reject_symlink_components(&path, "configuration")?;
         if !path.is_file() {
             return Err(format!(
                 "configuration file does not exist: {}",
                 path.display()
             ));
         }
+        let resolved = fs::canonicalize(&path).map_err(|error| {
+            format!(
+                "cannot resolve configuration file {}: {error}",
+                path.display()
+            )
+        })?;
+        Some(resolved)
+    } else {
+        None
+    };
+    let mut config = None;
+    if let Some(path) = &config_path {
         let metadata =
             fs::metadata(path).map_err(|e| format!("cannot inspect {}: {e}", path.display()))?;
         if metadata.len() > 64 * 1024 {

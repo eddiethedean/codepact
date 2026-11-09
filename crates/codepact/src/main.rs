@@ -110,6 +110,12 @@ fn emit_failure(format: &str, message: String) -> ExitCode {
     ExitCode::from(2)
 }
 
+fn resolve_project_root(root: &Path) -> Result<PathBuf, String> {
+    codepact::adoption::reject_symlink_components(root, "project root")?;
+    fs::canonicalize(root)
+        .map_err(|error| format!("cannot resolve project root {}: {error}", root.display()))
+}
+
 fn write_stdout(value: &str) -> Result<(), String> {
     if value.is_empty() {
         return Ok(());
@@ -454,9 +460,13 @@ fn main() -> ExitCode {
                 "--show-settings applies only to check".into(),
             );
         };
+        let root = match resolve_project_root(&c.root) {
+            Ok(root) => root,
+            Err(error) => return emit_failure(&output_format, error),
+        };
         let output = serde_json::to_string_pretty(&serde_json::json!({
             "execution_status": "settings-resolved",
-            "root": c.root,
+            "root": root,
             "config_file": c.source,
             "python_version": c.python_version,
             "include": c.include,
@@ -531,17 +541,9 @@ fn main() -> ExitCode {
         None
     };
     let root = if let Some(c) = effective.as_ref() {
-        if let Err(error) = adoption::reject_symlink_components(&c.root, "project root") {
-            return emit_failure(&output_format, error);
-        }
-        match fs::canonicalize(&c.root) {
-            Ok(p) => Some(p),
-            Err(e) => {
-                return emit_failure(
-                    &output_format,
-                    format!("cannot resolve project root {}: {e}", c.root.display()),
-                )
-            }
+        match resolve_project_root(&c.root) {
+            Ok(root) => Some(root),
+            Err(error) => return emit_failure(&output_format, error),
         }
     } else if let Some(p) = explicit_root {
         let p = if p.is_absolute() { p } else { cwd.join(p) };

@@ -49,6 +49,7 @@ before it can be marked Pass.
 | `must_use_tracks_local_captured_and_reexported_callable_identities` and `must_use_resolves_known_instance_static_and_class_methods` | V04-13 |
 | `must_use_reports_unsupported_nested_and_async_uses_without_mislabeling_arguments` | V04-14/15 |
 | `nearest_config_wins_and_invalid_project_settings_fail_before_analysis`, `project_config_strict_mode_and_rule_selection_are_applied`, and `settings_resolution_is_read_only_and_reports_origins` | V04-01/02, partial V04-03 |
+| `explicit_config_and_root_overrides_have_one_deterministic_precedence` and `project_config_wrong_types_and_invalid_values_fail_with_actionable_errors` | Additional V04-01/02/04 assertions for explicit config/root precedence, canonical paths, missing/symlinked roots, wrong TOML value types and invalid settings; partial-row evidence only |
 | `includes_and_excludes_define_scope_and_explicit_operands_cannot_bypass_excludes` | Partial V04-03 |
 | `advisory_strict_and_mandatory_severity_follow_policy_contract` and `policy_truth_table_keeps_severity_certainty_coverage_and_rule_selection_separate` | V04-08 |
 | `line_suppression_is_reasoned_and_does_not_delete_the_audit_finding` and `invalid_suppressions_cannot_be_baselined_and_stale_targets_do_not_hide_findings` | V04-09/10 |

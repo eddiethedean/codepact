@@ -1022,6 +1022,252 @@ fn nearest_config_wins_and_invalid_project_settings_fail_before_analysis() {
 }
 
 #[test]
+fn explicit_config_and_root_overrides_have_one_deterministic_precedence() {
+    let root = project("config-explicit-precedence");
+    let workspace = root.join("workspace");
+    let nested = workspace.join("package");
+    let cwd = nested.join("deep");
+    fs::create_dir_all(&cwd).unwrap();
+    fs::create_dir_all(nested.join("src")).unwrap();
+    fs::create_dir_all(workspace.join("outer-src")).unwrap();
+    fs::write(
+        workspace.join("pyproject.toml"),
+        "[tool.codepact]\nconfig-version=1\nmode='strict'\npython-version='3.13'\nroot='outer-src'\n",
+    )
+    .unwrap();
+    fs::write(
+        nested.join("pyproject.toml"),
+        "[tool.codepact]\nconfig-version=1\nmode='advisory'\npython-version='3.12'\nroot='src'\n",
+    )
+    .unwrap();
+    fs::write(nested.join("src/main.py"), "value = 1\n").unwrap();
+
+    let nearest = cli_from(&cwd, &["check", "--show-settings", "--json"]);
+    assert_eq!(nearest.status.code(), Some(0));
+    let nearest: serde_json::Value = serde_json::from_slice(&nearest.stdout).unwrap();
+    assert_eq!(nearest["mode"], "advisory");
+    assert_eq!(nearest["python_version"], "3.12");
+    assert_eq!(
+        nearest["root"],
+        nested
+            .join("src")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .as_ref()
+    );
+    assert!(nearest["config_file"]
+        .as_str()
+        .unwrap()
+        .ends_with("package/pyproject.toml"));
+
+    let no_config = cli_from(&cwd, &["check", "--show-settings", "--no-config", "--json"]);
+    assert_eq!(no_config.status.code(), Some(0));
+    let no_config: serde_json::Value = serde_json::from_slice(&no_config.stdout).unwrap();
+    assert_eq!(no_config["mode"], "advisory");
+    assert_eq!(no_config["python_version"], "3.11");
+    assert_eq!(no_config["config_file"], serde_json::Value::Null);
+    assert_eq!(
+        no_config["root"],
+        cwd.canonicalize().unwrap().to_string_lossy().as_ref()
+    );
+
+    let explicit_relative = cli_from(
+        &cwd,
+        &[
+            "check",
+            "--show-settings",
+            "--config",
+            "../pyproject.toml",
+            "--json",
+        ],
+    );
+    assert_eq!(explicit_relative.status.code(), Some(0));
+    let explicit_relative: serde_json::Value =
+        serde_json::from_slice(&explicit_relative.stdout).unwrap();
+    assert_eq!(explicit_relative["mode"], "advisory");
+    assert_eq!(explicit_relative["python_version"], "3.12");
+    assert_eq!(
+        explicit_relative["root"],
+        nested
+            .join("src")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .as_ref()
+    );
+
+    let absolute_config_path = nested.join("pyproject.toml");
+    let absolute_config = cli_from(
+        &cwd,
+        &[
+            "check",
+            "--show-settings",
+            "--config",
+            absolute_config_path.to_str().unwrap(),
+            "--json",
+        ],
+    );
+    assert_eq!(absolute_config.status.code(), Some(0));
+    let absolute_config: serde_json::Value =
+        serde_json::from_slice(&absolute_config.stdout).unwrap();
+    assert_eq!(
+        absolute_config["config_file"],
+        absolute_config_path
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .as_ref()
+    );
+
+    let absolute_root_path = nested.join("src");
+    let absolute_root = cli_from(
+        &cwd,
+        &[
+            "check",
+            "--show-settings",
+            "--root",
+            absolute_root_path.to_str().unwrap(),
+            "--json",
+        ],
+    );
+    assert_eq!(absolute_root.status.code(), Some(0));
+    let absolute_root: serde_json::Value = serde_json::from_slice(&absolute_root.stdout).unwrap();
+    assert_eq!(
+        absolute_root["root"],
+        absolute_root_path
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .as_ref()
+    );
+    assert_eq!(absolute_root["settings_origins"]["root"], "command-line");
+
+    let root_override = cli_from(
+        &cwd,
+        &["check", "--show-settings", "--root", "../src", "--json"],
+    );
+    assert_eq!(root_override.status.code(), Some(0));
+    let root_override: serde_json::Value = serde_json::from_slice(&root_override.stdout).unwrap();
+    assert_eq!(root_override["mode"], "advisory");
+    assert_eq!(root_override["python_version"], "3.12");
+    assert_eq!(
+        root_override["root"],
+        nested
+            .join("src")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .as_ref()
+    );
+    assert_eq!(root_override["settings_origins"]["root"], "command-line");
+    assert!(root_override["config_file"]
+        .as_str()
+        .unwrap()
+        .ends_with("package/pyproject.toml"));
+
+    let missing_root = cli_from(
+        &cwd,
+        &[
+            "check",
+            "--show-settings",
+            "--root",
+            "missing-project-root",
+            "--json",
+        ],
+    );
+    assert_eq!(missing_root.status.code(), Some(2));
+    let missing_root: serde_json::Value = serde_json::from_slice(&missing_root.stdout).unwrap();
+    assert_eq!(missing_root["execution_status"], "failed");
+    assert!(missing_root["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("cannot resolve project root"));
+
+    #[cfg(unix)]
+    {
+        let symlink_root = workspace.join("src-link");
+        std::os::unix::fs::symlink(nested.join("src"), &symlink_root).unwrap();
+        let linked_settings = cli_from(
+            &cwd,
+            &[
+                "check",
+                "--show-settings",
+                "--root",
+                symlink_root.to_str().unwrap(),
+                "--json",
+            ],
+        );
+        assert_eq!(linked_settings.status.code(), Some(2));
+        let linked_settings: serde_json::Value =
+            serde_json::from_slice(&linked_settings.stdout).unwrap();
+        assert_eq!(linked_settings["execution_status"], "failed");
+        assert!(linked_settings["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("symlink component"));
+
+        let symlink_config = workspace.join("pyproject-link.toml");
+        std::os::unix::fs::symlink(nested.join("pyproject.toml"), &symlink_config).unwrap();
+        let linked_config = cli_from(
+            &cwd,
+            &[
+                "check",
+                "--show-settings",
+                "--config",
+                symlink_config.to_str().unwrap(),
+                "--json",
+            ],
+        );
+        assert_eq!(linked_config.status.code(), Some(2));
+        let linked_config: serde_json::Value =
+            serde_json::from_slice(&linked_config.stdout).unwrap();
+        assert_eq!(linked_config["execution_status"], "failed");
+        assert!(linked_config["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("symlink component"));
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_config_wrong_types_and_invalid_values_fail_with_actionable_errors() {
+    let root = project("config-wrong-types");
+    fs::write(
+        root.join("pyproject.toml"),
+        "[tool.codepact]\nconfig-version=1\n",
+    )
+    .unwrap();
+
+    for config in [
+        "[tool.codepact]\nconfig-version='1'\n",
+        "[tool.codepact]\nconfig-version=1\nroot=1\n",
+        "[tool.codepact]\nconfig-version=1\ninclude='src/**/*.py'\n",
+        "[tool.codepact]\nconfig-version=1\nexclude=[1]\n",
+        "[tool.codepact]\nconfig-version=1\nenabled-rules='TP3001'\n",
+        "[tool.codepact]\nconfig-version=1\nseverity='warning'\n",
+        "[tool.codepact]\nconfig-version=1\nfail-on='info'\n",
+        "[tool.codepact]\nconfig-version=1\ninclude=['src/../outside.py']\n",
+        "[tool.codepact]\nconfig-version=1\npython-version='3.14'\n",
+        "[tool.codepact]\nconfig-version=1\n[tool.codepact.severity]\nTP3001='fatal'\n",
+    ] {
+        fs::write(root.join("pyproject.toml"), config).unwrap();
+        let invalid = cli(&root, &["check", "--json"]);
+        assert_eq!(invalid.status.code(), Some(2), "{config}");
+        let failure: serde_json::Value = serde_json::from_slice(&invalid.stdout).unwrap();
+        assert_eq!(failure["execution_status"], "failed", "{config}");
+        let message = failure["error"]["message"].as_str().unwrap_or_default();
+        assert!(!message.is_empty(), "{config}: {failure:#}");
+        assert!(
+            failure.get("diagnostics").is_none(),
+            "{config}: {failure:#}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn includes_and_excludes_define_scope_and_explicit_operands_cannot_bypass_excludes() {
     let root = project("include-exclude");
     fs::create_dir_all(root.join("src/generated")).unwrap();
