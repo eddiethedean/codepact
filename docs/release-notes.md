@@ -1,5 +1,29 @@
 # Release notes
 
+## 0.4.0 — source candidate, unpublished
+
+This checkout implements adoption tooling on top of the released lifecycle
+checker. It has not been pilot-qualified or published. The
+[phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4-adoption.md)
+records the remaining qualification gates.
+
+- Validated project settings, rule selection, severity overrides, effective
+  setting origins, and advisory/strict check policy.
+- Explicit baseline creation and replacement with stable finding matching,
+  plus line suppressions that require exact eligible codes and a reason.
+- Synchronous must-use contracts through `@must_use`, `MustUse[T]`, and
+  `MustUseResult`, with TP3001 for supported bare discarded calls.
+- CLI check schema 2, text/JSON/concise output, bounded detail reporting,
+  snapshot identity, capabilities, static rule explanations, and published
+  schemas with valid/invalid fixtures.
+- Existing declaration inspection and Rust checking APIs retain their released
+  result contracts. Mandatory errors and incomplete coverage remain visible
+  when eligible findings are suppressed.
+
+See [upgrading](upgrading.md) for interface changes and [adoption](adopting.md)
+for a gradual rollout. No release or distribution claim follows from these
+implementation notes.
+
 ## 0.3.0 — published 2026-11-08
 
 CodePact 0.3.0 extends lifecycle checking with bounded cleanup obligations.

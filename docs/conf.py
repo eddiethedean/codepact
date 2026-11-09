@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -20,6 +21,7 @@ extensions = [
 root_doc = "index"
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
 language = "en"
+nitpicky = True
 exclude_patterns = ["_build", "planning/**", "releases/**", "Thumbs.db", ".DS_Store"]
 
 myst_enable_extensions = ["colon_fence"]
@@ -37,7 +39,15 @@ nitpick_ignore = [
 ]
 
 html_theme = "sphinx_rtd_theme"
-html_title = "CodePact documentation — 0.4.0"
+html_title = "CodePact documentation — 0.4.0 candidate"
+html_baseurl = os.environ.get("READTHEDOCS_CANONICAL_URL", "")
+html_context = {
+    "display_github": True,
+    "github_user": "eddiethedean",
+    "github_repo": "codepact",
+    "github_version": os.environ.get("READTHEDOCS_GIT_COMMIT_HASH", "main"),
+    "conf_py_path": "/docs/",
+}
 html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 3,

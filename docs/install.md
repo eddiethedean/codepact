@@ -1,64 +1,105 @@
 # Installation
 
-CodePact 0.3.0 is published as `codepact` and `codepact-cli` on PyPI and as
-`codepact` on crates.io. Install the Python helper and matching CLI with:
+Choose the published **0.3.0 release** for distributed packages, or build the
+**0.4.0 source candidate** to evaluate adoption tooling. Candidate package
+versions in this repository do not imply a published release. See
+[availability](availability.md) for versions and platform evidence.
+
+## Python helpers and matching CLI
+
+In an existing uv project:
 
 ```sh
 uv add codepact==0.3.0
 uv run --locked codepact --version
 ```
 
-The helper installs the matching CLI version automatically. To install only the
-command, use:
+Or install with pip:
 
 ```sh
-uv tool install codepact-cli==0.3.0
+python -m pip install 'codepact==0.3.0'
 codepact --version
 ```
 
-To add the Rust library to a Cargo project, use `cargo add codepact@0.3.0`.
-Python programs can import declarations without starting the analyzer:
+The `codepact` package pins `codepact-cli` to the same version. It contains pure
+Python helpers, typing metadata, and `py.typed`. Importing those helpers does
+not start the analyzer or download an executable:
 
 ```python
 from codepact import resource
 from codepact.rust import Borrowed, Owned
 ```
 
-To run the checker in the uv project:
+## Standalone command
+
+Install only the native analyzer when Python helper imports are unnecessary:
 
 ```sh
-uv run --locked codepact inspect-contracts app.py
-uv run --locked codepact check --root src
+uv tool install codepact-cli==0.3.0
+codepact --version
 ```
 
-The helper wheel is platform-independent and requires Python 3.11 or newer.
-Prebuilt CLI wheels include the executable and do not require a Rust compiler.
-Source builds require Rust 1.96+, a linker, and access to the locked Cargo
-dependencies. Published CLI wheels cover Linux glibc and musl, macOS,
-and Windows on x86-64 and ARM64. See [compatibility](supported-syntax.md#python-version-support)
-for the analyzer source targets.
+Prebuilt CLI wheels contain a standalone Rust executable. They do not require
+a Rust compiler or depend on a particular CPython ABI.
 
-## Build the checker from source
-
-The CLI and Rust library share the same analyzer. From the repository root:
+## Rust library
 
 ```sh
-cargo run --locked -- check --root examples
+cargo add codepact@0.3.0
 ```
 
-The lifecycle example intentionally reports a use after close and exits `1`.
-The [cleanup tutorial](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md) demonstrates
-the released exit-obligation diagnostics. Check out `v0.3.0` and record the full
-Git commit when sharing source-build results.
+Use the [Rust API reference](rust-api.md) for one-shot checks and reusable sessions.
+Source builds require Rust 1.96+, a linker, and the locked Cargo dependencies.
 
-## Confirm the installation
+## Build the 0.4 candidate
+
+With Python 3.11+, uv, and Rust 1.96+ installed:
+
+```sh
+git clone https://github.com/eddiethedean/codepact.git
+cd codepact
+uv sync --locked
+uv run --locked codepact --version
+uv run --locked codepact capabilities --json
+git rev-parse HEAD
+```
+
+This builds the local helper and CLI workspace. The version is `0.4.0`; record
+the Git revision with reports to identify the candidate precisely. Continue
+with [adoption](adopting.md) for project configuration and must-use results.
+
+For a Rust-only build from that checkout:
+
+```sh
+cargo build --release --locked
+./target/release/codepact --version
+```
+
+To reproduce the published release from source, check out `v0.3.0` before
+building. Avoid mixing candidate helpers with the published CLI when evaluating
+new contracts.
+
+## Compatibility
+
+| Surface | Support |
+| --- | --- |
+| Python helper runtime | Python 3.11+; CI covers CPython 3.11–3.14 |
+| Analyzed source targets | Python 3.11, 3.12, and 3.13 |
+| CLI wheels | Linux glibc/musl, macOS, and Windows on x86-64 and ARM64 |
+| Source builds | Rust 1.96+ and a linker |
+
+The [platform matrix](availability.md#platform-and-runtime-evidence) lists
+minimum OS/runtime versions. The helper wheel is universal pure Python.
+Running the helpers on Python 3.14 does not add analyzer support for Python
+3.14 grammar; choose source grammar separately with `--python-version`.
+
+## Verify and continue
 
 ```sh
 uv run --locked codepact --version
 uv run --locked python -c "from codepact import resource; from codepact.rust import Borrowed, Owned"
 ```
 
-The command should print `codepact 0.3.0`; the Python import should exit
-successfully. The analyzer target is selected separately with
-`--python-version`. Running the helpers on Python 3.14 does not add analyzer
-support for Python 3.14 grammar.
+For a project using published dependencies, the command should print
+`codepact 0.3.0`. Then follow the [quick start](quickstart.md). If an executable
+or dependency cannot be found, use [troubleshooting](troubleshooting.md).

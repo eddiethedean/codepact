@@ -1,128 +1,135 @@
 # CodePact
 
-CodePact catches conflicting resource declarations and supported lifecycle bugs such as use-after-close and missed cleanup in Python. Its analyzer reads source without importing or running application code.
+**Find lifecycle mistakes in Python before running your code.**
+
+CodePact is a static analyzer for resource contracts. Declare how a resource
+closes and which functions own or borrow it; CodePact checks supported paths
+for use after close, missed cleanup, and invalid ownership handoffs. It reads
+source without importing or executing your application.
 
 [![PyPI](https://img.shields.io/pypi/v/codepact.svg)](https://pypi.org/project/codepact/)
 [![CLI on PyPI](https://img.shields.io/pypi/v/codepact-cli.svg?label=CLI)](https://pypi.org/project/codepact-cli/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](#compatibility)
 [![Quality](https://github.com/eddiethedean/codepact/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/eddiethedean/codepact/actions/workflows/quality.yml)
 [![Documentation](https://readthedocs.org/projects/typepact/badge/?version=latest)](https://typepact.readthedocs.io/en/latest/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/eddiethedean/codepact/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Declare how resources close and how APIs intend to access them alongside ordinary Python types. CodePact 0.3.0 checks cleanup obligations across supported exits, in addition to use-after-close. The previous 0.1.0 and 0.2.0 releases used the TypePact name and package names. APIs, diagnostics, and the JSON schema remain provisional during 0.x.
+[Quick start](#quick-start) · [Try 0.4](#try-the-04-source-candidate) ·
+[Documentation](https://typepact.readthedocs.io/en/latest/) ·
+[Rule catalog](docs/rules.md) · [Roadmap](ROADMAP.md)
 
-| Task | Command | Availability |
+**Release status:** 0.3.0 is published on PyPI and crates.io. This repository
+contains the **0.4.0 source candidate**, including configuration, baselines,
+suppressions, and must-use results. The candidate has not been published or
+pilot-qualified. See [availability and release evidence](docs/availability.md).
+APIs and report schemas remain provisional during 0.x.
+
+## What it checks
+
+| Contract | Finding | Available in |
 | --- | --- | --- |
-| Inspect lifecycle and access declarations | `codepact inspect-contracts FILE...` | CodePact 0.3.0 |
-| Check use-after-close and cleanup obligations | `codepact check --root DIR` | CodePact 0.3.0 |
+| A resource is closed by a declared method | Use after close (`TP1001`) | Published 0.3 |
+| A function owns a resource | Outstanding cleanup duty on a modeled exit (`TP1002`) | Published 0.3 |
+| A function returns `Owned[T]` | Invalid ownership handoff (`TP1003`) | Published 0.3 |
+| A function borrows a resource | Close through a borrowed view (`TP2001`) | Published 0.3 |
+| A synchronous result must be handled | Discarded must-use result (`TP3001`) | 0.4 candidate |
+| Resource declarations must agree | Conflicting lifecycle/access metadata (`TP4002`) | Published 0.3 |
 
-Install CodePact using [installation](#install), then follow [contract inspection](#inspect-your-first-contract) or [lifecycle checking](#try-lifecycle-checking-from-source). See the [availability guide](docs/availability.md) for release status and the platform matrix.
+The checker covers bounded local flow, aliases, supported calls, branches,
+loops, exceptional exits, `finally`, context managers, and supported async
+cleanup/cancellation paths. Reports expose certainty, related locations, and
+coverage boundaries. A clean report describes the supported subset; it does
+not establish general Python resource safety.
 
-## Install
+## Quick start
 
-Install the Python helper and its matching CLI dependency:
+In an existing uv project, install the published helper and matching CLI:
 
 ```sh
 uv add codepact==0.3.0
 uv run --locked codepact --version
+mkdir -p demo
 ```
 
-Alternatively, use `python -m pip install 'codepact==0.3.0'`.
-
-This installs two matching distributions:
-
-| Distribution | Contents |
-| --- | --- |
-| `codepact` | Pure Python declaration helpers, typing metadata, and `py.typed` |
-| `codepact-cli` | The native Rust `codepact` executable |
-
-`codepact` pins `codepact-cli` to the same version. Importing the Python helpers does not start the analyzer or download an executable. Prebuilt CLI wheels require no Rust compiler; building the CLI from source requires Rust 1.96 or newer and a linker.
-
-For the command alone:
-
-```sh
-uv tool install codepact-cli==0.3.0
-codepact --version
-```
-
-## Inspect your first contract
-
-Save this as `connection.py`:
+Save this as `demo/connection.py`:
 
 ```python
 from codepact import resource
-from codepact.rust import Borrowed, Owned
+from codepact.rust import Borrowed
 
 
 @resource(closed_by="close")
 class Connection:
+    def status(self) -> str:
+        return "ready"
+
     def close(self) -> None:
         pass
 
 
 def read(conn: Borrowed[Connection]) -> str:
-    return "ready"
+    return conn.status()
 
 
-def consume(conn: Owned[Connection]) -> None:
-    conn.close()
+conn = Connection()
+conn.close()
+read(conn)  # TP1001: the connection has already been closed.
 ```
 
-Inspect its declarations:
+Run the checker on that directory:
 
 ```sh
-uv run codepact inspect-contracts connection.py
+uv run --locked codepact check --root demo
 ```
 
-CodePact emits JSON containing these contract views:
+CodePact reports a definite `TP1001` at `read(conn)`, relates the earlier close,
+and exits with status `1`. Move `read(conn)` before `conn.close()` and recheck
+to clear the finding. These methods are small stubs: CodePact trusts the
+lifecycle declaration and does not verify what `close()` releases at runtime.
 
-| Declaration | Base type | Lifecycle | Access intent |
-| --- | --- | --- | --- |
-| `Connection` | `connection.Connection` | Closed by `close` | Unspecified |
-| `read.conn` | `connection.Connection` | Closed by `close` | Shared |
-| `consume.conn` | `connection.Connection` | Closed by `close` | Owned |
-
-The `resource` decorator preserves the class identity and records lifecycle metadata. The inspector reads the file as text without importing it, evaluating annotations, or invoking decorators. In the historical TypePact 0.1.0 release, method bodies were not checked: declaring `closed_by="close"` did not establish that `close` releases anything.
-
-The inspector also rejects conflicting declarations. The
-[TP4002 example](docs/rules.md#example-conflicting-lifecycle-metadata) shows a
-resource alias that declares a different close method, the reported locations,
-and a valid repair. Use the `check` command below for lifecycle findings.
-
-See the complete [paired example](https://github.com/eddiethedean/codepact/blob/main/examples/contracts.py) and its [JSON snapshot](https://github.com/eddiethedean/codepact/blob/main/tests/snapshots/example-contracts.json).
-
-## Try lifecycle checking from source
-
-The TypePact 0.2.0 checker remains available from its historical tag. Install the published CodePact 0.3.0 packages with the commands above. To build from source, use Rust 1.96+ and the current checkout:
+To inspect the declarations as JSON:
 
 ```sh
-git clone https://github.com/eddiethedean/codepact.git
-cd codepact
-uv sync --locked
-uv run --locked codepact check --root examples
+uv run --locked codepact inspect-contracts demo/connection.py
 ```
 
-Record `git rev-parse HEAD` with results from a source checkout.
+This records the resource lifecycle and the shared access intent of `read.conn`.
+The [lifecycle tutorial](docs/lifecycle.md) explains the analysis, and the
+[cleanup tutorial](docs/planning/phases/0.3/cleanup-tutorial.md) covers exit duties.
 
-The [lifecycle example](https://github.com/eddiethedean/codepact/blob/main/examples/lifecycle.py) constructs a connection, passes it to a Borrowed helper, closes it, then calls the helper again. The final call produces a definite `TP1001`, includes the close location, and exits with status `1`. This example intentionally contains an error.
+### Other installation options
 
-The checker follows supported normal synchronous flow, local aliases, direct calls, and `if`/`else` joins. It also reports closing a `Borrowed` parameter as `TP2001`. Possible findings and incomplete coverage are visible warnings that can accompany exit `0`; read the report even when the command succeeds.
+```sh
+# Python helpers and matching CLI
+python -m pip install 'codepact==0.3.0'
 
-Follow the [lifecycle tutorial](https://typepact.readthedocs.io/en/latest/lifecycle.html) for an isolated example, expected output, and a valid counterpart. The checker does not establish leak freedom, cleanup on every exit, general ownership safety, or that the declared close method releases a runtime resource. Release status and supported behavior are summarized in the [availability guide](docs/availability.md).
+# Standalone CLI
+uv tool install codepact-cli==0.3.0
 
-## Annotation forms
+# Rust library
+cargo add codepact@0.3.0
+```
 
-The access aliases use `typing.Annotated`, so ordinary Python type checkers retain the underlying type:
+The `codepact` distribution pins `codepact-cli` to the same version. Helpers
+are pure Python and include `py.typed`; importing them does not start the
+analyzer. Prebuilt CLI wheels include a native executable and require no Rust
+compiler. Source builds require Rust 1.96+ and a linker.
 
-| Alias from `codepact.rust` | Metadata from `codepact.contracts` | Intent |
-| --- | --- | --- |
-| `Borrowed[T]` | `Annotated[T, SharedBorrow()]` | Shared access |
-| `Owned[T]` | `Annotated[T, OwnedAccess()]` | Owned access |
-| `BorrowedMut[T]` | `Annotated[T, ExclusiveBorrow()]` | Exclusive access |
+## Declare intent with ordinary Python types
 
-For example, `Borrowed[Connection]` and `Annotated[Connection, SharedBorrow()]` produce the same shared-access facts. The aliases are also exported from `codepact.contracts`.
+The helpers use `typing.Annotated`, preserving the underlying type for mypy
+and Pyright:
 
-You can attach lifecycle and access metadata to an alias of an existing class:
+| Declaration | Meaning |
+| --- | --- |
+| `@resource(closed_by="close")` | Declare the method that closes a resource |
+| `Owned[T]` | Declare owned access or an ownership handoff |
+| `Borrowed[T]` | Declare shared borrowed access |
+| `BorrowedMut[T]` | Declare exclusive borrowed access |
+| `MustUse[T]` or `@must_use` | Declare a result that requires immediate handling; 0.4 candidate |
+
+Access aliases come from `codepact.rust` or `codepact.contracts`. You can also
+write metadata explicitly:
 
 ```python
 from typing import Annotated
@@ -137,90 +144,159 @@ ConnectionView = Annotated[
 ]
 ```
 
-Here, `Connection` is the class from the quick start. Metadata on an alias describes that view; it does not change every use of the underlying class. CodePact combines compatible lifecycle and access declarations and reports conflicting values with their source locations. These annotations express intent; they do not enforce ownership or borrowing at runtime.
+Here, `Connection` is the class from the quick start. Metadata describes the
+alias's view. Compatible declarations combine; conflicts report both source
+locations. The helpers record intent without enforcing borrowing at runtime.
+See [contracts and annotation forms](docs/contracts.md).
 
-## Inspecting a project
+## Try the 0.4 source candidate
 
-Choose a source target explicitly when needed. The default is Python 3.11:
-
-```sh
-uv run codepact inspect-contracts --python-version 3.13 connection.py
-```
-
-For imports between files, pass every module that should participate in resolution. For a project with a `src` directory:
+Build the current checkout with Python 3.11+, uv, and Rust 1.96+:
 
 ```sh
-uv run codepact inspect-contracts --root src src/models.py src/client.py
+git clone https://github.com/eddiethedean/codepact.git
+cd codepact
+uv sync --locked
+uv run --locked codepact --version
+uv run --locked codepact capabilities --json
 ```
 
-For `inspect-contracts`, `--root` determines logical paths and package-qualified module names without discovering files. Without it, each input file's stem supplies its module name. Absolute `from module import Class` imports and direct imports of supported assignment aliases resolve across supplied files. The `check` command instead scans `.py` files below its root; explicit filenames add inputs and do not restrict that scan.
+Record `git rev-parse HEAD` when sharing candidate results. The following
+features require this checkout's CLI and helpers.
 
-### Inspection output and exit codes
+### Handle must-use results
 
-JSON is the default output; `--json` is accepted explicitly. Each result includes:
+```python
+from codepact import discard, must_use
 
-- `contracts`: normalized base symbols, lifecycle and access facts, source spans, and declaration provenance.
-- `diagnostics`: errors and unsupported-boundary findings, including related locations where applicable.
-- `coverage`: `complete-for-supported-subset` or `incomplete`, with reasons and work counts.
-- `schema_version: 0` and `assurance: "contract-inspection-only"`.
 
-Contract provenance is `declared-unverified`. Line and column numbers are one-based; columns count UTF-8 bytes.
+@must_use
+def fetch() -> int:
+    return 42
 
-| Exit code | Meaning |
+
+fetch()                 # TP3001: result discarded
+value = fetch()         # Immediate handling by assignment
+discard(fetch())        # Explicit intentional abandonment
+```
+
+`MustUse[int]` and `Annotated[int, MustUseResult()]` return annotations express
+the same contract. The rule checks immediate handling of resolved synchronous
+calls. It does not track later use of an assigned value, infer ownership, or
+prove async result consumption. `discard()` preserves evaluation effects and
+does not close a resource. `TP3001` defaults to warning severity; use
+`--fail-on warning` to make it fail the check.
+
+### Add a project policy
+
+For a project with a `src/` directory, add this to `pyproject.toml`:
+
+```toml
+[tool.codepact]
+config-version = 1
+root = "src"
+python-version = "3.12"
+exclude = ["generated/**"]
+mode = "strict"
+fail-on = "warning"
+```
+
+With the candidate CLI, inspect the effective settings and run a check:
+
+```sh
+codepact check --show-settings --json
+codepact check --json > codepact-report.json
+codepact explain TP3001 --json
+```
+
+Strict mode also fails on unsuppressed possible violations and incomplete
+coverage. JSON reports retain certainty, coverage, policy, suppression data,
+and snapshot identity. See [CLI options](docs/cli.md) and
+[report formats and schemas](docs/output.md).
+
+### Adopt checks gradually
+
+Review current findings, then explicitly create a baseline:
+
+```sh
+codepact baseline update --output codepact-baseline.json \
+  --reason "reviewed findings before adoption"
+codepact check --baseline codepact-baseline.json
+```
+
+Commit the reviewed baseline with the project. Replacing it requires
+`--replace`; ordinary checks never rewrite it. For a local exception, name the
+rule and explain why:
+
+```python
+fetch()  # codepact: ignore[TP3001] -- queried intentionally for side effects
+```
+
+Eligible suppressed findings remain in the JSON audit output. Baselines and
+inline suppressions preserve mandatory errors and incomplete coverage.
+Follow the [adoption guide](docs/adopting.md) for matching rules, stale entries,
+policy configuration, and qualification status.
+
+## Choose the right command
+
+| Command | Purpose |
 | --- | --- |
-| `0` | Inspection completed with no declaration errors or incomplete coverage |
-| `1` | Declaration errors, syntax errors, or unsupported/unresolved constructs were reported |
-| `2` | An invocation, file access, input limit, or fatal execution error prevented inspection |
+| `codepact check --root src` | Discover Python files and check supported flow |
+| `codepact inspect-contracts --root src src/models.py src/client.py` | Inspect declarations in explicit files and resolve their supported imports |
+| `codepact check --json` | Emit a machine-readable report; schema 2 in the 0.4 CLI |
+| `codepact check --show-settings --json` | Inspect configuration and its origins; 0.4 candidate |
+| `codepact capabilities --json` | List rules, schemas, targets, and limits; 0.4 candidate |
 
-A successful inspection establishes the recorded declarations within the supported subset. It does not prove resource safety.
+`check` scans its root; explicit file operands add inputs rather than narrowing
+the scan. `inspect-contracts` reads only the files supplied. The default source
+target is Python 3.11; select another with `--python-version`.
 
-## Scope of the original 0.1 release
+| Check status | Meaning |
+| --- | --- |
+| `0` | The completed report passes the selected policy |
+| `1` | The completed report contains a finding or coverage condition that fails policy |
+| `2` | Invocation, configuration, input, or execution failed |
 
-The inspector supports module-level classes, literal CodePact resource decorators, simple assignment aliases, parameter and return annotations, and direct absolute imports among explicitly supplied modules. It resolves supported API imports by identity, respects local rebinding, and preserves the class and metadata captured by earlier aliases.
+Advisory mode can return `0` with incomplete coverage. Read the coverage and
+certainty fields alongside the exit code. Inspection has its own preserved
+exit policy, documented in the [CLI reference](docs/cli.md).
 
-Relevant unsupported constructs produce incomplete coverage. Current boundaries include:
-
-- String annotations and `from __future__ import annotations`.
-- Relative imports, star imports, import re-export chains, and supplied-module cycles.
-- Class inheritance and metaclass behavior, other class decorators, and decorated functions.
-- Computed contract expressions, dynamic decorator arguments, and eager named expressions that could rebind module names.
-- Module-level control flow and unsupported nested or generic declarations.
-
-The inspector has explicit source and work limits, including a 1,000,000-byte total source budget per request. See the [inspector guide](https://github.com/eddiethedean/codepact/blob/main/docs/inspector.md) for the detailed limits and Rust session API.
-
-The historical TypePact 0.2.0 release added bounded lifecycle flow checks. CodePact 0.3.0 adds cleanup obligations across supported exits. General ownership enforcement and precise alias analysis through fields and containers remain future work. The [release roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md) describes that progression.
-
-## Compatibility
+## Compatibility and limits
 
 | Surface | Support |
 | --- | --- |
 | Python helper runtime | Python 3.11+; CI covers CPython 3.11–3.14 |
-| Analyzed Python source targets | 3.11, 3.12, and 3.13 |
-| Python typing | Inline types and `py.typed`; compatibility fixtures for mypy and Pyright |
+| Analyzed Python source | Python 3.11, 3.12, and 3.13 |
+| Python typing | Inline types, `py.typed`, mypy and Pyright fixtures |
 | Rust source builds | Rust 1.96+ |
+| Published CLI wheels | Linux glibc/musl, macOS, and Windows; x86-64 and ARM64 |
 
-The release provides eight native CLI wheel targets. Its build and install
-evidence is recorded in the
-[availability guide](docs/availability.md):
+Platform versions and published artifact evidence are in the
+[availability guide](docs/availability.md). Running the helpers on Python 3.14
+does not enable analysis of Python 3.14 grammar.
 
-| Platform | x86-64 | ARM64 |
-| --- | --- | --- |
-| Linux glibc | glibc 2.17+ | glibc 2.28+ |
-| Linux musl | musl 1.2+ | musl 1.2+ |
-| macOS | 10.13+ | 11.0+ |
-| Windows | Supported | Supported |
+Analysis is bounded and reports unsupported constructs. String annotations,
+`from __future__ import annotations`, dynamic dispatch, and resource aliases
+through arbitrary fields or containers remain important limitations. The
+checker does not prove that a declared close method releases an operating
+system resource. See [supported syntax](docs/supported-syntax.md) and
+[limitations](docs/limitations.md) before relying on a result.
 
-The helper wheel is universal pure Python. CLI wheels contain a standalone executable and do not depend on a particular CPython ABI. Identifier validation follows the Unicode rules of the selected source target. See [compatibility](https://github.com/eddiethedean/codepact/blob/main/docs/planning/compatibility.md) and [distribution details](https://github.com/eddiethedean/codepact/blob/main/docs/planning/releases.md) for the complete policy.
+## How it works
 
-## Architecture
+Python helpers provide declarations. The Rust engine uses Ruff's parser and
+AST for syntax and source ranges, then performs bounded semantic and flow
+analysis. Salsa caches reusable queries across edits in an analysis session.
 
-The Python helpers supply declarations; the Rust engine performs inspection. Pinned Ruff parser and AST components provide structured syntax and source ranges. Salsa tracks parsing and module semantics so reusable sessions can retain unaffected work across edits.
+The Rust crate exposes `inspect`, `check`, `check_report`, and
+`AnalysisSession` for repeated updates and cancellation. Existing Rust APIs
+keep their released result contracts; the 0.4 CLI's adoption policy wraps the
+canonical findings. See the [Rust API guide](docs/rust-api.md) and
+[architecture](docs/architecture.md).
 
-The Rust `codepact` crate exposes `inspect` for a single request and `AnalysisSession` for repeated updates, removal, reset, cancellation, and revision-tagged results. CodePact 0.3.0 adds `check` and versioned `check_report` methods. CLI and library calls share the analyzer; the host application supplies the Rust API's source snapshot. See the [Rust API guide](https://typepact.readthedocs.io/en/latest/rust-api.html) and [analyzer design](https://github.com/eddiethedean/codepact/blob/main/docs/planning/analyzer-migration.md).
+## Contributing
 
-## Development
-
-Use a source checkout with `uv`, Rust 1.96+, rustfmt, Clippy, and Make. Install the pinned dependency auditors, then run the full local gate:
+From a checkout, install the pinned auditors and run the full gate:
 
 ```sh
 uv sync --locked
@@ -229,27 +305,20 @@ cargo install cargo-deny --version 0.20.2 --locked
 uv run --locked make check
 ```
 
-`make check` covers Rust formatting, compilation, Clippy, tests, MSRV validation, dependency audits, strict Python typing and linting, identifier-table verification, package builds and clean installation checks, and the inspector's execution guard. GitHub Actions runs the Python checks on 3.11–3.14 alongside the Rust and dependency checks.
+The gate covers Rust and Python quality, tests, MSRV, dependency audits,
+package builds and isolated installation, schema fixtures, documentation, and
+checks that analyzed source is never executed. GitHub Actions runs the Python
+matrix on 3.11–3.14. See [CONTRIBUTING.md](CONTRIBUTING.md) for focused targets.
 
-Run the repository example from the checkout:
+- [Documentation](https://typepact.readthedocs.io/en/latest/) — guides and API references.
+- [Rule catalog](docs/rules.md) — findings, certainty, and repair guidance.
+- [Roadmap](ROADMAP.md) — release progression and pending work.
+- [Planning index](docs/planning/README.md) — design decisions and qualification plans.
 
-```sh
-uv run --locked codepact inspect-contracts --root . examples/contracts.py
-```
-
-See [CONTRIBUTING.md](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) for focused check targets and contribution guidance.
-
-## Documentation
-
-- [Full documentation](https://typepact.readthedocs.io/en/latest/): installation, quick start, adoption guidance, APIs, CLI, output, examples, security, and support.
-- [Documentation source](https://github.com/eddiethedean/codepact/tree/main/docs): guides in the repository if the hosted site is unavailable.
-- [Release and capability availability](docs/availability.md): published versions, capabilities, and platform support.
-- [Inspector guide](https://github.com/eddiethedean/codepact/blob/main/docs/inspector.md): supported syntax, output, limits, and sessions.
-- [Release roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md): the planned 0.1–0.9 sequence.
-- [Product vision](https://github.com/eddiethedean/codepact/blob/main/docs/planning/vision.md): goals and intended use cases.
-- [Limitations](https://github.com/eddiethedean/codepact/blob/main/docs/planning/limitations.md): analysis and assurance boundaries.
-- [Planning index](https://github.com/eddiethedean/codepact/blob/main/docs/planning/README.md): architecture, decisions, and future feature specifications.
+The 0.1 and 0.2 releases used the former TypePact name. The documentation site
+retains its `typepact.readthedocs.io` address; the project and current packages
+are named CodePact.
 
 ## License
 
-CodePact is distributed under the [MIT license](https://github.com/eddiethedean/codepact/blob/main/LICENSE).
+[MIT](LICENSE).

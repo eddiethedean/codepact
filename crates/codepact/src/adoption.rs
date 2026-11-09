@@ -1,4 +1,8 @@
 use crate::{CheckDiagnostic, CheckResult, SourceFile, Span};
+use ruff_python_ast::token::TokenKind;
+use ruff_python_ast::PythonVersion;
+use ruff_python_parser::{Mode, ParseOptions};
+use ruff_text_size::Ranged;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -8,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 pub const ADOPTION_SCHEMA_VERSION: u8 = 2;
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
-pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 2;
+pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 3;
 pub const RULE_SEMANTIC_VERSION: u8 = 1;
 pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"];
 
@@ -468,18 +472,6 @@ fn validate_pattern(p: &str) -> Result<(), String> {
 }
 
 fn glob_match(pattern: &str, path: &str) -> bool {
-    fn inner(p: &[&str], s: &[&str]) -> bool {
-        if p.is_empty() {
-            return s.is_empty();
-        }
-        if p[0] == "**" {
-            return inner(&p[1..], s) || (!s.is_empty() && inner(p, &s[1..]));
-        }
-        if s.is_empty() {
-            return false;
-        }
-        component(p[0], s[0]) && inner(&p[1..], &s[1..])
-    }
     fn component(p: &str, s: &str) -> bool {
         let (mut i, mut j, mut star, mut mark) = (0, 0, None, 0);
         let pattern = p.chars().collect::<Vec<_>>();
@@ -509,10 +501,27 @@ fn glob_match(pattern: &str, path: &str) -> bool {
         }
         i == pattern.len()
     }
-    inner(
-        &pattern.split('/').collect::<Vec<_>>(),
-        &path.split('/').collect::<Vec<_>>(),
-    )
+    let patterns = pattern.split('/').collect::<Vec<_>>();
+    let segments = path.split('/').collect::<Vec<_>>();
+    let mut matched = vec![false; segments.len() + 1];
+    matched[0] = true;
+    for part in patterns {
+        let mut next = vec![false; segments.len() + 1];
+        if part == "**" {
+            next[0] = matched[0];
+            for index in 1..=segments.len() {
+                // `**` either consumes no path components or extends the match
+                // already formed by consuming the preceding component.
+                next[index] = matched[index] || next[index - 1];
+            }
+        } else {
+            for index in 1..=segments.len() {
+                next[index] = matched[index - 1] && component(part, segments[index - 1]);
+            }
+        }
+        matched = next;
+    }
+    matched[segments.len()]
 }
 pub fn included(config: &EffectiveConfig, root: &Path, path: &Path) -> bool {
     let Ok(rel) = path.strip_prefix(root) else {
@@ -948,69 +957,28 @@ fn normalized_span(source: &str, start: usize, end: usize) -> String {
 }
 
 fn source_comments(source: &str) -> Vec<(usize, &str)> {
-    let bytes = source.as_bytes();
     let mut comments = Vec::new();
-    let (mut index, mut line) = (0usize, 1usize);
-    let (mut quote, mut triple, mut escaped) = (None::<u8>, false, false);
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if let Some(delimiter) = quote {
-            if byte == b'\n' {
-                line += 1;
-                if !triple && !escaped {
-                    quote = None;
-                }
-                escaped = false;
-                index += 1;
-                continue;
-            }
-            if escaped {
-                escaped = false;
-                index += 1;
-                continue;
-            }
-            if byte == b'\\' {
-                escaped = true;
-                index += 1;
-                continue;
-            }
-            if triple
-                && index + 2 < bytes.len()
-                && bytes[index] == delimiter
-                && bytes[index + 1] == delimiter
-                && bytes[index + 2] == delimiter
-            {
-                quote = None;
-                triple = false;
-                index += 3;
-                continue;
-            }
-            if !triple && byte == delimiter {
-                quote = None;
-            }
-            index += 1;
+    // Use the same Python lexer family as source analysis. In particular, this
+    // keeps quotes inside PEP 701 f-string expressions from ending the outer
+    // string and turning string contents into apparent suppression comments.
+    let parsed = ruff_python_parser::parse_unchecked(
+        source,
+        ParseOptions::from(Mode::Module).with_target_version(PythonVersion::PY313),
+    );
+    let mut line = 1usize;
+    let mut offset = 0usize;
+    for token in parsed.tokens() {
+        if token.kind() != TokenKind::Comment {
             continue;
         }
-        match byte {
-            b'\n' => {
-                line += 1;
-                index += 1;
-            }
-            b'#' => {
-                let start = index;
-                while index < bytes.len() && bytes[index] != b'\n' {
-                    index += 1;
-                }
-                comments.push((line, &source[start..index]));
-            }
-            b'\'' | b'"' => {
-                quote = Some(byte);
-                triple =
-                    index + 2 < bytes.len() && bytes[index + 1] == byte && bytes[index + 2] == byte;
-                index += if triple { 3 } else { 1 };
-            }
-            _ => index += 1,
-        }
+        let start = token.start().to_usize();
+        let end = token.end().to_usize();
+        line += source[offset..start]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count();
+        comments.push((line, &source[start..end]));
+        offset = end;
     }
     comments
 }
@@ -1026,8 +994,9 @@ fn fingerprint(diagnostic: &CheckDiagnostic, contents: &BTreeMap<&str, &str>) ->
         .map(|span| {
             let related_source = contents.get(span.file.as_str()).copied().unwrap_or("");
             format!(
-                "{}:{}",
+                "{}:{}:{}",
                 span.file,
+                enclosing_declaration(related_source, span.line),
                 normalized_span(related_source, span.line, span.end_line)
             )
         })
@@ -1781,6 +1750,7 @@ pub fn failure(message: String) -> serde_json::Value {
         "error":{"category":"configuration-or-execution","message":message}
     })
 }
+
 pub fn suppression_diagnostic(
     path: &str,
     line: usize,
@@ -1804,5 +1774,25 @@ pub fn suppression_diagnostic(
         trust: "static-source".into(),
         coverage_reason: None,
         repair: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::glob_match;
+
+    #[test]
+    fn globstar_matching_handles_many_ambiguous_components() {
+        let mut pattern = std::iter::repeat_n("**", 20).collect::<Vec<_>>().join("/");
+        pattern.push_str("/missing.py");
+        let path = (0..20)
+            .map(|index| format!("d{index}"))
+            .chain(std::iter::once("real.py".into()))
+            .collect::<Vec<_>>()
+            .join("/");
+
+        assert!(!glob_match(&pattern, &path));
+        assert!(glob_match("**/*.py", "src/main.py"));
+        assert!(glob_match("**/*.py", "main.py"));
     }
 }

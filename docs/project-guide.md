@@ -1,6 +1,6 @@
 # Inspect a project with multiple files
 
-CodePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, which are supported in 0.2.0.
+CodePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, supported by the published declaration inspector and the current source candidate.
 
 For a project-level evaluation path and lifecycle-checking limits, see
 [Adopting CodePact](adopting.md).
@@ -57,4 +57,4 @@ Choose the directory above your top-level package as the root. File arguments ar
 
 Supplying only `client.py` leaves the imported class unresolved. The inspector reports incomplete coverage instead of importing your application or searching installed packages. Add the provider file to the invocation when its declaration belongs to the supported subset.
 
-Relative imports, re-export chains, and import cycles remain outside 0.1. See [limitations](limitations.md) before expanding the input list to an entire application, and [automation](automation.md) to use a chosen source set in CI.
+Relative imports, re-export chains, and import cycles remain outside declaration inspection’s supported subset; the lifecycle checker has its own import-resolution scope. See [limitations](limitations.md) before expanding the input list to an entire application, and [automation](automation.md) to use a chosen source set in CI.

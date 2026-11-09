@@ -18,7 +18,7 @@ cargo install cargo-deny --version 0.20.2 --locked
 uv run --locked make check
 ```
 
-`make check` covers Rust formatting, compilation, Clippy, tests, MSRV validation, dependency audits, strict Python typing and linting, packaging, and the docs build. `make check-docs` runs just the Sphinx build.
+`make check` covers Rust formatting, compilation, Clippy, tests, MSRV validation, dependency audits, strict Python typing and linting, packaging, and the docs build. `make check-docs` validates schemas and links, then performs a clean strict Sphinx build using the pinned docs environment.
 
 ## Focused checks
 
@@ -42,7 +42,7 @@ The docs toolchain is pinned in `docs/requirements.txt`. Build the site locally 
 
 ```sh
 uv run --no-project --with-requirements docs/requirements.txt \
-  sphinx-build -b html -n -W --keep-going docs target/docs/html
+  sphinx-build -E -a -b html -n -W --keep-going docs target/docs/html
 ```
 
 The Read the Docs configuration uses the same requirements file and fails the build on warnings. The generated site is written outside the source tree.
@@ -65,11 +65,15 @@ The lifecycle tutorial includes `examples/lifecycle.py` directly. Check its exac
 primary and related lines after edits, and confirm that removing the final use
 leaves no diagnostics or coverage boundaries. Keep published installation
 instructions distinct from source-build instructions. Qualification records are
-in `docs/releases/0.1.0-evidence.md` and `docs/releases/0.2.0-evidence.md`.
+under `docs/releases/`, including the CodePact 0.3.0 evidence record.
 Documentation of implemented patterns does not by itself mark phase validation
 rows or release gates as passed.
 
-Read the Docs uses `.readthedocs.yaml` at the repository root. Connect the GitHub repository to the `codepact` Read the Docs project and enable the desired branches or release tags there. The checked-in configuration selects the build tools, requirements, and Sphinx entry point. GitHub's docs job runs the same strict local build target on pushes and pull requests.
+Read the Docs uses `.readthedocs.yaml` at the repository root. The existing
+hosting project retains the `typepact.readthedocs.io` address. See
+[documentation deployment](documentation.md) for the verified configuration,
+version selection, dashboard setup, and publication checks. GitHub’s docs job
+runs the same pinned local gate on pushes and pull requests.
 
 ## Contribution notes
 

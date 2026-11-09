@@ -1,9 +1,9 @@
 # Check a resource lifecycle
 
-The historical TypePact 0.2.0 release introduced its `typepact check` command
-for a bounded subset of normal synchronous Python execution. CodePact 0.3.0
-publishes the renamed `codepact check` command and adds cleanup obligations
-across supported exits.
+This tutorial uses the published CodePact 0.3.0 lifecycle checker. Reproduce a
+use after close, read its evidence, then make the example pass. The 0.4 source
+candidate supports the same example and adds configurable check policy; see
+[adoption](adopting.md).
 
 ## Install and run
 
@@ -17,17 +17,17 @@ The analyzer reads Python source as text; it does not import the example.
 
 ## Reproduce a use after close
 
-Create a `demo` directory in the checkout and save this example as
+Create a `demo` directory in your project and save this example as
 `demo/connection.py`:
 
 ```{literalinclude} ../examples/lifecycle.py
 :language: python
 ```
 
-Run the checker from the checkout root:
+Run the checker from your project root:
 
 ```sh
-uv run codepact check --root demo
+uv run --locked codepact check --root demo
 ```
 
 The first `inspect_connection(conn)` runs while the connection is open. After
@@ -67,6 +67,10 @@ It does not provide a general lifetime or escape proof.
 
 ## Read the whole report
 
+The following exits describe the published 0.3 CLI and the candidate’s default
+advisory policy. Candidate strict mode additionally fails on possible violations
+and incomplete coverage; see [policy and exits](cli.md#policy-and-exits).
+
 | Result | Command exit | Action |
 | --- | --- | --- |
 | Definite lifecycle violation or declaration error | `1` | Review the primary operation and related locations |
@@ -77,7 +81,7 @@ It does not provide a general lifetime or escape proof.
 Readable output is the default. For the provisional structured report:
 
 ```sh
-uv run codepact check --root demo --json
+uv run --locked codepact check --root demo --json
 ```
 
 Read both `diagnostics` and `coverage`. A successful exit can include possible
@@ -97,19 +101,10 @@ files, and unsupported code outside the selected root. The default root is the
 current directory. The scan skips symlinks and common build and environment
 directories; see the [CLI reference](cli.md).
 
-These limits describe the historical TypePact 0.2.0 checker. Its released
-behavior did not model loops, exception handlers, `finally`, context managers,
-async suspension, fields and containers, or returned resource aliases
-precisely. CodePact 0.3.0 extends bounded exit flow and cleanup;
-exact finite tuple loops,
-resolved local close bodies, and directly awaited coroutine calls are included
-in the released subset. Its remaining boundaries are listed in the [0.3
-specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/specification.md).
-Recursive calls still recover to an unknown summary. A clean result does not
-establish leak freedom, cleanup on every exit, ownership safety, or correctness
-of declared resource models. Read the [limitations](limitations.md) and
-[supported syntax](supported-syntax.md) before using released results in a workflow.
-
-Phase 0.2 qualification and publication evidence are in the
-[phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.2-lifecycle.md)
-and [release record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md).
+The 0.3 checker also models bounded cleanup duties across exceptional exits,
+`finally`, loops, supported context managers, and direct coroutine awaits.
+Continue with the [cleanup tutorial](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3/cleanup-tutorial.md)
+for `TP1002` and ownership handoffs. Recursive calls, dynamic dispatch, arbitrary
+containers, and unsupported concurrency can leave coverage incomplete. Read
+[limitations](limitations.md) and [supported syntax](supported-syntax.md) before
+using results in a required build gate.

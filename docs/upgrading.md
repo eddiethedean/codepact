@@ -1,4 +1,34 @@
-# Move from TypePact to CodePact 0.3
+# Upgrade CodePact
+
+## Evaluate 0.4 from a 0.3 project
+
+The repository contains the unpublished 0.4.0 candidate. Keep published 0.3
+projects pinned until choosing to evaluate a specific source revision; follow
+[installation from source](install.md#build-the-04-candidate) and record its SHA.
+
+| Surface | Published 0.3 | 0.4 source candidate |
+| --- | --- | --- |
+| Project settings | CLI arguments | Validated `[tool.codepact]` settings and CLI overrides |
+| Result-use checking | Unavailable | `@must_use`, `MustUse[T]`, and TP3001 |
+| Check policy | Fixed released behavior | Advisory/strict policy, severity, and failure threshold |
+| Acknowledged findings | No baseline or inline policy | Explicit baseline updates and reasoned line suppressions |
+| CLI check JSON | Checker schema 1 | Adoption report with `check_schema_version: 2` |
+| Declaration inspection | Inspection schema 0 | Inspection schema 0 and preserved exit policy |
+| Existing Rust `check` / `check_report` | Released rule set | Preserved rule set and result contracts |
+
+Update report consumers before switching the CLI: validate schema versions and
+read execution status, coverage, suppression metadata, and truncation. Start
+with advisory policy, review the first report, then enable stricter conditions
+as appropriate. TP3001 is a warning by default; `--fail-on warning` makes it
+fail a check. Strict mode also fails on unsuppressed possible violations and
+incomplete coverage.
+
+The candidate still targets Python source 3.11–3.13. Existing resource helpers
+keep their meaning; new must-use contracts do not transfer ownership or discharge
+cleanup. Baselines should be created only after reviewing findings. See the
+[adoption workflow](adopting.md) and [schema transition](output.md).
+
+## Move from TypePact to CodePact 0.3
 
 CodePact is the renamed project and 0.3.0 is the first release under the new
 name. The 0.1.0 and 0.2.0 releases remain historical TypePact artifacts. The

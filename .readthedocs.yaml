@@ -4,6 +4,10 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.11"
+  jobs:
+    pre_build:
+      - '"$READTHEDOCS_VIRTUALENV_PATH/bin/python" scripts/check_schema_fixtures.py'
+      - '"$READTHEDOCS_VIRTUALENV_PATH/bin/python" scripts/check_docs_links.py'
 
 python:
   install:

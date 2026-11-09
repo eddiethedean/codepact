@@ -1,6 +1,12 @@
 Python API reference
 ====================
 
+.. note::
+
+   This reference is generated from the 0.4 source candidate. ``must_use``,
+   ``discard``, ``MustUseResult``, and ``MustUse`` require that candidate;
+   they are unavailable in the published 0.3 helper package.
+
 The ``codepact`` package contains lightweight runtime helpers and static typing metadata. It does not load the analyzer executable when imported.
 
 ``codepact.resource``

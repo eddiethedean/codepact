@@ -36,13 +36,12 @@ exclude = ["generated/**"]
 enabled-rules = ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"]
 mode = "advisory"
 fail-on = "error"
-baseline = "codepact-baseline.json"
 
 [tool.codepact.severity]
 TP3001 = "warning"
 ```
 
-The baseline file is not created by configuration or by an ordinary check.
+This initial policy does not require a baseline. A baseline file is created explicitly after reviewing the first report, as described below.
 Use `--show-settings --json` to see the effective values and their origins
 without analyzing source. CLI scalar options override file settings; arrays
 replace file values. The closest `pyproject.toml` wins and unrelated tool
@@ -88,7 +87,9 @@ uv run --locked codepact baseline update \
   --reason "reviewed findings before gradual adoption"
 ```
 
-Review the JSON entries and commit the file with the project policy. Updating
+Review the JSON entries and commit the file with the project policy. Add
+`baseline = "codepact-baseline.json"` to `[tool.codepact]` to apply it on future
+checks; the path is relative to the configuration directory. Updating
 an existing file requires `--replace`; it produces a deterministic diff
 summary. Ambiguous duplicate sites are omitted and reported instead of being
 matched by line number or source-order ordinal. Target/model/rule incompatibility

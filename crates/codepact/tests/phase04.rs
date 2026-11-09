@@ -444,6 +444,127 @@ fn baseline_matching_keeps_same_named_methods_in_distinct_classes_separate() {
 }
 
 #[test]
+fn baseline_fingerprint_distinguishes_identical_methods_on_different_classes() {
+    let root = project("baseline-resolved-method");
+    let before = "from codepact import must_use\nclass A:\n    @must_use\n    def fetch(self): return 1\nclass B:\n    @must_use\n    def fetch(self): return 1\ndef run():\n    obj = A()\n    obj.fetch()\n";
+    fs::write(root.join("main.py"), before).unwrap();
+    let created = cli(
+        &root,
+        &[
+            "baseline",
+            "update",
+            "--no-config",
+            "--output",
+            "baseline.json",
+            "--reason",
+            "record A.fetch",
+        ],
+    );
+    assert_eq!(
+        created.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    let after = before.replace("obj = A()", "obj = B()");
+    fs::write(root.join("main.py"), after).unwrap();
+    let checked = cli(
+        &root,
+        &[
+            "check",
+            "--no-config",
+            "--baseline",
+            "baseline.json",
+            "--fail-on",
+            "warning",
+            "--json",
+        ],
+    );
+    assert_eq!(checked.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
+    let finding = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|diagnostic| diagnostic["code"] == "TP3001")
+        .unwrap();
+    assert_eq!(finding["disposition"], "active");
+    assert_eq!(finding["certainty"], "definite");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn loop_and_context_manager_targets_clear_stale_must_use_aliases() {
+    let root = project("must-use-target-rebinding");
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run(manager):\n    action = fetch\n    for action in (print,):\n        action()\n    with manager as action:\n        action()\n",
+    )
+    .unwrap();
+    let checked = cli(
+        &root,
+        &["check", "--no-config", "--fail-on", "warning", "--json"],
+    );
+    let report: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
+    let findings = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP3001")
+        .collect::<Vec<_>>();
+    assert!(findings.is_empty(), "{report:#}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn break_and_continue_stop_analysis_of_the_unreachable_loop_tail() {
+    let root = project("must-use-loop-transfers");
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef broken():\n    for item in (1,):\n        break\n        fetch()\n    fetch()\ndef continued():\n    for item in (1,):\n        continue\n        fetch()\n    fetch()\n",
+    )
+    .unwrap();
+    let checked = cli(
+        &root,
+        &["check", "--no-config", "--fail-on", "warning", "--json"],
+    );
+    assert_eq!(checked.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
+    let lines = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP3001")
+        .map(|diagnostic| diagnostic["primary"]["line"].as_u64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(lines, [8, 13], "{report:#}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fstring_expression_text_is_not_a_suppression_comment() {
+    let root = project("fstring-suppression-text");
+    fs::write(
+        root.join("main.py"),
+        "value = f\"{\"# codepact: ignore[TP9001] -- harmless string\"}\"\n",
+    )
+    .unwrap();
+    let checked = cli(
+        &root,
+        &["check", "--no-config", "--python-version", "3.12", "--json"],
+    );
+    let report: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
+    assert!(!report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "TP4002"));
+    assert_eq!(report["policy_failures"].as_array().unwrap().len(), 0);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn module_must_use_bindings_follow_source_order_and_unreachable_calls_are_ignored() {
     let root = project("must-use-source-order");
     fs::write(

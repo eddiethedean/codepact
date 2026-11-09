@@ -1,40 +1,53 @@
 # CodePact documentation
 
-CodePact finds conflicting resource declarations and supported lifecycle errors in Python without importing or running your application. It reports each finding with source locations, certainty, and coverage information.
+**Find lifecycle mistakes in Python before running your application.**
 
-**CodePact 0.3.0 is published.** This checkout also contains the unreleased 0.4.0 adoption-tooling candidate; its behavior is not yet pilot-qualified or distributed. The 0.1.0 and 0.2.0 releases used the TypePact package names. APIs, diagnostics, and JSON schemas remain provisional during 0.x.
+CodePact reads source and checks declared resource contracts for supported
+use after close, outstanding cleanup duties, and invalid ownership handoffs.
+Reports connect each finding to source locations and explain its certainty
+and the parts of the program that remain outside the supported analysis.
 
-```sh
-git clone https://github.com/eddiethedean/codepact.git
-cd codepact
-uv sync --locked
-uv run codepact inspect-contracts connection.py
-uv run codepact check --root src
+```{important}
+**Choose your version.** CodePact 0.3.0 is the published release. This site’s
+0.4.0 candidate documentation also describes project configuration, baselines,
+line suppressions, and must-use results available from the source checkout.
+The candidate is not published or pilot-qualified. See [release availability](availability.md).
 ```
 
-Create `connection.py` with the [quick start](quickstart.md), then read the result using the [JSON reference](output.md).
+## Start with a working example
 
-Follow the [lifecycle tutorial](lifecycle.md) to use `check`. See the
-[availability guide](availability.md) for exact release and platform support.
-The [adoption guide](adopting.md) describes the 0.4 candidate's project policy,
-baselines, suppressions and synchronous must-use preview.
+Install the published release in your uv project:
+
+```sh
+uv add codepact==0.3.0
+uv run --locked codepact --version
+```
+
+The [quick start](quickstart.md) provides a complete source file and a first
+successful check. Continue with [lifecycle checking](lifecycle.md) to reproduce
+a use after close, understand the related close location, and repair it.
 
 ## Find your next step
 
-| I want to… | Start here |
+| Goal | Guide |
 | --- | --- |
-| Declare a resource and inspect it | [Quick start](quickstart.md) |
-| Find a supported use after close | [Lifecycle checking](lifecycle.md) |
-| Try the adoption tooling candidate | [Adopting CodePact](adopting.md) |
-| Resolve imports across my own modules | [Multi-file tutorial](project-guide.md) |
-| Use the inspector in a build pipeline | [Automation and CI](automation.md) and [report handling](ci-reporting.md) |
-| Understand an error or incomplete result | [Troubleshooting](troubleshooting.md) |
-| Look up a diagnostic or example | [Rule catalog](rules.md) and [examples](examples.md) |
-| Embed the analyzer in a Rust application | [Rust API](rust-api.md) |
+| Install the helpers, standalone CLI, or Rust library | [Installation](install.md) |
+| Declare owned or borrowed access | [Contract declarations](contracts.md) |
+| Check imports across modules | [Multi-file tutorial](project-guide.md) |
+| Evaluate the 0.4 candidate in a project | [Adoption workflow](adopting.md) |
+| Run checks and preserve reports in CI | [Automation](automation.md) and [report handling](ci-reporting.md) |
+| Understand a finding or incomplete coverage | [Rules](rules.md), [limitations](limitations.md), and [troubleshooting](troubleshooting.md) |
+| Integrate the analyzer with another tool | [Rust API](rust-api.md) and [report schemas](schemas.md) |
+| Build or publish this documentation | [Documentation deployment](documentation.md) |
 
-```{note}
-Python helpers run on Python 3.11+. The analyzer accepts source targets 3.11–3.13. Every emitted contract is `declared-unverified`; a successful inspection describes declarations within the supported subset.
-```
+## Know what a result establishes
+
+The Python helpers run on Python 3.11+; the analyzer accepts source targets
+3.11–3.13. Declarations carry `declared-unverified` provenance. CodePact does
+not execute the project or verify that a close method releases a real resource.
+Read certainty and coverage alongside findings: an advisory check can pass
+with unsupported regions. The [output reference](output.md) explains how to
+interpret reports; [supported syntax](supported-syntax.md) defines the scope.
 
 ```{toctree}
 :maxdepth: 1
@@ -43,51 +56,60 @@ Python helpers run on Python 3.11+. The analyzer accepts source targets 3.11–3
 install
 quickstart
 lifecycle
-availability
-adopting
-upgrading
 contracts
 project-guide
+examples
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: Adopt and automate
+
+adopting
 automation
 ci-reporting
-examples
+upgrading
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: Reference
+
+cli
+rules
+output
+schemas
+python-api
+rust-api
+supported-syntax
+inspector
+limitations
+performance
+troubleshooting
 faq
 ```
 
 ```{toctree}
 :maxdepth: 1
-:caption: Analyzer reference
+:caption: Project and maintenance
 
-cli
-output
-schemas
-supported-syntax
-limitations
-troubleshooting
-inspector
-rules
-security
-performance
-```
-
-```{toctree}
-:maxdepth: 1
-:caption: API and project
-
-python-api
-rust-api
+availability
 architecture
 roadmap
 release-notes
+security
 support
 development
+documentation
 ```
 
 ## Project links
 
-- [Source code](https://github.com/eddiethedean/codepact)
-- [Issues and feature requests](https://github.com/eddiethedean/codepact/issues)
-- [PyPI package](https://pypi.org/project/codepact/)
-- [Native CLI package](https://pypi.org/project/codepact-cli/)
-- [MIT license](https://github.com/eddiethedean/codepact/blob/main/LICENSE)
-- [Security reporting instructions](https://github.com/eddiethedean/codepact/blob/main/SECURITY.md)
+[Source](https://github.com/eddiethedean/codepact) ·
+[Issues](https://github.com/eddiethedean/codepact/issues) ·
+[Python package](https://pypi.org/project/codepact/) ·
+[Standalone CLI](https://pypi.org/project/codepact-cli/) ·
+[MIT license](https://github.com/eddiethedean/codepact/blob/main/LICENSE)
+
+The historical 0.1 and 0.2 releases used the TypePact name. The documentation
+continues to use `typepact.readthedocs.io`; the current project is CodePact.

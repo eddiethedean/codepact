@@ -1,62 +1,75 @@
 # Quick start
 
-This example declares that a `Connection` is closed by `close`, then describes how two functions intend to access it.
+Run a first check using the published CodePact 0.3.0 release, then inspect the
+contracts behind its result. For source-only 0.4 features, start with the
+[adoption guide](adopting.md).
 
-Install CodePact 0.3.0 with `uv add codepact==0.3.0`, then run the examples with `uv run codepact`. The helper package installs the matching CLI automatically. See [installation](install.md) for standalone CLI, Rust crate, and platform requirements.
+## Install in your project
 
-Save the code as `connection.py`:
+In an existing uv project:
+
+```sh
+uv add codepact==0.3.0
+uv run --locked codepact --version
+mkdir -p demo
+```
+
+The helper package installs the matching CLI. The command prints
+`codepact 0.3.0`. See [installation](install.md) for standalone CLI and source builds.
+
+## Declare a resource
+
+Save this complete example as `demo/connection.py`:
 
 ```{literalinclude} _examples/connection.py
 :language: python
 ```
 
-Inspect the declarations:
+`@resource` declares the close operation. `Borrowed[Connection]` describes a
+shared view; `Owned[Connection]` assigns cleanup responsibility to the consumer.
+The ordinary Python type remains `Connection` for mypy and Pyright.
+
+## Run your first check
 
 ```sh
-uv run codepact inspect-contracts connection.py
+uv run --locked codepact check --root demo --json
 ```
 
-A successful run exits with status `0`, has an empty `diagnostics` list, and reports `coverage.status` as `complete-for-supported-subset`.
+This example has no lifecycle violations and complete coverage for the
+supported subset; it exits `0`. CodePact reads the file without importing it.
+The empty `close` method is a stub: the declared transition is modeled, while
+actual runtime cleanup remains the implementation’s responsibility.
 
-The JSON result contains a resource contract for `Connection` and access contracts for `read.conn` and `consume.conn`. The first parameter is shared; the second is owned. Both inherit the class lifecycle metadata.
+Use a narrow root: `check` discovers Python files below `demo`. Supplying a
+filename adds an input and does not limit discovery to that file.
 
-The source is parsed without importing `connection.py`. CodePact records the declared method name; the lifecycle checker can analyze supported calls to it, but does not verify that the method actually releases a runtime resource.
-
-The inspector also catches inconsistent declarations. For example, if a view
-uses `Resource(closed_by="release")` while its class declares
-`@resource(closed_by="close")`, it reports `TP4002` with both source locations.
-See the [diagnostic catalog](rules.md#example-conflicting-lifecycle-metadata)
-for a complete copyable example and repair.
-
-## Read the result
-
-| Declaration | Lifecycle | Access |
-| --- | --- | --- |
-| `Connection` | Closed by `close` | `unspecified` |
-| `read.conn` | Closed by `close` | `shared` |
-| `consume.conn` | Closed by `close` | `owned` |
-
-All three facts refer to `connection.Connection`. The `source` field locates each declaration, and `provenance` records how its metadata was declared. See the [full output](output.md) for the corresponding JSON.
-
-## Inspect multiple modules
-
-Pass all source files that should participate in direct import resolution. Use `--root` to derive package-qualified module names:
+## Inspect the contract facts
 
 ```sh
-uv run codepact inspect-contracts --root src src/models.py src/client.py
+uv run --locked codepact inspect-contracts demo/connection.py
 ```
 
-The root is used to name modules; CodePact does not discover files or follow imports automatically. For the full option and input behavior, see the [CLI reference](cli.md). For supported declarations and lifecycle flow, see [supported syntax](supported-syntax.md).
+Inspection emits schema 0 JSON with these views:
 
-Continue with the [multi-file tutorial](project-guide.md) to resolve declarations across modules, or [automation](automation.md) to check an explicit source set in CI.
+| Declaration | Base symbol | Lifecycle | Access |
+| --- | --- | --- | --- |
+| `Connection` | `connection.Connection` | Closed by `close` | `unspecified` |
+| `read.conn` | `connection.Connection` | Closed by `close` | `shared` |
+| `consume.conn` | `connection.Connection` | Closed by `close` | `owned` |
 
-## Try lifecycle checking next
+The result has an empty `diagnostics` list and
+`coverage.status: complete-for-supported-subset`. Each view includes its source
+span and declaration provenance. Inspection describes declarations; `check`
+analyzes supported flow. See the [output reference](output.md).
 
-The historical TypePact 0.2.0 release introduced `check` for direct
-construction, local aliases, normal synchronous calls, and `if`/`else` joins.
-CodePact 0.3.0 expands checking to cleanup and exceptional exits.
+The inspector also rejects inconsistent metadata. A view that declares
+`Resource(closed_by="release")` for this class conflicts with its `close`
+lifecycle and produces `TP4002` with both source locations. See the
+[complete conflicting-declaration example](rules.md#example-conflicting-lifecycle-metadata).
 
-Follow the [lifecycle tutorial](lifecycle.md) to reproduce a use after close,
-read its related close location, and make the example pass.
-Possible findings and coverage warnings can accompany exit `0`; the command does
-not prove cleanup on every exit or general ownership safety.
+## Continue with a failing example
+
+Follow the [lifecycle tutorial](lifecycle.md) to reproduce a definite use after
+close, read the diagnostic, and make the example pass. Use the
+[multi-file tutorial](project-guide.md) when resource providers and consumers
+live in different modules, or [automation](automation.md) to check them in CI.

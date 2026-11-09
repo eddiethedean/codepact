@@ -2397,6 +2397,7 @@ fn check_must_use_body(
         &imports,
         &state.known_classes,
         class_scope,
+        0,
     );
 }
 
@@ -2593,20 +2594,29 @@ fn merge_equal_bindings<K: Ord + Clone, V: PartialEq + Clone>(
     left.retain(|name, value| right.get(name).is_some_and(|other| other == value));
 }
 
-fn must_use_sequence_terminates(statements: &[crate::frontend::FlowStatement]) -> bool {
-    statements.iter().any(must_use_statement_terminates)
+fn must_use_sequence_terminates(
+    statements: &[crate::frontend::FlowStatement],
+    loop_depth: usize,
+) -> bool {
+    statements
+        .iter()
+        .any(|statement| must_use_statement_terminates(statement, loop_depth))
 }
 
-fn must_use_statement_terminates(statement: &crate::frontend::FlowStatement) -> bool {
+fn must_use_statement_terminates(
+    statement: &crate::frontend::FlowStatement,
+    loop_depth: usize,
+) -> bool {
     use crate::frontend::FlowStatement as Flow;
     match statement {
         Flow::Return { .. } | Flow::Raise { .. } => true,
+        Flow::Break { .. } | Flow::Continue { .. } => loop_depth > 0,
         Flow::If {
             body, alternate, ..
         } => {
             !alternate.is_empty()
-                && must_use_sequence_terminates(body)
-                && must_use_sequence_terminates(alternate)
+                && must_use_sequence_terminates(body, loop_depth)
+                && must_use_sequence_terminates(alternate, loop_depth)
         }
         Flow::Try {
             body,
@@ -2615,14 +2625,15 @@ fn must_use_statement_terminates(statement: &crate::frontend::FlowStatement) -> 
             finalbody,
             ..
         } => {
-            must_use_sequence_terminates(finalbody)
-                || (must_use_sequence_terminates(body)
-                    && (alternate.is_empty() || must_use_sequence_terminates(alternate))
+            must_use_sequence_terminates(finalbody, loop_depth)
+                || (must_use_sequence_terminates(body, loop_depth)
+                    && (alternate.is_empty()
+                        || must_use_sequence_terminates(alternate, loop_depth))
                     && handlers
                         .iter()
-                        .all(|handler| must_use_sequence_terminates(&handler.body)))
+                        .all(|handler| must_use_sequence_terminates(&handler.body, loop_depth)))
         }
-        Flow::With { body, .. } => must_use_sequence_terminates(body),
+        Flow::With { body, .. } => must_use_sequence_terminates(body, loop_depth),
         _ => false,
     }
 }
@@ -2637,6 +2648,7 @@ fn walk_must_use_body(
     imports: &BTreeMap<String, String>,
     known_classes: &BTreeSet<String>,
     class_scope: Option<(&str, Option<&str>)>,
+    loop_depth: usize,
 ) {
     use crate::frontend::FlowStatement as Flow;
     for statement in statements {
@@ -2805,6 +2817,7 @@ fn walk_must_use_body(
                     imports,
                     known_classes,
                     class_scope,
+                    loop_depth,
                 );
                 walk_must_use_body(
                     result,
@@ -2815,6 +2828,7 @@ fn walk_must_use_body(
                     imports,
                     known_classes,
                     class_scope,
+                    loop_depth,
                 );
                 merge_equal_bindings(&mut left_marked, &right_marked);
                 merge_equal_bindings(&mut left_instances, &right_instances);
@@ -2840,6 +2854,7 @@ fn walk_must_use_body(
                     imports,
                     known_classes,
                     class_scope,
+                    loop_depth,
                 );
                 outcomes.push((body_marked, body_instances));
                 for handler in handlers {
@@ -2854,6 +2869,7 @@ fn walk_must_use_body(
                         imports,
                         known_classes,
                         class_scope,
+                        loop_depth,
                     );
                     outcomes.push((handler_marked, handler_instances));
                 }
@@ -2872,6 +2888,7 @@ fn walk_must_use_body(
                         imports,
                         known_classes,
                         class_scope,
+                        loop_depth,
                     );
                 }
                 walk_must_use_body(
@@ -2883,15 +2900,23 @@ fn walk_must_use_body(
                     imports,
                     known_classes,
                     class_scope,
+                    loop_depth,
                 );
                 *marked = merged_marked;
                 *instances = merged_instances;
             }
             Flow::Loop {
-                body, alternate, ..
+                target,
+                body,
+                alternate,
+                ..
             } => {
                 let mut loop_marked = marked.clone();
                 let mut loop_instances = instances.clone();
+                if let Some(name) = target {
+                    loop_marked.remove(name);
+                    loop_instances.remove(name);
+                }
                 walk_must_use_body(
                     result,
                     file,
@@ -2901,6 +2926,7 @@ fn walk_must_use_body(
                     imports,
                     known_classes,
                     class_scope,
+                    loop_depth + 1,
                 );
                 merge_equal_bindings(marked, &loop_marked);
                 merge_equal_bindings(instances, &loop_instances);
@@ -2913,25 +2939,45 @@ fn walk_must_use_body(
                     imports,
                     known_classes,
                     class_scope,
+                    loop_depth,
                 );
             }
-            Flow::With { body, .. } => walk_must_use_body(
-                result,
-                file,
-                body,
-                marked,
-                instances,
-                imports,
-                known_classes,
-                class_scope,
-            ),
+            Flow::With { items, body, .. } => {
+                for item in items {
+                    if let Some(name) = &item.target {
+                        marked.remove(name);
+                        instances.remove(name);
+                    }
+                    if item.unsupported_target {
+                        marked.clear();
+                        instances.clear();
+                        unsupported(
+                            result,
+                            file,
+                            item.range,
+                            "must-use binding through a destructuring context-manager target is unsupported",
+                        );
+                    }
+                }
+                walk_must_use_body(
+                    result,
+                    file,
+                    body,
+                    marked,
+                    instances,
+                    imports,
+                    known_classes,
+                    class_scope,
+                    loop_depth,
+                );
+            }
             Flow::BindFunction { name, .. } => {
                 marked.remove(name);
                 instances.remove(name);
             }
             _ => {}
         }
-        if must_use_statement_terminates(statement) {
+        if must_use_statement_terminates(statement, loop_depth) {
             break;
         }
     }

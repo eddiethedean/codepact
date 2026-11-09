@@ -2,6 +2,7 @@ PYTHON ?= python
 CARGO ?= cargo
 RUSTUP ?= rustup
 UV ?= uv
+DOCS_BUILD_DIR ?= target/docs/html
 CARGO_AUDIT_ARGS ?=
 CARGO_DENY_ARGS ?=
 
@@ -109,8 +110,4 @@ check-inspector:
 check-docs:
 	$(UV) run --no-project --with-requirements docs/requirements.txt python scripts/check_schema_fixtures.py
 	$(PYTHON) scripts/check_docs_links.py
-	@if command -v sphinx-build >/dev/null 2>&1; then \
-		sphinx-build -b html -n -W --keep-going docs target/docs/html; \
-	else \
-		$(UV) run --no-project --with-requirements docs/requirements.txt sphinx-build -b html -n -W --keep-going docs target/docs/html; \
-	fi
+	$(UV) run --no-project --with-requirements docs/requirements.txt sphinx-build -E -a -b html -n -W --keep-going docs "$(DOCS_BUILD_DIR)"
