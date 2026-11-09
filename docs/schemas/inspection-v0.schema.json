@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/inspection-v0.schema.json",
+  "title": "CodePact inspection result, schema 0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "assurance", "contracts", "diagnostics", "coverage"],
+  "properties": {
+    "schema_version": {"const": 0},
+    "assurance": {"type": "string"},
+    "contracts": {"type": "array", "items": {"$ref": "#/$defs/contract"}},
+    "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+    "coverage": {"$ref": "#/$defs/coverage"}
+  },
+  "$defs": {
+    "span": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file", "line", "column", "end_line", "end_column"],
+      "properties": {
+        "file": {"type": "string"}, "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1},
+        "end_column": {"type": "integer", "minimum": 1}
+      }
+    },
+    "diagnostic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "severity", "message", "primary", "related", "certainty"],
+      "properties": {
+        "code": {"type": "string"}, "severity": {"enum": ["error", "warning", "info"]},
+        "message": {"type": "string"}, "primary": {"$ref": "#/$defs/span"},
+        "related": {"type": "array", "items": {"$ref": "#/$defs/span"}},
+        "certainty": {"enum": ["definite", "possible", "unknown"]}
+      }
+    },
+    "contract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "base_symbol", "display_name", "lifecycle", "access", "source", "provenance"],
+      "properties": {
+        "schema_version": {"const": 0}, "base_symbol": {"type": "string"},
+        "display_name": {"type": "string"},
+        "lifecycle": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["closed_by"], "properties": {"closed_by": {"type": "string"}}}]},
+        "access": {"enum": ["unspecified", "shared", "owned", "exclusive"]},
+        "source": {"$ref": "#/$defs/span"},
+        "provenance": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["origin", "trust"], "properties": {"origin": {"type": "string"}, "trust": {"type": "string"}}}}
+      }
+    },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "reasons", "source_bytes", "declarations"],
+      "properties": {
+        "status": {"enum": ["complete-for-supported-subset", "incomplete"]},
+        "reasons": {"type": "array", "items": {"type": "string"}},
+        "source_bytes": {"type": "integer", "minimum": 0},
+        "declarations": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

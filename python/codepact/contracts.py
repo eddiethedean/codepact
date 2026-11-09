@@ -28,6 +28,14 @@ class ExclusiveBorrow:
     """Intent to access a value through an exclusive borrow."""
 
 
+@dataclass(frozen=True, slots=True)
+class MustUseResult:
+    """The declared result should be handled by its immediate caller."""
+
+
+MustUse: TypeAlias = Annotated[T, MustUseResult()]
+
+
 Owned: TypeAlias = Annotated[T, OwnedAccess()]
 Borrowed: TypeAlias = Annotated[T, SharedBorrow()]
 BorrowedMut: TypeAlias = Annotated[T, ExclusiveBorrow()]
@@ -37,6 +45,8 @@ __all__ = [
     "SharedBorrow",
     "OwnedAccess",
     "ExclusiveBorrow",
+    "MustUseResult",
+    "MustUse",
     "Owned",
     "Borrowed",
     "BorrowedMut",

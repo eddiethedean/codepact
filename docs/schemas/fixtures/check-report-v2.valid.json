@@ -1,0 +1,63 @@
+{
+  "actionable_diagnostics": 0,
+  "assurance": "lifecycle-checking-for-supported-exit-flow",
+  "audit_diagnostics": 0,
+  "available_models": [],
+  "baseline": {
+    "compatible": null,
+    "configured": false,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "check_schema_version": 2,
+  "config_file": null,
+  "contracts": [],
+  "counts": {},
+  "counts_by_certainty": {},
+  "counts_by_disposition": {},
+  "coverage": {
+    "declarations": 0,
+    "reasons": [],
+    "source_bytes": 0,
+    "status": "complete-for-supported-subset"
+  },
+  "details_truncated": false,
+  "diagnostics": [],
+  "disabled_rules": [],
+  "engine_version": "0.4.0",
+  "exclude": [],
+  "execution_status": "completed",
+  "exit_code": 0,
+  "fail_on": "error",
+  "include": [
+    "**/*.py"
+  ],
+  "logical_root": ".",
+  "mode": "advisory",
+  "model_catalog_version": 2,
+  "model_fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "policy_failures": [],
+  "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "policy_warnings": [],
+  "project_root": "/project",
+  "report_schema_version": 2,
+  "returned_diagnostics": 0,
+  "selected_files": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP3001"
+  ],
+  "semantic_fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "settings_origins": {},
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshot_manifest": [],
+  "target_python_version": "3.11",
+  "total_diagnostics": 0,
+  "unused_suppressions": []
+}

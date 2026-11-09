@@ -71,6 +71,14 @@ revision-tagged `SessionCheckResult`. `check` continues returning `Inspection`
 for source compatibility. The 0.x API remains provisional and may change in a
 future release.
 
+The 0.4 implementation candidate adds `check_with_must_use(files, target)` and
+`AnalysisSession::check_with_must_use` (plus a cancellable session method) for
+the synchronous TP3001 result-use rule. These return `Inspection` so the
+existing `check` and `check_report` APIs keep their released rule set and schema
+1 meaning. A caller that needs the CLI adoption policy can wrap canonical
+results with the public `codepact::adoption` resolver and report builder. This
+candidate API has not been pilot-qualified or released.
+
 ## Incremental analysis session
 
 Use `AnalysisSession` when inputs change repeatedly. It stores source in a Salsa database, tracks input revisions, and invalidates computations from changed files while retaining reusable work for unchanged files.
@@ -108,7 +116,9 @@ validation matrix records query-execution evidence for both cases; see the
 | --- | --- |
 | `inspect(files, target)` | Synchronizes the full input snapshot and returns `Inspection` |
 | `check(files, target)` | Synchronizes the snapshot and adds bounded lifecycle diagnostics |
+| `check_with_must_use(files, target)` | Candidate-only lifecycle check plus synchronous TP3001 diagnostics |
 | `check_cancellable(files, target)` | Returns checked `SessionInspection` with revision; cancellation returns `AnalysisCancelled` |
+| `check_with_must_use_cancellable(files, target)` | Candidate-only cancellable check including synchronous TP3001 |
 | `inspect_cancellable(files, target)` | Returns `Result<SessionInspection, AnalysisCancelled>` with a revision on success |
 | `set_file(path, module, source)` | Updates one stored input; returns `SessionInputError` if its source or file budgets would be exceeded |
 | `remove_file(path)` | Removes a stored input; removing an absent path is a no-op |

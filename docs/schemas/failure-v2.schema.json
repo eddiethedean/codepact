@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/failure-v2.schema.json",
+  "title": "CodePact CLI execution failure, checker schema 2",
+  "type": "object", "additionalProperties": false,
+  "required": ["execution_status", "engine_version", "report_schema_version", "check_schema_version", "error"],
+  "properties": {
+    "execution_status": {"const": "failed"}, "engine_version": {"type": "string"},
+    "report_schema_version": {"const": 2}, "check_schema_version": {"const": 2},
+    "error": {"type": "object", "additionalProperties": false, "required": ["category", "message"], "properties": {"category": {"enum": ["configuration-or-execution"]}, "message": {"type": "string", "minLength": 1}}}
+  }
+}

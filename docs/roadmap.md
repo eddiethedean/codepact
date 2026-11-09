@@ -16,9 +16,9 @@ CodePact 0.x grows from declaration inspection toward broader resource lifecycle
 
 The roadmap describes direction, not arbitrary Python ownership proofs or memory-safety guarantees. CodePact 0.3.0 passed local checks, Quality CI, release qualification, publication, and registry verification; phase-specific gates and G1–G8 evidence are recorded in the release evidence. Read [availability](availability.md) for the current package boundary and [release notes](release-notes.md) for published behavior. Each phase must define its supported subset and evidence before a release claim is made.
 
-Planned linting work adds command/reporting foundations in 0.4, followed in 0.8 by inline CodePact diagnostics and problem-list entries through a shared language server. Target editors are VS Code, PyCharm/IntelliJ, Neovim and Emacs; support depends on verified client/version combinations. These features are not available in 0.1.
+The local 0.4 candidate implements CLI reporting foundations. The shared language server, inline CodePact diagnostics and problem-list entries remain planned for 0.8. Target editors are VS Code, PyCharm/IntelliJ, Neovim and Emacs; support depends on verified client/version combinations.
 
-Planned AI-agent integration adds structured reports, rule explanations and check–edit–recheck recipes in 0.4, followed by local read-only MCP tools and verified agent client workflows in 0.8. Agents will share the CLI's analysis and retain explicit certainty, source revisions and incomplete-coverage signals. These features remain planned.
+The local 0.4 candidate implements structured reports, rule explanations and an opt-in check–edit–recheck recipe. Local read-only MCP tools and verified agent client workflows remain planned for 0.8. Any agent consumer must preserve certainty, source identity and incomplete-coverage signals.
 
 An optional `codepact-pyrefly-cli` prototype is also planned, with its own `codepact-pyrefly` command combining Pyrefly's ordinary Python type checking and CodePact's resource checks. It will have independent prereleases and qualification gates alongside the main roadmap; no combined package or command is available yet.
 

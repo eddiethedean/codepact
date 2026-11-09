@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codepact"
-version = "0.3.0"
+version = "0.4.0"
 description = "Lightweight Python contract annotations for CodePact"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["codepact-cli==0.3.0"]
+dependencies = ["codepact-cli==0.4.0"]
 license = "MIT"
 authors = [{ name = "CodePact contributors" }]
 classifiers = [
@@ -31,6 +31,7 @@ dev = [
   "mypy==1.19.1",
   "packaging==26.3",
   "pyright==1.1.411",
+  "jsonschema==4.26.0",
   "ruff==0.17.3",
   "twine==6.1.0",
 ]

@@ -1,0 +1,41 @@
+{
+  "baseline_schema_version": 1,
+  "coverage_reasons": [],
+  "coverage_status": "complete-for-supported-subset",
+  "engine_version": "0.4.0",
+  "entries": [
+    {
+      "certainty": "definite",
+      "code": "TP3001",
+      "completion": null,
+      "explanation": "A must-use result was discarded.",
+      "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "logical_path": "main.py",
+      "trust": "declared-unverified"
+    }
+  ],
+  "exclude": [],
+  "fingerprint_algorithm_version": 2,
+  "include": [
+    "**/*.py"
+  ],
+  "logical_root": ".",
+  "model_catalog_version": 2,
+  "rule_semantic_version": 1,
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP3001"
+  ],
+  "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_manifest": [
+    {
+      "logical_path": "main.py",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "target_python_version": "3.11",
+  "update_reason": "initial adoption"
+}

@@ -18,9 +18,11 @@ Completion: the documented Connection example produces exactly the intended post
 
 The [refined 0.3 cleanup plan](phases/0.3-cleanup.md), [cleanup specification](phases/0.3/specification.md) and [V03 matrix](phases/0.3/validation.md) define CL01–CL08 and C01–C05/C07/CS01. CodePact 0.3.0 implements cleanup duties, exceptional exits, reviewed contexts, loop fixed points and bounded intratask cancellation. Local checks, performance review, the tag-triggered release workflow and published artifact verification passed; G1–G8 and phase-gate evidence are recorded in the release record. Must-use rules, configuration, baselines, suppressions, broader reporting and pilots belong to [0.4 adoption](phases/0.4-adoption.md).
 
-CodePact 0.3.0 implements exception edges, `finally`, reviewed context-manager models, early returns, loops and cleanup obligations. Its V03 technical qualification and release evidence are recorded. Initial must-use checks, `pyproject` configuration, suppression reasons and baselines, broader reporting and pilot workflows are planned for 0.4.
+CodePact 0.3.0 implements exception edges, `finally`, reviewed context-manager models, early returns, loops and cleanup obligations. Its V03 technical qualification and release evidence are recorded. Initial must-use checks, `pyproject` configuration, suppression reasons, baselines and broader reports have local 0.4 candidate code; the pilot workflows and release qualification remain pending.
 
-Completion: pilot projects can run in CI with stable exit codes; modeled cleanup works on normal and exceptional paths; unresolved behavior is visible; baseline updates cannot silently hide new rules.
+The [0.4 adoption plan](phases/0.4-adoption.md), [specification](phases/0.4/specification.md), [V04 matrix](phases/0.4/validation.md) and [pilot protocol](phases/0.4/pilots.md) track the local 0.4.0 candidate. Project input resolution, must-use helpers/analysis, CLI reporting/schemas, adoption policy, baselines and user workflow docs are implemented with focused tests. AD01 still needs maintainer acceptance or amendment; full V04 evidence, pilots, measurements and qualification remain pending.
+
+Completion: pilot projects can run in CI with stable exit codes; modeled cleanup works on normal and exceptional paths; unresolved behavior is visible; baseline updates cannot silently hide new rules. Three reviewed projects include an async application; at least 90% of a recorded sample of at least 30 definite violations must be actionable. CLI reporting/agent foundations are required; task ownership, LSP and MCP retain their later phase dependencies.
 
 ## Phase 3: introduce ownership experimentally
 

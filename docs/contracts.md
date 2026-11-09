@@ -50,6 +50,42 @@ These aliases are `typing.Annotated` aliases. The underlying Python type remains
 
 The metadata classes and aliases are also exported from `codepact.contracts`. Submodule imports work too: `from codepact import rust as r` allows `r.Borrowed[Connection]`, and `from codepact import contracts as ct` allows `ct.Resource(closed_by="close")` in `Annotated`. Rebinding either imported name removes that API identity.
 
+## Mark a must-use return (0.4 candidate)
+
+The local 0.4 CLI candidate recognizes synchronous function and method results
+declared in any of these equivalent forms:
+
+```python
+from typing import Annotated
+from codepact import discard, must_use
+from codepact.contracts import MustUseResult
+from codepact.rust import MustUse
+
+@must_use
+def fetch() -> int: ...
+
+def fetch_typed() -> MustUse[int]: ...
+def fetch_verbose() -> Annotated[int, MustUseResult()]: ...
+
+fetch()                 # TP3001 in a check
+value = fetch()         # immediate handling, no later-use proof
+discard(fetch())        # explicit intentional abandonment
+```
+
+`must_use` is a ParamSpec-typed identity decorator: it attaches a marker and
+returns the same callable without wrapping it. `MustUse[T]` is an
+`Annotated[T, MustUseResult()]` alias. `discard(value)` evaluates and returns
+`None`; it does not close, transfer, suppress exceptions, or import the
+analyzer. These helper APIs are typing metadata/markers, not runtime resource
+semantics. A user-defined lookalike has no CodePact meaning.
+
+The source checker accepts only resolved synchronous return contracts.
+Assignment, return/forwarding and direct argument passing count as immediate
+handling, not eventual consumption. Async/dynamic consumption and unsupported
+nested expressions remain visible coverage boundaries. Misplaced known
+metadata is a declaration error. See the [rule catalog](rules.md#tp3001) and
+[adoption workflow](adopting.md); the 0.4 candidate has not been pilot-qualified.
+
 ## Use `Annotated` directly
 
 You can spell the metadata explicitly with `typing.Annotated`:
@@ -75,6 +111,6 @@ Metadata on an alias describes that alias. It does not mutate the underlying cla
 
 ## What the declarations mean
 
-The helper decorator has a small runtime effect: it stores metadata on the class. Parameter and return annotations remain ordinary Python typing metadata. The analyzer does not verify method bodies, ownership transfer, exclusivity, cleanup, or use-after-close in 0.1.
+The resource helper decorator has a small runtime effect: it stores metadata on the class. Parameter and return annotations remain ordinary Python typing metadata. The analyzer does not verify method bodies, ownership transfer, exclusivity, cleanup, or use-after-close.
 
 All inspected facts are marked `declared-unverified`. CodePact reports what the source declares; it does not prove that the implementation honors it. See [output](output.md) and [current limitations](limitations.md).

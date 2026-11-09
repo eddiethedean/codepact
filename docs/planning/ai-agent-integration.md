@@ -20,6 +20,8 @@ CLI agents, IDE agents and MCP clients use one semantic engine and the same proj
 
 Names and new fields remain proposals pending API/schema review. Existing `inspect-contracts` JSON and the developing `check` command are the starting point; agent-specific capabilities must be documented separately from released behavior. Protocol support must not delay CLI-based adoption.
 
+The local 0.4 candidate implements the [adoption specification](phases/0.4/specification.md)'s proposed checker schema 2, capability/explanation commands, snapshot/finding identities and bounded CLI output without pagination or stored snapshots. The [V04 matrix](phases/0.4/validation.md) maps CLI AI-V01–AI-V04, and the [pilot protocol](phases/0.4/pilots.md) defines the supported-repair and unresolved-boundary walkthroughs. AD01 acceptance and full workflow qualification remain pending; MCP and editor-client delivery remain in 0.8.
+
 ## Machine-readable analysis contract
 
 - Publish a JSON Schema and fixtures for reports, with engine/schema versions and capability metadata describing supported Python targets, rules, configuration and optional tools. Unsupported schema versions or options produce actionable failures.
@@ -78,4 +80,4 @@ For 0.4, A08 requires AI01–AI03 and AI-V01–AI-V04 for CLI workflows, plus a 
 
 ## Concurrent repair workflows
 
-Inherit [CS02/CS06](concurrency.md) reporting and model assumptions. Agent tools preserve task/resource origins, capture/close/transfer/join sites, cancellation effects, certainty and unknown process/thread boundaries. Qualify one structured-task repair and one unsupported process-handoff walkthrough alongside CLI/editor parity. Rechecking must not turn an unsupported boundary into a verified repair. Do not recommend or automatically insert cancellation suppression, shielding, joins, moves or close calls without verified behavioral preconditions; a wrapper or cancellation request alone proves neither completion nor cleanup.
+Inherit [CS02/CS06](concurrency.md) reporting and model assumptions. Agent tools preserve task/resource origins, capture/close/transfer/join sites, cancellation effects, certainty and unknown process/thread boundaries. In 0.4, demonstrate a supported lifecycle or synchronous must-use repair and an unresolved async/process boundary using inherited 0.3 evidence. Qualify a structured-task repair alongside 0.8 CLI/editor/tool parity only after CS03 establishes that scope. Rechecking must not turn an unsupported boundary into a verified repair. Do not recommend or automatically insert cancellation suppression, shielding, joins, moves or close calls without verified behavioral preconditions; a wrapper or cancellation request alone proves neither completion nor cleanup.

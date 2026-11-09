@@ -16,13 +16,16 @@ project slug has not been renamed.
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
+| CodePact 0.4.0 | Source implementation candidate; not published or pilot-qualified | `codepact`, `codepact-cli`, Rust crate `codepact` | Adoption configuration/policy, JSON report schema 2, baselines, suppressions, and synchronous must-use preview; see the 0.4 phase plan |
 | CodePact 0.3.0 | Published | `codepact`, `codepact-cli`, Rust crate `codepact` | Declaration inspection, lifecycle checking, cleanup obligations, and bounded intratask cancellation/cleanup; see the specification |
 | TypePact 0.2.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Declaration inspection and bounded synchronous lifecycle checking |
 | TypePact 0.1.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Contract declaration inspection |
 
-CodePact source checkouts use version `0.3.0` and package names in their build
-metadata. To reproduce the published source, check out tag `v0.3.0` and record
-the full Git commit with results.
+The latest published packages and crate are 0.3.0. To reproduce that release,
+check out tag `v0.3.0` and record the full Git commit with results. The current
+repository metadata describes the unreleased 0.4.0 candidate; those packages
+are available only by building this checkout and are not a distribution or
+platform-support claim.
 
 ## Install CodePact 0.3.0
 
@@ -32,7 +35,7 @@ applications can depend on `codepact` 0.3.0 from crates.io.
 
 ## Build from source
 
-Build from the repository checkout with Python 3.11+ and Rust 1.96+:
+Build the selected repository checkout with Python 3.11+ and Rust 1.96+:
 
 ```sh
 git clone https://github.com/eddiethedean/codepact.git
@@ -41,6 +44,11 @@ uv sync --locked
 uv run --locked codepact --version
 uv run --locked codepact check --root examples
 ```
+
+For the 0.4 candidate, record the checkout's full Git revision with every
+report. Do not describe it as the published 0.3 package. The 0.4 phase plan
+lists the implementation evidence and the still-pending pilots, performance
+review, maintainer acceptance and release gates.
 
 ## Platform and runtime evidence
 

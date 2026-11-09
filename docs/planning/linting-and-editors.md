@@ -22,6 +22,8 @@ The companion [AI-agent integration plan](ai-agent-integration.md) reuses these 
 
 Command names and options remain proposals until their API review. The current 0.1 `inspect-contracts` command remains a declaration inspector; this plan does not claim it already performs flow linting or serves LSP.
 
+The local 0.4 candidate implements the [adoption specification](phases/0.4/specification.md)'s proposed configuration/exit policy, checker schema 2 and tab-separated location format. [V04-05–08/18/25](phases/0.4/validation.md) still require full qualification for LE01 and CLI LE-V01/LE-V02; LSP comparisons and client setup remain 0.8 requirements. AD01 acceptance remains pending.
+
 ## Lint command and configuration
 
 - Specify deterministic rule codes, ordering, severity and explanation URLs. Human and machine reports use the same underlying findings; retain the existing contract-inspection interface separately.
@@ -71,4 +73,4 @@ Attach these results to 0.4 A01/A03/A07 for the command foundations and 0.8 E03/
 
 ## Concurrent resource diagnostics
 
-As [CS02/CS06](concurrency.md) land, preserve task origin, resource owner, capture/transfer, close, suspension and join/escape related sites where modeled. CLI and editor must agree on certainty, unsupported async/process boundaries, model assumptions and source revision. Include a supported structured-task lifetime violation and an unsupported process handoff in CLI/LSP parity fixtures. A green editor state must not turn unknown concurrency coverage into a safety claim; fixes that add joins, shielding or cleanup need verified behavioral preconditions.
+As [CS02/CS06](concurrency.md) land, preserve task origin, resource owner, capture/transfer, close, suspension and join/escape related sites where modeled. CLI and editor must agree on certainty, unsupported async/process boundaries, model assumptions and source revision. In 0.4, qualify the inherited 0.3 coroutine/cleanup evidence and unsupported handoffs; do not fabricate task/join sites. After CS03 qualifies task ownership, include a supported structured-task lifetime violation and an unsupported process handoff in 0.8 CLI/LSP parity fixtures. A green editor state must not turn unknown concurrency coverage into a safety claim; fixes that add joins, shielding or cleanup need verified behavioral preconditions.

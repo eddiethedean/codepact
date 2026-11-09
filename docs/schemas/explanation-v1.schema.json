@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/explanation-v1.schema.json",
+  "title": "CodePact rule explanation, schema 1",
+  "type": "object", "additionalProperties": false,
+  "required": ["explanation_schema_version", "explanation_id", "code", "title", "summary", "preconditions", "limitations", "examples", "repair_guidance", "automatic_fix"],
+  "properties": {
+    "explanation_schema_version": {"const": 1},
+    "explanation_id": {"type": "string", "pattern": "^TP[0-9]{4}\\.R[0-9]{3}$"},
+    "code": {"enum": ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001", "TP4001", "TP4002", "TP9001", "TP9002"]},
+    "title": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "preconditions": {"type": "array", "items": {"type": "string", "maxLength": 8192}},
+    "limitations": {"type": "array", "items": {"type": "string", "maxLength": 8192}},
+    "examples": {"$ref": "#/$defs/examples"},
+    "repair_guidance": {"$ref": "#/$defs/repair-guidance"},
+    "automatic_fix": {"const": false}
+  },
+  "$defs": {
+    "examples": {
+      "type": "object", "additionalProperties": false,
+      "required": ["valid", "invalid", "unknown"],
+      "properties": {"valid": {"type": "string", "maxLength": 8192}, "invalid": {"type": "string", "maxLength": 8192}, "unknown": {"type": "string", "maxLength": 8192}}
+    },
+    "repair-guidance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "text", "suggested_action"],
+      "properties": {"id": {"type": "string"}, "text": {"type": "string", "minLength": 1, "maxLength": 8192}, "suggested_action": {"type": "string", "minLength": 1, "maxLength": 8192}}
+    }
+  }
+}

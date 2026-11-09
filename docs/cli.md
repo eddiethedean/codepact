@@ -1,95 +1,156 @@
 # Command-line reference
 
-The `codepact` command inspects declarations or checks resource lifecycles in Python source without importing or executing the project.
-
-The published TypePact 0.2.0 release used the `typepact` command. CodePact 0.3.0
-publishes the renamed `codepact` command; install it using the
-[installation instructions](install.md). See the
-[availability guide](availability.md) and [lifecycle tutorial](lifecycle.md).
+The published CodePact release is 0.3.0. This checkout contains the 0.4.0
+adoption-tooling candidate; use the [availability guide](availability.md) for
+what is distributed. The analyzer reads Python as source and does not import
+or execute the project.
 
 ## Commands
 
 ```text
 codepact --version
-codepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] [--json] FILE...
-codepact check [--root DIR] [--python-version 3.11|3.12|3.13] [--json] [FILE...]
+codepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] --json FILE...
+codepact check [--root DIR] [--config PYPROJECT|--no-config]
+               [--python-version 3.11|3.12|3.13] [--mode advisory|strict]
+               [--fail-on error|warning] [--rules CODE[,CODE...]]
+               [--severity CODE=LEVEL] [--baseline FILE]
+               [--output-format text|json|concise] [--max-diagnostics N]
+               [FILE...]
+codepact check [project/policy options] --show-settings --json
+codepact baseline update [project/policy options]
+                        --output FILE --reason TEXT [--replace] [FILE...]
+codepact capabilities --json
+codepact explain RULE --json
 ```
 
-`inspect-contracts` requires explicit files and writes JSON. `check` discovers Python files under its root, defaults to readable diagnostics and accepts `--json` for the structured inspection result with lifecycle findings. Use `--root` to bound discovery; without it, the current directory is the root. Explicit files are included alongside discovered files. `--help` describes the invocation.
+`inspect-contracts` keeps the inspection interface: it requires explicit files
+and returns inspection schema 0. `check --json` uses the 0.4 CLI adoption
+report, checker schema 2. The Rust `check` and `check_report` APIs retain their
+schema 1 result. The schema transition is documented in the
+[JSON output reference](output.md).
 
-## Check resource lifecycles
+## Project configuration and scope
 
-```sh
-codepact check --root src
-codepact check --root src --python-version 3.12 src/app.py
+`check` discovers sorted Python files below its effective root. File operands
+are added to discovery; they do not narrow discovery. The default root is the
+current directory. A `[tool.codepact]` table in the nearest `pyproject.toml`
+can configure the root and policy. Use `--config FILE` to select one file, or
+`--no-config` to ignore configuration discovery.
+
+```toml
+[tool.codepact]
+config-version = 1
+root = "src"
+python-version = "3.12"
+include = ["**/*.py"]
+exclude = ["generated/**"]
+enabled-rules = ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"]
+mode = "advisory"
+fail-on = "error"
+baseline = "codepact-baseline.json"
+
+[tool.codepact.severity]
+TP3001 = "warning"
 ```
 
-The published TypePact 0.2 subset tracked direct resource construction, local
-aliases, straight-line synchronous code, `if`/`else`, returns, resolved local
-helpers, and acyclic named re-exports. It reported use after close as TP1001
-and close through a `Borrowed` parameter as TP2001. The CodePact 0.3 candidate
-extends this subset as described below.
+The baseline path is relative to the configuration directory, not `src`; it
+must be explicitly created with `baseline update`. Unknown keys, unsupported
+targets, invalid patterns or rule codes, and severity changes to mandatory
+rules are configuration errors. `--show-settings --json` resolves policy and
+reports each setting's origin without reading source files. It accepts no file
+operands or detail limit.
 
-Checking is bounded static analysis, not a guarantee of runtime safety, leak
-freedom or cleanup on every Python path. Dynamic dispatch, arbitrary escaped
-resource storage and unsupported expressions retain visible boundaries. Read
-the [limitations](limitations.md) before treating a clean result as a proof.
+Include/exclude patterns match root-relative paths using `/`; `*` and `?` match
+within one path component and `**` crosses components. Excludes win. Discovery
+skips symlinks and common build/environment directories. Explicit inputs must
+remain under the root, pass the same include/exclude policy, and map to distinct
+Python module names. CodePact does not search installed packages.
 
-## Select the Python grammar
+## Output modes
 
-The default source target is Python 3.11. Select Python 3.11, 3.12, or 3.13 with `--python-version`:
+The default `text` format prints active findings and a full-count summary.
+`--json` aliases `--output-format json` and writes one report to stdout; runtime
+or configuration failures produce a structured failure envelope and status 2.
+`concise` emits seven-field, tab-separated primary/related locations for
+actionable findings and sends counts and coverage status to stderr. See the
+[format and field definitions](output.md#location-per-line-format).
 
-```sh
-codepact inspect-contracts --python-version 3.13 app.py
-```
+`--max-diagnostics N` must be a positive integer. It caps returned finding
+details, not analysis, full counts, coverage, or exit calculation. The report
+sets `details_truncated` when details were omitted. Rerun without the cap and
+compare `snapshot_id` before using the full details.
 
-This controls which Python grammar and identifier rules are used to parse the input. It does not change the Python interpreter running your application. Unsupported target versions produce incomplete coverage.
-
-## Name modules with `--root`
-
-For source files inside a package or `src` directory, set a root and pass every file that should be analyzed:
-
-```sh
-codepact inspect-contracts --root src src/models.py src/client.py
-```
-
-With a root, paths below it form the logical module name. For example, `src/my_app/models.py` under `src` becomes `my_app.models`. Without a root, the filename stem is used as the module name. Input files must map to distinct module names.
-
-For `inspect-contracts`, `--root` only names the explicitly supplied modules. `check` discovers `.py` files under the root in sorted order and resolves supported direct absolute imports and acyclic named re-exports among them. Relative imports and star imports remain unsupported.
-
-The checker scans the entire root even when filenames are supplied. It skips
-symlinks and directories named `.git`, `.venv`, `venv`, `target`, `build`, `dist`,
-and `__pycache__`. Explicit inputs must remain inside the root after path
-resolution. Duplicate physical inputs are deduplicated; files mapping to the same
-logical module produce an input error. Discovery does not search installed
-packages. An empty root with no Python inputs is an input error.
-
-Use a narrow root for a small supported source set. Passing one entry file does
-not currently provide dependency-only discovery.
-
-## Exit status
+## Policy and exits
 
 | Status | Meaning |
 | --- | --- |
-| `0` | Inspection has no errors and complete coverage; check has no definite lifecycle or declaration errors (possible findings/boundaries may remain) |
-| `1` | Inspection has declaration errors or incomplete coverage; check has a definite lifecycle violation or declaration error |
-| `2` | Invocation or file input failed, or a fatal input or execution limit prevented inspection |
+| `0` | Analysis completed and no finding or policy condition failed the selected policy. Advisory mode can return 0 with incomplete coverage. |
+| `1` | A mandatory source error, an actionable finding, or a strict-mode possible finding/incomplete-coverage condition failed the policy. The completed report is preserved. |
+| `2` | Invocation, configuration, baseline, input, serialization, or other execution failed; do not treat the result as a completed check. |
 
-For `check`, status `1` means a definite lifecycle violation or declaration error was found; possible findings and bounded coverage warnings alone return `0`. Status `0` does not establish safety outside the supported subset. See [result fields](output.md) for machine-readable coverage and diagnostic details.
+Advisory mode fails on findings at or above `--fail-on` (`error` by default).
+Strict mode also fails on unsuppressed possible violations and incomplete
+coverage. `TP3001` defaults to warning, so it does not fail the default
+error-only threshold. Mandatory syntax/declaration errors cannot be disabled
+or demoted. Severity and thresholds never change certainty.
 
-## CodePact 0.3.0 behavior
+## Baselines and inline suppressions
 
-CodePact 0.3.0 extends `check` to bounded cleanup obligations across
-returns, raises, supported exception handlers, loops, `finally`, exact
-`contextlib.closing`/`aclosing` imports, and resolved local coroutine calls
-that are directly awaited once. Each awaited call is matched to its own
-coroutine; nested calls that are not awaited remain pending and do not apply
-cleanup. Repeated calls to one resolved factory site keep distinct bounded
-allocation identities. Finite tuple loops are unrolled up to 16 items; each
-flow state retains up to 128 pending coroutine records. It prints
-completion, certainty, trust, coverage reason and repair guidance. With
-`--json`, it emits the separately versioned `check_schema_version: 1` result
-described in the [output reference](output.md); `inspect-contracts` keeps its
-inspection schema. The release qualification is recorded in the [0.3
-cleanup plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
-It does not provide a general lifetime, escape, or task-completion proof.
+Use the explicit command to write a baseline:
+
+```sh
+codepact baseline update --output codepact-baseline.json \
+  --reason "record findings before adoption"
+```
+
+An existing destination requires `--replace`. The update validates directives
+and any previous baseline before atomically replacing the destination. Ambiguous
+duplicate identities are omitted and counted; incomplete coverage is recorded.
+Add `--json` to emit the versioned baseline-update summary. Normal `check`
+commands never write a baseline. A stale or incompatible baseline is reported
+but its entries do not suppress current findings.
+
+A line-level suppression requires exact eligible rule codes and a reason:
+
+```python
+fetch()  # codepact: ignore[TP3001] -- the query is intentionally discarded
+```
+
+Only the finding whose primary span starts on that line is suppressed. The
+finding remains in JSON audit output. Malformed/unused suppressions and
+incomplete coverage remain visible; mandatory and boundary rules cannot be
+suppressed.
+
+## Must-use results
+
+The initial result-use rule recognizes these synchronous declarations:
+
+```python
+from typing import Annotated
+from codepact import discard, must_use
+from codepact.contracts import MustUseResult
+from codepact.rust import MustUse
+
+@must_use
+def fetch() -> int: ...
+
+def fetch_typed() -> MustUse[int]: ...
+def fetch_verbose() -> Annotated[int, MustUseResult()]: ...
+
+fetch()                 # TP3001
+value = fetch()         # immediate handling only
+discard(fetch())        # explicit intentional discard
+```
+
+These forms carry no cleanup or ownership semantics. Assigned values are not
+tracked after the assignment. Async/dynamic consumption and unsupported nested
+expressions remain coverage boundaries. See [rules](rules.md#tp3001) and the
+[adoption guide](adopting.md).
+
+## Read-only metadata commands
+
+`codepact capabilities --json` lists schema versions, supported targets,
+available rules, formats, hard limits and unavailable services. `codepact
+explain RULE --json` returns a static explanation with valid/invalid/unknown
+examples and advisory repair guidance. These commands do not inspect a project
+or apply edits; no automatic fixes are advertised.

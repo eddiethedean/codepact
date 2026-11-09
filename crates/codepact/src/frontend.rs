@@ -33,6 +33,9 @@ pub(crate) enum AstExprKind {
     },
     Await(Box<AstExpr>),
     Tuple(Vec<AstExpr>),
+    /// An expression outside the directly modeled subset, with its nested
+    /// call targets retained for rules that need to report an honest boundary.
+    OtherCalls(Vec<String>),
     Boolean(bool),
     String(String),
     Primitive,
@@ -116,12 +119,19 @@ pub(crate) enum FlowStatement {
     },
     Assign {
         name: String,
+        annotation: Option<AstExpr>,
         value: AstExpr,
         range: SourceRange,
     },
     EscapingAssign {
         name: String,
+        annotation: Option<AstExpr>,
         value: AstExpr,
+        range: SourceRange,
+    },
+    AnnotatedDeclaration {
+        name: Option<String>,
+        annotation: AstExpr,
         range: SourceRange,
     },
     Expression {
@@ -201,7 +211,11 @@ pub(crate) struct FlowWithItem {
 pub(crate) struct MethodBody {
     pub name: String,
     pub parameters: Vec<String>,
+    pub parameter_annotations: Vec<(String, AstExpr)>,
     pub signature: CallSignature,
+    pub returns: Option<AstExpr>,
+    pub decorators: Vec<AstExpr>,
+    pub must_use_decorator: bool,
     pub has_parameter_annotations: bool,
     pub range: SourceRange,
     pub body: Vec<FlowStatement>,
@@ -224,6 +238,7 @@ pub(crate) enum Declaration {
     Class {
         name: String,
         decorators: Vec<AstExpr>,
+        class_annotations: Vec<AstExpr>,
         has_unresolved_base_classes: bool,
         methods: Vec<MethodBody>,
         unsupported: bool,
@@ -235,6 +250,7 @@ pub(crate) enum Declaration {
         signature: CallSignature,
         returns: Option<AstExpr>,
         decorators: Vec<AstExpr>,
+        must_use_decorator: bool,
         is_async: bool,
         unsupported: bool,
         body: Vec<FlowStatement>,
@@ -252,6 +268,10 @@ pub(crate) enum Declaration {
     },
     TypeAlias {
         name: Option<String>,
+        range: SourceRange,
+    },
+    Expression {
+        value: AstExpr,
         range: SourceRange,
     },
     Unsupported {
@@ -279,6 +299,47 @@ fn source_range(node: &impl Ranged) -> SourceRange {
 struct ExpressionBudget {
     nodes: usize,
     exceeded: bool,
+}
+
+struct NestedCallCollector<'b> {
+    budget: &'b mut ExpressionBudget,
+    calls: Vec<String>,
+    depth: usize,
+}
+
+impl<'a> Visitor<'a> for NestedCallCollector<'_> {
+    fn visit_expr(&mut self, node: &'a Expr) {
+        if self.budget.exceeded {
+            return;
+        }
+        if self.depth >= ExpressionBudget::MAX_DEPTH
+            || self.budget.nodes >= ExpressionBudget::MAX_NODES
+        {
+            self.budget.exceeded = true;
+            return;
+        }
+        self.budget.nodes += 1;
+        self.depth += 1;
+        if let Expr::Call(call) = node {
+            if let Some(path) = expression_identity(&call.func) {
+                self.calls.push(path);
+            }
+        }
+        walk_expr(self, node);
+        self.depth -= 1;
+    }
+}
+
+fn expression_identity(node: &Expr) -> Option<String> {
+    match node {
+        Expr::Name(name) => Some(name.id.to_string()),
+        Expr::Attribute(attribute) => Some(format!(
+            "{}.{}",
+            expression_identity(&attribute.value)?,
+            attribute.attr
+        )),
+        _ => None,
+    }
 }
 
 impl ExpressionBudget {
@@ -804,8 +865,30 @@ fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usize) -> AstEx
         Expr::BooleanLiteral(boolean) => AstExprKind::Boolean(boolean.value),
         Expr::NumberLiteral(_) => AstExprKind::Primitive,
         Expr::NoneLiteral(_) => AstExprKind::NoneLiteral,
-        _ => AstExprKind::Other,
+        _ => {
+            let mut collector = NestedCallCollector {
+                budget,
+                calls: Vec::new(),
+                depth: depth + 1,
+            };
+            collector.visit_expr(node);
+            if collector.budget.exceeded {
+                return AstExpr {
+                    range,
+                    kind: AstExprKind::DepthLimit,
+                };
+            }
+            collector.calls.sort();
+            collector.calls.dedup();
+            AstExprKind::OtherCalls(collector.calls)
+        }
     };
+    if budget.exceeded {
+        return AstExpr {
+            range,
+            kind: AstExprKind::DepthLimit,
+        };
+    }
     AstExpr { range, kind }
 }
 
@@ -828,6 +911,83 @@ fn decorators(list: &[ruff_python_ast::Decorator], budget: &mut ExpressionBudget
             expression
         })
         .collect()
+}
+
+fn decorators_are_only_must_use(
+    list: &[ruff_python_ast::Decorator],
+    must_use_names: &std::collections::BTreeSet<String>,
+) -> bool {
+    !list.is_empty()
+        && list.iter().all(|decorator| {
+            dotted_name(&decorator.expression).is_some_and(|name| must_use_names.contains(&name))
+        })
+}
+
+fn update_must_use_names(names: &mut std::collections::BTreeSet<String>, statement: &Stmt) {
+    match statement {
+        Stmt::ImportFrom(import) => {
+            let module = import.module.as_ref().map(ToString::to_string);
+            for alias in &import.names {
+                let source = alias.name.to_string();
+                let local = alias
+                    .asname
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| source.clone());
+                clear_imported_names(names, &local);
+                if import.level == 0
+                    && module.as_deref() == Some("codepact")
+                    && source == "must_use"
+                {
+                    names.insert(local);
+                }
+            }
+        }
+        Stmt::Import(import) => {
+            for alias in &import.names {
+                let source = alias.name.to_string();
+                let local = alias
+                    .asname
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| source.split('.').next().unwrap_or_default().to_owned());
+                clear_imported_names(names, &local);
+                if source == "codepact" {
+                    names.insert(format!("{local}.must_use"));
+                }
+            }
+        }
+        Stmt::FunctionDef(function) => clear_imported_names(names, function.name.as_ref()),
+        Stmt::ClassDef(class) => clear_imported_names(names, class.name.as_ref()),
+        Stmt::Assign(assign) => {
+            let mut rebound = std::collections::BTreeSet::new();
+            for target in &assign.targets {
+                assignment_roots(target, &mut rebound);
+            }
+            for name in rebound {
+                clear_imported_names(names, &name);
+            }
+        }
+        Stmt::AnnAssign(assign) => {
+            let mut rebound = std::collections::BTreeSet::new();
+            assignment_roots(&assign.target, &mut rebound);
+            for name in rebound {
+                clear_imported_names(names, &name);
+            }
+        }
+        Stmt::Delete(delete) => {
+            let mut rebound = std::collections::BTreeSet::new();
+            for target in &delete.targets {
+                assignment_roots(target, &mut rebound);
+            }
+            for name in rebound {
+                clear_imported_names(names, &name);
+            }
+        }
+        Stmt::Pass(_) => {}
+        Stmt::Expr(expression) if matches!(expression.value.as_ref(), Expr::StringLiteral(_)) => {}
+        _ => names.clear(),
+    }
 }
 
 fn flow_statements(statements: &[Stmt], budget: &mut ExpressionBudget) -> Vec<FlowStatement> {
@@ -864,9 +1024,19 @@ fn flow_statements_at(
                         let value = expression(&assign.value, budget, 0);
                         let range = source_range(assign);
                         if scope_escapes.contains(&name) {
-                            FlowStatement::EscapingAssign { name, value, range }
+                            FlowStatement::EscapingAssign {
+                                name,
+                                annotation: None,
+                                value,
+                                range,
+                            }
                         } else {
-                            FlowStatement::Assign { name, value, range }
+                            FlowStatement::Assign {
+                                name,
+                                annotation: None,
+                                value,
+                                range,
+                            }
                         }
                     }
                     _ => FlowStatement::Unsupported {
@@ -874,21 +1044,36 @@ fn flow_statements_at(
                     },
                 },
                 Stmt::AnnAssign(assign) => match assign.target.as_ref() {
-                    Expr::Name(name) => assign.value.as_deref().map_or(
-                        FlowStatement::Unsupported {
-                            range: source_range(statement),
-                        },
-                        |value| {
-                            let name = name.id.to_string();
-                            let value = expression(value, budget, 0);
-                            let range = source_range(statement);
-                            if scope_escapes.contains(&name) {
-                                FlowStatement::EscapingAssign { name, value, range }
-                            } else {
-                                FlowStatement::Assign { name, value, range }
+                    Expr::Name(target_name) => {
+                        let name = target_name.id.to_string();
+                        let annotation = expression(&assign.annotation, budget, 0);
+                        let range = source_range(statement);
+                        match assign.value.as_deref() {
+                            Some(value) => {
+                                let value = expression(value, budget, 0);
+                                if scope_escapes.contains(&name) {
+                                    FlowStatement::EscapingAssign {
+                                        name,
+                                        annotation: Some(annotation),
+                                        value,
+                                        range,
+                                    }
+                                } else {
+                                    FlowStatement::Assign {
+                                        name,
+                                        annotation: Some(annotation),
+                                        value,
+                                        range,
+                                    }
+                                }
                             }
-                        },
-                    ),
+                            None => FlowStatement::AnnotatedDeclaration {
+                                name: Some(name),
+                                annotation,
+                                range,
+                            },
+                        }
+                    }
                     _ => FlowStatement::Unsupported {
                         range: source_range(statement),
                     },
@@ -1103,6 +1288,7 @@ pub(crate) fn parse_frontend(
         })
         .collect();
     let mut declarations = Vec::new();
+    let mut must_use_names = std::collections::BTreeSet::new();
     for (index, statement) in module.body.iter().enumerate() {
         if index >= crate::DEFAULT_MAX_AST_DECLARATIONS {
             declarations.push(Declaration::Unsupported {
@@ -1120,6 +1306,7 @@ pub(crate) fn parse_frontend(
                 unknown_exception_bindings: all_exception_binding_names(),
                 range: source_range(statement),
             });
+            must_use_names.clear();
             continue;
         }
         let mut expression_budget = ExpressionBudget {
@@ -1144,6 +1331,18 @@ pub(crate) fn parse_frontend(
             Stmt::ClassDef(class) => declarations.push(Declaration::Class {
                 name: class.name.to_string(),
                 decorators: decorators(&class.decorator_list, &mut expression_budget),
+                class_annotations: class
+                    .body
+                    .iter()
+                    .filter_map(|statement| match statement {
+                        Stmt::AnnAssign(assignment) => Some(expression(
+                            &assignment.annotation,
+                            &mut expression_budget,
+                            0,
+                        )),
+                        _ => None,
+                    })
+                    .collect(),
                 has_unresolved_base_classes: class
                     .bases()
                     .iter()
@@ -1168,7 +1367,34 @@ pub(crate) fn parse_frontend(
                         Some(MethodBody {
                             name: method.name.to_string(),
                             parameters,
+                            parameter_annotations: method
+                                .parameters
+                                .iter_source_order()
+                                .filter_map(|parameter| {
+                                    let parameter = match parameter {
+                                        AnyParameterRef::NonVariadic(parameter) => {
+                                            &parameter.parameter
+                                        }
+                                        AnyParameterRef::Variadic(parameter) => parameter,
+                                    };
+                                    parameter.annotation().map(|annotation| {
+                                        (
+                                            parameter.name.to_string(),
+                                            expression(annotation, &mut expression_budget, 0),
+                                        )
+                                    })
+                                })
+                                .collect(),
                             signature: CallSignature::from_parameters(&method.parameters),
+                            returns: method
+                                .returns
+                                .as_deref()
+                                .map(|value| expression(value, &mut expression_budget, 0)),
+                            decorators: decorators(&method.decorator_list, &mut expression_budget),
+                            must_use_decorator: decorators_are_only_must_use(
+                                &method.decorator_list,
+                                &must_use_names,
+                            ),
                             has_parameter_annotations: method
                                 .parameters
                                 .iter_source_order()
@@ -1220,6 +1446,10 @@ pub(crate) fn parse_frontend(
                         .as_deref()
                         .map(|annotation| expression(annotation, &mut expression_budget, 0)),
                     decorators: decorators(&function.decorator_list, &mut expression_budget),
+                    must_use_decorator: decorators_are_only_must_use(
+                        &function.decorator_list,
+                        &must_use_names,
+                    ),
                     is_async: function.is_async,
                     unsupported: function
                         .type_params
@@ -1295,6 +1525,10 @@ pub(crate) fn parse_frontend(
             Stmt::Pass(_) => {}
             Stmt::Expr(expression)
                 if index == 0 && matches!(expression.value.as_ref(), Expr::StringLiteral(_)) => {}
+            Stmt::Expr(expr) => declarations.push(Declaration::Expression {
+                value: expression(&expr.value, &mut expression_budget, 0),
+                range: source_range(expr),
+            }),
             Stmt::TypeAlias(alias) => {
                 let name = match alias.name.as_ref() {
                     Expr::Name(name) => Some(name.id.to_string()),
@@ -1327,6 +1561,7 @@ pub(crate) fn parse_frontend(
                 range: source_range(statement),
             });
         }
+        update_must_use_names(&mut must_use_names, statement);
     }
     let header_boundaries = definition_header_boundaries(&module.body);
     Ok(FrontendOutput {
@@ -1452,8 +1687,10 @@ fn function_header_requires_boundary(
     safe_metadata_calls: &std::collections::BTreeSet<String>,
     safe_annotation_subscripts: &std::collections::BTreeSet<String>,
     annotated_subscripts: &std::collections::BTreeSet<String>,
+    must_use_names: &std::collections::BTreeSet<String>,
 ) -> bool {
-    !function.decorator_list.is_empty()
+    (!function.decorator_list.is_empty()
+        && !decorators_are_only_must_use(&function.decorator_list, must_use_names))
         || parameters_have_effectful_defaults(&function.parameters)
         || function.parameters.iter_source_order().any(|parameter| {
             parameter.annotation().is_some_and(|expr| {
@@ -1750,7 +1987,13 @@ fn assignment_roots(target: &Expr, names: &mut std::collections::BTreeSet<String
 }
 
 fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
-    let metadata = ["Resource", "SharedBorrow", "OwnedAccess", "ExclusiveBorrow"];
+    let metadata = [
+        "Resource",
+        "SharedBorrow",
+        "OwnedAccess",
+        "ExclusiveBorrow",
+        "MustUseResult",
+    ];
     let mut metadata_names = std::collections::BTreeSet::new();
     let mut resource_names = std::collections::BTreeSet::new();
     let mut safe_annotation_subscripts = std::collections::BTreeSet::from([
@@ -1761,6 +2004,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
         "frozenset".to_owned(),
     ]);
     let mut annotated_subscripts = std::collections::BTreeSet::new();
+    let mut must_use_names = std::collections::BTreeSet::new();
     let mut known_resource_classes = std::collections::BTreeSet::new();
     let mut boundaries = Vec::with_capacity(statements.len());
     for statement in statements {
@@ -1770,6 +2014,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 &metadata_names,
                 &safe_annotation_subscripts,
                 &annotated_subscripts,
+                &must_use_names,
             ),
             Stmt::ClassDef(class) => {
                 class_body_requires_boundary(
@@ -1777,6 +2022,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     &metadata_names,
                     &safe_annotation_subscripts,
                     &annotated_subscripts,
+                    &must_use_names,
                 ) || class_header_requires_boundary(class, &resource_names)
             }
             _ => false,
@@ -1788,6 +2034,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
             safe_annotation_subscripts.clear();
             annotated_subscripts.clear();
             known_resource_classes.clear();
+            must_use_names.clear();
         }
         match statement {
             Stmt::ImportFrom(import) => {
@@ -1802,7 +2049,9 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     resource_names.clear();
                     safe_annotation_subscripts.clear();
                     annotated_subscripts.clear();
+                    must_use_names.clear();
                     known_resource_classes.clear();
+                    must_use_names.clear();
                 }
                 for alias in &import.names {
                     let source = alias.name.to_string();
@@ -1815,6 +2064,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut resource_names, &local);
                     clear_imported_names(&mut safe_annotation_subscripts, &local);
                     clear_imported_names(&mut annotated_subscripts, &local);
+                    clear_imported_names(&mut must_use_names, &local);
                     if import.level != 0 {
                         continue;
                     }
@@ -1849,6 +2099,9 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     {
                         annotated_subscripts.insert(local.clone());
                     }
+                    if module.as_deref() == Some("codepact") && source == "must_use" {
+                        must_use_names.insert(local.clone());
+                    }
                     if import.level == 0
                         && module.as_deref() == Some("codepact")
                         && source == "resource"
@@ -1871,6 +2124,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut resource_names, &local);
                     clear_imported_names(&mut safe_annotation_subscripts, &local);
                     clear_imported_names(&mut annotated_subscripts, &local);
+                    clear_imported_names(&mut must_use_names, &local);
                     if source == "codepact.contracts" {
                         let prefix = alias
                             .asname
@@ -1898,6 +2152,9 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     if matches!(source.as_str(), "typing" | "typing_extensions") {
                         annotated_subscripts.insert(format!("{local}.Annotated"));
                     }
+                    if source == "codepact" {
+                        must_use_names.insert(format!("{local}.must_use"));
+                    }
                 }
             }
             Stmt::FunctionDef(function) => {
@@ -1905,6 +2162,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 clear_imported_names(&mut resource_names, function.name.as_ref());
                 clear_imported_names(&mut safe_annotation_subscripts, function.name.as_ref());
                 clear_imported_names(&mut annotated_subscripts, function.name.as_ref());
+                clear_imported_names(&mut must_use_names, function.name.as_ref());
                 known_resource_classes.remove(function.name.as_ref());
             }
             Stmt::ClassDef(class) => {
@@ -1912,6 +2170,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 clear_imported_names(&mut resource_names, class.name.as_ref());
                 clear_imported_names(&mut safe_annotation_subscripts, class.name.as_ref());
                 clear_imported_names(&mut annotated_subscripts, class.name.as_ref());
+                clear_imported_names(&mut must_use_names, class.name.as_ref());
                 known_resource_classes.remove(class.name.as_ref());
                 if !boundary && has_known_resource_decorator(class, &resource_names) {
                     known_resource_classes.insert(class.name.to_string());
@@ -1940,6 +2199,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut resource_names, &name);
                     clear_imported_names(&mut safe_annotation_subscripts, &name);
                     clear_imported_names(&mut annotated_subscripts, &name);
+                    clear_imported_names(&mut must_use_names, &name);
                     known_resource_classes.remove(&name);
                 }
                 if resource_class_alias {
@@ -1954,6 +2214,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     resource_names.clear();
                     safe_annotation_subscripts.clear();
                     annotated_subscripts.clear();
+                    must_use_names.clear();
                     known_resource_classes.clear();
                 }
             }
@@ -1984,6 +2245,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut resource_names, &name);
                     clear_imported_names(&mut safe_annotation_subscripts, &name);
                     clear_imported_names(&mut annotated_subscripts, &name);
+                    clear_imported_names(&mut must_use_names, &name);
                     known_resource_classes.remove(&name);
                 }
                 if resource_class_alias.is_some() {
@@ -1999,6 +2261,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     resource_names.clear();
                     safe_annotation_subscripts.clear();
                     annotated_subscripts.clear();
+                    must_use_names.clear();
                     known_resource_classes.clear();
                 }
             }
@@ -2012,6 +2275,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut resource_names, &name);
                     clear_imported_names(&mut safe_annotation_subscripts, &name);
                     clear_imported_names(&mut annotated_subscripts, &name);
+                    clear_imported_names(&mut must_use_names, &name);
                     known_resource_classes.remove(&name);
                 }
             }
@@ -2020,6 +2284,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 resource_names.clear();
                 safe_annotation_subscripts.clear();
                 annotated_subscripts.clear();
+                must_use_names.clear();
                 known_resource_classes.clear();
             }
             Stmt::Pass(_) => {}
@@ -2033,6 +2298,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     resource_names.clear();
                     safe_annotation_subscripts.clear();
                     annotated_subscripts.clear();
+                    must_use_names.clear();
                     known_resource_classes.clear();
                 }
             }
@@ -2041,6 +2307,7 @@ fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 resource_names.clear();
                 safe_annotation_subscripts.clear();
                 annotated_subscripts.clear();
+                must_use_names.clear();
                 known_resource_classes.clear();
             }
         }
@@ -2073,6 +2340,7 @@ fn class_body_requires_boundary(
     safe_metadata_calls: &std::collections::BTreeSet<String>,
     safe_annotation_subscripts: &std::collections::BTreeSet<String>,
     annotated_subscripts: &std::collections::BTreeSet<String>,
+    must_use_names: &std::collections::BTreeSet<String>,
 ) -> bool {
     class
         .body
@@ -2081,7 +2349,8 @@ fn class_body_requires_boundary(
         .any(|(index, statement)| match statement {
             Stmt::FunctionDef(function) => {
                 parameters_have_effectful_defaults(&function.parameters)
-                    || !function.decorator_list.is_empty()
+                    || (!function.decorator_list.is_empty()
+                        && !decorators_are_only_must_use(&function.decorator_list, must_use_names))
                     || function.parameters.iter_source_order().any(|parameter| {
                         parameter.annotation().is_some_and(|expr| {
                             expression_has_unknown_call(expr, safe_metadata_calls)

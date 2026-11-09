@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/capabilities-v1.schema.json",
+  "title": "CodePact CLI capabilities, schema 1",
+  "type": "object", "additionalProperties": false,
+  "required": ["capability_schema_version", "engine_version", "checker_schema_version", "baseline_schema_version", "inspection_schema_version", "explanation_schema_version", "python_targets", "rules", "formats", "settings", "limits", "services"],
+  "properties": {
+    "capability_schema_version": {"const": 1}, "engine_version": {"type": "string"},
+    "checker_schema_version": {"const": 2}, "baseline_schema_version": {"const": 1},
+    "inspection_schema_version": {"const": 0}, "explanation_schema_version": {"const": 1},
+    "python_targets": {"type": "array", "items": {"enum": ["3.11", "3.12", "3.13"]}, "minItems": 1, "uniqueItems": true},
+    "rules": {"type": "array", "items": {"$ref": "#/$defs/rule"}, "minItems": 1},
+    "formats": {"type": "array", "items": {"enum": ["text", "json", "concise"]}, "uniqueItems": true},
+    "settings": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "limits": {"$ref": "#/$defs/limits"}, "services": {"$ref": "#/$defs/services"}
+  },
+  "$defs": {
+    "rule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "semantic_version", "tier", "enabled_by_default", "explanation_id"],
+      "properties": {
+        "code": {"enum": ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001", "TP4001", "TP4002", "TP9001", "TP9002"]},
+        "semantic_version": {"type": "integer", "minimum": 1}, "tier": {"enum": ["stable", "mandatory"]},
+        "enabled_by_default": {"type": "boolean"}, "explanation_id": {"type": "string"}
+      }
+    },
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["config_bytes", "baseline_bytes", "baseline_entries", "report_bytes", "related_sites_per_finding", "explanation_bytes_per_finding", "max_input_files", "max_source_bytes"],
+      "properties": {
+        "config_bytes": {"const": 65536}, "baseline_bytes": {"const": 16777216},
+        "baseline_entries": {"const": 100000}, "report_bytes": {"const": 33554432},
+        "related_sites_per_finding": {"const": 32}, "explanation_bytes_per_finding": {"const": 8192},
+        "max_input_files": {"type": "integer", "minimum": 1}, "max_source_bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "services": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pagination", "mcp", "language_server", "persistent_cache"],
+      "properties": {"pagination": {"const": false}, "mcp": {"const": false}, "language_server": {"const": false}, "persistent_cache": {"const": false}}
+    }
+  }
+}

@@ -4,11 +4,13 @@ Importing this module never loads the Rust inspector or executes analysis.
 """
 
 from collections.abc import Callable
-from typing import TypeVar, overload
+from typing import ParamSpec, TypeVar, overload
 
-from .contracts import Resource
+from .contracts import MustUseResult, Resource
 
 T = TypeVar("T")
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 def _is_identifier(value: str) -> bool:
@@ -44,4 +46,18 @@ def resource(
     return decorate(cls) if cls is not None else decorate
 
 
-__all__ = ["resource", "Resource"]
+def must_use(function: Callable[P, R]) -> Callable[P, R]:
+    """Mark a synchronous function result as requiring immediate handling."""
+    existing = getattr(function, "__codepact_must_use__", None)
+    if existing is not None and existing != MustUseResult():
+        raise ValueError("conflicting CodePact must-use declarations")
+    setattr(function, "__codepact_must_use__", MustUseResult())
+    return function
+
+
+def discard(value: object) -> None:
+    """Document intentional immediate abandonment of a value."""
+    del value
+
+
+__all__ = ["resource", "Resource", "must_use", "discard", "MustUseResult"]

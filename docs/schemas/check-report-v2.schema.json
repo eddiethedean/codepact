@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/check-report-v2.schema.json",
+  "title": "CodePact CLI adoption report, schema 2",
+  "type": "object", "additionalProperties": false,
+  "required": ["execution_status", "engine_version", "report_schema_version", "check_schema_version", "target_python_version", "model_catalog_version", "available_models", "assurance", "contracts", "coverage", "diagnostics", "counts", "counts_by_certainty", "counts_by_disposition", "total_diagnostics", "actionable_diagnostics", "returned_diagnostics", "audit_diagnostics", "policy_failures", "policy_warnings", "unused_suppressions", "details_truncated", "snapshot_algorithm_version", "snapshot_id", "semantic_fingerprint", "policy_fingerprint", "model_fingerprint", "snapshot_manifest", "project_root", "logical_root", "config_file", "selected_files", "include", "exclude", "selected_rules", "disabled_rules", "mode", "fail_on", "settings_origins", "baseline", "exit_code"],
+  "properties": {
+    "execution_status": {"const": "completed"}, "engine_version": {"type": "string"},
+    "report_schema_version": {"const": 2}, "check_schema_version": {"const": 2},
+    "target_python_version": {"type": "string"}, "model_catalog_version": {"type": "integer", "minimum": 0},
+    "available_models": {"type": "array", "items": {"$ref": "check-result-v1.schema.json#/$defs/model"}},
+    "assurance": {"type": "string"},
+    "contracts": {"type": "array", "items": {"$ref": "inspection-v0.schema.json#/$defs/contract"}},
+    "coverage": {"$ref": "inspection-v0.schema.json#/$defs/coverage"},
+    "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+    "counts": {"$ref": "#/$defs/counts"}, "counts_by_certainty": {"$ref": "#/$defs/counts"},
+    "counts_by_disposition": {"$ref": "#/$defs/counts"},
+    "total_diagnostics": {"type": "integer", "minimum": 0}, "actionable_diagnostics": {"type": "integer", "minimum": 0},
+    "returned_diagnostics": {"type": "integer", "minimum": 0}, "audit_diagnostics": {"type": "integer", "minimum": 0},
+    "policy_failures": {"type": "array", "items": {"type": "string"}}, "policy_warnings": {"type": "array", "items": {"type": "string"}},
+    "unused_suppressions": {"type": "array", "items": {"type": "string"}}, "details_truncated": {"type": "boolean"},
+    "snapshot_algorithm_version": {"type": "integer", "minimum": 1}, "snapshot_id": {"$ref": "#/$defs/hash"},
+    "semantic_fingerprint": {"$ref": "#/$defs/hash"}, "policy_fingerprint": {"$ref": "#/$defs/hash"}, "model_fingerprint": {"$ref": "#/$defs/hash"},
+    "snapshot_manifest": {"type": "array", "items": {"$ref": "#/$defs/snapshot-file"}},
+    "project_root": {"type": "string"}, "logical_root": {"type": "string"},
+    "config_file": {"type": ["string", "null"]}, "selected_files": {"type": "array", "items": {"type": "string"}},
+    "include": {"type": "array", "items": {"type": "string"}}, "exclude": {"type": "array", "items": {"type": "string"}},
+    "selected_rules": {"type": "array", "items": {"type": "string"}}, "disabled_rules": {"type": "array", "items": {"type": "string"}},
+    "mode": {"enum": ["advisory", "strict"]}, "fail_on": {"enum": ["error", "warning"]},
+    "settings_origins": {"type": "object", "additionalProperties": {"type": "string"}},
+    "baseline": {"$ref": "#/$defs/baseline-summary"}, "exit_code": {"enum": [0, 1]}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "snapshot-file": {"type": "object", "additionalProperties": false, "required": ["logical_path", "sha256"], "properties": {"logical_path": {"type": "string"}, "sha256": {"$ref": "#/$defs/hash"}}},
+    "span": {"$ref": "inspection-v0.schema.json#/$defs/span"},
+    "diagnostic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "severity", "message", "primary", "related", "certainty", "completion", "trust", "coverage_reason", "repair", "fingerprint", "base_severity", "effective_severity", "disposition", "disposition_reason", "explanation_id", "actionable", "message_omitted_bytes", "repair_omitted_bytes", "related_sites_omitted"],
+      "properties": {
+        "code": {"type": "string"}, "severity": {"enum": ["error", "warning", "info"]},
+        "message": {"type": "string"}, "primary": {"$ref": "#/$defs/span"},
+        "related": {"type": "array", "items": {"$ref": "#/$defs/span"}},
+        "certainty": {"enum": ["definite", "possible", "unknown"]},
+        "completion": {"oneOf": [{"type": "null"}, {"enum": ["fallthrough", "return", "raise", "cancelled", "break", "continue"]}]},
+        "trust": {"type": "string"}, "coverage_reason": {"type": ["string", "null"]}, "repair": {"type": ["string", "null"]},
+        "fingerprint": {"$ref": "#/$defs/hash"}, "base_severity": {"enum": ["error", "warning", "info"]},
+        "effective_severity": {"enum": ["error", "warning", "info"]},
+        "disposition": {"enum": ["active", "rule-disabled", "suppressed-inline", "suppressed-baseline"]},
+        "disposition_reason": {"type": ["string", "null"]}, "explanation_id": {"type": "string"},
+        "actionable": {"type": "boolean"}, "message_omitted_bytes": {"type": "integer", "minimum": 0},
+        "repair_omitted_bytes": {"type": "integer", "minimum": 0}, "related_sites_omitted": {"type": "integer", "minimum": 0}
+      }
+    },
+    "baseline-summary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["configured", "compatible", "entries", "matched", "unmatched", "update_reason"],
+      "properties": {
+        "configured": {"type": "boolean"}, "compatible": {"type": ["boolean", "null"]},
+        "entries": {"type": "integer", "minimum": 0}, "matched": {"type": "integer", "minimum": 0},
+        "unmatched": {"type": "integer", "minimum": 0}, "update_reason": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

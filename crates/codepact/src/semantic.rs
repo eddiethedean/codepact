@@ -48,6 +48,7 @@ struct SemanticProject {
     inspection: Inspection,
     module_exports: BTreeMap<String, BTreeMap<String, ExportedView>>,
     module_functions: BTreeMap<String, BTreeSet<String>>,
+    module_must_use_callables: BTreeMap<String, BTreeMap<String, Span>>,
     symbols: BTreeMap<String, ClassDecl>,
 }
 
@@ -56,6 +57,7 @@ fn inspect_inner(
     python_version: &str,
     prepared: &BTreeMap<String, ParseSummary>,
     module_context: Option<&ModuleContext>,
+    run_must_use: bool,
     mut check_cancelled: impl FnMut(),
 ) -> SemanticProject {
     let mut result = Inspection {
@@ -128,6 +130,11 @@ fn inspect_inner(
         .flat_map(|context| context.dependency_exports.iter())
         .map(|(module, exports)| (module.clone(), exports.functions.clone()))
         .collect::<BTreeMap<_, _>>();
+    let mut module_must_use_callables = module_context
+        .into_iter()
+        .flat_map(|context| context.dependency_exports.iter())
+        .map(|(module, exports)| (module.clone(), exports.must_use_callables.clone()))
+        .collect::<BTreeMap<_, _>>();
     for index in ordered {
         let file = &files[index];
         check_cancelled();
@@ -157,6 +164,11 @@ fn inspect_inner(
             continue;
         };
         let mut state = FileState::new(python_version);
+        let mut pending_must_use_bodies = Vec::<(
+            Vec<crate::frontend::FlowStatement>,
+            Option<(String, Option<String>)>,
+            Vec<String>,
+        )>::new();
         state.future_annotations = declarations.iter().any(|declaration| {
             matches!(
                 declaration,
@@ -213,6 +225,7 @@ fn inspect_inner(
                             &symbols,
                             &module_exports,
                             &module_functions,
+                            &module_must_use_callables,
                             &mut bindings,
                             &mut state,
                         );
@@ -232,6 +245,13 @@ fn inspect_inner(
                             state
                                 .imports
                                 .insert(local.to_owned(), "external:contextlib".into());
+                        } else if item.name == "codepact" || item.name.starts_with("codepact.") {
+                            let identity = if item.alias.is_some() {
+                                item.name.replace('.', "::")
+                            } else {
+                                item.name.split('.').next().unwrap_or(&item.name).to_owned()
+                            };
+                            state.imports.insert(local.to_owned(), identity);
                         } else {
                             unsupported(
                                 &mut result,
@@ -259,18 +279,109 @@ fn inspect_inner(
                 Declaration::Class {
                     name,
                     decorators,
+                    class_annotations,
+                    methods,
                     unsupported: has_unsupported_syntax,
                     range,
                     ..
                 } => {
-                    if *has_unsupported_syntax {
-                        unsupported(
-                            &mut result,
-                            file,
-                            *range,
-                            "Ruff AST marked syntax outside the supported declaration subset (class bases, keywords, and type parameters are not resolved)",
-                        );
+                    if run_must_use {
+                        for decorator in decorators {
+                            if is_misplaced_must_use_decorator(decorator, &state.imports) {
+                                declaration_error(
+                                    &mut result,
+                                    file,
+                                    decorator.range,
+                                    "TP4002",
+                                    "must-use metadata is supported only on function return annotations",
+                                    Vec::new(),
+                                );
+                            }
+                        }
+                        for annotation in class_annotations {
+                            report_misplaced_must_use_annotation(
+                                &mut result,
+                                file,
+                                annotation,
+                                &state.imports,
+                            );
+                        }
+                        for method in methods {
+                            for decorator in &method.decorators {
+                                if is_misplaced_must_use_decorator(decorator, &state.imports) {
+                                    declaration_error(
+                                        &mut result,
+                                        file,
+                                        decorator.range,
+                                        "TP4002",
+                                        "must-use metadata is supported only on function return annotations",
+                                        Vec::new(),
+                                    );
+                                }
+                            }
+                            for (_, annotation) in &method.parameter_annotations {
+                                report_misplaced_must_use_annotation(
+                                    &mut result,
+                                    file,
+                                    annotation,
+                                    &state.imports,
+                                );
+                            }
+                        }
                     }
+                    let mut method_contracts = Vec::new();
+                    for method in methods {
+                        match supported_method_must_use(
+                            &method.decorators,
+                            method.returns.as_ref(),
+                            &state.imports,
+                        ) {
+                            Ok(true) if method.is_async => {
+                                if run_must_use {
+                                    unsupported(
+                                        &mut result,
+                                        file,
+                                        method.range,
+                                        "must-use result consumption for async methods is unsupported in 0.4",
+                                    );
+                                }
+                            }
+                            Ok(true) => method_contracts.push((
+                                format!("{name}.{}", method.name),
+                                crate::source_span(&file.path, &file.source, method.range),
+                            )),
+                            Ok(false) => {}
+                            Err(()) => {
+                                if run_must_use {
+                                    unsupported(
+                                        &mut result,
+                                        file,
+                                        method.range,
+                                        "must-use method has an unsupported decorator identity or order",
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    let pending_methods = methods
+                        .iter()
+                        .map(|method| {
+                            let is_static = method.decorators.iter().any(|decorator| {
+                                canonical(decorator, &state.imports).as_deref()
+                                    == Some("builtins::staticmethod")
+                            });
+                            (
+                                method.body.clone(),
+                                Some((
+                                    name.clone(),
+                                    (!is_static)
+                                        .then(|| method.parameters.first().cloned())
+                                        .flatten(),
+                                )),
+                                method.parameters.clone(),
+                            )
+                        })
+                        .collect::<Vec<_>>();
                     lower_class(
                         &mut result,
                         file,
@@ -280,11 +391,56 @@ fn inspect_inner(
                         &mut symbols,
                         &mut bindings,
                     );
+                    for (callable, span) in method_contracts {
+                        state.must_use_callables.insert(callable, span);
+                    }
+                    if !has_unsupported_syntax {
+                        state.known_classes.insert(name.clone());
+                    }
+                    if *has_unsupported_syntax {
+                        unsupported(
+                            &mut result,
+                            file,
+                            *range,
+                            "Ruff AST marked syntax outside the supported declaration subset (class bases, keywords, and type parameters are not resolved)",
+                        );
+                    }
+                    for (body, class_scope, parameters) in pending_methods {
+                        pending_must_use_bodies.push((body, class_scope, parameters));
+                    }
                 }
                 Declaration::Assignment {
-                    name, value, range, ..
+                    name,
+                    annotation,
+                    value,
+                    range,
                 } => {
+                    if run_must_use
+                        && annotation.as_ref().is_some_and(|annotation| {
+                            contains_must_use_marker(annotation, &state.imports)
+                        })
+                    {
+                        report_misplaced_must_use_annotation(
+                            &mut result,
+                            file,
+                            annotation.as_ref().unwrap(),
+                            &state.imports,
+                        );
+                    }
                     if let Some(name) = name {
+                        let source_name = value.as_ref().and_then(expression_path);
+                        let must_use_source = source_name
+                            .as_ref()
+                            .and_then(|source| state.must_use_callables.get(source).cloned());
+                        let instance_class = value.as_ref().and_then(|value| {
+                            let AstExprKind::Call { function, .. } = &value.kind else {
+                                return source_name
+                                    .as_deref()
+                                    .and_then(|source| state.instances.get(source).cloned());
+                            };
+                            expression_path(function)
+                                .filter(|class| state.known_classes.contains(class))
+                        });
                         lower_assignment(
                             &mut result,
                             file,
@@ -294,6 +450,16 @@ fn inspect_inner(
                             &symbols,
                             &mut bindings,
                         );
+                        if let Some(span) = must_use_source {
+                            state.must_use_callables.insert(name.clone(), span);
+                            state.callables.insert(name.clone());
+                        } else {
+                            state.must_use_callables.remove(name);
+                        }
+                        state.instances.remove(name);
+                        if let Some(class) = instance_class {
+                            state.instances.insert(name.clone(), class);
+                        }
                     } else {
                         unsupported(
                             &mut result,
@@ -322,8 +488,58 @@ fn inspect_inner(
                     decorators,
                     unsupported: has_unsupported_syntax,
                     range,
+                    body,
+                    is_async,
                     ..
                 } => {
+                    let marked = function_is_must_use(decorators, returns.as_ref(), &state.imports);
+                    if run_must_use {
+                        for parameter in parameters {
+                            if let Some(annotation) = &parameter.annotation {
+                                report_misplaced_must_use_annotation(
+                                    &mut result,
+                                    file,
+                                    annotation,
+                                    &state.imports,
+                                );
+                            }
+                        }
+                        if returns.as_ref().is_some_and(|annotation| {
+                            contains_must_use_marker(annotation, &state.imports)
+                                && !annotation_is_must_use(annotation, &state.imports)
+                        }) {
+                            unsupported(
+                            &mut result,
+                            file,
+                            returns.as_ref().unwrap().range,
+                            "must-use return metadata is nested in an unsupported annotation shape",
+                        );
+                        }
+                        for decorator in decorators {
+                            if is_misplaced_must_use_decorator(decorator, &state.imports) {
+                                declaration_error(
+                                    &mut result,
+                                    file,
+                                    decorator.range,
+                                    "TP4002",
+                                    "must-use metadata is supported only on function return annotations",
+                                    Vec::new(),
+                                );
+                            }
+                        }
+                    }
+                    let only_known_decorators = decorators.iter().all(|decorator| {
+                        canonical(decorator, &state.imports).as_deref()
+                            == Some("codepact::must_use")
+                    });
+                    if run_must_use && marked && *is_async {
+                        unsupported(
+                            &mut result,
+                            file,
+                            *range,
+                            "must-use result consumption for async functions is unsupported in 0.4",
+                        );
+                    }
                     if *has_unsupported_syntax {
                         unsupported(
                             &mut result,
@@ -332,7 +548,7 @@ fn inspect_inner(
                             "nested or generic function declarations are unsupported",
                         );
                     }
-                    if !decorators.is_empty() {
+                    if !decorators.is_empty() && !only_known_decorators {
                         unsupported(
                             &mut result,
                             file,
@@ -369,6 +585,20 @@ fn inspect_inner(
                         }
                         // Python evaluates eager annotations before installing the new function binding.
                         state.clear_name(name, &file.module, &mut bindings);
+                        if marked && !*is_async {
+                            state.must_use_callables.insert(
+                                name.clone(),
+                                crate::source_span(&file.path, &file.source, *range),
+                            );
+                        }
+                        pending_must_use_bodies.push((
+                            body.clone(),
+                            None,
+                            parameters
+                                .iter()
+                                .map(|parameter| parameter.name.clone())
+                                .collect(),
+                        ));
                         if !has_unsupported_syntax {
                             state.callables.insert(name.clone());
                         }
@@ -378,11 +608,50 @@ fn inspect_inner(
                     unsupported(&mut result, file, *range, message);
                     state.clear_module(&file.module, &mut bindings);
                 }
+                Declaration::Expression { value, range } => {
+                    if run_must_use {
+                        let statement = crate::frontend::FlowStatement::Expression {
+                            value: value.clone(),
+                            range: *range,
+                        };
+                        check_must_use_body(
+                            &mut result,
+                            file,
+                            std::slice::from_ref(&statement),
+                            &state,
+                            None,
+                            &[],
+                        );
+                    } else {
+                        unsupported(
+                            &mut result,
+                            file,
+                            *range,
+                            "module-level control flow and executable statements are unsupported",
+                        );
+                        state.clear_module(&file.module, &mut bindings);
+                    }
+                }
             }
         }
         if !stop {
+            if run_must_use {
+                for (body, class_scope, parameters) in pending_must_use_bodies {
+                    check_must_use_body(
+                        &mut result,
+                        file,
+                        &body,
+                        &state,
+                        class_scope
+                            .as_ref()
+                            .map(|(class, receiver)| (class.as_str(), receiver.as_deref())),
+                        &parameters,
+                    );
+                }
+            }
             module_exports.insert(file.module.clone(), state.exports.clone());
             module_functions.insert(file.module.clone(), state.callables.clone());
+            module_must_use_callables.insert(file.module.clone(), state.must_use_callables.clone());
         } else {
             break;
         }
@@ -422,6 +691,7 @@ fn inspect_inner(
         inspection: result,
         module_exports,
         module_functions,
+        module_must_use_callables,
         symbols,
     }
 }
@@ -440,6 +710,7 @@ pub(crate) struct SemanticExports {
     classes: BTreeMap<String, ClassDecl>,
     names: BTreeMap<String, ExportedView>,
     functions: BTreeSet<String>,
+    must_use_callables: BTreeMap<String, Span>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -545,6 +816,9 @@ pub(crate) fn context_for_module(
                     exports
                         .functions
                         .retain(|name| names.is_some_and(|names| names.contains(name)));
+                    exports
+                        .must_use_callables
+                        .retain(|name, _| names.is_some_and(|names| names.contains(name)));
                     exports.classes.retain(|symbol, _| {
                         exports.names.values().any(|view| &view.symbol == symbol)
                     });
@@ -704,7 +978,7 @@ fn summary_uses_contract_wrapper(summary: &ParseSummary) -> bool {
             Declaration::TypeAlias { .. } | Declaration::Unsupported { .. } => {
                 state.clear_module("", &mut bindings);
             }
-            Declaration::Assignment { .. } => {}
+            Declaration::Assignment { .. } | Declaration::Expression { .. } => {}
         }
     }
     false
@@ -715,6 +989,7 @@ pub(crate) fn inspect_module(
     python_version: &str,
     summary: &ParseSummary,
     context: &ModuleContext,
+    run_must_use: bool,
     check_cancelled: impl FnMut(),
 ) -> ModuleAnalysis {
     let prepared = BTreeMap::from([(file.path.clone(), summary.clone())]);
@@ -723,6 +998,7 @@ pub(crate) fn inspect_module(
         python_version,
         &prepared,
         Some(context),
+        run_must_use,
         check_cancelled,
     );
     let names = project
@@ -751,12 +1027,18 @@ pub(crate) fn inspect_module(
         .get(&file.module)
         .cloned()
         .unwrap_or_default();
+    let must_use_callables = project
+        .module_must_use_callables
+        .get(&file.module)
+        .cloned()
+        .unwrap_or_default();
     ModuleAnalysis {
         inspection: project.inspection,
         exports: SemanticExports {
             classes,
             names,
             functions,
+            must_use_callables,
         },
     }
 }
@@ -829,6 +1111,9 @@ struct FileState {
     python_version: String,
     future_annotations: bool,
     imports: BTreeMap<String, String>,
+    must_use_callables: BTreeMap<String, Span>,
+    known_classes: BTreeSet<String>,
+    instances: BTreeMap<String, String>,
     unresolved_imports: BTreeMap<String, UnresolvedImport>,
     aliases: BTreeMap<String, String>,
     alias_lifecycle: BTreeMap<String, (String, Span)>,
@@ -845,8 +1130,13 @@ struct UnresolvedImport {
 
 impl FileState {
     fn new(python_version: &str) -> Self {
+        let imports = BTreeMap::from([
+            ("staticmethod".into(), "builtins::staticmethod".into()),
+            ("classmethod".into(), "builtins::classmethod".into()),
+        ]);
         Self {
             python_version: python_version.into(),
+            imports,
             ..Self::default()
         }
     }
@@ -859,6 +1149,12 @@ impl FileState {
         self.alias_access.remove(name);
         self.exports.remove(name);
         self.callables.remove(name);
+        self.must_use_callables.remove(name);
+        let method_prefix = format!("{name}.");
+        self.must_use_callables
+            .retain(|callable, _| !callable.starts_with(&method_prefix));
+        self.known_classes.remove(name);
+        self.instances.remove(name);
         bindings.remove(&format!("{module}.{name}"));
     }
 
@@ -872,6 +1168,9 @@ impl FileState {
         self.alias_access.clear();
         self.exports.clear();
         self.callables.clear();
+        self.must_use_callables.clear();
+        self.known_classes.clear();
+        self.instances.clear();
     }
 }
 
@@ -885,6 +1184,7 @@ impl Declaration {
             | Self::Assignment { range, .. }
             | Self::Delete { range, .. }
             | Self::TypeAlias { range, .. }
+            | Self::Expression { range, .. }
             | Self::Unsupported { range, .. } => *range,
         }
     }
@@ -903,6 +1203,7 @@ fn process_import_from(
     symbols: &BTreeMap<String, ClassDecl>,
     module_exports: &BTreeMap<String, BTreeMap<String, ExportedView>>,
     module_functions: &BTreeMap<String, BTreeSet<String>>,
+    module_must_use_callables: &BTreeMap<String, BTreeMap<String, Span>>,
     bindings: &mut BTreeMap<String, String>,
     state: &mut FileState,
 ) {
@@ -940,6 +1241,7 @@ fn process_import_from(
             symbols,
             module_exports,
             module_functions,
+            module_must_use_callables,
             bindings,
             state,
         );
@@ -952,13 +1254,19 @@ fn register_import(original: &str, local: &str, module: &str, state: &mut FileSt
         "codepact.rust" => "codepact::rust",
         "codepact.contracts" => "codepact::contracts",
         "codepact.resource" => "codepact::resource",
+        "codepact.must_use" => "codepact::must_use",
+        "codepact.discard" => "codepact::discard",
+        "builtins.staticmethod" => "builtins::staticmethod",
+        "builtins.classmethod" => "builtins::classmethod",
         "codepact.Resource" | "codepact.contracts.Resource" => "codepact::contracts::Resource",
         "codepact.contracts.SharedBorrow" => "codepact::contracts::SharedBorrow",
         "codepact.contracts.OwnedAccess" => "codepact::contracts::OwnedAccess",
         "codepact.contracts.ExclusiveBorrow" => "codepact::contracts::ExclusiveBorrow",
+        "codepact.contracts.MustUseResult" => "codepact::contracts::MustUseResult",
         "codepact.contracts.Borrowed" | "codepact.rust.Borrowed" => "codepact::Borrowed",
         "codepact.contracts.Owned" | "codepact.rust.Owned" => "codepact::Owned",
         "codepact.contracts.BorrowedMut" | "codepact.rust.BorrowedMut" => "codepact::BorrowedMut",
+        "codepact.rust.MustUse" | "codepact.contracts.MustUse" => "codepact::MustUse",
         _ => "",
     };
     state.imports.insert(local.to_owned(), canonical.to_owned());
@@ -977,6 +1285,7 @@ fn register_supplied_module_import(
     symbols: &BTreeMap<String, ClassDecl>,
     module_exports: &BTreeMap<String, BTreeMap<String, ExportedView>>,
     module_functions: &BTreeMap<String, BTreeSet<String>>,
+    module_must_use_callables: &BTreeMap<String, BTreeMap<String, Span>>,
     bindings: &mut BTreeMap<String, String>,
     state: &mut FileState,
 ) {
@@ -1018,6 +1327,16 @@ fn register_supplied_module_import(
         .cloned()
         .filter(|view| symbols.contains_key(&view.symbol))
     else {
+        if let Some(declaration) = module_must_use_callables
+            .get(module)
+            .and_then(|functions| functions.get(original))
+        {
+            state
+                .must_use_callables
+                .insert(local.to_owned(), declaration.clone());
+            state.callables.insert(local.to_owned());
+            return;
+        }
         if module_functions
             .get(module)
             .is_some_and(|functions| functions.contains(original))
@@ -1686,7 +2005,7 @@ fn parse_annotation(
                 AstExprKind::String(_) => {
                     Some("string and future annotations are not resolved in 0.1")
                 }
-                AstExprKind::Call { .. } | AstExprKind::Other => {
+                AstExprKind::Call { .. } | AstExprKind::Other | AstExprKind::OtherCalls(_) => {
                     Some("computed annotation expressions are unsupported")
                 }
                 AstExprKind::Tuple(_) if contains_codepact_contract(expression, state) => {
@@ -1876,21 +2195,746 @@ fn expression_path(expression: &AstExpr) -> Option<String> {
 }
 
 fn canonical(expression: &AstExpr, imports: &BTreeMap<String, String>) -> Option<String> {
-    let path = expression_path(expression)?;
-    if let Some(value) = imports.get(&path).filter(|value| !value.is_empty()) {
-        return Some(value.clone());
+    canonical_path(&expression_path(expression)?, imports)
+}
+
+fn canonical_path(path: &str, imports: &BTreeMap<String, String>) -> Option<String> {
+    if let Some(value) = imports.get(path).filter(|value| !value.is_empty()) {
+        return Some(normalize_canonical_identity(value));
     }
-    let (root, suffix) = path.split_once('.')?;
-    let root_identity = imports.get(root).filter(|value| !value.is_empty())?;
-    let identity = format!("{root_identity}::{suffix}");
-    Some(match identity.as_str() {
+    let components = path.split('.').collect::<Vec<_>>();
+    for prefix_len in (1..components.len()).rev() {
+        let prefix = components[..prefix_len].join(".");
+        let Some(root_identity) = imports.get(&prefix).filter(|value| !value.is_empty()) else {
+            continue;
+        };
+        let suffix = components[prefix_len..].join("::");
+        return Some(normalize_canonical_identity(&format!(
+            "{root_identity}::{suffix}"
+        )));
+    }
+    None
+}
+
+fn normalize_canonical_identity(identity: &str) -> String {
+    match identity {
         "codepact::rust::Borrowed" | "codepact::contracts::Borrowed" => "codepact::Borrowed".into(),
         "codepact::rust::Owned" | "codepact::contracts::Owned" => "codepact::Owned".into(),
         "codepact::rust::BorrowedMut" | "codepact::contracts::BorrowedMut" => {
             "codepact::BorrowedMut".into()
         }
-        _ => identity,
+        _ => identity.to_owned(),
+    }
+}
+
+fn function_is_must_use(
+    decorators: &[AstExpr],
+    returns: Option<&AstExpr>,
+    imports: &BTreeMap<String, String>,
+) -> bool {
+    let decorated = decorators
+        .iter()
+        .any(|decorator| canonical(decorator, imports).as_deref() == Some("codepact::must_use"));
+    decorated || returns.is_some_and(|annotation| annotation_is_must_use(annotation, imports))
+}
+
+fn supported_method_must_use(
+    decorators: &[AstExpr],
+    returns: Option<&AstExpr>,
+    imports: &BTreeMap<String, String>,
+) -> Result<bool, ()> {
+    if !function_is_must_use(decorators, returns, imports) {
+        return Ok(false);
+    }
+    let mut marker_index = None;
+    let mut wrapper_index = None;
+    for (index, decorator) in decorators.iter().enumerate() {
+        match canonical(decorator, imports).as_deref() {
+            Some("codepact::must_use") => marker_index = Some(index),
+            Some("builtins::staticmethod" | "builtins::classmethod") => {
+                if wrapper_index.replace(index).is_some() {
+                    return Err(());
+                }
+            }
+            _ => return Err(()),
+        }
+    }
+    if let (Some(marker), Some(wrapper)) = (marker_index, wrapper_index) {
+        if wrapper > marker {
+            return Err(());
+        }
+    }
+    Ok(true)
+}
+
+fn annotation_is_must_use(annotation: &AstExpr, imports: &BTreeMap<String, String>) -> bool {
+    match &annotation.kind {
+        AstExprKind::Subscript(container, arguments) => {
+            match canonical(container, imports).as_deref() {
+                Some("codepact::MustUse") => true,
+                Some("typing::Annotated") => arguments.iter().skip(1).any(|metadata| {
+                    let expression = match &metadata.kind {
+                        AstExprKind::Call { function, .. } => function.as_ref(),
+                        _ => metadata,
+                    };
+                    canonical(expression, imports).as_deref()
+                        == Some("codepact::contracts::MustUseResult")
+                }),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+fn contains_must_use_marker(expression: &AstExpr, imports: &BTreeMap<String, String>) -> bool {
+    if annotation_is_must_use(expression, imports)
+        || canonical(expression, imports).is_some_and(|identity| {
+            matches!(
+                identity.as_str(),
+                "codepact::MustUse" | "codepact::contracts::MustUseResult"
+            )
+        })
+    {
+        return true;
+    }
+    match &expression.kind {
+        AstExprKind::Attribute(value, _) | AstExprKind::Await(value) => {
+            contains_must_use_marker(value, imports)
+        }
+        AstExprKind::Subscript(container, arguments) => {
+            contains_must_use_marker(container, imports)
+                || arguments
+                    .iter()
+                    .any(|argument| contains_must_use_marker(argument, imports))
+        }
+        AstExprKind::Tuple(arguments) => arguments
+            .iter()
+            .any(|argument| contains_must_use_marker(argument, imports)),
+        AstExprKind::OtherCalls(calls) => calls.iter().any(|call| {
+            canonical_path(call, imports).is_some_and(|identity| {
+                matches!(
+                    identity.as_str(),
+                    "codepact::MustUse" | "codepact::contracts::MustUseResult"
+                )
+            })
+        }),
+        AstExprKind::Call {
+            function,
+            arguments,
+            keywords,
+        } => {
+            contains_must_use_marker(function, imports)
+                || arguments
+                    .iter()
+                    .any(|argument| contains_must_use_marker(argument, imports))
+                || keywords
+                    .iter()
+                    .any(|(_, value)| contains_must_use_marker(value, imports))
+        }
+        _ => false,
+    }
+}
+
+fn report_misplaced_must_use_annotation(
+    result: &mut Inspection,
+    file: &SourceFile,
+    annotation: &AstExpr,
+    imports: &BTreeMap<String, String>,
+) {
+    if contains_must_use_marker(annotation, imports) {
+        declaration_error(
+            result,
+            file,
+            annotation.range,
+            "TP4002",
+            "must-use metadata is supported only on function return annotations",
+            Vec::new(),
+        );
+    }
+}
+
+fn is_misplaced_must_use_decorator(
+    decorator: &AstExpr,
+    imports: &BTreeMap<String, String>,
+) -> bool {
+    let identity = match &decorator.kind {
+        AstExprKind::Call { function, .. } => canonical(function, imports),
+        _ => canonical(decorator, imports),
+    };
+    identity.is_some_and(|identity| {
+        matches!(
+            identity.as_str(),
+            "codepact::MustUse" | "codepact::contracts::MustUseResult"
+        )
     })
+}
+
+fn check_must_use_body(
+    result: &mut Inspection,
+    file: &SourceFile,
+    statements: &[crate::frontend::FlowStatement],
+    state: &FileState,
+    class_scope: Option<(&str, Option<&str>)>,
+    parameters: &[String],
+) {
+    let mut locals = parameters.iter().cloned().collect::<BTreeSet<_>>();
+    collect_must_use_locals(statements, &mut locals);
+    let mut marked = state.must_use_callables.clone();
+    let mut imports = state.imports.clone();
+    let mut instances = state.instances.clone();
+    for name in locals {
+        marked.remove(&name);
+        imports.remove(&name);
+        instances.remove(&name);
+    }
+    walk_must_use_body(
+        result,
+        file,
+        statements,
+        &mut marked,
+        &mut instances,
+        &imports,
+        &state.known_classes,
+        class_scope,
+    );
+}
+
+fn collect_must_use_locals(
+    statements: &[crate::frontend::FlowStatement],
+    names: &mut BTreeSet<String>,
+) {
+    use crate::frontend::FlowStatement as Flow;
+    for statement in statements {
+        match statement {
+            Flow::Assign { name, .. }
+            | Flow::EscapingAssign { name, .. }
+            | Flow::BindFunction { name, .. } => {
+                names.insert(name.clone());
+            }
+            Flow::AnnotatedDeclaration {
+                name: Some(name), ..
+            } => {
+                names.insert(name.clone());
+            }
+            Flow::If {
+                body, alternate, ..
+            }
+            | Flow::Loop {
+                body, alternate, ..
+            } => {
+                collect_must_use_locals(body, names);
+                collect_must_use_locals(alternate, names);
+            }
+            Flow::Try {
+                body,
+                handlers,
+                alternate,
+                finalbody,
+                ..
+            } => {
+                collect_must_use_locals(body, names);
+                for handler in handlers {
+                    if let Some(name) = &handler.name {
+                        names.insert(name.clone());
+                    }
+                    collect_must_use_locals(&handler.body, names);
+                }
+                collect_must_use_locals(alternate, names);
+                collect_must_use_locals(finalbody, names);
+            }
+            Flow::With { items, body, .. } => {
+                for item in items {
+                    if let Some(name) = &item.target {
+                        names.insert(name.clone());
+                    }
+                }
+                collect_must_use_locals(body, names);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn resolve_marked_callable(
+    name: &str,
+    marked: &BTreeMap<String, Span>,
+    instances: &BTreeMap<String, String>,
+    class_scope: Option<(&str, Option<&str>)>,
+) -> Option<(String, Span)> {
+    if let Some(declaration) = marked.get(name) {
+        return Some((name.to_owned(), declaration.clone()));
+    }
+    if let Some((class, Some(receiver))) = class_scope {
+        if let Some(method) = name.strip_prefix(&format!("{receiver}.")) {
+            let resolved = format!("{class}.{method}");
+            if let Some(declaration) = marked.get(&resolved) {
+                return Some((resolved, declaration.clone()));
+            }
+        }
+    }
+    let (receiver, method) = name.split_once('.')?;
+    let class = instances.get(receiver)?;
+    let resolved = format!("{class}.{method}");
+    marked
+        .get(&resolved)
+        .cloned()
+        .map(|declaration| (resolved, declaration))
+}
+
+fn expression_has_marked_call(
+    expression: &AstExpr,
+    marked: &BTreeMap<String, Span>,
+    instances: &BTreeMap<String, String>,
+    class_scope: Option<(&str, Option<&str>)>,
+) -> bool {
+    match &expression.kind {
+        AstExprKind::Call {
+            function,
+            arguments,
+            keywords,
+        } => {
+            expression_path(function).is_some_and(|name| {
+                resolve_marked_callable(&name, marked, instances, class_scope).is_some()
+            }) || arguments.iter().any(|argument| {
+                expression_has_marked_call(argument, marked, instances, class_scope)
+            }) || keywords
+                .iter()
+                .any(|(_, value)| expression_has_marked_call(value, marked, instances, class_scope))
+        }
+        AstExprKind::Attribute(value, _) | AstExprKind::Await(value) => {
+            expression_has_marked_call(value, marked, instances, class_scope)
+        }
+        AstExprKind::Subscript(value, arguments) => {
+            expression_has_marked_call(value, marked, instances, class_scope)
+                || arguments.iter().any(|argument| {
+                    expression_has_marked_call(argument, marked, instances, class_scope)
+                })
+        }
+        AstExprKind::Tuple(arguments) => arguments
+            .iter()
+            .any(|argument| expression_has_marked_call(argument, marked, instances, class_scope)),
+        AstExprKind::OtherCalls(calls) => calls
+            .iter()
+            .any(|name| resolve_marked_callable(name, marked, instances, class_scope).is_some()),
+        _ => false,
+    }
+}
+
+/// Calls passed directly as an argument are considered immediate handling.
+/// A marked call wrapped in another expression, await, container, or computed
+/// callee remains an unqualified boundary.
+fn has_unsupported_nested_marked_call(
+    expression: &AstExpr,
+    marked: &BTreeMap<String, Span>,
+    instances: &BTreeMap<String, String>,
+    class_scope: Option<(&str, Option<&str>)>,
+) -> bool {
+    match &expression.kind {
+        AstExprKind::Call {
+            function,
+            arguments,
+            keywords,
+        } => {
+            expression_has_marked_call(function, marked, instances, class_scope)
+                || arguments
+                    .iter()
+                    .chain(keywords.iter().map(|(_, value)| value))
+                    .any(|argument| {
+                        if direct_marked_call(argument, marked, instances, class_scope) {
+                            has_unsupported_nested_marked_call(
+                                argument,
+                                marked,
+                                instances,
+                                class_scope,
+                            )
+                        } else {
+                            expression_has_marked_call(argument, marked, instances, class_scope)
+                        }
+                    })
+        }
+        AstExprKind::Attribute(value, _) | AstExprKind::Await(value) => {
+            expression_has_marked_call(value, marked, instances, class_scope)
+        }
+        AstExprKind::Subscript(value, arguments) => {
+            expression_has_marked_call(value, marked, instances, class_scope)
+                || arguments.iter().any(|argument| {
+                    expression_has_marked_call(argument, marked, instances, class_scope)
+                })
+        }
+        AstExprKind::Tuple(arguments) => arguments
+            .iter()
+            .any(|argument| expression_has_marked_call(argument, marked, instances, class_scope)),
+        AstExprKind::OtherCalls(_) | AstExprKind::Other | AstExprKind::DepthLimit => {
+            expression_has_marked_call(expression, marked, instances, class_scope)
+        }
+        _ => false,
+    }
+}
+
+fn direct_marked_call(
+    expression: &AstExpr,
+    marked: &BTreeMap<String, Span>,
+    instances: &BTreeMap<String, String>,
+    class_scope: Option<(&str, Option<&str>)>,
+) -> bool {
+    let AstExprKind::Call { function, .. } = &expression.kind else {
+        return false;
+    };
+    expression_path(function).is_some_and(|name| {
+        resolve_marked_callable(&name, marked, instances, class_scope).is_some()
+    })
+}
+
+fn merge_equal_bindings<K: Ord + Clone, V: PartialEq + Clone>(
+    left: &mut BTreeMap<K, V>,
+    right: &BTreeMap<K, V>,
+) {
+    left.retain(|name, value| right.get(name).is_some_and(|other| other == value));
+}
+
+fn must_use_sequence_terminates(statements: &[crate::frontend::FlowStatement]) -> bool {
+    statements.iter().any(must_use_statement_terminates)
+}
+
+fn must_use_statement_terminates(statement: &crate::frontend::FlowStatement) -> bool {
+    use crate::frontend::FlowStatement as Flow;
+    match statement {
+        Flow::Return { .. } | Flow::Raise { .. } => true,
+        Flow::If {
+            body, alternate, ..
+        } => {
+            !alternate.is_empty()
+                && must_use_sequence_terminates(body)
+                && must_use_sequence_terminates(alternate)
+        }
+        Flow::Try {
+            body,
+            handlers,
+            alternate,
+            finalbody,
+            ..
+        } => {
+            must_use_sequence_terminates(finalbody)
+                || (must_use_sequence_terminates(body)
+                    && (alternate.is_empty() || must_use_sequence_terminates(alternate))
+                    && handlers
+                        .iter()
+                        .all(|handler| must_use_sequence_terminates(&handler.body)))
+        }
+        Flow::With { body, .. } => must_use_sequence_terminates(body),
+        _ => false,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn walk_must_use_body(
+    result: &mut Inspection,
+    file: &SourceFile,
+    statements: &[crate::frontend::FlowStatement],
+    marked: &mut BTreeMap<String, Span>,
+    instances: &mut BTreeMap<String, String>,
+    imports: &BTreeMap<String, String>,
+    known_classes: &BTreeSet<String>,
+    class_scope: Option<(&str, Option<&str>)>,
+) {
+    use crate::frontend::FlowStatement as Flow;
+    for statement in statements {
+        match statement {
+            Flow::Expression { value, .. } => {
+                let call = match &value.kind {
+                    AstExprKind::Call {
+                        function,
+                        arguments,
+                        keywords,
+                    } => Some((function.as_ref(), arguments.as_slice(), keywords.as_slice())),
+                    _ => None,
+                };
+                let discard = call.is_some_and(|(function, _, _)| {
+                    canonical(function, imports).as_deref() == Some("codepact::discard")
+                });
+                if discard {
+                    if has_unsupported_nested_marked_call(value, marked, instances, class_scope) {
+                        unsupported(
+                            result,
+                            file,
+                            value.range,
+                            "must-use result is nested in an unsupported explicit discard expression",
+                        );
+                    }
+                    continue;
+                }
+                let resolved = call.and_then(|(function, _, _)| {
+                    expression_path(function).and_then(|name| {
+                        resolve_marked_callable(&name, marked, instances, class_scope)
+                    })
+                });
+                if let Some((resolved, declaration)) = resolved {
+                    let primary = crate::source_span(&file.path, &file.source, value.range);
+                    result.diagnostics.push(Diagnostic {
+                        code: "TP3001".into(),
+                        severity: "warning".into(),
+                        message: format!("must-use result from {resolved} is discarded"),
+                        primary,
+                        related: vec![declaration],
+                        certainty: "definite".into(),
+                    });
+                }
+                if has_unsupported_nested_marked_call(value, marked, instances, class_scope) {
+                    unsupported(
+                        result,
+                        file,
+                        value.range,
+                        "must-use result is nested in an expression whose immediate handling is unsupported",
+                    );
+                }
+            }
+            Flow::Assign {
+                name,
+                annotation,
+                value,
+                ..
+            } => {
+                if let Some(annotation) = annotation {
+                    report_misplaced_must_use_annotation(result, file, annotation, imports);
+                }
+                if let Some(path) = expression_path(value) {
+                    if let Some((_, declaration)) =
+                        resolve_marked_callable(&path, marked, instances, class_scope)
+                    {
+                        marked.insert(name.clone(), declaration);
+                    } else {
+                        marked.remove(name);
+                    }
+                    if let Some(class) = instances.get(&path).cloned() {
+                        instances.insert(name.clone(), class);
+                    } else {
+                        instances.remove(name);
+                    }
+                } else {
+                    marked.remove(name);
+                    if let AstExprKind::Call { function, .. } = &value.kind {
+                        let class =
+                            expression_path(function).filter(|class| known_classes.contains(class));
+                        if let Some(class) = class {
+                            instances.insert(name.clone(), class);
+                        } else {
+                            instances.remove(name);
+                        }
+                    } else {
+                        instances.remove(name);
+                    }
+                }
+                if has_unsupported_nested_marked_call(value, marked, instances, class_scope) {
+                    unsupported(
+                        result,
+                        file,
+                        value.range,
+                        "must-use result is nested in an assignment expression whose immediate handling is unsupported",
+                    );
+                }
+            }
+            Flow::EscapingAssign {
+                name,
+                annotation,
+                value,
+                ..
+            } => {
+                if let Some(annotation) = annotation {
+                    report_misplaced_must_use_annotation(result, file, annotation, imports);
+                }
+                if expression_has_marked_call(value, marked, instances, class_scope) {
+                    unsupported(
+                        result,
+                        file,
+                        value.range,
+                        "must-use callable escapes through an unsupported assignment",
+                    );
+                }
+                marked.remove(name);
+                instances.remove(name);
+            }
+            Flow::AnnotatedDeclaration {
+                name, annotation, ..
+            } => {
+                report_misplaced_must_use_annotation(result, file, annotation, imports);
+                if let Some(name) = name {
+                    marked.remove(name);
+                    instances.remove(name);
+                }
+            }
+            Flow::Return {
+                value: Some(value), ..
+            } => {
+                if has_unsupported_nested_marked_call(value, marked, instances, class_scope) {
+                    unsupported(
+                        result,
+                        file,
+                        value.range,
+                        "must-use result is nested in an unsupported returned expression",
+                    );
+                }
+            }
+            Flow::Raise {
+                exception, cause, ..
+            } => {
+                for expression in exception.iter().chain(cause.iter()) {
+                    if expression_has_marked_call(expression, marked, instances, class_scope) {
+                        unsupported(
+                            result,
+                            file,
+                            expression.range,
+                            "must-use result is evaluated in an unsupported raise expression",
+                        );
+                    }
+                }
+            }
+            Flow::If {
+                body, alternate, ..
+            } => {
+                let mut left_marked = marked.clone();
+                let mut left_instances = instances.clone();
+                let mut right_marked = marked.clone();
+                let mut right_instances = instances.clone();
+                walk_must_use_body(
+                    result,
+                    file,
+                    body,
+                    &mut left_marked,
+                    &mut left_instances,
+                    imports,
+                    known_classes,
+                    class_scope,
+                );
+                walk_must_use_body(
+                    result,
+                    file,
+                    alternate,
+                    &mut right_marked,
+                    &mut right_instances,
+                    imports,
+                    known_classes,
+                    class_scope,
+                );
+                merge_equal_bindings(&mut left_marked, &right_marked);
+                merge_equal_bindings(&mut left_instances, &right_instances);
+                *marked = left_marked;
+                *instances = left_instances;
+            }
+            Flow::Try {
+                body,
+                handlers,
+                alternate,
+                finalbody,
+                ..
+            } => {
+                let mut outcomes = Vec::new();
+                let mut body_marked = marked.clone();
+                let mut body_instances = instances.clone();
+                walk_must_use_body(
+                    result,
+                    file,
+                    body,
+                    &mut body_marked,
+                    &mut body_instances,
+                    imports,
+                    known_classes,
+                    class_scope,
+                );
+                outcomes.push((body_marked, body_instances));
+                for handler in handlers {
+                    let mut handler_marked = marked.clone();
+                    let mut handler_instances = instances.clone();
+                    walk_must_use_body(
+                        result,
+                        file,
+                        &handler.body,
+                        &mut handler_marked,
+                        &mut handler_instances,
+                        imports,
+                        known_classes,
+                        class_scope,
+                    );
+                    outcomes.push((handler_marked, handler_instances));
+                }
+                let (mut merged_marked, mut merged_instances) = outcomes.remove(0);
+                for (candidate_marked, candidate_instances) in outcomes {
+                    merge_equal_bindings(&mut merged_marked, &candidate_marked);
+                    merge_equal_bindings(&mut merged_instances, &candidate_instances);
+                }
+                if !alternate.is_empty() {
+                    walk_must_use_body(
+                        result,
+                        file,
+                        alternate,
+                        &mut merged_marked,
+                        &mut merged_instances,
+                        imports,
+                        known_classes,
+                        class_scope,
+                    );
+                }
+                walk_must_use_body(
+                    result,
+                    file,
+                    finalbody,
+                    &mut merged_marked,
+                    &mut merged_instances,
+                    imports,
+                    known_classes,
+                    class_scope,
+                );
+                *marked = merged_marked;
+                *instances = merged_instances;
+            }
+            Flow::Loop {
+                body, alternate, ..
+            } => {
+                let mut loop_marked = marked.clone();
+                let mut loop_instances = instances.clone();
+                walk_must_use_body(
+                    result,
+                    file,
+                    body,
+                    &mut loop_marked,
+                    &mut loop_instances,
+                    imports,
+                    known_classes,
+                    class_scope,
+                );
+                merge_equal_bindings(marked, &loop_marked);
+                merge_equal_bindings(instances, &loop_instances);
+                walk_must_use_body(
+                    result,
+                    file,
+                    alternate,
+                    marked,
+                    instances,
+                    imports,
+                    known_classes,
+                    class_scope,
+                );
+            }
+            Flow::With { body, .. } => walk_must_use_body(
+                result,
+                file,
+                body,
+                marked,
+                instances,
+                imports,
+                known_classes,
+                class_scope,
+            ),
+            Flow::BindFunction { name, .. } => {
+                marked.remove(name);
+                instances.remove(name);
+            }
+            _ => {}
+        }
+        if must_use_statement_terminates(statement) {
+            break;
+        }
+    }
 }
 
 fn opaque_annotation(expression: &AstExpr, state: &FileState) -> ParsedAnnotation {

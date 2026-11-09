@@ -44,6 +44,48 @@ fn run_check_text(root: &PathBuf) -> Output {
         .expect("CLI starts")
 }
 
+fn assert_adoption_report_matches_check_result(
+    report: &serde_json::Value,
+    expected: &serde_json::Value,
+) {
+    for field in [
+        "target_python_version",
+        "model_catalog_version",
+        "available_models",
+        "assurance",
+        "contracts",
+        "coverage",
+    ] {
+        assert_eq!(report[field], expected[field], "canonical field {field}");
+    }
+    let fields = [
+        "code",
+        "severity",
+        "message",
+        "primary",
+        "related",
+        "certainty",
+        "completion",
+        "trust",
+        "coverage_reason",
+        "repair",
+    ];
+    let actual = report["diagnostics"].as_array().unwrap();
+    let mut remaining = expected["diagnostics"].as_array().unwrap().clone();
+    assert_eq!(actual.len(), remaining.len(), "canonical diagnostic count");
+    for diagnostic in actual {
+        let Some(position) = remaining.iter().position(|candidate| {
+            fields
+                .iter()
+                .all(|field| diagnostic[*field] == candidate[*field])
+        }) else {
+            panic!("adoption report contains a noncanonical diagnostic: {diagnostic:#?}");
+        };
+        remaining.remove(position);
+    }
+    assert!(remaining.is_empty(), "canonical diagnostics were omitted");
+}
+
 #[test]
 fn phase03_text_and_json_reports_agree_on_cleanup_diagnostics() {
     let root = fixture_root().with_extension("phase03-report-parity");
@@ -75,7 +117,7 @@ fn phase03_text_and_json_reports_agree_on_cleanup_diagnostics() {
     assert_eq!(finding["completion"], "fallthrough");
     assert_eq!(finding["certainty"], "definite");
     assert_eq!(finding["trust"], "declared-unverified");
-    assert_eq!(report["check_schema_version"], 1);
+    assert_eq!(report["check_schema_version"], 2);
     assert_eq!(
         report["coverage"]["status"],
         "complete-for-supported-subset"
@@ -146,7 +188,14 @@ fn phase03_interfaces_agree_for_possible_and_unknown_cleanup_results() {
             &[codepact::SourceFile::new("main.py", "main", source)],
             "3.11",
         );
-        assert_eq!(report, serde_json::to_value(rust_result).unwrap(), "{name}");
+        let rust_result = serde_json::to_value(rust_result).unwrap();
+        assert_eq!(report["coverage"], rust_result["coverage"], "{name}");
+        assert_eq!(report["contracts"], rust_result["contracts"], "{name}");
+        assert_eq!(
+            report["available_models"], rust_result["available_models"],
+            "{name}"
+        );
+        assert_adoption_report_matches_check_result(&report, &rust_result);
     }
 
     let invalid = std::process::Command::new(env!("CARGO_BIN_EXE_codepact"))
@@ -194,7 +243,10 @@ fn phase03_module_qualified_contextlib_model_is_reported_in_text_and_json() {
         &[codepact::SourceFile::new("main.py", "main", source)],
         "3.11",
     );
-    assert_eq!(report, serde_json::to_value(rust_result).unwrap());
+    assert_adoption_report_matches_check_result(
+        &report,
+        &serde_json::to_value(rust_result).unwrap(),
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -224,7 +276,7 @@ fn check_reports_one_use_after_close_at_the_call_site() {
         "3.11",
     );
     let report = codepact::CheckResult::from_inspection(api, "3.11");
-    assert_eq!(result, serde_json::to_value(report).unwrap());
+    assert_adoption_report_matches_check_result(&result, &serde_json::to_value(report).unwrap());
     let diagnostics = result["diagnostics"].as_array().unwrap();
     let findings: Vec<_> = diagnostics
         .iter()
@@ -710,13 +762,13 @@ fn check_applies_a_reexported_helper_and_retains_its_provider_location() {
             codepact::SourceFile::new(path, path.trim_end_matches(".py"), source)
         })
         .collect();
-    assert_eq!(
-        result,
-        serde_json::to_value(codepact::CheckResult::from_inspection(
+    assert_adoption_report_matches_check_result(
+        &result,
+        &serde_json::to_value(codepact::CheckResult::from_inspection(
             codepact::check(&sources, "3.11"),
             "3.11",
         ))
-        .unwrap()
+        .unwrap(),
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -952,7 +1004,15 @@ fn possible_findings_exit_zero_while_invalid_project_input_exits_two() {
 
     let invalid = run_check(&invalid_root);
     assert_eq!(invalid.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&invalid.stderr).contains("no Python files"));
+    let invalid_output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&invalid.stdout),
+        String::from_utf8_lossy(&invalid.stderr)
+    );
+    assert!(
+        invalid_output.contains("no Python files"),
+        "{invalid_output}"
+    );
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(invalid_root).unwrap();
 }
@@ -1030,7 +1090,15 @@ fn project_discovery_rejects_module_collisions_and_skips_symlink_escapes() {
     .unwrap();
     let collision = run_check(&root);
     assert_eq!(collision.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&collision.stderr).contains("multiple files map to module pkg"));
+    let collision_output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&collision.stdout),
+        String::from_utf8_lossy(&collision.stderr)
+    );
+    assert!(
+        collision_output.contains("multiple files map to module pkg"),
+        "{collision_output}"
+    );
 
     fs::remove_file(root.join("pkg.py")).unwrap();
     fs::remove_dir_all(root.join("pkg")).unwrap();
@@ -1039,7 +1107,15 @@ fn project_discovery_rejects_module_collisions_and_skips_symlink_escapes() {
         std::os::unix::fs::symlink(outside.join("escaped.py"), root.join("escaped.py")).unwrap();
         let symlink_result = run_check(&root);
         assert_eq!(symlink_result.status.code(), Some(2));
-        assert!(String::from_utf8_lossy(&symlink_result.stderr).contains("no Python files"));
+        let symlink_output = format!(
+            "{}{}",
+            String::from_utf8_lossy(&symlink_result.stdout),
+            String::from_utf8_lossy(&symlink_result.stderr)
+        );
+        assert!(
+            symlink_output.contains("no Python files"),
+            "{symlink_output}"
+        );
     }
     fs::remove_dir_all(root).unwrap();
     fs::remove_dir_all(outside).unwrap();

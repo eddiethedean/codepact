@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 project = "CodePact"
 author = "CodePact contributors"
 copyright = "2026, CodePact contributors"
-version = "0.3"
-release = "0.3.0"
+version = "0.4"
+release = "0.4.0"
 
 extensions = [
     "myst_parser",
@@ -31,10 +31,13 @@ autodoc_default_options = {"show-inheritance": True}
 nitpick_ignore = [
     ("py:class", "collections.abc.Callable"),
     ("py:class", "codepact.T"),
+    ("py:class", "P"),
+    ("py:class", "~P"),
+    ("py:class", "codepact.R"),
 ]
 
 html_theme = "sphinx_rtd_theme"
-html_title = "CodePact documentation — 0.3.0"
+html_title = "CodePact documentation — 0.4.0"
 html_theme_options = {
     "collapse_navigation": False,
     "navigation_depth": 3,
@@ -42,4 +45,5 @@ html_theme_options = {
 }
 html_show_sphinx = False
 html_static_path = ["_static"]
+html_extra_path = ["schemas"]
 html_css_files = ["codepact.css"]

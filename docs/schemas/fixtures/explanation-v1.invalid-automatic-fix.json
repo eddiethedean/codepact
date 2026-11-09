@@ -1,0 +1,24 @@
+{
+  "automatic_fix": true,
+  "code": "TP3001",
+  "examples": {
+    "invalid": "fetch()",
+    "unknown": "the callee is dynamically selected or the result is nested in an unsupported expression",
+    "valid": "value = fetch()"
+  },
+  "explanation_id": "TP3001.R001",
+  "explanation_schema_version": 1,
+  "limitations": [
+    "Assignment is immediate handling only; later use or eventual consumption is not proven. Async and dynamic consumption are unqualified."
+  ],
+  "preconditions": [
+    "The synchronous callable resolves to a supported must-use declaration."
+  ],
+  "repair_guidance": {
+    "id": "TP3001.repair.R001",
+    "suggested_action": "Handle the result, or use codepact.discard(call()) when intentional discard is explicit.",
+    "text": "Handle the value, assign it for immediate handling, or pass it to codepact.discard when abandonment is intentional."
+  },
+  "summary": "A declared must-use result is discarded as an expression statement.",
+  "title": "Discarded must-use result"
+}

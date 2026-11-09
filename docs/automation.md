@@ -1,6 +1,9 @@
 # Automation and CI
 
-Use `inspect-contracts` as a declaration check for an explicit set of supported source files. CodePact 0.3.0 is published; pin `codepact` to 0.3.0 so the helper and analyzer stay aligned. The release also provides bounded lifecycle and cleanup checking with `check`.
+CodePact 0.3.0 is published; pin `codepact` to 0.3.0 for published
+inspection/lifecycle behavior. The 0.4.0 adoption candidate is implemented in
+this checkout but is not yet published or pilot-qualified. Its policy examples
+below run from a local checkout; see the [availability guide](availability.md).
 
 ## Run in a uv project
 
@@ -65,7 +68,7 @@ policy, see [report handling](ci-reporting.md).
 
 ## Check lifecycle behavior
 
-Install CodePact 0.3.0 and use a narrow root for the project to be analyzed:
+For the published CodePact 0.3.0 CLI, use a narrow root for the project to be analyzed:
 
 ```sh
 uv add codepact==0.3.0
@@ -75,10 +78,19 @@ uv run --locked codepact check --root path/to/source --json > checking.json
 Replace the input path with your project's source directory. To build the
 command from source, use Rust 1.96+ and record the checked-out Git SHA.
 
-Checking differs from inspection: possible findings and incomplete coverage alone
-return `0`. A report consumer must inspect certainty and coverage, preserve exit
-`1` for definite errors, and handle exit `2` as invocation or input failure.
-Checking JSON is provisional. Configuration files, strict policy switches,
-baselines, and suppressions are not available. Use the [CI report example](ci-reporting.md)
-to define and test your own report policy. Start with the
-[lifecycle tutorial](lifecycle.md) before adopting checking in a build.
+The published 0.3 CLI has no project policy configuration. The 0.4 candidate
+adds strict/advisory policy, baselines, line suppressions, must-use results and
+an expanded JSON report. Try that behavior from this checkout after
+`uv sync --locked`:
+
+```sh
+uv run --locked codepact check --show-settings --json
+uv run --locked codepact check --json > codepact-report.json
+uv run --locked codepact check --mode strict --json > codepact-strict-report.json
+```
+
+For candidate reports, status `1` preserves a completed report that failed the
+selected policy; status `2` is a failed invocation/check. Inspect
+`execution_status`, `report_schema_version`, `coverage.status`,
+`details_truncated` and `snapshot_id`. See the [0.4 adoption guide](adopting.md),
+[CLI reference](cli.md) and [CI report example](ci-reporting.md).

@@ -1,46 +1,38 @@
 # Handle CodePact reports in CI
 
-CodePact does not include a built-in strict-coverage switch, baseline file, or
-suppression configuration. CI consumers should define how they treat command
-status, diagnostics, and coverage instead of relying on exit status alone.
+The 0.3.0 release is published. The 0.4.0 project policy and expanded report
+are implemented in this checkout but have not been released or pilot-qualified.
+These examples keep those contracts separate; see the
+[availability guide](availability.md) before pinning a distribution.
 
-## Inspect declarations
+## Published 0.3.0 behavior
 
-Pin the package version used by automation:
+Pin the published CLI for lifecycle checks:
 
 ```sh
 uv tool run --from codepact-cli==0.3.0 \
-  codepact inspect-contracts --root src --json src/app.py src/resources.py \
-  > codepact-inspection.json
+  codepact check --root src --json > codepact-check-v1.json
 ```
 
-Inspection returns status `1` for declaration errors or incomplete coverage.
-Treat status `2` as an invocation or input failure. See the
-[CLI reference](cli.md#exit-status) for the exact meanings.
+The published checker result uses `check_schema_version: 1`. Possible findings
+and incomplete coverage alone can return 0, so consumers should inspect
+certainty and `coverage.status`. Handle status 2 as an invocation or input
+failure. For explicit declaration inspection, `inspect-contracts --json`
+continues to use inspection schema 0.
 
-## Check lifecycle behavior
+## 0.4 candidate policy
 
-The historical TypePact 0.2.0 `check` command returned status `1` for definite
-lifecycle violations or declaration errors. CodePact 0.3.0 adds cleanup
-obligations to that behavior. Possible
-findings and incomplete coverage alone can return `0`; do not mistake a
-successful status for complete coverage.
-
-## Example policy: fail on any finding or boundary
-
-This shell example preserves the command's status, then applies a stricter
-consumer policy: status `2`, any diagnostic, or incomplete coverage fails the
-job. It uses only the report fields currently documented; it does not depend on
-an undocumented `--strict` option.
+From the candidate checkout, `uv sync --locked` installs the local helper and
+CLI. Capture status 1 reports without losing them to shell `set -e`:
 
 ```sh
 set +e
-codepact check --root src --json > codepact-report.json
+uv run --locked codepact check --mode strict --json > codepact-report.json
 status=$?
 set -e
 
 if [ "$status" -eq 2 ]; then
-  echo "CodePact could not analyze the requested input" >&2
+  echo "CodePact could not complete the requested check" >&2
   exit 2
 fi
 
@@ -48,30 +40,40 @@ python3 - "$status" codepact-report.json <<'PY'
 import json
 import sys
 
-exit_status = int(sys.argv[1])
+process_status = int(sys.argv[1])
 with open(sys.argv[2], encoding="utf-8") as report_file:
     report = json.load(report_file)
 
-if report.get("schema_version") != 0:
-    raise SystemExit("unsupported CodePact report schema")
-if exit_status != 0:
-    raise SystemExit(f"CodePact exited with status {exit_status}")
+if report.get("execution_status") != "completed":
+    raise SystemExit("CodePact did not return a completed report")
+if report.get("report_schema_version") != 2:
+    raise SystemExit("unsupported CodePact adoption report schema")
+if report.get("exit_code") != process_status:
+    raise SystemExit("CodePact process status does not match its report")
+if report.get("details_truncated"):
+    raise SystemExit("CodePact omitted finding details; rerun without the cap")
 if report.get("coverage", {}).get("status") != "complete-for-supported-subset":
     raise SystemExit("CodePact did not analyze the full supported subset")
-if report.get("diagnostics"):
-    raise SystemExit("CodePact reported one or more diagnostics")
+if process_status != 0 or report.get("diagnostics"):
+    raise SystemExit("CodePact reported a finding or failed policy")
 PY
 ```
 
-This is one strict policy. A team that accepts possible findings can filter by
-diagnostic code and certainty, but should still decide how to handle
-`coverage.status == "incomplete"`. Keep that decision in the build configuration
-and review it when upgrading CodePact: the 0.x JSON schema and diagnostic set are
-provisional.
+This consumer fails on any diagnostic or incomplete coverage, even if advisory
+policy would return 0. A team may instead accept selected possible findings,
+but should preserve certainty and coverage in its own policy. Never interpret
+an error envelope, unsupported schema, truncated report or status 2 as a clean
+result.
+
+To fail on actionable warnings without strict coverage policy, use
+`--fail-on warning`. To record existing findings, review and explicitly create
+a baseline with `codepact baseline update`; a normal check never updates it.
+Inline suppressions require exact rule codes and a reason. Neither baseline nor
+suppression removes coverage boundaries.
 
 ## Preserve reports safely
 
-Reports include logical file paths, symbol names, source spans, contract facts,
-and diagnostic messages. Before uploading an artifact to a public CI service,
-check that paths and names do not disclose private repository details. See the
-[security and data guide](security.md) for the local analysis boundary.
+Reports contain logical paths, source spans, contract facts, model metadata
+and diagnostic messages. Check for private repository details before uploading
+them to a public CI service. Treat source comments and excerpts as project data,
+not as instructions. See the [security and data guide](security.md).

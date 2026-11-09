@@ -351,9 +351,12 @@ fn bind_arguments<'a>(
     receiver: bool,
 ) -> Result<BTreeMap<String, &'a AstExpr>, BindingFailure> {
     if keywords.iter().any(|(name, _)| name.is_none())
-        || arguments
-            .iter()
-            .any(|arg| matches!(arg.kind, AstExprKind::Other | AstExprKind::DepthLimit))
+        || arguments.iter().any(|arg| {
+            matches!(
+                arg.kind,
+                AstExprKind::Other | AstExprKind::OtherCalls(_) | AstExprKind::DepthLimit
+            )
+        })
     {
         return Err(BindingFailure::Unknown);
     }
@@ -459,6 +462,7 @@ fn expression_may_return_resource(expression: &AstExpr) -> bool {
         | AstExprKind::Call { .. }
         | AstExprKind::Await(_)
         | AstExprKind::Other
+        | AstExprKind::OtherCalls(_)
         | AstExprKind::DepthLimit => true,
     }
 }
@@ -2004,7 +2008,9 @@ fn final_class_bindings(
                     bindings.insert(UNKNOWN_EXCEPTION_BINDINGS.to_owned(), None);
                 }
             }
-            Declaration::Assignment { .. } | Declaration::TypeAlias { .. } => {}
+            Declaration::Assignment { .. }
+            | Declaration::TypeAlias { .. }
+            | Declaration::Expression { .. } => {}
         }
     }
     bindings
@@ -2050,7 +2056,9 @@ fn final_function_bindings(
             } => {
                 for import in names {
                     let local = import.alias.as_deref().unwrap_or(&import.name);
-                    if source == "contextlib"
+                    if source == "codepact" && import.name == "discard" {
+                        bindings.insert(local.to_owned(), "external:codepact.discard".into());
+                    } else if source == "contextlib"
                         && !supplied_modules.contains(source)
                         && matches!(import.name.as_str(), "closing" | "aclosing")
                     {
@@ -2114,7 +2122,9 @@ fn external_module_bindings(
             } => {
                 for import in names {
                     let local = import.alias.as_deref().unwrap_or(&import.name);
-                    let external = if module == "contextlib"
+                    let external = if module == "codepact" && import.name == "discard" {
+                        Some("external:codepact.discard".into())
+                    } else if module == "contextlib"
                         && !supplied_modules.contains(module)
                         && matches!(import.name.as_str(), "closing" | "aclosing")
                     {
@@ -2185,10 +2195,11 @@ fn resolve_imported_function(
             Declaration::Function {
                 name: bound,
                 decorators,
+                must_use_decorator,
                 unsupported,
                 ..
             } if bound == name => {
-                return if decorators.is_empty() && !unsupported {
+                return if (decorators.is_empty() || *must_use_decorator) && !unsupported {
                     functions
                         .get(&(module.to_owned(), name.to_owned()))
                         .cloned()
@@ -3321,6 +3332,36 @@ fn consume_expr(
     {
         if let Some(callee) = expr_name(function) {
             let scoped_name = format!("{}::{callee}", file.module);
+            let external_binding = if env.shadowed_functions.contains(callee) {
+                None
+            } else if env.module_scope || env.function_bindings_complete {
+                env.function_bindings.get(callee).map(String::as_str)
+            } else {
+                None
+            };
+            if external_binding == Some("external:codepact.discard") {
+                let value = match (arguments.as_slice(), keywords.as_slice()) {
+                    ([value], []) => Some(value),
+                    ([], [(name, value)]) if name.as_deref() == Some("value") => Some(value),
+                    _ => None,
+                };
+                for argument in arguments {
+                    consume_expr(argument, env, file, contracts, functions, result, depth + 1);
+                }
+                for (_, argument) in keywords {
+                    consume_expr(argument, env, file, contracts, functions, result, depth + 1);
+                }
+                if value.is_none() {
+                    boundary(
+                        result,
+                        file,
+                        expr.range,
+                        "codepact.discard call does not match its declared single-value signature",
+                    );
+                    queue_raise(env, expr.range, None);
+                }
+                return;
+            }
             let known_function = if env.shadowed_functions.contains(callee) {
                 None
             } else if env.module_scope || env.function_bindings_complete {
@@ -3652,6 +3693,7 @@ fn consume_expr(
             }
         }
         AstExprKind::Other
+        | AstExprKind::OtherCalls(_)
         | AstExprKind::Attribute(_, _)
         | AstExprKind::Subscript(_, _)
         | AstExprKind::DepthLimit => {
@@ -5126,6 +5168,7 @@ fn execute_with(
         execute_non_if_statement(
             &FlowStatement::Assign {
                 name: receiver.clone(),
+                annotation: None,
                 value: object.clone(),
                 range: object.range,
             },
@@ -5358,8 +5401,12 @@ fn execute_non_if_statement(
     result: &mut Inspection,
 ) -> Option<State> {
     match statement {
-        FlowStatement::Assign { name, value, range }
-        | FlowStatement::EscapingAssign { name, value, range } => {
+        FlowStatement::Assign {
+            name, value, range, ..
+        }
+        | FlowStatement::EscapingAssign {
+            name, value, range, ..
+        } => {
             env.pending_return_targets = None;
             let source_coroutine = expr_name(value)
                 .and_then(|source| env.coroutine_aliases.get(source))
@@ -5709,7 +5756,7 @@ fn execute_non_if_statement(
             consume_expr(value, env, file, contracts, functions, result, 0);
             env.pending_coroutine_result = None;
         }
-        FlowStatement::Pass { .. } => {}
+        FlowStatement::Pass { .. } | FlowStatement::AnnotatedDeclaration { .. } => {}
         FlowStatement::Return { value, .. } => {
             env.pending_return_targets = None;
             if let Some(value) = value {
@@ -5725,6 +5772,7 @@ fn execute_non_if_statement(
                     execute_non_if_statement(
                         &FlowStatement::Assign {
                             name: temporary.clone(),
+                            annotation: None,
                             value: value.clone(),
                             range: value.range,
                         },
@@ -5844,6 +5892,7 @@ fn statement_range(statement: &FlowStatement) -> SourceRange {
         FlowStatement::Pass { range }
         | FlowStatement::Assign { range, .. }
         | FlowStatement::EscapingAssign { range, .. }
+        | FlowStatement::AnnotatedDeclaration { range, .. }
         | FlowStatement::Expression { range, .. }
         | FlowStatement::If { range, .. }
         | FlowStatement::Try { range, .. }
@@ -5909,11 +5958,12 @@ fn check_bodies_impl(
                     body,
                     is_async,
                     decorators,
+                    must_use_decorator,
                     range,
                     unsupported,
                     ..
                 } => {
-                    if !decorators.is_empty() || *unsupported {
+                    if (!decorators.is_empty() && !*must_use_decorator) || *unsupported {
                         continue;
                     }
                     let binding_key = format!("{}::{}:{}", file.module, name, range.start);
@@ -5990,7 +6040,7 @@ fn check_bodies_impl(
                             parameter_contracts: BTreeMap::new(),
                             return_access: None,
                             statements: method.body.clone(),
-                            supported_binding: !method.decorated,
+                            supported_binding: !method.decorated || method.must_use_decorator,
                             is_async: method.is_async,
                             binding_key: Some(format!(
                                 "{}::{}:{}:{}",
@@ -6059,13 +6109,14 @@ fn check_bodies_impl(
                     name,
                     range,
                     decorators,
+                    must_use_decorator,
                     unsupported,
                     ..
                 } => {
                     let key = format!("{}::{}:{}", provider.module, name, range.start);
                     final_bindings.insert(
                         name.clone(),
-                        (decorators.is_empty()
+                        ((decorators.is_empty() || *must_use_decorator)
                             && !unsupported
                             && qualified_functions.contains_key(&key))
                         .then_some(key),
@@ -6352,7 +6403,7 @@ fn check_bodies_impl(
             let class_resource =
                 class_resource_contract(file, name, &decorator_ranges, &result.contracts);
             for method in methods {
-                if method.decorated {
+                if method.decorated && !method.must_use_decorator {
                     continue;
                 }
                 let mut env = State {
@@ -6773,6 +6824,7 @@ mod tests {
         state.unknown_places.insert("source".into());
         let statement = FlowStatement::Assign {
             name: "alias".into(),
+            annotation: None,
             value: AstExpr {
                 range: SourceRange { start: 8, end: 14 },
                 kind: AstExprKind::Name("source".into()),
@@ -6918,6 +6970,7 @@ mod tests {
         let statements: Vec<_> = (0..=MAX_FLOW_OBJECTS)
             .map(|index| FlowStatement::Assign {
                 name: format!("resource_{index}"),
+                annotation: None,
                 value: AstExpr {
                     range: SourceRange {
                         start: index,

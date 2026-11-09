@@ -1,0 +1,36 @@
+{
+  "baseline": "/project/codepact-baseline.json",
+  "config_file": "/project/pyproject.toml",
+  "enabled_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP3001"
+  ],
+  "exclude": [
+    "generated/**"
+  ],
+  "execution_status": "settings-resolved",
+  "fail_on": "error",
+  "include": [
+    "**/*.py"
+  ],
+  "mode": "advisory",
+  "python_version": "3.12",
+  "root": "/project/src",
+  "settings_origins": {
+    "baseline": "pyproject.toml",
+    "enabled-rules": "default",
+    "exclude": "pyproject.toml",
+    "fail-on": "default",
+    "include": "pyproject.toml",
+    "mode": "pyproject.toml",
+    "python-version": "pyproject.toml",
+    "root": "pyproject.toml",
+    "severity.TP3001": "pyproject.toml"
+  },
+  "severity": {
+    "TP3001": "warning"
+  }
+}

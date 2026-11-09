@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/baseline-update-v1.schema.json",
+  "title": "CodePact baseline update summary, schema 1",
+  "type": "object", "additionalProperties": false,
+  "required": ["baseline_schema_version", "output_path", "entries", "added", "removed", "unchanged", "skipped_ambiguous", "snapshot_id", "coverage_status"],
+  "properties": {
+    "baseline_schema_version": {"const": 1}, "output_path": {"type": "string"},
+    "entries": {"type": "integer", "minimum": 0, "maximum": 100000},
+    "added": {"type": "integer", "minimum": 0}, "removed": {"type": "integer", "minimum": 0},
+    "unchanged": {"type": "integer", "minimum": 0}, "skipped_ambiguous": {"type": "integer", "minimum": 0},
+    "snapshot_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "coverage_status": {"enum": ["complete-for-supported-subset", "incomplete"]}
+  }
+}

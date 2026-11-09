@@ -14,6 +14,20 @@ The decorator accepts a literal method name in supported source. At runtime it a
 
 The runtime helper also accepts ``resource(Connection, closed_by="close")``. Source inspection recognizes the supported class-decorator syntax; a runtime call does not imply that the analyzer resolves that call as a resource declaration.
 
+``codepact.must_use`` and ``codepact.discard``
+----------------------------------------------
+
+.. autofunction:: codepact.must_use
+
+.. autofunction:: codepact.discard
+
+``must_use`` attaches ``MustUseResult`` metadata to and returns the original
+callable. It preserves the callable's parameters, result type and identity; it
+does not wrap or enforce the function at runtime. The source checker uses the
+marker on supported synchronous returns in the 0.4 adoption candidate.
+``discard`` evaluates the given value and returns ``None`` without changing
+resource ownership, cleanup or exception behavior.
+
 Contract metadata
 -----------------
 
@@ -27,6 +41,9 @@ Contract metadata
    :members:
 
 .. autoclass:: codepact.contracts.ExclusiveBorrow
+   :members:
+
+.. autoclass:: codepact.contracts.MustUseResult
    :members:
 
 These metadata values are frozen dataclasses with slots. ``Resource`` stores a ``closed_by: str`` field; the access markers have no fields. Constructing ``Resource`` directly stores the supplied string without the decorator's identifier validation. The inspector validates recognized lifecycle declarations independently, using the selected source target's identifier rules.
@@ -45,6 +62,10 @@ Annotation aliases
 .. py:data:: codepact.contracts.BorrowedMut
 
    ``BorrowedMut[T]`` expands to ``Annotated[T, ExclusiveBorrow()]`` and declares exclusive access.
+
+.. py:data:: codepact.contracts.MustUse
+
+   ``MustUse[T]`` expands to ``Annotated[T, MustUseResult()]``. It requests immediate handling of supported synchronous function results; it is not an ownership or resource-cleanup contract.
 
 The aliases are available from both ``codepact.contracts`` and ``codepact.rust``. See :doc:`contracts` for examples and semantics.
 

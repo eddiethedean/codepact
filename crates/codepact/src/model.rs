@@ -477,6 +477,9 @@ impl CheckResult {
                     "TP2001" => Some(
                         "Leave cleanup to the owner or pass an explicitly owned resource.".into(),
                     ),
+                    "TP3001" => Some(
+                        "Handle the result, assign it for immediate handling, or call codepact.discard when abandonment is intentional.".into(),
+                    ),
                     "TP9001" => Some(
                         "Resolve the reported model boundary or keep the affected lifecycle state unknown.".into(),
                     ),

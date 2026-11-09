@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/check-result-v1.schema.json",
+  "title": "CodePact Rust checker result, schema 1",
+  "type": "object", "additionalProperties": false,
+  "required": ["check_schema_version", "schema_version", "target_python_version", "model_catalog_version", "available_models", "assurance", "contracts", "diagnostics", "coverage"],
+  "properties": {
+    "check_schema_version": {"const": 1}, "schema_version": {"const": 0},
+    "target_python_version": {"type": "string"}, "model_catalog_version": {"type": "integer", "minimum": 0},
+    "available_models": {"type": "array", "items": {"$ref": "#/$defs/model"}},
+    "assurance": {"type": "string"},
+    "contracts": {"type": "array", "items": {"$ref": "inspection-v0.schema.json#/$defs/contract"}},
+    "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+    "coverage": {"$ref": "inspection-v0.schema.json#/$defs/coverage"}
+  },
+  "$defs": {
+    "span": {"$ref": "inspection-v0.schema.json#/$defs/span"},
+    "model": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "qualified_symbol", "source_revisions", "source_urls", "selection_rule", "modeled_behavior", "qualification"],
+      "properties": {
+        "id": {"type": "string"}, "qualified_symbol": {"type": "string"},
+        "source_revisions": {"type": "array", "items": {"type": "string"}},
+        "source_urls": {"type": "array", "items": {"type": "string", "format": "uri"}},
+        "selection_rule": {"type": "string"}, "modeled_behavior": {"type": "string"},
+        "qualification": {"type": "string"}
+      }
+    },
+    "diagnostic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "severity", "message", "primary", "related", "certainty", "completion", "trust", "coverage_reason", "repair"],
+      "properties": {
+        "code": {"type": "string"}, "severity": {"enum": ["error", "warning", "info"]},
+        "message": {"type": "string"}, "primary": {"$ref": "#/$defs/span"},
+        "related": {"type": "array", "items": {"$ref": "#/$defs/span"}},
+        "certainty": {"enum": ["definite", "possible", "unknown"]},
+        "completion": {"oneOf": [{"type": "null"}, {"enum": ["fallthrough", "return", "raise", "cancelled", "break", "continue"]}]},
+        "trust": {"type": "string"}, "coverage_reason": {"type": ["string", "null"]},
+        "repair": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

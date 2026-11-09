@@ -1,0 +1,10 @@
+{
+  "check_schema_version": 2,
+  "engine_version": "0.4.0",
+  "error": {
+    "category": "configuration-or-execution",
+    "message": "unsupported config-version 2; expected 1"
+  },
+  "execution_status": "failed",
+  "report_schema_version": 2
+}

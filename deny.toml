@@ -8,6 +8,7 @@ multiple-versions = "deny"
 wildcards = "deny"
 skip = [
   { crate = "syn@2.0.119", reason = "The locked transitive proc-macro graph requires both syn 2 and syn 3, whose major-version requirements cannot be unified." },
+  { crate = "winnow@0.7.15", reason = "The locked TOML parser graph requires both winnow 0.7 and winnow 1, whose major-version requirements cannot be unified." },
 ]
 
 [licenses]

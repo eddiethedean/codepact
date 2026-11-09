@@ -1,0 +1,11 @@
+{
+  "added": 1,
+  "baseline_schema_version": 1,
+  "coverage_status": "complete-for-supported-subset",
+  "entries": 1,
+  "output_path": "/project/codepact-baseline.json",
+  "removed": 0,
+  "skipped_ambiguous": 0,
+  "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "unchanged": 0
+}

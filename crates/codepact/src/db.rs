@@ -82,15 +82,23 @@ fn inspect_module_query(
     file: FileInput,
     python_version: String,
     context_json: String,
+    run_must_use: bool,
 ) -> String {
     let source = SourceFile::new(file.path(db), file.module(db), file.source(db));
     let summary = parse_file(db, file, python_version.clone());
     let context: crate::semantic::ModuleContext =
         serde_json::from_str(&context_json).expect("module context serializes");
     let analysis = crate::source::with_indexed_sources([source.source.as_str()], || {
-        crate::semantic::inspect_module(&source, &python_version, summary, &context, || {
-            db.unwind_if_revision_cancelled();
-        })
+        crate::semantic::inspect_module(
+            &source,
+            &python_version,
+            summary,
+            &context,
+            run_must_use,
+            || {
+                db.unwind_if_revision_cancelled();
+            },
+        )
     });
     serde_json::to_string(&analysis).expect("module analysis serializes")
 }
@@ -107,13 +115,19 @@ fn module_exports_query(
         file,
         python_version,
         context_json,
+        false,
     ))
     .expect("module analysis deserializes");
     serde_json::to_string(&analysis.exports).expect("module exports serialize")
 }
 
 #[salsa::tracked(returns(clone))]
-fn inspect_project_query(db: &dyn Db, files: Vec<FileInput>, python_version: String) -> String {
+fn inspect_project_query(
+    db: &dyn Db,
+    files: Vec<FileInput>,
+    python_version: String,
+    run_must_use: bool,
+) -> String {
     db.unwind_if_revision_cancelled();
     let sizes: Vec<_> = files
         .iter()
@@ -166,10 +180,15 @@ fn inspect_project_query(db: &dyn Db, files: Vec<FileInput>, python_version: Str
         let context =
             crate::semantic::context_for_module(source, summary, &plan, &computed_exports);
         let context_json = serde_json::to_string(&context).expect("module context serializes");
-        let analysis: crate::semantic::ModuleAnalysis = serde_json::from_str(
-            &inspect_module_query(db, file, python_version.clone(), context_json.clone()),
-        )
-        .expect("module analysis deserializes");
+        let analysis: crate::semantic::ModuleAnalysis =
+            serde_json::from_str(&inspect_module_query(
+                db,
+                file,
+                python_version.clone(),
+                context_json.clone(),
+                run_must_use,
+            ))
+            .expect("module analysis deserializes");
         let exports: crate::semantic::SemanticExports = serde_json::from_str(
             &module_exports_query(db, file, python_version.clone(), context_json),
         )
@@ -651,6 +670,23 @@ impl AnalysisSession {
         }
     }
 
+    /// Check lifecycle and synchronous must-use contracts for the 0.4
+    /// adoption surface. The existing `check` API keeps its 0.3 rule set.
+    pub fn check_with_must_use(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+    ) -> Inspection {
+        match self.check_with_must_use_cancellable(files, python_version) {
+            Ok(result) => result.inspection,
+            Err(_) => {
+                let mut inspection = crate::cancelled_inspection(files);
+                inspection.assurance = "lifecycle-checking-for-supported-exit-flow".into();
+                inspection
+            }
+        }
+    }
+
     /// Check resource cleanup duties using the versioned checker result schema.
     pub fn check_report(
         &mut self,
@@ -689,6 +725,23 @@ impl AnalysisSession {
         files: &[SourceFile],
         python_version: &str,
     ) -> Result<SessionInspection, AnalysisCancelled> {
+        self.check_cancellable_with_must_use(files, python_version, false)
+    }
+
+    pub fn check_with_must_use_cancellable(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+    ) -> Result<SessionInspection, AnalysisCancelled> {
+        self.check_cancellable_with_must_use(files, python_version, true)
+    }
+
+    fn check_cancellable_with_must_use(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+        run_must_use: bool,
+    ) -> Result<SessionInspection, AnalysisCancelled> {
         if let Some(mut inspection) = rejected_check_input(files) {
             inspection.assurance = "lifecycle-checking-for-supported-exit-flow".into();
             return Ok(SessionInspection {
@@ -696,7 +749,8 @@ impl AnalysisSession {
                 inspection,
             });
         }
-        let inspected = self.inspect_cancellable(files, python_version)?;
+        let inspected =
+            self.inspect_cancellable_with_must_use(files, python_version, run_must_use)?;
         let revision = inspected.revision;
         let inspection = inspected.inspection;
         let inspection_json =
@@ -742,6 +796,15 @@ impl AnalysisSession {
         &mut self,
         files: &[SourceFile],
         python_version: &str,
+    ) -> Result<SessionInspection, AnalysisCancelled> {
+        self.inspect_cancellable_with_must_use(files, python_version, false)
+    }
+
+    fn inspect_cancellable_with_must_use(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+        run_must_use: bool,
     ) -> Result<SessionInspection, AnalysisCancelled> {
         if files.len() > crate::DEFAULT_MAX_INPUT_FILES {
             let source_bytes = files.iter().fold(0usize, |total, file| {
@@ -826,6 +889,7 @@ impl AnalysisSession {
                 &self.db,
                 self.files.values().copied().collect(),
                 python_version.to_string(),
+                run_must_use,
             )
         })
         .map_err(|_| AnalysisCancelled)?;

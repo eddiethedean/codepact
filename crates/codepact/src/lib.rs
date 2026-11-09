@@ -1,4 +1,5 @@
 //! Bounded, non-executing inspection of CodePact declarations in Python source.
+pub mod adoption;
 pub mod db;
 pub use db::{
     AnalysisCancelled, AnalysisSession, CancellationToken, SessionCheckResult, SessionInputError,
@@ -108,6 +109,12 @@ pub fn inspect(files: &[SourceFile], python_version: &str) -> Inspection {
 /// Check resource cleanup duties in the bounded, currently supported subset.
 pub fn check(files: &[SourceFile], python_version: &str) -> Inspection {
     AnalysisSession::default().check(files, python_version)
+}
+
+/// Check lifecycle obligations plus the 0.4 synchronous must-use rule.
+/// Existing `check` and `check_report` keep the released rule set.
+pub fn check_with_must_use(files: &[SourceFile], python_version: &str) -> Inspection {
+    AnalysisSession::default().check_with_must_use(files, python_version)
 }
 
 /// Check resource cleanup duties and return the versioned checker-specific

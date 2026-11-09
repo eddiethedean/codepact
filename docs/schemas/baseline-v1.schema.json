@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/baseline-v1.schema.json",
+  "title": "CodePact finding baseline, schema 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fingerprint_algorithm_version", "baseline_schema_version", "engine_version", "rule_semantic_version", "target_python_version", "model_catalog_version", "snapshot_id", "source_manifest", "logical_root", "include", "exclude", "selected_rules", "coverage_status", "coverage_reasons", "update_reason", "entries"],
+  "properties": {
+    "fingerprint_algorithm_version": {"const": 2},
+    "baseline_schema_version": {"const": 1},
+    "engine_version": {"type": "string", "minLength": 1, "maxLength": 64},
+    "rule_semantic_version": {"type": "integer", "minimum": 1},
+    "target_python_version": {"enum": ["3.11", "3.12", "3.13"]},
+    "model_catalog_version": {"type": "integer", "minimum": 0},
+    "snapshot_id": {"$ref": "#/$defs/hash"},
+    "source_manifest": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/source-file"}},
+    "logical_root": {"const": "."},
+    "include": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "exclude": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "selected_rules": {"type": "array", "uniqueItems": true, "items": {"enum": ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001", "TP4001", "TP4002", "TP9001", "TP9002"]}},
+    "coverage_status": {"enum": ["complete-for-supported-subset", "incomplete"]},
+    "coverage_reasons": {"type": "array", "items": {"type": "string"}},
+    "update_reason": {"type": "string", "minLength": 1, "maxLength": 8192},
+    "entries": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/entry"}}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "logical-path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\).+$"},
+    "source-file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["logical_path", "sha256"],
+      "properties": {"logical_path": {"$ref": "#/$defs/logical-path"}, "sha256": {"$ref": "#/$defs/hash"}}
+    },
+    "entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fingerprint", "code", "logical_path", "certainty", "trust", "completion", "explanation"],
+      "properties": {
+        "fingerprint": {"$ref": "#/$defs/hash"},
+        "code": {"enum": ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"]},
+        "logical_path": {"$ref": "#/$defs/logical-path"},
+        "certainty": {"enum": ["definite", "possible", "unknown"]},
+        "trust": {"type": "string", "minLength": 1, "maxLength": 128},
+        "completion": {"oneOf": [{"type": "null"}, {"enum": ["fallthrough", "return", "raise", "cancelled", "break", "continue"]}]},
+        "explanation": {"type": "string", "minLength": 1, "maxLength": 8192}
+      }
+    }
+  }
+}
