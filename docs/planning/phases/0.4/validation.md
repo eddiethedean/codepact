@@ -78,7 +78,7 @@ Add concrete evidence beside `crates/codepact/tests/cli.rs`, `tests/phase03.rs` 
 
 ## Operational qualification
 
-No 0.4 measurements exist yet. Reuse the [released 0.3 baseline](../0.3/performance.md), its host/method disclosure and bounded corpora. Retain optimized seven-run medians/ranges, corpus revisions/content hashes, source bytes, diagnostic counts, host/toolchain/target/model settings and peak/retained-memory method for:
+Partial 0.4 measurements are recorded in [candidate performance evidence](performance-2026-11-09.md); they do not pass G4. Reuse the [released 0.3 baseline](../0.3/performance.md), its host/method disclosure and bounded corpora. Retain optimized seven-run medians/ranges, corpus revisions/content hashes, source bytes, diagnostic counts, host/toolchain/target/model settings and peak/retained-memory method for:
 
 - Cold CLI and in-process checks, warm no-op, unrelated edit, imported semantic edit and location-only edit on the same lifecycle/cleanup corpora.
 - A must-use corpus, ordinary and near-limit project/configuration discovery, empty/dense baselines, and many matching versus changed/ambiguous findings.
