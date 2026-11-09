@@ -144,7 +144,8 @@ discard(fetch())        # explicit intentional discard
 
 These forms carry no cleanup or ownership semantics. Assigned values are not
 tracked after the assignment. Async/dynamic consumption and unsupported nested
-expressions remain coverage boundaries. See [rules](rules.md#tp3001) and the
+expressions remain coverage boundaries. See
+[rules](rules.md#tp3001-discarded-must-use-result) and the
 [adoption guide](adopting.md).
 
 ## Read-only metadata commands

@@ -83,7 +83,8 @@ The source checker accepts only resolved synchronous return contracts.
 Assignment, return/forwarding and direct argument passing count as immediate
 handling, not eventual consumption. Async/dynamic consumption and unsupported
 nested expressions remain visible coverage boundaries. Misplaced known
-metadata is a declaration error. See the [rule catalog](rules.md#tp3001) and
+metadata is a declaration error. See the
+[rule catalog](rules.md#tp3001-discarded-must-use-result) and
 [adoption workflow](adopting.md); the 0.4 candidate has not been pilot-qualified.
 
 ## Use `Annotated` directly
