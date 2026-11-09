@@ -80,10 +80,19 @@ frozen run.
 
 ## Pre-analysis project facts to retain
 
-Before the first analyzer run, record each pinned checkout's README/metadata,
-license, declared Python support, source layout and size, test/CI commands,
-resource and cancellation patterns visible from project documentation, and any
-explicit unsupported dependency boundaries. These characterize the selected
-sample; they must not be used to replace projects after seeing findings. The
-individual scorecards and raw reports belong in the 0.4 pilot evidence folder
-and must link back to this preregistration and the exact candidate revision.
+The following facts were recorded from the pinned metadata, README, project
+documentation, test configuration and CI workflow files before the first
+CodePact scan. They characterize the frozen sample; they cannot be used to
+replace a project after seeing findings.
+
+| Project snapshot | Python support and source layout | Documented resource / async patterns | Test and CI route; explicit analysis boundaries |
+| --- | --- | --- | --- |
+| Requests, commit `3c7baaa05ab4aa49cc819ce3a819d260de19c157`, tree `0c8b989695d73c087123936657c0fbfe3034471f` | `>=3.10`; `src/requests`: 19 Python files / 216,088 bytes; `tests`: 15 / 173,837 bytes. | Documentation says `Session` is a context manager and closes on exit; streamed `Response` objects require consumption or explicit close and recommends `with` for guaranteed closure. Synchronous project. | Tox runs `pytest tests` across configured Python 3.10–3.14 environments. Runtime dependencies include charset-normalizer, idna, urllib3 and certifi. Their installed package sources are outside this scan; tests and project setup are not run. |
+| pip, commit `4b71f36fb4dfbc87ce65ac4710eeccf81d379f55`, tree `9eb70d44014780ec918e709c8dea122da2466c98` | `>=3.10`; `src/pip`: 441 Python files / 4,993,145 bytes; `tests`: 250 / 1,847,580 bytes; `tools`: 5 / 14,402 bytes. | Documentation describes package download, filesystem and archive workflows. The reviewed developer docs do not establish a project async resource-lifetime contract. Package/process/network interactions may depend on external tools and are not executed or modeled as supported by this pilot. | CI uses Nox/pytest for `tests/unit` and `tests/functional`; Python and platform matrices vary in its workflow. External dependencies and vendored libraries are not qualified independently. Nox, tests, package installs and network operations are not run. |
+| Uvicorn, commit `a99c1b76ee9caea67ff98e2ccc457bd372db193f`, tree `8fbdd8d45f2ad93f09b5524237d769a524cee086` | `>=3.11`; `uvicorn`: 45 Python files / 279,829 bytes; `tests`: 39 / 349,742 bytes. | Documentation describes ASGI lifespan startup/shutdown resource setup, a sibling lifespan task, waiting for pending requests/background tasks at shutdown, connection limits and cancellation-related behavior. TaskGroup/detached-task ownership remains outside CodePact's accepted scope. | CI covers Python 3.11–3.15 and Windows/Linux/macOS using `scripts/install`, `scripts/check`, `scripts/build`, `scripts/test` and `scripts/coverage`. Runtime dependencies include click and h11; optional protocol, event-loop and watcher dependencies remain external boundaries. No project scripts, tests or dependencies are run. |
+
+The initial source checkouts were clean at these exact revisions. The selected
+target is Python 3.11 for all three. No CodePact output has been examined yet.
+The individual scorecards and raw reports belong in the 0.4 pilot evidence
+folder and must link back to this preregistration and the exact candidate
+revision.
