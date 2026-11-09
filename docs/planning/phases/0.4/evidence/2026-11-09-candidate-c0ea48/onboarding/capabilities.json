@@ -1,0 +1,111 @@
+{
+  "baseline_schema_version": 1,
+  "capability_schema_version": 1,
+  "checker_schema_version": 2,
+  "engine_version": "0.4.0",
+  "explanation_schema_version": 1,
+  "formats": [
+    "text",
+    "json",
+    "concise"
+  ],
+  "inspection_schema_version": 0,
+  "limits": {
+    "baseline_bytes": 16777216,
+    "baseline_entries": 100000,
+    "config_bytes": 65536,
+    "explanation_bytes_per_finding": 8192,
+    "max_input_files": 10000,
+    "max_source_bytes": 1000000,
+    "related_sites_per_finding": 32,
+    "report_bytes": 33554432,
+    "source_snippet_bytes_per_finding": 2048
+  },
+  "python_targets": [
+    "3.11",
+    "3.12",
+    "3.13"
+  ],
+  "rules": [
+    {
+      "code": "TP1001",
+      "enabled_by_default": true,
+      "explanation_id": "TP1001.R001",
+      "semantic_version": 1,
+      "tier": "stable"
+    },
+    {
+      "code": "TP1002",
+      "enabled_by_default": true,
+      "explanation_id": "TP1002.R001",
+      "semantic_version": 1,
+      "tier": "stable"
+    },
+    {
+      "code": "TP1003",
+      "enabled_by_default": true,
+      "explanation_id": "TP1003.R001",
+      "semantic_version": 1,
+      "tier": "stable"
+    },
+    {
+      "code": "TP2001",
+      "enabled_by_default": true,
+      "explanation_id": "TP2001.R001",
+      "semantic_version": 1,
+      "tier": "stable"
+    },
+    {
+      "code": "TP3001",
+      "enabled_by_default": true,
+      "explanation_id": "TP3001.R001",
+      "semantic_version": 1,
+      "tier": "stable"
+    },
+    {
+      "code": "TP4001",
+      "enabled_by_default": true,
+      "explanation_id": "TP4001.R001",
+      "semantic_version": 1,
+      "tier": "mandatory"
+    },
+    {
+      "code": "TP4002",
+      "enabled_by_default": true,
+      "explanation_id": "TP4002.R001",
+      "semantic_version": 1,
+      "tier": "mandatory"
+    },
+    {
+      "code": "TP9001",
+      "enabled_by_default": true,
+      "explanation_id": "TP9001.R001",
+      "semantic_version": 1,
+      "tier": "mandatory"
+    },
+    {
+      "code": "TP9002",
+      "enabled_by_default": true,
+      "explanation_id": "TP9002.R001",
+      "semantic_version": 1,
+      "tier": "mandatory"
+    }
+  ],
+  "services": {
+    "language_server": false,
+    "mcp": false,
+    "pagination": false,
+    "persistent_cache": false
+  },
+  "settings": [
+    "root",
+    "python-version",
+    "include",
+    "exclude",
+    "enabled-rules",
+    "mode",
+    "fail-on",
+    "baseline",
+    "severity"
+  ]
+}

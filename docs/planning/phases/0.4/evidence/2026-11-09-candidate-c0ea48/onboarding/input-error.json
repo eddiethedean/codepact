@@ -1,0 +1,10 @@
+{
+  "check_schema_version": 2,
+  "engine_version": "0.4.0",
+  "error": {
+    "category": "configuration-or-execution",
+    "message": "cannot read /private/tmp/codepact-040-onboarding/project/missing.py: No such file or directory (os error 2)"
+  },
+  "execution_status": "failed",
+  "report_schema_version": 2
+}

@@ -1,0 +1,163 @@
+{
+  "execution_status": "completed",
+  "engine_version": "0.4.0",
+  "report_schema_version": 2,
+  "check_schema_version": 2,
+  "target_python_version": "3.11",
+  "model_catalog_version": 2,
+  "available_models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    }
+  ],
+  "assurance": "lifecycle-checking-for-supported-exit-flow",
+  "contracts": [
+    {
+      "schema_version": 0,
+      "base_symbol": "connection.Connection",
+      "display_name": "Connection",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "unspecified",
+      "source": {
+        "file": "connection.py",
+        "line": 5,
+        "column": 1,
+        "end_line": 5,
+        "end_column": 29
+      },
+      "provenance": [
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "base_symbol": "connection.Connection",
+      "display_name": "inspect_connection.conn",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "shared",
+      "source": {
+        "file": "connection.py",
+        "line": 14,
+        "column": 30,
+        "end_line": 14,
+        "end_column": 50
+      },
+      "provenance": [
+        {
+          "origin": "explicit-access-alias",
+          "trust": "declared-unverified"
+        },
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "status": "complete-for-supported-subset",
+    "reasons": [],
+    "source_bytes": 355,
+    "declarations": 2
+  },
+  "diagnostics": [],
+  "counts": {},
+  "counts_by_certainty": {},
+  "counts_by_disposition": {},
+  "total_diagnostics": 0,
+  "actionable_diagnostics": 0,
+  "returned_diagnostics": 0,
+  "audit_diagnostics": 0,
+  "policy_failures": [],
+  "policy_warnings": [],
+  "unused_suppressions": [],
+  "details_truncated": false,
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "3c49a3884c509e98c19a82e22a00441ba967d5454853046393c6f9442e4ef745",
+  "semantic_fingerprint": "01f97bcd97105ff78435a2ea448c8f479a68d8536d501286f00c2ca0fe3b7e62",
+  "policy_fingerprint": "063222763dd2036f5a086bfee15bc847a12d29853743ca6dfaa694189475f8ec",
+  "model_fingerprint": "b853763e15dcc12a605065aa5723d0d47cbe939311991b80056ee8ccddae31b7",
+  "snapshot_manifest": [
+    {
+      "logical_path": "connection.py",
+      "sha256": "15db5214dd6fe94b7d59299e4c83f7d9b65138d4c6f40878bd52a87272610390"
+    }
+  ],
+  "project_root": "/private/tmp/codepact-040-onboarding/project/demo",
+  "logical_root": ".",
+  "config_file": null,
+  "selected_files": [
+    "connection.py"
+  ],
+  "include": [
+    "**/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP3001"
+  ],
+  "disabled_rules": [],
+  "mode": "advisory",
+  "fail_on": "error",
+  "settings_origins": {
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "fail-on": "default",
+    "include": "default",
+    "mode": "default",
+    "python-version": "default",
+    "root": "command-line"
+  },
+  "baseline": {
+    "configured": false,
+    "compatible": null,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "exit_code": 0
+}

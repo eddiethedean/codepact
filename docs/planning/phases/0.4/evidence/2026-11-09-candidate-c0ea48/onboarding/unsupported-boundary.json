@@ -1,0 +1,248 @@
+{
+  "execution_status": "completed",
+  "engine_version": "0.4.0",
+  "report_schema_version": 2,
+  "check_schema_version": 2,
+  "target_python_version": "3.11",
+  "model_catalog_version": 2,
+  "available_models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    }
+  ],
+  "assurance": "lifecycle-checking-for-supported-exit-flow",
+  "contracts": [
+    {
+      "schema_version": 0,
+      "base_symbol": "boundary.Connection",
+      "display_name": "Connection",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "unspecified",
+      "source": {
+        "file": "boundary.py",
+        "line": 4,
+        "column": 1,
+        "end_line": 4,
+        "end_column": 29
+      },
+      "provenance": [
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "status": "incomplete",
+    "reasons": [
+      "boundary.py:12: unknown call effect for unknown_result"
+    ],
+    "source_bytes": 205,
+    "declarations": 1
+  },
+  "diagnostics": [
+    {
+      "code": "TP1002",
+      "severity": "warning",
+      "message": "owned resource cleanup obligation remains open on return",
+      "primary": {
+        "file": "boundary.py",
+        "line": 12,
+        "column": 5,
+        "end_line": 12,
+        "end_column": 38
+      },
+      "related": [
+        {
+          "file": "boundary.py",
+          "line": 11,
+          "column": 5,
+          "end_line": 11,
+          "end_column": 30
+        }
+      ],
+      "certainty": "possible",
+      "completion": "return",
+      "trust": "declared-unverified",
+      "coverage_reason": "boundary.py:12: unknown call effect for unknown_result",
+      "repair": "Close the resource on every reported exit, or return it through a resolved Owned[T] boundary.",
+      "fingerprint": "ef7b4fd788831c206bad77a0e2f7219e963b79e9ac2a545078eda792d723eed0",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP1002.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP1002",
+      "severity": "warning",
+      "message": "owned resource cleanup obligation remains open on raise",
+      "primary": {
+        "file": "boundary.py",
+        "line": 12,
+        "column": 12,
+        "end_line": 12,
+        "end_column": 38
+      },
+      "related": [
+        {
+          "file": "boundary.py",
+          "line": 11,
+          "column": 5,
+          "end_line": 11,
+          "end_column": 30
+        }
+      ],
+      "certainty": "possible",
+      "completion": "raise",
+      "trust": "declared-unverified",
+      "coverage_reason": "boundary.py:12: unknown call effect for unknown_result",
+      "repair": "Close the resource on every reported exit, or return it through a resolved Owned[T] boundary.",
+      "fingerprint": "256ff5662ebaefddf124a5ae04d60b6997e89d78e97c0e9725f813296d078776",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP1002.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unknown call effect for unknown_result",
+      "primary": {
+        "file": "boundary.py",
+        "line": 12,
+        "column": 12,
+        "end_line": 12,
+        "end_column": 38
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unknown call effect for unknown_result",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "618c5dd9dd6075df83a3028e84c5404b41eeca5ddf345344e3bb8bf1ade85ef5",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    }
+  ],
+  "counts": {
+    "TP1002": 2,
+    "TP9001": 1
+  },
+  "counts_by_certainty": {
+    "possible": 2,
+    "unknown": 1
+  },
+  "counts_by_disposition": {
+    "active": 3
+  },
+  "total_diagnostics": 3,
+  "actionable_diagnostics": 0,
+  "returned_diagnostics": 3,
+  "audit_diagnostics": 3,
+  "policy_failures": [],
+  "policy_warnings": [],
+  "unused_suppressions": [],
+  "details_truncated": false,
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "49594dd5a10b4073adb5f2b6c8fcab521659c99fa2bbaab6fcd8e5c9293f1351",
+  "semantic_fingerprint": "76dae655f0ddc24a3657c581c4f00b8aae6ac6c7b1d7a5ec873d7a37af9d7c6f",
+  "policy_fingerprint": "063222763dd2036f5a086bfee15bc847a12d29853743ca6dfaa694189475f8ec",
+  "model_fingerprint": "b853763e15dcc12a605065aa5723d0d47cbe939311991b80056ee8ccddae31b7",
+  "snapshot_manifest": [
+    {
+      "logical_path": "boundary.py",
+      "sha256": "96e1c1031e241fd71cdf7c58c7ade6f0c44126f27a6c55c5c1b98054b369923a"
+    }
+  ],
+  "project_root": "/private/tmp/codepact-040-onboarding/boundary-demo",
+  "logical_root": ".",
+  "config_file": null,
+  "selected_files": [
+    "boundary.py"
+  ],
+  "include": [
+    "**/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP3001"
+  ],
+  "disabled_rules": [],
+  "mode": "advisory",
+  "fail_on": "error",
+  "settings_origins": {
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "fail-on": "default",
+    "include": "default",
+    "mode": "default",
+    "python-version": "default",
+    "root": "command-line"
+  },
+  "baseline": {
+    "configured": false,
+    "compatible": null,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "exit_code": 0
+}

@@ -62,3 +62,30 @@ the schema's failed-execution envelope; the shell exit is captured separately.
 | Click | [JSON.gz](evidence/2026-11-09-candidate-620656/click-report.json.gz) | `98658c91d154da01f3e308c1cc05946c159eeb1e25a874f8b212a8cbedca6130` | 322 / `4315d1b86553ea08aae47dd2c828fe9515b32694ff5cb7328bcad234c9b9037e` |
 | FastAPI | [JSON.gz](evidence/2026-11-09-candidate-620656/fastapi-report.json.gz) | `c49975fa8002754a5d5d6aab2a219c2f3ddb8a26d0321af6e10ccce409f20f76` | 320 / `6534c521b83c8b803e2020614fe9529978818443137d40ff1ca91a0d5fbb27c5` |
 
+## Exact implementation-candidate replay — `c0ea48a`
+
+The same six pinned, clean checkouts were replayed with the exact macOS arm64
+CLI wheel produced by [build-only Release run 96](https://github.com/eddiethedean/codepact/actions/runs/42715489947)
+for implementation candidate `c0ea48a2fae771512e7c0010ba235ea9f7136e8d`.
+The frozen command, Python 3.11 target, rules, advisory/error policy and full
+default discovery from the preregistration were unchanged. The wheel SHA-256
+was `426978c5b1a5a177cd917bcd4da5e143f3fb76233c4c7312ec91253daf5bb584`.
+Each checkout's commit and tree matched the pinned inventory and was clean
+before replay. The exact reports and individual details are retained in the
+[candidate replay record](evidence/2026-11-09-candidate-c0ea48/pilot/README.md).
+
+| Project | Result | JSON bytes / SHA-256 | Retained report |
+| --- | --- | --- | --- |
+| Requests | Completed; 0 eligible definite findings; 5,006 TP9001 boundaries | 5,354,054 / `df7b809b939f784dab836cc86d39bd17b8b27159afffbb5673453b411b710c17` | [JSON.gz](evidence/2026-11-09-candidate-c0ea48/pilot/requests-report.json.gz) |
+| pip | Failed before analysis: invalid module component in `build-project/build-project.py` | 288 / `fe4e5e910895258bd1fb25224c3b8738016bbbd4fa952f57e2fe9b41d2988016` | [JSON.gz](evidence/2026-11-09-candidate-c0ea48/pilot/pip-report.json.gz) |
+| Uvicorn | Completed; 0 eligible definite findings; 10,782 TP9001 boundaries | 11,541,305 / `4d420d7f95d8f77d2c1198ed3f8bc5c807e2aa7cbe877c253fb1d6aa19a46bda` | [JSON.gz](evidence/2026-11-09-candidate-c0ea48/pilot/uvicorn-report.json.gz) |
+| Flask | Completed; 0 eligible definite findings; 7,400 TP9001 boundaries | 7,902,217 / `af21aa17889cff4e2cc85b8f7ef810ff26e95be75f4e14db8f0b9ad7a939c3b5` | [JSON.gz](evidence/2026-11-09-candidate-c0ea48/pilot/flask-report.json.gz) |
+| Click | Failed before analysis: 1,000,000-byte total source budget exceeded before `tests/test_utils/test_style.py` | 322 / `4315d1b86553ea08aae47dd2c828fe9515b32694ff5cb7328bcad234c9b9037e` | [JSON.gz](evidence/2026-11-09-candidate-c0ea48/pilot/click-report.json.gz) |
+| FastAPI | Failed before analysis: 1,000,000-byte total source budget exceeded before `fastapi/security/oauth2.py` | 320 / `6534c521b83c8b803e2020614fe9529978818443137d40ff1ca91a0d5fbb27c5` | [JSON.gz](evidence/2026-11-09-candidate-c0ea48/pilot/fastapi-report.json.gz) |
+
+The exact-candidate replay confirms the earlier scan pattern. The full eligible
+population remains unknown because three projects did not complete and the
+completed projects yielded no eligible definite findings. No sample was drawn
+or labeled; the minimum-30 and 90%-actionable criteria remain unevaluated.
+A05 remains pending.
+

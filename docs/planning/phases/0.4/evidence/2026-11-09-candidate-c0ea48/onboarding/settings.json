@@ -1,0 +1,31 @@
+{
+  "baseline": null,
+  "config_file": null,
+  "enabled_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP3001"
+  ],
+  "exclude": [],
+  "execution_status": "settings-resolved",
+  "fail_on": "error",
+  "include": [
+    "**/*.py"
+  ],
+  "mode": "advisory",
+  "python_version": "3.11",
+  "root": "/private/tmp/codepact-040-onboarding/project/demo",
+  "settings_origins": {
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "fail-on": "default",
+    "include": "default",
+    "mode": "default",
+    "python-version": "default",
+    "root": "command-line"
+  },
+  "severity": {}
+}

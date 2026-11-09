@@ -1,0 +1,11 @@
+{
+  "baseline_schema_version": 1,
+  "output_path": "/private/tmp/codepact-040-onboarding/baseline96.json",
+  "entries": 1,
+  "added": 1,
+  "removed": 0,
+  "unchanged": 0,
+  "skipped_ambiguous": 0,
+  "snapshot_id": "7da436d349e68ebe697e3f4c60396e5d6037d9088129dd3d9719edd876eeb29c",
+  "coverage_status": "complete-for-supported-subset"
+}

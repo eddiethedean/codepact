@@ -1,0 +1,41 @@
+{
+  "fingerprint_algorithm_version": 3,
+  "baseline_schema_version": 1,
+  "engine_version": "0.4.0",
+  "rule_semantic_version": 1,
+  "target_python_version": "3.11",
+  "model_catalog_version": 2,
+  "snapshot_id": "7da436d349e68ebe697e3f4c60396e5d6037d9088129dd3d9719edd876eeb29c",
+  "source_manifest": [
+    {
+      "logical_path": "existing.py",
+      "sha256": "68676585c7e0af91be8dabbc0211119e46aafe0f32689a43820f1fca1d840587"
+    }
+  ],
+  "logical_root": ".",
+  "include": [
+    "**/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP3001"
+  ],
+  "coverage_status": "complete-for-supported-subset",
+  "coverage_reasons": [],
+  "update_reason": "controlled exact-candidate onboarding baseline demonstration",
+  "entries": [
+    {
+      "fingerprint": "2c03ccd466c2933f9a7f040b491eab2c3d7bb9bb3eda0cdadf44a38e7fd18d08",
+      "code": "TP1001",
+      "logical_path": "existing.py",
+      "certainty": "definite",
+      "trust": "declared-unverified",
+      "completion": null,
+      "explanation": "Borrowed call requires an open resource"
+    }
+  ]
+}
