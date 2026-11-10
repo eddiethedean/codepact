@@ -1,17 +1,18 @@
-from codepact import resource
+from codepact import must_use, resource
+
 
 @resource(closed_by="release")
 class Token:
-    def inspect(self):
+    def inspect(self) -> str:
         return "plugin"
 
-    def release(self):
+    def release(self) -> None:
         pass
 
-def close_token(token: Token):
+
+def close_token(token: Token) -> None:
     token.release()
 
-from codepact import must_use
 
 @must_use
 def plugin_config() -> int:

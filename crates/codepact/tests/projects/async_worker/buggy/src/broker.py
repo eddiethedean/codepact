@@ -1,14 +1,14 @@
-from codepact import resource
+from codepact import must_use, resource
+
 
 @resource(closed_by="close")
 class BrokerLink:
-    def ack(self):
+    def ack(self) -> None:
         return None
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-from codepact import must_use
 
 @must_use
 def decode_message() -> str:

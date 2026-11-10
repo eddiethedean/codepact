@@ -34,6 +34,7 @@ a use after close, understand the related close location, and repair it.
 | Install the helpers, standalone CLI, or Rust library | [Installation](install.md) |
 | Declare owned or borrowed access | [Contract declarations](contracts.md) |
 | Check imports across modules | [Multi-file tutorial](project-guide.md) |
+| See semantic mistakes caught before runtime | [Bugs CodePact catches](bugs-caught.md) |
 | Evaluate the 0.4 candidate in a project | [Adoption workflow](adopting.md) |
 | Run checks and preserve reports in CI | [Automation](automation.md) and [report handling](ci-reporting.md) |
 | Understand a finding or incomplete coverage | [Rules](rules.md), [limitations](limitations.md), and [troubleshooting](troubleshooting.md) |
@@ -60,6 +61,7 @@ lifecycle
 contracts
 project-guide
 examples
+bugs-caught
 ```
 
 ```{toctree}

@@ -42,6 +42,11 @@ contracts. It also compares fresh and reused library sessions, reversed input
 order, repeated CLI output, advisory/strict boundary reports, and every
 analyzed source file before and after the CLI invocation.
 
+`make check` also runs Ruff and strict Pyright over every buggy, repaired, and
+boundary source variant. This keeps planted semantic mistakes separate from
+ordinary lint and type errors; it does not claim that specialized analyzers or
+project-specific rules could not find similar issues.
+
 To inspect one project manually, run:
 
 ```sh

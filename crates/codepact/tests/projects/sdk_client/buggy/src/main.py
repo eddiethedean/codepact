@@ -1,6 +1,7 @@
 from codepact import must_use
 from catalog import get_version
 
+
 class Catalog:
     @must_use
     def fetch(self) -> int:
@@ -17,21 +18,24 @@ class Catalog:
         return 3
 
 
-
-def ignored_instance():
+def ignored_instance() -> None:
     client = Catalog()
     client.fetch()
 
-def ignored_static():
+
+def ignored_static() -> None:
     Catalog.create_request()
 
-def ignored_class():
+
+def ignored_class() -> None:
     Catalog.create_cursor()
 
-def ignored_alias():
+
+def ignored_alias() -> None:
     operation = get_version
     operation()
 
-def valid_result():
+
+def valid_result() -> int:
     client = Catalog()
     return client.fetch()

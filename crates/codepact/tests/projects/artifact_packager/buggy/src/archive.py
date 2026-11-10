@@ -1,14 +1,14 @@
-from codepact import resource
+from codepact import must_use, resource
+
 
 @resource(closed_by="close")
 class Archive:
-    def inspect(self):
+    def inspect(self) -> str:
         return "manifest"
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-from codepact import must_use
 
 @must_use
 def build_manifest() -> str:

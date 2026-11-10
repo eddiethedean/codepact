@@ -23,7 +23,9 @@ check-python:
 	PYTHONPATH=python $(PYTHON) -m unittest discover -s tests/python -v
 	basedpyright
 	ruff check python/codepact scripts
-	ruff format --check python/codepact scripts
+	ruff check crates/codepact/tests/projects
+	ruff format --check python/codepact scripts crates/codepact/tests/projects
+	$(PYTHON) scripts/check_synthetic_static_tools.py
 	MYPYPATH=python mypy --strict tests/checkers/valid.py
 	@diagnostics="$$(mktemp)"; \
 	if MYPYPATH=python mypy --strict tests/checkers/invalid.py >"$$diagnostics" 2>&1; then \

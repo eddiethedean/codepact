@@ -9,6 +9,7 @@ Each example has a narrow purpose. Install CodePact 0.3.0 with
 | [`docs/_examples/connection.py`](https://github.com/eddiethedean/codepact/blob/main/docs/_examples/connection.py) | Quick-start contract facts and JSON snapshot | `uv run --locked codepact inspect-contracts --root docs/_examples docs/_examples/connection.py` |
 | [`docs/_examples/project/`](https://github.com/eddiethedean/codepact/tree/main/docs/_examples/project) | Direct absolute imports across supplied modules | See the [multi-file tutorial](project-guide.md) |
 | [`examples/lifecycle.py`](https://github.com/eddiethedean/codepact/blob/main/examples/lifecycle.py) | Supported use-after-close finding with the related close location | `uv run --locked codepact check --root examples` |
+| [Synthetic bug examples](bugs-caught.md) | Corpus-backed use-after-close, cleanup, ownership, borrowed access, must-use, and cross-module examples | See [synthetic project controls](synthetic-projects.md) |
 
 The lifecycle example intentionally exits with status `1`. Removing its final
 use produces a valid counterpart with no lifecycle finding or coverage boundary

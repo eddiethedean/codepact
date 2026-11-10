@@ -32,6 +32,10 @@ The corresponding repaired project is under `fixed/`. Project definitions,
 expected findings, and repair notes are in the
 [fixture corpus](https://github.com/eddiethedean/codepact/tree/main/crates/codepact/tests/projects).
 
+The public guide [Bugs CodePact catches before runtime](bugs-caught.md) shows
+source-grounded examples for each diagnostic family, cross-module flow, and
+the async boundaries where the analyzer reports incomplete coverage.
+
 ## Read the result carefully
 
 These controls establish repeatable behavior for the listed source patterns.

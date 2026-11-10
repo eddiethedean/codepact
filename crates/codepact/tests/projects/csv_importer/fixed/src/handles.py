@@ -1,14 +1,14 @@
-from codepact import resource
+from codepact import must_use, resource
+
 
 @resource(closed_by="close")
 class CsvFile:
-    def read(self):
+    def read(self) -> str:
         return "row"
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-from codepact import must_use
 
 @must_use
 def validate_schema() -> bool:
