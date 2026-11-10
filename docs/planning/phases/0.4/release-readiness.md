@@ -39,8 +39,9 @@ All 17 retained JSON documents from candidate `c0ea48a` (including decompressed
 pilot reports) validated against their then-current applicable schemas during
 this audit. This strengthens V04-05 evidence for those historical documents
 only. The capabilities schema now includes the new discovery limits, and the
-repeatable schema check validates both fixtures and the current emitted CLI
-capabilities document.
+repeatable schema check validates fixtures plus eight current CLI outputs:
+capabilities, explanations, completed/failing checks, settings, baseline,
+baseline-update, and inspection documents.
 
 ## Critical path
 

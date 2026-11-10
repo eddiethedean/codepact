@@ -1807,7 +1807,37 @@ pub fn suppression_diagnostic(
 
 #[cfg(test)]
 mod tests {
-    use super::{glob_match, read_configuration, MAX_CONFIG_BYTES};
+    use super::{glob_match, read_configuration, serialize_pretty_limited, MAX_CONFIG_BYTES};
+
+    #[test]
+    fn limited_json_serialization_accepts_exact_limit_and_rejects_overflow() {
+        let exact = serialize_pretty_limited(&"x", 3, "test report").unwrap();
+        assert_eq!(exact, br#""x""#);
+
+        let error = serialize_pretty_limited(&"x", 2, "test report").unwrap_err();
+        assert_eq!(error, "test report exceeds the 2 byte limit");
+    }
+
+    #[test]
+    fn limited_json_serialization_reports_serializer_errors_separately() {
+        struct FailsSerialization;
+
+        impl serde::Serialize for FailsSerialization {
+            fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                Err(serde::ser::Error::custom("injected serializer failure"))
+            }
+        }
+
+        let error = serialize_pretty_limited(&FailsSerialization, 64, "test report").unwrap_err();
+        assert!(
+            error.starts_with("cannot serialize test report:"),
+            "{error}"
+        );
+        assert!(error.contains("injected serializer failure"), "{error}");
+    }
 
     #[test]
     fn configuration_read_accepts_the_byte_limit_and_caps_consumption_on_overflow() {

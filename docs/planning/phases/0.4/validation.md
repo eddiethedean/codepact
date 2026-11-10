@@ -56,13 +56,16 @@ before it can be marked Pass.
 | `advisory_strict_and_mandatory_severity_follow_policy_contract` and `policy_truth_table_keeps_severity_certainty_coverage_and_rule_selection_separate` | V04-08 |
 | `line_suppression_is_reasoned_and_does_not_delete_the_audit_finding` and `invalid_suppressions_cannot_be_baselined_and_stale_targets_do_not_hide_findings` | V04-09/10 |
 | `baseline_update_is_explicit_and_baseline_only_hides_matching_results`, `baseline_preserves_unambiguous_sites_and_surfaces_inserted_duplicates`, and `baseline_inputs_and_replace_targets_are_validated_before_source_discovery` | V04-10/11 |
+| `baseline_replace_refusal_and_failed_input_preserve_the_previous_file` | Existing bytes survive a refused replacement and a fatal invalid-UTF-8 input; valid replacement succeeds and cleans up its temporary file for V04-11 |
 | `suppression_targets_only_the_primary_start_line_and_retains_raw_findings` and `baseline_rejects_unsupported_versions_and_duplicate_entries_without_hiding_findings` | Partial V04-09/11 |
+| `limited_json_serialization_accepts_exact_limit_and_rejects_overflow` and `limited_json_serialization_reports_serializer_errors_separately` in `crates/codepact/src/adoption.rs` | Exact output limit, overflow rejection and serialization-error classification for V04-19 |
 | `adoption_policy_and_baseline_edits_reuse_canonical_session_queries` in `crates/codepact/src/db.rs` | Query-event reuse and fresh-result parity for selected V04-20 policy/suppression/baseline edits; partial V04-21 |
 | `output_policy_keeps_full_counts_and_concise_records_have_seven_fields` | Partial V04-06/19 |
+| `output_formats_keep_unicode_crlf_spans_and_escape_project_paths` | Cross-format finding identity, related-site decoding, UTF-8 byte columns, CRLF and JSON escaping for V04-06/07 |
 | `legacy_rust_check_keeps_its_rule_set_and_schema` | Compatibility boundary for V04-05 |
 | `capabilities_and_rule_explanations_publish_the_supported_surface_and_limits` | Partial V04-25 |
 | `semantic_source_removes_only_lexer_identified_codepact_comments` in `crates/codepact/src/frontend.rs` | Preserves string contents and line endings while separating policy-comment inputs for V04-20 |
-| `scripts/check_schema_fixtures.py` with `docs/schemas/fixtures/` | Schema syntax and the published valid/invalid examples for V04-05/25 |
+| `scripts/check_schema_fixtures.py` with `docs/schemas/fixtures/` | Schema syntax and valid/invalid fixtures plus emitted capabilities, explanation, check report, settings, failure, baseline, baseline-update, and inspection JSON for V04-05/25 |
 
 The focused Rust suite is `cargo test -p codepact --test phase04`. The schema
 fixture validator is run by `make check-docs`. These are local candidate checks;

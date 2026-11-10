@@ -290,6 +290,94 @@ fn baseline_update_is_explicit_and_baseline_only_hides_matching_results() {
 }
 
 #[test]
+fn baseline_replace_refusal_and_failed_input_preserve_the_previous_file() {
+    let root = project("baseline-replace-recovery");
+    let source =
+        "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run(): fetch()\n";
+    fs::write(root.join("main.py"), source).unwrap();
+    let baseline = root.join("baseline.json");
+    let create = cli(
+        &root,
+        &[
+            "baseline",
+            "update",
+            "--no-config",
+            "--output",
+            "baseline.json",
+            "--reason",
+            "initial baseline",
+        ],
+    );
+    assert_eq!(create.status.code(), Some(0));
+    let original = fs::read(&baseline).unwrap();
+    let original_document: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    assert_eq!(original_document["update_reason"], "initial baseline");
+
+    let refused = cli(
+        &root,
+        &[
+            "baseline",
+            "update",
+            "--no-config",
+            "--output",
+            "baseline.json",
+            "--reason",
+            "replacement refused",
+        ],
+    );
+    assert_eq!(refused.status.code(), Some(2));
+    assert_eq!(fs::read(&baseline).unwrap(), original);
+
+    fs::write(root.join("main.py"), [0xff]).unwrap();
+    let failed_input = cli(
+        &root,
+        &[
+            "baseline",
+            "update",
+            "--no-config",
+            "--output",
+            "baseline.json",
+            "--reason",
+            "failed replacement",
+            "--replace",
+        ],
+    );
+    assert_eq!(failed_input.status.code(), Some(2));
+    assert_eq!(fs::read(&baseline).unwrap(), original);
+
+    fs::write(root.join("main.py"), source).unwrap();
+    let replaced = cli(
+        &root,
+        &[
+            "baseline",
+            "update",
+            "--no-config",
+            "--output",
+            "baseline.json",
+            "--reason",
+            "reviewed replacement",
+            "--replace",
+            "--json",
+        ],
+    );
+    assert_eq!(replaced.status.code(), Some(0));
+    let summary: serde_json::Value = serde_json::from_slice(&replaced.stdout).unwrap();
+    assert_eq!(summary["baseline_schema_version"], 1);
+    let updated = fs::read(&baseline).unwrap();
+    assert_ne!(updated, original);
+    let updated_document: serde_json::Value = serde_json::from_slice(&updated).unwrap();
+    assert_eq!(updated_document["update_reason"], "reviewed replacement");
+    assert!(!fs::read_dir(&root).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".codepact-baseline-")
+    }));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn invalid_suppressions_cannot_be_baselined_and_stale_targets_do_not_hide_findings() {
     let root = project("baseline-validation");
     fs::write(
@@ -877,6 +965,92 @@ fn output_policy_keeps_full_counts_and_concise_records_have_seven_fields() {
         &["check", "--no-config", "--json", "--output-format", "text"],
     );
     assert_eq!(conflict.status.code(), Some(2));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn output_formats_keep_unicode_crlf_spans_and_escape_project_paths() {
+    let root = project("unicode\tpath:\n😀");
+    let source = b"from codepact import resource\r\n@resource(closed_by=\"close\")\r\nclass C:\r\n    def close(self): pass\r\n    def read(self): pass\r\ndef f():\r\n    c = C()\r\n    marker = \"\xf0\x9f\x98\x80\"; c.close(); c.read()\r\n";
+    fs::write(root.join("main.py"), source).unwrap();
+
+    let json_output = cli(&root, &["check", "--no-config", "--json"]);
+    assert_eq!(json_output.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&json_output.stdout).unwrap();
+    let canonical_root = root.canonicalize().unwrap();
+    assert_eq!(
+        report["project_root"],
+        canonical_root.to_string_lossy().as_ref()
+    );
+    assert_eq!(
+        report["coverage"]["status"],
+        "complete-for-supported-subset"
+    );
+    let findings = report["diagnostics"].as_array().unwrap();
+    assert_eq!(findings.len(), 1, "{report:#}");
+    let finding = &findings[0];
+    assert_eq!(finding["code"], "TP1001");
+    assert_eq!(finding["certainty"], "definite");
+
+    let source_line = source
+        .split(|byte| *byte == b'\n')
+        .nth(7)
+        .unwrap()
+        .strip_suffix(b"\r")
+        .unwrap();
+    let byte_column = |needle: &[u8]| {
+        source_line
+            .windows(needle.len())
+            .position(|window| window == needle)
+            .unwrap()
+            + 1
+    };
+    let primary_column = byte_column(b"c.read()");
+    let related_column = byte_column(b"c.close()");
+    assert_eq!(finding["primary"]["file"], "main.py");
+    assert_eq!(finding["primary"]["line"], 8);
+    assert_eq!(finding["primary"]["column"], primary_column);
+    assert_eq!(
+        finding["primary"]["end_column"],
+        primary_column + b"c.read()".len()
+    );
+    assert_eq!(finding["related"][0]["line"], 8);
+    assert_eq!(finding["related"][0]["column"], related_column);
+    assert_eq!(
+        finding["related"][0]["end_column"],
+        related_column + b"c.close()".len()
+    );
+
+    let text_output = cli(&root, &["check", "--no-config"]);
+    assert_eq!(text_output.status.code(), Some(1));
+    let text = String::from_utf8(text_output.stdout).unwrap();
+    assert_eq!(text.matches("TP1001").count(), 1, "{text}");
+    assert!(text.contains(&format!("main.py:8:{primary_column}")));
+
+    let concise = cli(
+        &root,
+        &["check", "--no-config", "--output-format", "concise"],
+    );
+    assert_eq!(concise.status.code(), Some(1));
+    let records = String::from_utf8(concise.stdout).unwrap();
+    let records = records.lines().collect::<Vec<_>>();
+    assert_eq!(records.len(), 2, "{records:#?}");
+    let primary = records[0].split('\t').collect::<Vec<_>>();
+    let related = records[1].split('\t').collect::<Vec<_>>();
+    assert_eq!(primary.len(), 7);
+    assert_eq!(related.len(), 7);
+    assert_eq!(
+        serde_json::from_str::<String>(primary[0]).unwrap(),
+        "main.py"
+    );
+    assert_eq!(primary[1], "8");
+    assert_eq!(primary[2], primary_column.to_string());
+    assert_eq!(primary[4], "TP1001");
+    assert_eq!(primary[5], "primary");
+    assert_eq!(related[1], "8");
+    assert_eq!(related[2], related_column.to_string());
+    assert_eq!(related[4], "TP1001");
+    assert_eq!(related[5], "related");
     fs::remove_dir_all(root).unwrap();
 }
 

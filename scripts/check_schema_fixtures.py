@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import TypeAlias, cast
 
@@ -27,6 +28,31 @@ def read_object(path: Path) -> JsonObject:
     if not isinstance(value, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return cast(JsonObject, value)
+
+
+def cli_output(arguments: list[str], expected_exit: int = 0) -> str:
+    command = [
+        "cargo",
+        "run",
+        "--locked",
+        "--quiet",
+        "-p",
+        "codepact",
+        "--",
+        *arguments,
+    ]
+    result = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != expected_exit:
+        raise RuntimeError(
+            f"CLI command {arguments!r} exited {result.returncode}, "
+            f"expected {expected_exit}: {result.stderr.strip()}"
+        )
+    return result.stdout
 
 
 def main() -> int:
@@ -72,42 +98,110 @@ def main() -> int:
                 )
             checked += 1
 
-    capability_schema = schemas.get("capabilities-v1.schema.json")
-    if capability_schema is None:
-        raise ValueError("missing published capabilities-v1 schema")
-    command = [
-        "cargo",
-        "run",
-        "--locked",
-        "--quiet",
-        "-p",
-        "codepact",
-        "--",
+    emitted_count = 0
+
+    def validate_emitted(label: str, schema_name: str, output: str) -> None:
+        nonlocal emitted_count
+        schema = schemas.get(schema_name)
+        if schema is None:
+            raise ValueError(f"missing published schema: {schema_name}")
+        document = cast(JsonValue, json.loads(output))
+        validator = cast(Validator, Draft202012Validator(schema, registry=registry))
+        errors = list(validator.iter_errors(document))
+        if errors:
+            error = errors[0]
+            raise ValueError(
+                f"current CLI {label} output is invalid at "
+                f"{list(error.absolute_path)}: {error.message}"
+            )
+        emitted_count += 1
+
+    validate_emitted(
         "capabilities",
-        "--json",
-    ]
-    emitted = subprocess.run(
-        command,
-        check=True,
-        capture_output=True,
-        text=True,
+        "capabilities-v1.schema.json",
+        cli_output(["capabilities", "--json"]),
     )
-    emitted_document = cast(JsonValue, json.loads(emitted.stdout))
-    validator = cast(
-        Validator, Draft202012Validator(capability_schema, registry=registry)
+    validate_emitted(
+        "explanation",
+        "explanation-v1.schema.json",
+        cli_output(["explain", "TP1001", "--json"]),
     )
-    errors = list(validator.iter_errors(emitted_document))
-    if errors:
-        error = errors[0]
-        raise ValueError(
-            "the current CLI capabilities output is invalid at "
-            f"{list(error.absolute_path)}: {error.message}"
+
+    with tempfile.TemporaryDirectory(prefix="codepact-schema-output-") as temp:
+        root = Path(temp)
+        project = root / "project"
+        project.mkdir()
+        source = project / "main.py"
+        source.write_text("def main():\n    return 1\n", encoding="utf-8")
+        check_args = [
+            "check",
+            "--root",
+            str(project),
+            "--no-config",
+            "--json",
+        ]
+        validate_emitted(
+            "completed check",
+            "check-report-v2.schema.json",
+            cli_output(check_args),
         )
-    checked += 1
+        validate_emitted(
+            "settings",
+            "settings-v1.schema.json",
+            cli_output(["check", "--root", str(project), "--show-settings", "--json"]),
+        )
+        (project / "invalid.toml").write_text(
+            "[tool.codepact]\nconfig-version=999\n", encoding="utf-8"
+        )
+        validate_emitted(
+            "failed check",
+            "failure-v2.schema.json",
+            cli_output(
+                [
+                    "check",
+                    "--root",
+                    str(project),
+                    "--config",
+                    str(project / "invalid.toml"),
+                    "--json",
+                ],
+                expected_exit=2,
+            ),
+        )
+        baseline_path = root / "baseline.json"
+        baseline_summary = cli_output(
+            [
+                "baseline",
+                "update",
+                "--output",
+                str(baseline_path),
+                "--reason",
+                "schema output validation",
+                "--root",
+                str(project),
+                "--no-config",
+                "--json",
+            ]
+        )
+        validate_emitted(
+            "baseline",
+            "baseline-v1.schema.json",
+            baseline_path.read_text(encoding="utf-8"),
+        )
+        validate_emitted(
+            "baseline update",
+            "baseline-update-v1.schema.json",
+            baseline_summary,
+        )
+        validate_emitted(
+            "inspection",
+            "inspection-v0.schema.json",
+            cli_output(["inspect-contracts", str(source)]),
+        )
 
     print(
-        f"Validated {len(schemas)} schemas, {checked - 1} valid/invalid fixtures, "
-        "and current CLI capabilities output"
+        f"Validated {len(schemas)} schemas, {checked} valid/invalid fixtures, "
+        f"and {emitted_count} current CLI JSON outputs"
     )
     return 0
 
