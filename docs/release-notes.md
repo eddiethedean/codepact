@@ -2,20 +2,20 @@
 
 ## 0.4.0 — synthetic preview
 
-This release adds adoption tooling on top of the released lifecycle checker.
-Its scope is a synthetic preview; real-world usefulness is unqualified.
-Qualification and verified publication status are recorded in the
-[release ledger](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md). Baseline fingerprint algorithm 5 adds canonical Python-token matching, including equivalent whitespace and multiline calls; earlier candidate baselines require explicit regeneration. The
-[phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4-adoption.md)
-records the remaining qualification gates.
+Published on November 10, 2026, CodePact 0.4.0 adds adoption tooling to the
+lifecycle checker as a synthetic preview. Real-world usefulness remains
+unqualified. The tag-triggered workflow passed all 25 jobs, and the 11 PyPI
+files and crates.io archive passed registry verification.
+[Release ledger](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md) · [Installation](install.md)
 
 - Validated project settings, rule selection, severity overrides, effective
   setting origins, and advisory/strict check policy.
 - Explicit baseline creation and replacement with stable finding matching,
   plus line suppressions that require exact eligible codes and a reason.
-- Baseline fingerprint algorithm 5 includes resolved resource/callable identity.
-  Changed cleanup declarations and imported resource identities reopen findings;
-  algorithm 3/4 baselines require explicit regeneration.
+- Baseline fingerprint algorithm 5 uses canonical Python tokens and resolved
+  resource and callable identities. It recognizes equivalent whitespace and
+  multiline calls. Changed cleanup declarations and imported resource
+  identities reopen findings. Regenerate algorithm 3/4 baselines explicitly.
 - Synchronous must-use contracts through `@must_use`, `MustUse[T]`, and
   `MustUseResult`, with TP3001 for supported bare discarded calls.
 - CLI check schema 2, text/JSON/concise output, bounded detail reporting,
@@ -25,9 +25,7 @@ records the remaining qualification gates.
   result contracts. Mandatory errors and incomplete coverage remain visible
   when eligible findings are suppressed.
 
-See [upgrading](upgrading.md) for interface changes and [adoption](adopting.md)
-for a gradual rollout. No release or distribution claim follows from these
-implementation notes.
+Review interface changes before rolling out project policy. [Upgrade guide](upgrading.md) · [Adoption guide](adopting.md)
 
 ## 0.3.0 — published 2026-11-08
 

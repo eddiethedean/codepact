@@ -1,7 +1,7 @@
 # Examples
 
-Each example has a narrow purpose. Install CodePact 0.3.0 with
-`uv add codepact==0.3.0`, then run the examples with `uv run --locked codepact`.
+Each example has a narrow purpose. Install CodePact 0.4.0 with
+`uv add codepact==0.4.0`, then run the examples with `uv run --locked codepact`.
 
 | Example | What it demonstrates | How to run |
 | --- | --- | --- |

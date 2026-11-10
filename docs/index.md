@@ -8,12 +8,10 @@ Reports connect each finding to source locations and explain its certainty
 and the parts of the program that remain outside the supported analysis.
 
 ```{important}
-**Choose your scope and version.** CodePact 0.3.0 is the separately qualified
-published release. This site describes the 0.4.0 synthetic preview, including
-configuration, baselines, line suppressions and must-use results. Real-world
-usefulness is unqualified. Check [release availability](availability.md) for
-verified artifact and publication status; source-build instructions support
-candidate evaluation while publication is pending.
+**CodePact 0.4.0 is published as a synthetic preview.** It includes
+configuration, baselines, line suppressions, and synchronous must-use results.
+Real-world usefulness remains unqualified.
+[Release availability and verification](availability.md)
 ```
 
 ## Start with a working example
@@ -21,7 +19,7 @@ candidate evaluation while publication is pending.
 Install the published release in your uv project:
 
 ```sh
-uv add codepact==0.3.0
+uv add codepact==0.4.0
 uv run --locked codepact --version
 ```
 
@@ -37,7 +35,7 @@ a use after close, understand the related close location, and repair it.
 | Declare owned or borrowed access | [Contract declarations](contracts.md) |
 | Check imports across modules | [Multi-file tutorial](project-guide.md) |
 | See semantic mistakes caught before runtime | [Bugs CodePact catches](bugs-caught.md) |
-| Evaluate the 0.4 candidate in a project | [Adoption workflow](adopting.md) |
+| Adopt 0.4 in a project | [Adoption workflow](adopting.md) |
 | Run checks and preserve reports in CI | [Automation](automation.md) and [report handling](ci-reporting.md) |
 | Understand a finding or incomplete coverage | [Rules](rules.md), [limitations](limitations.md), and [troubleshooting](troubleshooting.md) |
 | Integrate the analyzer with another tool | [Rust API](rust-api.md) and [report schemas](schemas.md) |

@@ -65,7 +65,7 @@ The lifecycle tutorial includes `examples/lifecycle.py` directly. Check its exac
 primary and related lines after edits, and confirm that removing the final use
 leaves no diagnostics or coverage boundaries. Keep published installation
 instructions distinct from source-build instructions. Qualification records are
-under `docs/releases/`, including the CodePact 0.3.0 evidence record.
+under `docs/releases/`, including the CodePact 0.4.0 evidence record.
 Documentation of implemented patterns does not by itself mark phase validation
 rows or release gates as passed.
 
@@ -84,7 +84,7 @@ runs the same pinned local gate on pushes and pull requests.
 - Update documentation when changing the contract API, CLI, schema, supported Python targets, or limits.
 - Do not execute inspected Python files as part of analysis.
 
-See [CONTRIBUTING.md](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) for repository guidance. The historical TypePact 0.2.0 release procedure is in [the release checklist](https://github.com/eddiethedean/codepact/blob/main/docs/planning/release-0.2.0-checklist.md); the [CodePact 0.3.0 release record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md) documents its completed qualification and publication workflow.
+See [CONTRIBUTING.md](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) for repository guidance. The historical TypePact 0.2.0 release procedure is in [the release checklist](https://github.com/eddiethedean/codepact/blob/main/docs/planning/release-0.2.0-checklist.md); the [CodePact 0.4.0 release record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md) documents its completed qualification and publication workflow.
 
 ## Measure the release baseline
 

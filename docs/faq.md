@@ -2,11 +2,10 @@
 
 ## Which version can I install now?
 
-CodePact 0.3.0 is published on PyPI and crates.io. It provides declaration
-inspection, lifecycle checking, and bounded cleanup obligations. The previous
-0.1.0 and 0.2.0 releases used the former package names. See
-[availability](availability.md). The 0.4.0 adoption tooling is a synthetic preview. Real-world usefulness
-is unqualified; the availability record identifies verified distributions.
+CodePact 0.4.0 is published on PyPI and crates.io as a synthetic preview.
+It includes project policy, baselines, and synchronous must-use checks.
+Real-world usefulness remains unqualified. [Install CodePact](install.md) ·
+[Release availability](availability.md)
 
 ## Does CodePact import or run my application?
 
@@ -25,7 +24,7 @@ possible exit, or that ownership is generally safe.
 ## Why does the command exit successfully when I see a warning?
 
 The published 0.3 `check` can return `0` with possible findings or incomplete
-coverage. In the 0.4 candidate, advisory mode can also return `0` for
+coverage. In 0.4, advisory mode can also return `0` for
 below-threshold findings and boundaries; strict mode additionally fails on
 possible violations and incomplete coverage. Read `execution_status`,
 `diagnostics`, `coverage.status`, and `exit_code` in the report. See
@@ -48,20 +47,20 @@ and [limitations](limitations.md), then inspect `coverage.reasons`.
 
 ## Will I need Rust to install the CodePact command?
 
-The 0.3.0 release provides native CLI wheels for supported platforms, which do
+The 0.4.0 release provides native CLI wheels for supported platforms, which do
 not need Rust at installation. The published wheels and source archives passed
-build, digest, install, and smoke checks recorded in the [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md).
+build, digest, install, and smoke checks recorded in the [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md).
 Building from source requires Rust 1.96 or newer and a linker. See
 [installation](install.md).
 
 ## What does TP3001 mean?
 
-The 0.4 candidate emits TP3001 when a resolved synchronous function or method
+The 0.4 CLI emits TP3001 when a resolved synchronous function or method
 declared with `@must_use`, `MustUse[T]`, or `Annotated[..., MustUseResult()]`
 has its result discarded as a bare expression. Assignment and passing the
 result count as immediate handling, not proof of eventual use. Async/dynamic
 consumption and unsupported nested expressions remain boundaries. See
-[declaring contracts](contracts.md#mark-a-must-use-return-04-candidate).
+[declaring contracts](contracts.md#mark-a-must-use-return).
 
 ## Which Python version is analyzed?
 

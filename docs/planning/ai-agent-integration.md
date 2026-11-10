@@ -20,7 +20,12 @@ CLI agents, IDE agents and MCP clients use one semantic engine and the same proj
 
 Names and new fields remain proposals pending API/schema review. Existing `inspect-contracts` JSON and the developing `check` command are the starting point; agent-specific capabilities must be documented separately from released behavior. Protocol support must not delay CLI-based adoption.
 
-The local 0.4 candidate implements the [accepted adoption specification](phases/0.4/specification.md)'s checker schema 2, capability/explanation commands, snapshot/finding identities and bounded CLI output without pagination or stored snapshots. The [V04 matrix](phases/0.4/validation.md) maps CLI AI-V01–AI-V04, and the [pilot protocol](phases/0.4/pilots.md) defines the supported-repair and unresolved-boundary walkthroughs. AD01 scope acceptance is recorded; full workflow qualification remains pending. MCP and editor-client delivery remain in 0.8.
+CodePact 0.4.0 includes checker schema 2, capability and explanation commands,
+snapshot and finding identities, and bounded CLI output. The 0.4 release
+qualified AI01–AI03 and CLI AI-V01–AI-V04, including the installed CLI repair
+walkthrough. MCP and editor clients remain 0.8 work.
+[Validation matrix](phases/0.4/validation.md) ·
+[Release evidence](../releases/0.4.0-evidence.md)
 
 ## Machine-readable analysis contract
 

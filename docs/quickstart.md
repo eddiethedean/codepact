@@ -1,7 +1,7 @@
 # Quick start
 
-Run a first check using the published CodePact 0.3.0 release, then inspect the
-contracts behind its result. For source-only 0.4 features, start with the
+Run a first check using CodePact 0.4.0, then inspect the contracts behind its
+result. Continue with project policy, baselines, and must-use checks in the
 [adoption guide](adopting.md).
 
 ## Install in your project
@@ -9,13 +9,13 @@ contracts behind its result. For source-only 0.4 features, start with the
 In an existing uv project:
 
 ```sh
-uv add codepact==0.3.0
+uv add codepact==0.4.0
 uv run --locked codepact --version
 mkdir -p demo
 ```
 
 The helper package installs the matching CLI. The command prints
-`codepact 0.3.0`. See [installation](install.md) for standalone CLI and source builds.
+`codepact 0.4.0`. See [installation](install.md) for standalone CLI and source builds.
 
 ## Declare a resource
 

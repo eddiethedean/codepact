@@ -71,11 +71,10 @@ In its Read the Docs dashboard:
 1. Verify the repository is `https://github.com/eddiethedean/codepact` and the
    configuration path is `.readthedocs.yaml`.
 2. Confirm the repository integration/webhook is active so pushes trigger builds.
-3. Enable `main` for the `latest` documentation. It describes the 0.4 candidate
-   and must retain the visible unpublished-status notice.
-4. Enable the `v0.3.0` release tag for published-release documentation. Select
-   the appropriate active release as the project’s default/stable version;
-   use the source and configuration belonging to that tag.
+3. Enable `main` for the `latest` documentation and verify that the landing
+   page shows the published 0.4.0 synthetic preview.
+4. Enable `v0.4.0` for the documentation snapshot from the tagged commit.
+   Publish post-release documentation updates from `main`.
 5. Optionally enable pull request previews for reviewing documentation changes.
 
 These dashboard settings are service state, not settings applied by this

@@ -12,8 +12,8 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [Analyzer migration](analyzer-migration.md) | Ruff AST, declaration identities, Salsa query graph and AM01–AM06 acceptance |
 | [0.1 implementation repair](phases/0.1/remediation.md) | Archived file-level repair plan; see the release evidence for completed work |
 | [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, released scope, V02 matrix and performance record |
-| [0.3 cleanup plan](phases/0.3-cleanup.md) | Maintainer-qualified phase gates, cleanup/async behavior, and pre-tag release evidence; publication not yet completed |
-| [0.4 adoption plan](phases/0.4-adoption.md) | AD01 scope decision accepted; V04 matrix, pilot, qualification and release remain pending |
+| [0.3 cleanup plan](phases/0.3-cleanup.md) | Published cleanup and bounded async behavior with verified artifacts |
+| [0.4 adoption plan](phases/0.4-adoption.md) | Published synthetic preview with completed A01–A08, CS02, and G1–G8 |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
@@ -36,15 +36,15 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 
 **Proposal** is an implementable starting point awaiting prototype evidence. Public API spellings, package layout, support versions and milestone targets are proposals. **Research** covers capabilities whose feasibility is unresolved. A feature becomes **implemented** only when code, tests, documentation and release notes establish its supported scope.
 
-In planning documents, “must” describes an acceptance requirement and is not by itself a claim of present functionality. The 0.3 candidate implementation and automated coverage are recorded separately from maintainer qualification and release status. Cross-interface semantic parity is a release gate.
+In planning documents, “must” describes an acceptance requirement and is not by itself a claim of present functionality. Release evidence records automated coverage, maintainer qualification, and publication status. Cross-interface semantic parity is a release gate.
 
 ## Repository baseline
 
-A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The predecessor TypePact's 0.1.0 and 0.2.0 releases are published and qualified under the `typepact` names; see their historical phase plans, validation matrices, and release evidence. CodePact 0.3.0 is the first candidate using the renamed packages and crate.
+A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The predecessor TypePact's 0.1.0 and 0.2.0 releases are published and qualified under the `typepact` names; see their historical phase plans, validation matrices, and release evidence. CodePact 0.3.0 was the first release using the renamed packages and crate. CodePact 0.4.0 is the published synthetic preview. [0.4.0 release evidence](../releases/0.4.0-evidence.md)
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 has accepted CL01 semantics, passing automated checks, refreshed and maintainer-accepted G4 measurements, maintainer-qualified phase gates and verified candidate distributions. Current G1–G7 status is recorded in the release evidence; G8 is completed after authorized publication. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 and 0.4.0 passed their phase-specific and common release gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 

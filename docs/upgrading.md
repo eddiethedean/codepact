@@ -1,12 +1,13 @@
 # Upgrade CodePact
 
-## Evaluate 0.4 from a 0.3 project
+## Upgrade from 0.3 to 0.4
 
-The repository contains the unpublished 0.4.0 candidate. Keep published 0.3
-projects pinned until choosing to evaluate a specific source revision; follow
-[installation from source](install.md#build-the-04-candidate) and record its SHA.
+CodePact 0.4.0 is published as a synthetic preview. Update the project
+dependency with `uv add codepact==0.4.0` and commit the updated lockfile.
+For standalone CLI or Rust installs, pin the 0.4.0 distribution.
+[Installation](install.md)
 
-| Surface | Published 0.3 | 0.4 source candidate |
+| Surface | Published 0.3 | Published 0.4 |
 | --- | --- | --- |
 | Project settings | CLI arguments | Validated `[tool.codepact]` settings and CLI overrides |
 | Result-use checking | Unavailable | `@must_use`, `MustUse[T]`, and TP3001 |
@@ -23,12 +24,12 @@ as appropriate. TP3001 is a warning by default; `--fail-on warning` makes it
 fail a check. Strict mode also fails on unsuppressed possible violations and
 incomplete coverage.
 
-The candidate still targets Python source 3.11–3.13. Existing resource helpers
+The 0.4 analyzer targets Python source 3.11–3.13. Existing resource helpers
 keep their meaning; new must-use contracts do not transfer ownership or discharge
 cleanup. Baselines should be created only after reviewing findings. See the
 [adoption workflow](adopting.md) and [schema transition](output.md).
 
-Candidate baselines now use fingerprint algorithm 5. Algorithm 3/4 baselines
+The 0.4.0 release uses fingerprint algorithm 5. Algorithm 3/4 baselines
 fail with exit 2 and require an explicit reviewed `baseline update`.
 Changed resolved resource/cleanup contracts reopen findings.
 

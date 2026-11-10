@@ -100,7 +100,7 @@ may try to use the session after the handler has released it. The repaired
 handler queries the session and leaves cleanup to its owner; see
 [`web_handler/fixed`](https://github.com/eddiethedean/codepact/tree/main/crates/codepact/tests/projects/web_handler/fixed).
 
-## Discarding a required result: TP3001 (0.4 candidate)
+## Discarding a required result: TP3001
 
 The provider marks configuration as must-use, while the caller throws away the
 returned decision:
@@ -120,8 +120,8 @@ The first declaration gives the result-use contract; the second is the
 unhandled call. TP3001 reports the dropped result, which could otherwise mean
 that a caller silently ignores a required configuration choice, validation
 decision, or operation status. Ruff and Pyright do not ordinarily treat this
-metadata as an obligation. TP3001 is part of the local 0.4 candidate and is not
-available in the published 0.3.0 release; see [release availability](availability.md).
+metadata as an obligation. The published 0.4.0 CLI includes TP3001.
+[Release availability](availability.md)
 
 ## Following an imported cleanup helper
 

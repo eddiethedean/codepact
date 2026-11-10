@@ -14,27 +14,27 @@ source without importing or executing your application.
 [![Documentation](https://readthedocs.org/projects/typepact/badge/?version=latest)](https://typepact.readthedocs.io/en/latest/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[Quick start](#quick-start) · [Try 0.4](#try-the-04-source-candidate) ·
+[Quick start](#quick-start) · [Adopt 0.4](#adopt-the-04-preview) ·
 [Documentation](https://typepact.readthedocs.io/en/latest/) ·
 [Rule catalog](docs/rules.md) · [Roadmap](ROADMAP.md)
 
-**Release scope:** This checkout describes the **0.4.0 synthetic preview**,
-including configuration, baselines, suppressions, and must-use results.
-Real-world usefulness remains unqualified. See [availability and verified
-release evidence](docs/availability.md) for publication and artifact status.
-The separately qualified 0.3.0 release is available on PyPI and crates.io.
-APIs and report schemas remain provisional during 0.x.
+**CodePact 0.4.0 was published on November 10, 2026** as a synthetic preview
+of project configuration, baselines, suppressions, and synchronous must-use
+checking. Real-world usefulness remains unqualified. APIs and report schemas
+remain provisional during 0.x.
+[PyPI helper](https://pypi.org/project/codepact/0.4.0/) · [PyPI CLI](https://pypi.org/project/codepact-cli/0.4.0/) ·
+[Crates.io](https://crates.io/crates/codepact/0.4.0) · [Verified release evidence](docs/releases/0.4.0-evidence.md)
 
 ## What it checks
 
 | Contract | Finding | Available in |
 | --- | --- | --- |
-| A resource is closed by a declared method | Use after close (`TP1001`) | Published 0.3 |
-| A function owns a resource | Outstanding cleanup duty on a modeled exit (`TP1002`) | Published 0.3 |
-| A function returns `Owned[T]` | Invalid ownership handoff (`TP1003`) | Published 0.3 |
-| A function borrows a resource | Close through a borrowed view (`TP2001`) | Published 0.3 |
-| A synchronous result must be handled | Discarded must-use result (`TP3001`) | 0.4 candidate |
-| Resource declarations must agree | Conflicting lifecycle/access metadata (`TP4002`) | Published 0.3 |
+| A resource is closed by a declared method | Use after close (`TP1001`) | 0.3 and 0.4 |
+| A function owns a resource | Outstanding cleanup duty on a modeled exit (`TP1002`) | 0.3 and 0.4 |
+| A function returns `Owned[T]` | Invalid ownership handoff (`TP1003`) | 0.3 and 0.4 |
+| A function borrows a resource | Close through a borrowed view (`TP2001`) | 0.3 and 0.4 |
+| A synchronous result must be handled | Discarded must-use result (`TP3001`) | 0.4 |
+| Resource declarations must agree | Conflicting lifecycle/access metadata (`TP4002`) | 0.3 and 0.4 |
 
 The checker covers bounded local flow, aliases, supported calls, branches,
 loops, exceptional exits, `finally`, context managers, and supported async
@@ -47,7 +47,7 @@ not establish general Python resource safety.
 In an existing uv project, install the published helper and matching CLI:
 
 ```sh
-uv add codepact==0.3.0
+uv add codepact==0.4.0
 uv run --locked codepact --version
 mkdir -p demo
 ```
@@ -102,13 +102,13 @@ The [lifecycle tutorial](docs/lifecycle.md) explains the analysis, and the
 
 ```sh
 # Python helpers and matching CLI
-python -m pip install 'codepact==0.3.0'
+python -m pip install 'codepact==0.4.0'
 
 # Standalone CLI
-uv tool install codepact-cli==0.3.0
+uv tool install codepact-cli==0.4.0
 
 # Rust library
-cargo add codepact@0.3.0
+cargo add codepact@0.4.0
 ```
 
 The `codepact` distribution pins `codepact-cli` to the same version. Helpers
@@ -127,7 +127,7 @@ and Pyright:
 | `Owned[T]` | Declare owned access or an ownership handoff |
 | `Borrowed[T]` | Declare shared borrowed access |
 | `BorrowedMut[T]` | Declare exclusive borrowed access |
-| `MustUse[T]` or `@must_use` | Declare a result that requires immediate handling; 0.4 candidate |
+| `MustUse[T]` or `@must_use` | Declare a result that requires immediate handling |
 
 Access aliases come from `codepact.rust` or `codepact.contracts`. You can also
 write metadata explicitly:
@@ -150,20 +150,18 @@ alias's view. Compatible declarations combine; conflicts report both source
 locations. The helpers record intent without enforcing borrowing at runtime.
 See [contracts and annotation forms](docs/contracts.md).
 
-## Try the 0.4 source candidate
+## Adopt the 0.4 preview
 
-Build the current checkout with Python 3.11+, uv, and Rust 1.96+:
+Use the 0.4.0 packages from the quick start to try configuration, policy,
+baselines, and must-use results. The capabilities command lists the rules,
+schemas, and limits supported by the installed CLI.
 
 ```sh
-git clone https://github.com/eddiethedean/codepact.git
-cd codepact
-uv sync --locked
-uv run --locked codepact --version
 uv run --locked codepact capabilities --json
 ```
 
-Record `git rev-parse HEAD` when sharing candidate results. The following
-features require this checkout's CLI and helpers.
+For a reproducible source build, use the `v0.4.0` tag.
+[Build instructions](docs/install.md#build-from-source)
 
 ### Handle must-use results
 
@@ -176,9 +174,10 @@ def fetch() -> int:
     return 42
 
 
-fetch()                 # TP3001: result discarded
-value = fetch()         # Immediate handling by assignment
-discard(fetch())        # Explicit intentional abandonment
+def run() -> None:
+    fetch()             # TP3001: result discarded
+    value = fetch()     # Immediate handling by assignment
+    discard(fetch())    # Explicit intentional abandonment
 ```
 
 `MustUse[int]` and `Annotated[int, MustUseResult()]` return annotations express
@@ -202,7 +201,7 @@ mode = "strict"
 fail-on = "warning"
 ```
 
-With the candidate CLI, inspect the effective settings and run a check:
+Inspect the effective settings and run a check:
 
 ```sh
 codepact check --show-settings --json
@@ -245,8 +244,8 @@ policy configuration, and qualification status.
 | `codepact check --root src` | Discover Python files and check supported flow |
 | `codepact inspect-contracts --root src src/models.py src/client.py` | Inspect declarations in explicit files and resolve their supported imports |
 | `codepact check --json` | Emit a machine-readable report; schema 2 in the 0.4 CLI |
-| `codepact check --show-settings --json` | Inspect configuration and its origins; 0.4 candidate |
-| `codepact capabilities --json` | List rules, schemas, targets, and limits; 0.4 candidate |
+| `codepact check --show-settings --json` | Inspect configuration and its origins |
+| `codepact capabilities --json` | List rules, schemas, targets, and limits |
 
 `check` scans its root; explicit file operands add inputs rather than narrowing
 the scan. `inspect-contracts` reads only the files supplied. The default source

@@ -1,26 +1,21 @@
 # Adopt the 0.4 synthetic preview
 
-CodePact 0.3.0 is the published release. The configuration, baseline, policy
-and must-use behavior below belongs to the 0.4.0 synthetic preview.
-Real-world usefulness remains unqualified. See the
-[availability guide](availability.md) for distribution status and the
-[phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4-adoption.md)
-for qualification gates.
+CodePact 0.4.0 is published as a synthetic preview. Real-world usefulness
+remains unqualified. [Availability](availability.md) ·
+[Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md)
 
-## Try the checkout
+## Install the preview
 
-From the repository root, install the locked workspace and run its matching
-helper and CLI:
+In your uv project, install the helper and matching CLI:
 
 ```sh
-uv sync --locked
+uv add codepact==0.4.0
 uv run --locked codepact --version
 uv run --locked codepact capabilities --json
 ```
 
-This evaluates the local candidate. It does not install or modify the target
-project. The CLI treats files as source text and does not execute project code,
-hooks or package setup.
+The CLI reads the selected files as source text and leaves the analyzed files
+untouched.
 
 ## Configure a project
 
@@ -107,7 +102,7 @@ call. Broad or file-wide ignores are not supported.
 
 ## Mark a must-use result
 
-The 0.4 candidate accepts three synchronous return declarations:
+The 0.4 CLI accepts three synchronous return declarations:
 
 ```python
 from typing import Annotated

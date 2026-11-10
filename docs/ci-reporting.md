@@ -1,9 +1,8 @@
 # Handle CodePact reports in CI
 
-The 0.3.0 release is published. The 0.4.0 project policy and expanded report
-belong to the synthetic preview; real-world usefulness is unqualified.
-These examples keep those contracts separate; see the
-[availability guide](availability.md) before pinning a distribution.
+The published 0.4.0 synthetic preview introduces checker schema 2 and project
+policy. Real-world usefulness remains unqualified. Use the schema 1 example
+for projects pinned to 0.3.0. [Release availability](availability.md)
 
 ## Published 0.3.0 behavior
 
@@ -20,23 +19,24 @@ certainty and `coverage.status`. Handle status 2 as an invocation or input
 failure. For explicit declaration inspection, `inspect-contracts --json`
 continues to use inspection schema 0.
 
-## 0.4 candidate policy
+## Published 0.4.0 policy
 
-From the candidate checkout, `uv sync --locked` installs the local helper and
-CLI. Capture status 1 reports without losing them to shell `set -e`:
+Use the published 0.4.0 CLI and capture status 1 reports without losing
+them to shell `set -e`:
 
 ```sh
 set +e
-uv run --locked codepact check --mode strict --json > codepact-report.json
-status=$?
+uv tool run --from codepact-cli==0.4.0 \
+  codepact check --mode strict --json > codepact-report.json
+check_exit=$?
 set -e
 
-if [ "$status" -eq 2 ]; then
+if [ "$check_exit" -eq 2 ]; then
   echo "CodePact could not complete the requested check" >&2
   exit 2
 fi
 
-python3 - "$status" codepact-report.json <<'PY'
+python3 - "$check_exit" codepact-report.json <<'PY'
 import json
 import sys
 

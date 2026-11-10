@@ -1,9 +1,8 @@
 # Automation and CI
 
-CodePact 0.3.0 is published; pin `codepact` to 0.3.0 for published
-inspection/lifecycle behavior. The 0.4.0 adoption tooling is a synthetic preview, with real-world usefulness
-unqualified. Its policy examples
-below run from a local checkout; see the [availability guide](availability.md).
+The examples use the published CodePact 0.4.0 synthetic preview.
+Real-world usefulness remains unqualified.
+[Release availability](availability.md)
 
 ## Run in a uv project
 
@@ -42,7 +41,7 @@ jobs:
           python-version: '3.11'
       - name: Inspect declarations
         run: >-
-          uv tool run --from codepact-cli==0.3.0 codepact inspect-contracts
+          uv tool run --from codepact-cli==0.4.0 codepact inspect-contracts
           --python-version 3.11 --root src src/models.py src/client.py
 ```
 
@@ -68,20 +67,17 @@ policy, see [report handling](ci-reporting.md).
 
 ## Check lifecycle behavior
 
-For the published CodePact 0.3.0 CLI, use a narrow root for the project to be analyzed:
+Set a narrow root for the project you want to analyze:
 
 ```sh
-uv add codepact==0.3.0
+uv add codepact==0.4.0
 uv run --locked codepact check --root path/to/source --json > checking.json
 ```
 
 Replace the input path with your project's source directory. To build the
 command from source, use Rust 1.96+ and record the checked-out Git SHA.
 
-The published 0.3 CLI has no project policy configuration. The 0.4 candidate
-adds strict/advisory policy, baselines, line suppressions, must-use results and
-an expanded JSON report. Try that behavior from this checkout after
-`uv sync --locked`:
+Use the installed 0.4 CLI to inspect settings and compare advisory and strict reports:
 
 ```sh
 uv run --locked codepact check --show-settings --json
@@ -89,7 +85,7 @@ uv run --locked codepact check --json > codepact-report.json
 uv run --locked codepact check --mode strict --json > codepact-strict-report.json
 ```
 
-For candidate reports, status `1` preserves a completed report that failed the
+Status `1` identifies a completed report that failed the
 selected policy; status `2` is a failed invocation/check. Inspect
 `execution_status`, `report_schema_version`, `coverage.status`,
 `details_truncated` and `snapshot_id`. See the [0.4 adoption guide](adopting.md),

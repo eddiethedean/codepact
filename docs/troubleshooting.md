@@ -7,7 +7,7 @@ usually includes an explanation on standard error. In a JSON report, read both
 
 ## The command is unavailable after installation
 
-For a project installation, run `uv run codepact --version` from the project directory. For a standalone installation, use `uv tool install codepact-cli==0.3.0` and check that the uv tool directory is on your shell's PATH.
+For a project installation, run `uv run codepact --version` from the project directory. For a standalone installation, use `uv tool install codepact-cli==0.4.0` and check that the uv tool directory is on your shell's PATH.
 
 Both distributions require Python 3.11+. A CLI source build requires Rust 1.96+ and a linker; a compatible platform wheel includes the executable. If installation reports that no compatible wheel exists, confirm the operating system, architecture, and libc against the [platform matrix](availability.md#platform-and-runtime-evidence). See [installation](install.md) for source-build requirements.
 
@@ -17,7 +17,7 @@ The 0.1.0 executable provides `inspect-contracts` only. Install the current
 0.2.0 package to use lifecycle checking:
 
 ```sh
-uv add codepact==0.3.0
+uv add codepact==0.4.0
 uv run codepact check --root DIR
 ```
 

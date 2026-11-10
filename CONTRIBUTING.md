@@ -59,7 +59,7 @@ without provenance and license review.
 Release versions must match across the Python helper, CLI, and Rust crate. The
 tag workflow builds and validates the exact artifact set before publishing.
 See the [release plan](docs/planning/releases.md) and current
-[0.3.0 evidence record](docs/releases/0.3.0-evidence.md). The
+[0.4.0 evidence record](docs/releases/0.4.0-evidence.md). The
 [0.2.0 checklist](docs/planning/release-0.2.0-checklist.md) is historical
 guidance. Do not claim release qualification from a run on another commit.
 

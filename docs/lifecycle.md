@@ -1,16 +1,14 @@
 # Check a resource lifecycle
 
-This tutorial uses the published CodePact 0.3.0 lifecycle checker. Reproduce a
-use after close, read its evidence, then make the example pass. The 0.4 source
-candidate supports the same example and adds configurable check policy; see
-[adoption](adopting.md).
+Use CodePact 0.4.0 to reproduce a use after close, read its evidence, and
+make the example pass. [Configure check policy](adopting.md)
 
 ## Install and run
 
 Install the matching helper and CLI packages in your project:
 
 ```sh
-uv add codepact==0.3.0
+uv add codepact==0.4.0
 ```
 
 The analyzer reads Python source as text; it does not import the example.
@@ -35,8 +33,12 @@ The first `inspect_connection(conn)` runs while the connection is open. After
 checker reports:
 
 ```text
-connection.py:23:1: error TP1001: use of a resource that may be closed
+connection.py:23:1: error TP1001: Borrowed call requires an open resource
+  certainty: definite
+  trust: declared-unverified
+  repair: Keep the use before close, or guard it with a lifecycle check.
   related: connection.py:22:1
+1 diagnostics; 1 actionable; 0 suppressed; 0 rule-disabled; 1 returned
 ```
 
 This example intentionally exits `1`. Remove the final call and run the command
@@ -67,9 +69,9 @@ It does not provide a general lifetime or escape proof.
 
 ## Read the whole report
 
-The following exits describe the published 0.3 CLI and the candidate’s default
-advisory policy. Candidate strict mode additionally fails on possible violations
-and incomplete coverage; see [policy and exits](cli.md#policy-and-exits).
+The following exits describe the default advisory policy. Strict mode
+additionally fails on unsuppressed possible violations and incomplete
+coverage. [Policy and exits](cli.md#policy-and-exits)
 
 | Result | Command exit | Action |
 | --- | --- | --- |
@@ -85,13 +87,10 @@ uv run --locked codepact check --root demo --json
 ```
 
 Read both `diagnostics` and `coverage`. A successful exit can include possible
-findings or incomplete analysis. The historical TypePact 0.2.0 checker used
-`assurance: "lifecycle-checking-for-supported-normal-flow"`; CodePact 0.3.0
-uses `lifecycle-checking-for-supported-exit-flow`. Declaration provenance
-remains `declared-unverified`. CodePact 0.3.0 bounds loop fixed-point analysis
-to 16 passes, finite tuple loops to 16 items, and pending coroutine records to
-128 per flow state. See the
-[output reference](output.md).
+findings or incomplete analysis. The default 0.4 CLI report uses checker
+schema 2 and the assurance value
+`lifecycle-and-must-use-checking-for-supported-exit-flow`. Declaration
+provenance remains `declared-unverified`. [Output reference](output.md)
 
 ## Choose a narrow project root
 

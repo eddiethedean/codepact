@@ -2,40 +2,36 @@
 
 `codepact-cli` distributes the Rust `codepact` command through Python packaging.
 Installing `codepact` installs this matching CLI package automatically. The
-CodePact 0.3.0 release is available on PyPI. The predecessor TypePact 0.2.0 release used `typepact-cli` and the
-`typepact` command.
+CodePact 0.4.0 synthetic preview is available on PyPI.
+[Published CLI](https://pypi.org/project/codepact-cli/0.4.0/)
 
 ## Install and inspect
 
-Install the command with `uv tool install codepact-cli==0.3.0`. To build from
+Install the command with `uv tool install codepact-cli==0.4.0`. To build from
 the repository, use `uv sync --locked` followed by `uv run codepact`.
 
-The 0.3.0 command provides declaration inspection and bounded lifecycle checking.
-Use `--root src` with explicit source files to resolve supported local imports
-for inspection. For `check`, `--root` scans Python files below the root. Exit
-`0` can include possible findings or incomplete coverage; `1` reports definite
-violations or inspection errors; `2` means invocation or input failure.
+The 0.4.0 command adds project configuration, baselines, suppressions, and
+synchronous must-use checks to bounded lifecycle checking. For `check`,
+`--root` scans Python files below the root. Exit `0` means the report passed the
+selected policy, `1` means it failed policy, and `2` means the check could not
+complete. Advisory policy can pass with incomplete coverage. Inspection uses
+explicit source files and reports its own status.
+[Command reference](https://typepact.readthedocs.io/en/latest/cli.html)
 
 ## Lifecycle checking
 
-CodePact 0.3.0 includes bounded cleanup checking through `codepact check`. To
-build it from the repository root, use Rust 1.96+:
+Build the released command with Rust 1.96+:
 
 ```sh
 git clone https://github.com/eddiethedean/codepact.git
 cd codepact
-git checkout v0.3.0
+git checkout v0.4.0
 cargo run --locked -- check --root examples
 ```
 
-For a reproducible source build, use the release tag in the
-[0.3.0 release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.3.0-evidence.md).
 The lifecycle example intentionally reports a use after close and exits `1`.
-Checking scans Python files below its root, reports readable diagnostics by default,
-and accepts `--json`. Possible findings and coverage warnings can accompany exit `0`.
-The historical TypePact 0.2.0 CLI does not include the CodePact 0.3 cleanup and
-cancellation behavior. The 0.3.0 release's qualification is recorded in the
-[release evidence](../docs/releases/0.3.0-evidence.md).
+Use `--json` to capture the schema 2 check report. Real-world usefulness of
+the synthetic preview remains unqualified. [Verified release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md)
 
 ## Requirements and reference
 

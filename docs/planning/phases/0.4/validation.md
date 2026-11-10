@@ -1,12 +1,12 @@
 # 0.4 validation matrix
 
-Status: **Source controls pass; final artifact verification and accountable maintainer gate approval are recorded separately in the release ledger.**
+Status: **0.4.0 passed qualification and registry verification under AD01-A2.**
 The maintainer-approved [AD01-A2 protocol](synthetic-preview-protocol.md) qualifies
 an engineered synthetic preview and explicitly leaves real-world usefulness
 unqualified. The [retained qualification](evidence/qualification-2026-11-10/README.md)
 maps every row below to assertions, commands, complete reports and measurements.
 The [release ledger](../../../releases/0.4.0-evidence.md) identifies the frozen
-candidate, exact-revision CI, distribution replay and final gate decisions.
+candidate, tagged CI, distribution replay, and completed release gates.
 Historical pilot and partial performance records retain their original limits.
 IDs are independent of V01/V02/V03; the [specification](specification.md) and
 [phase plan](../0.4-adoption.md) supply the accepted contracts and gate mapping.
@@ -94,7 +94,7 @@ AD01 retains inherited analyzer budgets and freezes explicit caps for config/bas
 
 ## Evidence ledger and acceptance
 
-The [release readiness work plan](release-readiness.md) maps the completed source work and remaining final-candidate decisions. Its task names do not replace the assertion-level results above.
+The [release readiness work plan](release-readiness.md) retains the original work required to qualify the release. Its task names do not replace the assertion-level results above.
 
 For every V04 row record status (Pending/Pass/Fail), exact candidate revision, fixture/test/command, environment/schema versions, actual result, artifact/log link and maintainer/date. Link one evidence item to multiple rows only with an explanation of which assertions it covers. Add pilot scorecards and raw labeled samples separately from deterministic test logs.
 

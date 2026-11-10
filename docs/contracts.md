@@ -50,9 +50,9 @@ These aliases are `typing.Annotated` aliases. The underlying Python type remains
 
 The metadata classes and aliases are also exported from `codepact.contracts`. Submodule imports work too: `from codepact import rust as r` allows `r.Borrowed[Connection]`, and `from codepact import contracts as ct` allows `ct.Resource(closed_by="close")` in `Annotated`. Rebinding either imported name removes that API identity.
 
-## Mark a must-use return (0.4 candidate)
+## Mark a must-use return
 
-The local 0.4 CLI candidate recognizes synchronous function and method results
+The 0.4 CLI recognizes synchronous function and method results
 declared in any of these equivalent forms:
 
 ```python

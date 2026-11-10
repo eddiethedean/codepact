@@ -3,7 +3,9 @@
 The predecessor TypePact 0.1.0 and 0.2.0 releases were published and verified
 under their original package and crate names. CodePact 0.3.0 is the first
 release using the new names; its published artifacts and passed gates are in
-the [0.3.0 release evidence](../releases/0.3.0-evidence.md). See also the
+the [0.3.0 release evidence](../releases/0.3.0-evidence.md). The 0.4.0 synthetic preview was published and verified on 2026-11-10. [0.4.0 release evidence](../releases/0.4.0-evidence.md)
+
+See also the
 [historical 0.1.0 evidence](../releases/0.1.0-evidence.md) and
 [historical 0.2.0 evidence](../releases/0.2.0-evidence.md).
 

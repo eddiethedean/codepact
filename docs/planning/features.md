@@ -31,7 +31,13 @@ Cleanup checks must distinguish owning and borrowing functions. A borrowing func
 
 The initial rule detects a bare discarded return expression. Assignment satisfies immediate handling but does not establish eventual use; tracking abandoned assigned values is a later dataflow rule. An explicit discard helper documents intentional abandonment. Decorating a Result-producing function and annotating its return MustUse must lower to the same obligation.
 
-The local [0.4 candidate specification](phases/0.4/specification.md#initial-must-use-contract) bounds the first rule to resolved synchronous returns, defines decorator/Annotated alias parity, explicit discard and cleanup interactions, and retains boundaries for unqualified async/dynamic consumption. The maintainer accepted this scope under AD01; full V04-12–16 evidence remains a prerequisite to a qualified support claim. It requires no Result/Option runtime types; those remain in 0.7.
+CodePact 0.4.0 bounds must-use checking to resolved synchronous returns. Its
+specification defines parity across decorator and annotation forms, explicit
+discard, and interactions with cleanup. V04-12–16 qualified the released
+subset under AD01-A2. Async and dynamic consumption remain unsupported.
+Result and Option runtime types remain planned for 0.7.
+[Specification](phases/0.4/specification.md#initial-must-use-contract) ·
+[Release evidence](../releases/0.4.0-evidence.md)
 
 ## Typestate and effects
 

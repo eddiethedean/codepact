@@ -1,23 +1,22 @@
 # Installation
 
-Choose the published **0.3.0 release** for distributed packages, or build the
-**0.4.0 source candidate** to evaluate adoption tooling. Candidate package
-versions in this repository do not imply a published release. See
-[availability](availability.md) for versions and platform evidence.
+Install CodePact **0.4.0**, the published synthetic preview. The helper and CLI
+are on PyPI, and the Rust crate is on crates.io.
+[Verified artifacts and platform support](availability.md)
 
 ## Python helpers and matching CLI
 
 In an existing uv project:
 
 ```sh
-uv add codepact==0.3.0
+uv add codepact==0.4.0
 uv run --locked codepact --version
 ```
 
 Or install with pip:
 
 ```sh
-python -m pip install 'codepact==0.3.0'
+python -m pip install 'codepact==0.4.0'
 codepact --version
 ```
 
@@ -35,7 +34,7 @@ from codepact.rust import Borrowed, Owned
 Install only the native analyzer when Python helper imports are unnecessary:
 
 ```sh
-uv tool install codepact-cli==0.3.0
+uv tool install codepact-cli==0.4.0
 codepact --version
 ```
 
@@ -45,18 +44,18 @@ a Rust compiler or depend on a particular CPython ABI.
 ## Rust library
 
 ```sh
-cargo add codepact@0.3.0
+cargo add codepact@0.4.0
 ```
 
 Use the [Rust API reference](rust-api.md) for one-shot checks and reusable sessions.
 Source builds require Rust 1.96+, a linker, and the locked Cargo dependencies.
 
-## Build the 0.4 candidate
+## Build from source
 
 With Python 3.11+, uv, and Rust 1.96+ installed:
 
 ```sh
-git clone https://github.com/eddiethedean/codepact.git
+git clone --branch v0.4.0 https://github.com/eddiethedean/codepact.git
 cd codepact
 uv sync --locked
 uv run --locked codepact --version
@@ -64,9 +63,9 @@ uv run --locked codepact capabilities --json
 git rev-parse HEAD
 ```
 
-This builds the local helper and CLI workspace. The version is `0.4.0`; record
-the Git revision with reports to identify the candidate precisely. Continue
-with [adoption](adopting.md) for project configuration and must-use results.
+This builds the helper and CLI workspace from the release tag. Record the
+Git revision when sharing reports from a source build.
+[Project configuration and must-use results](adopting.md)
 
 For a Rust-only build from that checkout:
 
@@ -74,10 +73,6 @@ For a Rust-only build from that checkout:
 cargo build --release --locked
 ./target/release/codepact --version
 ```
-
-To reproduce the published release from source, check out `v0.3.0` before
-building. Avoid mixing candidate helpers with the published CLI when evaluating
-new contracts.
 
 ## Compatibility
 
@@ -101,5 +96,5 @@ uv run --locked python -c "from codepact import resource; from codepact.rust imp
 ```
 
 For a project using published dependencies, the command should print
-`codepact 0.3.0`. Then follow the [quick start](quickstart.md). If an executable
+`codepact 0.4.0`. Then follow the [quick start](quickstart.md). If an executable
 or dependency cannot be found, use [troubleshooting](troubleshooting.md).

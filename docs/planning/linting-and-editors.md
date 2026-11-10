@@ -22,7 +22,11 @@ The companion [AI-agent integration plan](ai-agent-integration.md) reuses these 
 
 Command names and options remain proposals until their API review. The current 0.1 `inspect-contracts` command remains a declaration inspector; this plan does not claim it already performs flow linting or serves LSP.
 
-The local 0.4 candidate implements the [accepted adoption specification](phases/0.4/specification.md)'s configuration/exit policy, checker schema 2 and tab-separated location format. [V04-05–08/18/25](phases/0.4/validation.md) still require full qualification for LE01 and CLI LE-V01/LE-V02; LSP comparisons and client setup remain 0.8 requirements. AD01 scope acceptance is recorded; technical qualification remains pending.
+CodePact 0.4.0 includes configuration, exit policy, checker schema 2, and a
+tab-separated location format. The 0.4 release qualified LE01 and the CLI
+portions of LE-V01 and LE-V02. LSP parity and client setup remain 0.8 work.
+[Validation matrix](phases/0.4/validation.md) ·
+[Release evidence](../releases/0.4.0-evidence.md)
 
 ## Lint command and configuration
 

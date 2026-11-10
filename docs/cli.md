@@ -1,9 +1,8 @@
 # Command-line reference
 
-The published CodePact release is 0.3.0. This checkout contains the 0.4.0
-adoption-tooling candidate; use the [availability guide](availability.md) for
-what is distributed. The analyzer reads Python as source and does not import
-or execute the project.
+This reference covers the published CodePact 0.4.0 synthetic preview.
+The analyzer reads Python as source and does not import or execute the project.
+[Release availability](availability.md)
 
 ## Commands
 

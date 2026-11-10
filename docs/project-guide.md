@@ -1,6 +1,6 @@
 # Inspect a project with multiple files
 
-CodePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, supported by the published declaration inspector and the current source candidate.
+CodePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, supported by the published declaration inspector.
 
 For a project-level evaluation path and lifecycle-checking limits, see
 [Adopting CodePact](adopting.md).
@@ -34,7 +34,7 @@ Save its consumer as `src/client.py`:
 From `my-project`, install CodePact and inspect the two files:
 
 ```sh
-uv add codepact==0.3.0
+uv add codepact==0.4.0
 uv run codepact inspect-contracts --root src src/models.py src/client.py
 ```
 

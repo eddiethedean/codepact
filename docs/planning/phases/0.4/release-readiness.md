@@ -1,6 +1,6 @@
 # 0.4 release readiness work plan
 
-Status: **RR01–RR05 source qualification is complete; RR06 exact-distribution verification and RR07 maintainer approval are tracked in the [release ledger](../../../releases/0.4.0-evidence.md).**
+Status: **Completed.** CodePact 0.4.0 was qualified, approved, published, and verified on 2026-11-10. [Release ledger](../../../releases/0.4.0-evidence.md)
 The [retained qualification record](evidence/qualification-2026-11-10/README.md)
 contains assertions, actual results and operational samples for all V04 rows.
 AD01-A2 qualifies the synthetic preview; real-world usefulness is unqualified.

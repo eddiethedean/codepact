@@ -1,9 +1,8 @@
 # Support and maintenance
 
-CodePact is an early 0.x project. Its published 0.3.0 release adds bounded
-cleanup checking. The 0.1.0 and 0.2.0 releases used the
-TypePact name and package identifiers. APIs, diagnostics, and schema remain
-provisional during the 0.x series.
+CodePact 0.4.0 is the published synthetic preview of adoption tooling.
+APIs, diagnostics, and schemas remain provisional during the 0.x series.
+[Release availability](availability.md)
 
 ## Ask for help or report a bug
 
