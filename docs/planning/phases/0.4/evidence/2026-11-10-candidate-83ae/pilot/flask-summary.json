@@ -1,0 +1,25 @@
+{
+  "certainty": {
+    "unknown": 7400
+  },
+  "coverage_reasons": 7400,
+  "coverage_status": "incomplete",
+  "diagnostics": {
+    "TP9001": 7400
+  },
+  "dirty_before": false,
+  "eligible_definite_findings": 0,
+  "execution_status": "completed",
+  "exit_code": 0,
+  "gzip_sha256": "3d641d901e0b1da97a556a790f905c23e874f23ba2b1e353d66688f0a4216518",
+  "json_bytes": 7902217,
+  "json_sha256": "af21aa17889cff4e2cc85b8f7ef810ff26e95be75f4e14db8f0b9ad7a939c3b5",
+  "project": "flask",
+  "report_exit_code": 0,
+  "revision": "49943b5a94413a530761350f04e896f76e8d620e",
+  "selected_files": 83,
+  "source_bytes": 591255,
+  "stderr_bytes": 0,
+  "stderr_sha256": null,
+  "tree": "6751ab7eae06e6f97a157860470fd588920a734b"
+}

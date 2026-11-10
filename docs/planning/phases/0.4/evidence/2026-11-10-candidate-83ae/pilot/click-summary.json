@@ -1,0 +1,21 @@
+{
+  "certainty": {},
+  "coverage_reasons": null,
+  "coverage_status": null,
+  "diagnostics": {},
+  "dirty_before": false,
+  "eligible_definite_findings": 0,
+  "execution_status": "failed",
+  "exit_code": 2,
+  "gzip_sha256": "98658c91d154da01f3e308c1cc05946c159eeb1e25a874f8b212a8cbedca6130",
+  "json_bytes": 322,
+  "json_sha256": "4315d1b86553ea08aae47dd2c828fe9515b32694ff5cb7328bcad234c9b9037e",
+  "project": "click",
+  "report_exit_code": null,
+  "revision": "8abb77a8432e03ed14a95f972b44f905279415a7",
+  "selected_files": 0,
+  "source_bytes": 0,
+  "stderr_bytes": 0,
+  "stderr_sha256": null,
+  "tree": "84808be7a7674fe64b97f058372ae36a14b9eca6"
+}

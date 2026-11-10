@@ -1,7 +1,9 @@
 # 0.4 pilot scan results — candidate `620656b`
 
 Status: **Partial scans recorded; A05 remains pending.** No findings have been
-labeled and no actionability percentage is claimed.
+labeled and no actionability percentage is claimed. The six frozen revisions
+were replayed on exact implementation candidate `83ae561` on 2026-11-10; see
+the [current-candidate replay](evidence/2026-11-10-candidate-83ae/pilot/README.md).
 
 ## Run identity
 
@@ -88,4 +90,23 @@ population remains unknown because three projects did not complete and the
 completed projects yielded no eligible definite findings. No sample was drawn
 or labeled; the minimum-30 and 90%-actionable criteria remain unevaluated.
 A05 remains pending.
+
+## Exact implementation-candidate replay — `83ae561`
+
+The same six pinned project revisions, command, full default discovery, Python
+3.11 target, stable rule set and advisory/error policy were replayed using the
+macOS arm64 CLI wheel from [build-only Release run
+42729735141](https://github.com/eddiethedean/codepact/actions/runs/42729735141)
+on exact candidate `83ae561cfce8600159f53d3db4cc94892cad9db8`. The wheel SHA-256
+is `ce26dad93f6f8c410920454460b8b27158da7303f03ed25b9e3156100cda2cb0`.
+Checkout commits and trees matched the preregistration and were clean. Each
+current-run report's JSON and gzip hashes match its retained `c0ea48a` report
+byte for byte; the current-run summaries are recorded in the
+[replay evidence folder](evidence/2026-11-10-candidate-83ae/pilot/README.md).
+
+The result is unchanged: Requests, Uvicorn and Flask completed with zero
+eligible definite findings; pip failed module-name derivation, and Click and
+FastAPI exceeded the 1,000,000-byte source budget before analysis. The
+eligible population remains unknown, no sample was drawn or labeled, and A05
+remains pending.
 

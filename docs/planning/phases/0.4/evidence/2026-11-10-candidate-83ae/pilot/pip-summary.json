@@ -1,0 +1,21 @@
+{
+  "certainty": {},
+  "coverage_reasons": null,
+  "coverage_status": null,
+  "diagnostics": {},
+  "dirty_before": false,
+  "eligible_definite_findings": 0,
+  "execution_status": "failed",
+  "exit_code": 2,
+  "gzip_sha256": "ec88c52d789f1b4e8f2cc76cf5016cc284f38091de9d1108ae31b5edd6a94e0d",
+  "json_bytes": 288,
+  "json_sha256": "fe4e5e910895258bd1fb25224c3b8738016bbbd4fa2084f6022615ee826bd00b",
+  "project": "pip",
+  "report_exit_code": null,
+  "revision": "4b71f36fb4dfbc87ce65ac4710eeccf81d379f55",
+  "selected_files": 0,
+  "source_bytes": 0,
+  "stderr_bytes": 0,
+  "stderr_sha256": null,
+  "tree": "9eb70d44014780ec918e709c8dea122da2466c98"
+}

@@ -9,12 +9,14 @@ of a passing gate.
 
 ## Starting point and findings
 
-The last built artifact candidate is `c0ea48a`, with successful Quality run 219
-and build-only Release run 96. Evidence commit `10d2f39` passed Quality run 220.
-Those runs establish useful build, compatibility and distribution evidence.
-The [V04 matrix](validation.md) still lacks complete row-level qualification,
-the operational record covers only part of the required workloads, and the
-pilot has no eligible acceptance sample.
+The latest implementation candidate is `83ae561`, with successful [Quality
+run 42729033237](https://github.com/eddiethedean/codepact/actions/runs/42729033237)
+and [build-only Release run 42729735141](https://github.com/eddiethedean/codepact/actions/runs/42729735141).
+The full local `make check` passed on the same ref. Those results establish
+current build, compatibility and distribution evidence. The [V04
+matrix](validation.md) still lacks complete row-level qualification, the
+operational record covers only part of the required workloads, and the exact
+candidate pilot has no eligible acceptance sample.
 
 The readiness audit found two input-limit issues now addressed in development:
 
@@ -31,8 +33,8 @@ The readiness audit found two input-limit issues now addressed in development:
   consumes at most 65,537 bytes, rejects overflow, and accepts exactly 64 KiB.
   Unit and CLI controls cover consumption, the inclusive boundary and recovery.
 
-The configuration and discovery changes require a new frozen candidate and
-renewed affected evidence. They do not complete V04-03/24; full near-limit,
+The configuration and discovery changes are included in `83ae561` and its
+exact-candidate checks pass. They do not complete V04-03/24; full near-limit,
 containment and recovery controls still need to be retained before G4.
 
 All 17 retained JSON documents from candidate `c0ea48a` (including decompressed

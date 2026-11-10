@@ -1,0 +1,21 @@
+{
+  "certainty": {},
+  "coverage_reasons": null,
+  "coverage_status": null,
+  "diagnostics": {},
+  "dirty_before": false,
+  "eligible_definite_findings": 0,
+  "execution_status": "failed",
+  "exit_code": 2,
+  "gzip_sha256": "c49975fa8002754a5d5d6aab2a219c2f3ddb8a26d0321af6e10ccce409f20f76",
+  "json_bytes": 320,
+  "json_sha256": "6534c521b83c8b803e2020614fe9529978818443137d40ff1ca91a0d5fbb27c5",
+  "project": "fastapi",
+  "report_exit_code": null,
+  "revision": "534961812bef29ad80d2f7c399e52c688e8a0d57",
+  "selected_files": 0,
+  "source_bytes": 0,
+  "stderr_bytes": 0,
+  "stderr_sha256": null,
+  "tree": "3cec183c579a4efb69b34bf737c45631f5ed9271"
+}
