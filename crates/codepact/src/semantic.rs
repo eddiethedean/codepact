@@ -81,7 +81,7 @@ fn inspect_inner(
         ));
     }
 
-    let ordered = order_project_files(
+    let file_order = order_project_files(
         files,
         |path| {
             prepared
@@ -135,7 +135,7 @@ fn inspect_inner(
         .flat_map(|context| context.dependency_exports.iter())
         .map(|(module, exports)| (module.clone(), exports.must_use_callables.clone()))
         .collect::<BTreeMap<_, _>>();
-    for index in ordered {
+    for index in file_order.order {
         let file = &files[index];
         check_cancelled();
         if ambiguous_modules.contains(&file.module) {
@@ -732,6 +732,11 @@ pub(crate) struct ProjectPlan {
     module_counts: BTreeMap<String, usize>,
 }
 
+struct ProjectFileOrder {
+    order: Vec<usize>,
+    cyclic_modules: BTreeSet<String>,
+}
+
 pub(crate) fn plan_project(
     files: &[SourceFile],
     python_version: &str,
@@ -761,7 +766,7 @@ pub(crate) fn plan_project(
     for file in files {
         *module_counts.entry(file.module.clone()).or_default() += 1;
     }
-    let order = order_project_files(
+    let file_order = order_project_files(
         files,
         |path| {
             prepared
@@ -772,7 +777,7 @@ pub(crate) fn plan_project(
     );
     ProjectPlan {
         inspection,
-        order,
+        order: file_order.order,
         module_counts,
     }
 }
@@ -3066,7 +3071,7 @@ fn order_project_files<'a>(
     files: &[SourceFile],
     absolute_imports_for: impl Fn(&str) -> Option<&'a [String]>,
     result: &mut Inspection,
-) -> Vec<usize> {
+) -> ProjectFileOrder {
     let mut modules = BTreeMap::<&str, Vec<usize>>::new();
     for (index, file) in files.iter().enumerate() {
         modules.entry(&file.module).or_default().push(index);
@@ -3139,8 +3144,10 @@ fn order_project_files<'a>(
         .filter_map(|(index, _)| (indegree[index] > 0).then_some(index))
         .collect();
     cyclic.sort_by_key(|index| (&files[*index].module, &files[*index].path));
+    let mut cyclic_modules = BTreeSet::new();
     for index in cyclic {
         let file = &files[index];
+        cyclic_modules.insert(file.module.clone());
         unsupported(
             result,
             file,
@@ -3149,7 +3156,38 @@ fn order_project_files<'a>(
         );
         order.push(index);
     }
-    order
+    ProjectFileOrder {
+        order,
+        cyclic_modules,
+    }
+}
+
+pub(crate) fn cyclic_import_modules(
+    files: &[SourceFile],
+    summaries: &BTreeMap<String, crate::db::ParseSummary>,
+) -> BTreeSet<String> {
+    let mut result = Inspection {
+        schema_version: SCHEMA_VERSION,
+        assurance: "contract-inspection-only".into(),
+        contracts: Vec::new(),
+        diagnostics: Vec::new(),
+        coverage: Coverage {
+            status: "complete-for-supported-subset".into(),
+            reasons: Vec::new(),
+            source_bytes: 0,
+            declarations: 0,
+        },
+    };
+    order_project_files(
+        files,
+        |path| {
+            summaries
+                .get(path)
+                .map(|summary| summary.absolute_imports.as_slice())
+        },
+        &mut result,
+    )
+    .cyclic_modules
 }
 
 fn add_contract(result: &mut Inspection, contract: Contract) {

@@ -1,6 +1,6 @@
 # 0.4 validation matrix
 
-Status: **AD01 scope is accepted; all V04 rows and technical phase gates remain pending.** The references below are partial automated evidence, not full-row passes. Partial pilot results and performance measurements are recorded in the [pilot results](pilot-results-2026-11-09.md) and [performance evidence](performance-2026-11-09.md); neither completes its qualification criteria. IDs are independent of V01/V02/V03. The [specification](specification.md) supplies the accepted AD01 contracts; the [phase plan](../0.4-adoption.md) maps work packages and A01–A08/CS02.
+Status: **AD01 scope is accepted; all V04 rows and technical phase gates remain pending.** The references below are partial automated evidence, not full-row passes. The [synthetic project evaluation](synthetic-projects-2026-11-09.md) exercises controlled findings, repairs and unsupported boundaries; it does not count toward A05. Partial pilot results and performance measurements are recorded in the [pilot results](pilot-results-2026-11-09.md) and [performance evidence](performance-2026-11-09.md); neither completes its qualification criteria. IDs are independent of V01/V02/V03. The [specification](specification.md) supplies the accepted AD01 contracts; the [phase plan](../0.4-adoption.md) maps work packages and A01–A08/CS02.
 
 ## Required matrix
 
@@ -66,6 +66,7 @@ before it can be marked Pass.
 | `capabilities_and_rule_explanations_publish_the_supported_surface_and_limits` | Partial V04-25 |
 | `semantic_source_removes_only_lexer_identified_codepact_comments` in `crates/codepact/src/frontend.rs` | Preserves string contents and line endings while separating policy-comment inputs for V04-20 |
 | `scripts/check_schema_fixtures.py` with `docs/schemas/fixtures/` | Schema syntax and valid/invalid fixtures plus emitted capabilities, explanation, check report, settings, failure, baseline, baseline-update, and inspection JSON for V04-05/25 |
+| `synthetic_projects_match_bug_and_repair_oracles_on_all_targets`, `synthetic_source_repairs_have_fresh_reused_and_input_order_parity`, and `synthetic_unknown_boundaries_cannot_be_interpreted_as_verified_clean` in `crates/codepact/tests/synthetic_projects.rs` | Controlled bug/repair outcomes and unresolved-boundary handling for selected V04-12–15/18/22/24 assertions; synthetic results do not qualify the V04-26/A05 real-project sample |
 
 The focused Rust suite is `cargo test -p codepact --test phase04`. The schema
 fixture validator is run by `make check-docs`. These are local candidate checks;

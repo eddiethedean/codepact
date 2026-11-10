@@ -1,0 +1,46 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.22s
+     Running tests/synthetic_projects.rs (target/debug/deps/synthetic_projects-1301eb28e47ae78b)
+
+running 4 tests
+test synthetic_manifest_declares_independent_oracles_and_no_pilot_credit ... ok
+test synthetic_source_repairs_have_fresh_reused_and_input_order_parity ... ok
+async_handoff / 3.11: incomplete in both modes; strict refuses clean status
+csv_importer / 3.11: 4 expected violations, source repair clean
+async_handoff / 3.12: incomplete in both modes; strict refuses clean status
+async_handoff / 3.13: incomplete in both modes; strict refuses clean status
+csv_importer / 3.12: 4 expected violations, source repair clean
+async_cancellation / 3.11: incomplete in both modes; strict refuses clean status
+async_cancellation / 3.12: incomplete in both modes; strict refuses clean status
+csv_importer / 3.13: 4 expected violations, source repair clean
+async_cancellation / 3.13: incomplete in both modes; strict refuses clean status
+dynamic_plugin / 3.11: incomplete in both modes; strict refuses clean status
+warehouse_loader / 3.11: 4 expected violations, source repair clean
+dynamic_plugin / 3.12: incomplete in both modes; strict refuses clean status
+dynamic_plugin / 3.13: incomplete in both modes; strict refuses clean status
+warehouse_loader / 3.12: 4 expected violations, source repair clean
+repeat_close / 3.11: incomplete in both modes; strict refuses clean status
+repeat_close / 3.12: incomplete in both modes; strict refuses clean status
+warehouse_loader / 3.13: 4 expected violations, source repair clean
+repeat_close / 3.13: incomplete in both modes; strict refuses clean status
+test synthetic_unknown_boundaries_cannot_be_interpreted_as_verified_clean ... ok
+web_handler / 3.11: 4 expected violations, source repair clean
+web_handler / 3.12: 4 expected violations, source repair clean
+web_handler / 3.13: 4 expected violations, source repair clean
+artifact_packager / 3.11: 4 expected violations, source repair clean
+artifact_packager / 3.12: 4 expected violations, source repair clean
+artifact_packager / 3.13: 4 expected violations, source repair clean
+sdk_client / 3.11: 4 expected violations, source repair clean
+sdk_client / 3.12: 4 expected violations, source repair clean
+sdk_client / 3.13: 4 expected violations, source repair clean
+async_worker / 3.11: 4 expected violations, source repair clean
+async_worker / 3.12: 4 expected violations, source repair clean
+async_worker / 3.13: 4 expected violations, source repair clean
+plugin_runner / 3.11: 5 expected violations, source repair clean
+plugin_runner / 3.12: 5 expected violations, source repair clean
+plugin_runner / 3.13: 5 expected violations, source repair clean
+report_exporter / 3.11: 4 expected violations, source repair clean
+report_exporter / 3.12: 4 expected violations, source repair clean
+report_exporter / 3.13: 4 expected violations, source repair clean
+test synthetic_projects_match_bug_and_repair_oracles_on_all_targets ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s

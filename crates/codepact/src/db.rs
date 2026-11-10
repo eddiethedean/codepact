@@ -2,9 +2,16 @@ use crate::{
     frontend::{Declaration, FlowStatement},
     Coverage, Inspection, SourceFile,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
+
+#[derive(Deserialize, Serialize)]
+struct FlowFileContext {
+    model_catalog: crate::model::FlowModelCatalog,
+    cyclic_modules: BTreeSet<String>,
+}
 
 #[salsa::input]
 pub struct FileInput {
@@ -213,7 +220,7 @@ fn check_flow_file_query(
     dependencies: Vec<FileInput>,
     python_version: String,
     flow_budget: usize,
-    model_catalog_json: String,
+    flow_context_json: String,
     inspection_json: String,
 ) -> String {
     db.unwind_if_revision_cancelled();
@@ -238,8 +245,8 @@ fn check_flow_file_query(
         .collect();
     let mut inspection: Inspection =
         serde_json::from_str(&inspection_json).expect("flow file input deserializes");
-    let model_catalog: crate::model::FlowModelCatalog =
-        serde_json::from_str(&model_catalog_json).expect("flow model catalog deserializes");
+    let context: FlowFileContext =
+        serde_json::from_str(&flow_context_json).expect("flow file context deserializes");
     crate::flow::reset_flow_budget(flow_budget);
     crate::source::with_indexed_sources(
         sources.iter().map(|source| source.source.as_str()),
@@ -250,7 +257,8 @@ fn check_flow_file_query(
                 &summaries,
                 &mut inspection,
                 &python_version,
-                &model_catalog,
+                &context.model_catalog,
+                &context.cyclic_modules,
             );
         },
     );
@@ -282,6 +290,7 @@ fn check_flow_query(
             )
         })
         .collect();
+    let cyclic_modules = crate::semantic::cyclic_import_modules(&sources, &summaries);
     let mut inspection: Inspection =
         serde_json::from_str(&inspection_json).expect("inspection query result deserializes");
     inspection.diagnostics.retain(|diagnostic| {
@@ -355,16 +364,18 @@ fn check_flow_query(
             .iter()
             .map(|contract| contract.base_symbol.clone())
             .collect::<BTreeSet<_>>();
-        let applicable_models =
-            serde_json::to_string(&model_catalog.for_resource_symbols(&resource_symbols))
-                .expect("applicable flow models serialize");
+        let flow_context_json = serde_json::to_string(&FlowFileContext {
+            model_catalog: model_catalog.for_resource_symbols(&resource_symbols),
+            cyclic_modules: cyclic_modules.clone(),
+        })
+        .expect("flow file context serializes");
         let flow_json = check_flow_file_query(
             db,
             target,
             dependencies,
             python_version.clone(),
             flow_budget,
-            applicable_models,
+            flow_context_json,
             serde_json::to_string(&flow_input).expect("flow file input serializes"),
         );
         let flow: Inspection =

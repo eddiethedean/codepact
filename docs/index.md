@@ -38,6 +38,7 @@ a use after close, understand the related close location, and repair it.
 | Run checks and preserve reports in CI | [Automation](automation.md) and [report handling](ci-reporting.md) |
 | Understand a finding or incomplete coverage | [Rules](rules.md), [limitations](limitations.md), and [troubleshooting](troubleshooting.md) |
 | Integrate the analyzer with another tool | [Rust API](rust-api.md) and [report schemas](schemas.md) |
+| Run analyzer development controls | [Synthetic project controls](synthetic-projects.md) |
 | Build or publish this documentation | [Documentation deployment](documentation.md) |
 
 ## Know what a result establishes
@@ -101,6 +102,7 @@ security
 support
 development
 documentation
+synthetic-projects
 ```
 
 ## Project links

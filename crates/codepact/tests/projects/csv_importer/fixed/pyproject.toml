@@ -1,0 +1,7 @@
+[tool.codepact]
+config-version = 1
+root = "src"
+python-version = "3.11"
+mode = "advisory"
+fail-on = "warning"
+enabled-rules = ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"]

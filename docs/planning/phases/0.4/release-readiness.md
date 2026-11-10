@@ -9,14 +9,17 @@ of a passing gate.
 
 ## Starting point and findings
 
-The latest implementation candidate is `83ae561`, with successful [Quality
-run 42729033237](https://github.com/eddiethedean/codepact/actions/runs/42729033237)
-and [build-only Release run 42729735141](https://github.com/eddiethedean/codepact/actions/runs/42729735141).
-The full local `make check` passed on the same ref. Those results establish
-current build, compatibility and distribution evidence. The [V04
-matrix](validation.md) still lacks complete row-level qualification, the
-operational record covers only part of the required workloads, and the exact
-candidate pilot has no eligible acceptance sample.
+The exact implementation candidate `f4859b0` passed local `uv run --locked
+make check`, [Quality run 42732580869](https://github.com/eddiethedean/codepact/actions/runs/42732580869),
+and [build-only Release run 42733943867](https://github.com/eddiethedean/codepact/actions/runs/42733943867).
+The later evidence-only tree `c8cf0e2` passed [Quality run
+42735581630](https://github.com/eddiethedean/codepact/actions/runs/42735581630).
+The synthetic evaluation and imported-helper flow fix described in the
+[synthetic project report](synthetic-projects-2026-11-09.md) are later source
+and test changes; they need exact-candidate checks before reuse as release
+evidence. The [V04 matrix](validation.md) still lacks complete row-level
+qualification, the operational record covers only part of the required
+workloads, and the real-project pilot has no eligible acceptance sample.
 
 The readiness audit found two input-limit issues now addressed in development:
 
@@ -89,6 +92,12 @@ based; the only standard-library cleanup models are `contextlib.closing` and
 `aclosing` around a recognized resource. Scanning an unannotated repository
 does not establish the checker can find its framework/resource contracts.
 This is a selection/adoption mismatch to resolve before more acceptance runs.
+
+The [synthetic project corpus](synthetic-projects-2026-11-09.md) supplies a
+repeatable way to discover checker defects and verify source repairs across
+different project shapes. It exposed an imported-helper lifecycle gap and
+keeps unsupported cases explicit. Use it before real-project scoring; its
+planted cases are not eligible pilot findings and do not change A05.
 
 The other three failures have documented causes: pip includes a path that
 cannot be mapped to a Python module, and Click/FastAPI exceed the inherited

@@ -1,0 +1,412 @@
+{
+  "schema_version": 1,
+  "provenance": "synthetic",
+  "real_project_pilot_credit": false,
+  "oracle": "Hand-specified contract violations and source repairs; no labels inferred from checker output.",
+  "projects": [
+    {
+      "id": "csv_importer",
+      "title": "CSV import CLI",
+      "kind": "repair",
+      "expected_coverage": "complete-for-supported-subset",
+      "cases": [
+        {
+          "file": "main.py",
+          "function": "abandon_input",
+          "code": "TP1002",
+          "certainty": "definite",
+          "rationale": "The input stream reaches fallthrough without close.",
+          "repair": "Close the locally acquired stream in finally."
+        },
+        {
+          "file": "main.py",
+          "function": "preview_closed",
+          "code": "TP1001",
+          "certainty": "definite",
+          "rationale": "read uses the same stream after close.",
+          "repair": "Read before closing and return the saved data."
+        },
+        {
+          "file": "main.py",
+          "function": "return_closed_input",
+          "code": "TP1003",
+          "certainty": "definite",
+          "rationale": "An Owned return hands off an alias of a closed resource.",
+          "repair": "Return the open allocation and transfer cleanup to the caller."
+        },
+        {
+          "file": "main.py",
+          "function": "ignore_validation",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "The explicitly declared validation decision is discarded.",
+          "repair": "Return the decision to the caller."
+        }
+      ]
+    },
+    {
+      "id": "warehouse_loader",
+      "title": "Warehouse loading job",
+      "kind": "repair",
+      "expected_coverage": "complete-for-supported-subset",
+      "cases": [
+        {
+          "file": "main.py",
+          "function": "overwrite_cursor",
+          "code": "TP1002",
+          "certainty": "definite",
+          "rationale": "Overwriting the cursor loses the first allocation without cleanup.",
+          "repair": "Finish the first cursor before replacement."
+        },
+        {
+          "file": "main.py",
+          "function": "query_closed_cursor",
+          "code": "TP1001",
+          "certainty": "definite",
+          "rationale": "execute is called on the finished cursor.",
+          "repair": "Execute before finishing."
+        },
+        {
+          "file": "main.py",
+          "function": "handoff_closed_cursor",
+          "code": "TP1003",
+          "certainty": "definite",
+          "rationale": "Finally closes a cursor after evaluating its Owned return.",
+          "repair": "Return the open cursor and transfer its cleanup duty."
+        },
+        {
+          "file": "main.py",
+          "function": "discard_query",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "The MustUse query text is discarded.",
+          "repair": "Return the generated query."
+        }
+      ]
+    },
+    {
+      "id": "web_handler",
+      "title": "Request handler",
+      "kind": "repair",
+      "expected_coverage": "complete-for-supported-subset",
+      "cases": [
+        {
+          "file": "main.py",
+          "function": "close_caller_session",
+          "code": "TP2001",
+          "certainty": "definite",
+          "rationale": "The handler releases a borrowed caller-owned session.",
+          "repair": "Use the session and leave release to its owner."
+        },
+        {
+          "file": "main.py",
+          "function": "lose_connection",
+          "code": "TP1002",
+          "certainty": "definite",
+          "rationale": "A request-local session is abandoned open.",
+          "repair": "Release in finally."
+        },
+        {
+          "file": "main.py",
+          "function": "respond_after_release",
+          "code": "TP1001",
+          "certainty": "definite",
+          "rationale": "The response queries a released session.",
+          "repair": "Save the response before release."
+        },
+        {
+          "file": "main.py",
+          "function": "ignore_authorization",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "The declared authorization result is ignored.",
+          "repair": "Return the decision for caller handling."
+        }
+      ]
+    },
+    {
+      "id": "artifact_packager",
+      "title": "Artifact packaging tool",
+      "kind": "repair",
+      "expected_coverage": "incomplete",
+      "cases": [
+        {
+          "file": "main.py",
+          "function": "early_return",
+          "code": "TP1002",
+          "certainty": "definite",
+          "rationale": "An early return leaves the local archive open.",
+          "repair": "Wrap the return in try/finally cleanup."
+        },
+        {
+          "file": "main.py",
+          "function": "inspect_finished_archive",
+          "code": "TP1001",
+          "certainty": "definite",
+          "rationale": "Closing an alias also closes the original archive.",
+          "repair": "Inspect before closing either alias."
+        },
+        {
+          "file": "main.py",
+          "function": "close_borrowed_archive",
+          "code": "TP2001",
+          "certainty": "definite",
+          "rationale": "Verbose SharedBorrow metadata forbids caller cleanup.",
+          "repair": "Inspect the archive and preserve caller ownership."
+        },
+        {
+          "file": "main.py",
+          "function": "ignore_manifest",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "A callable alias still carries the result-use contract.",
+          "repair": "Return the manifest through the alias."
+        }
+      ],
+      "allowed_boundary_reasons": [
+        "unknown call effect for builder"
+      ],
+      "required_coverage_text": [
+        "unknown call effect for builder"
+      ]
+    },
+    {
+      "id": "sdk_client",
+      "title": "SDK result handling",
+      "kind": "repair",
+      "expected_coverage": "incomplete",
+      "cases": [
+        {
+          "file": "main.py",
+          "function": "ignored_instance",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "A resolved instance method's required result is dropped.",
+          "repair": "Return the fetched value."
+        },
+        {
+          "file": "main.py",
+          "function": "ignored_static",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "The known staticmethod wrapper preserves must-use.",
+          "repair": "Return the constructed request."
+        },
+        {
+          "file": "main.py",
+          "function": "ignored_class",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "The known classmethod wrapper preserves must-use.",
+          "repair": "Return the constructed cursor."
+        },
+        {
+          "file": "main.py",
+          "function": "ignored_alias",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "The imported callable alias preserves must-use.",
+          "repair": "Return its version value."
+        }
+      ],
+      "allowed_boundary_reasons": [
+        "unsupported flow weakens tracked resources",
+        "unknown call effect for Catalog",
+        "resource-valued call result is not tracked",
+        "unresolved method receiver may affect tracked resources",
+        "unknown call effect for operation"
+      ],
+      "required_coverage_text": [
+        "unknown call effect for Catalog",
+        "unresolved method receiver"
+      ]
+    },
+    {
+      "id": "async_worker",
+      "title": "Async worker before its first suspension",
+      "kind": "repair",
+      "expected_coverage": "complete-for-supported-subset",
+      "cases": [
+        {
+          "file": "main.py",
+          "function": "forget_link",
+          "code": "TP1002",
+          "certainty": "definite",
+          "rationale": "The coroutine reaches its exit with an open link and no suspension.",
+          "repair": "Close the link before returning."
+        },
+        {
+          "file": "main.py",
+          "function": "acknowledge_closed_link",
+          "code": "TP1001",
+          "certainty": "definite",
+          "rationale": "Acknowledgment uses a synchronously closed link before suspension.",
+          "repair": "Acknowledge before close."
+        },
+        {
+          "file": "main.py",
+          "function": "return_closed_link",
+          "code": "TP1003",
+          "certainty": "definite",
+          "rationale": "An async function returns a closed link through Owned before suspension.",
+          "repair": "Return an open link under the owning contract."
+        },
+        {
+          "file": "main.py",
+          "function": "skip_payload",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "A synchronous must-use decoder result is ignored inside async code.",
+          "repair": "Return the payload."
+        }
+      ]
+    },
+    {
+      "id": "plugin_runner",
+      "title": "Plugin host with named re-exports",
+      "kind": "repair",
+      "expected_coverage": "complete-for-supported-subset",
+      "cases": [
+        {
+          "file": "main.py",
+          "function": "borrowed_cleanup",
+          "code": "TP2001",
+          "certainty": "definite",
+          "rationale": "The re-exported borrowed token belongs to its caller.",
+          "repair": "Preserve its lifetime while inspecting it."
+        },
+        {
+          "file": "main.py",
+          "function": "abandoned_token",
+          "code": "TP1002",
+          "certainty": "definite",
+          "rationale": "A token acquired through a named re-export is lost open.",
+          "repair": "Release the local token."
+        },
+        {
+          "file": "main.py",
+          "function": "steal_borrowed_token",
+          "code": "TP1003",
+          "certainty": "definite",
+          "rationale": "A Borrowed token is falsely returned under an Owned contract.",
+          "repair": "Return derived data while leaving the caller-owned token with its owner."
+        },
+        {
+          "file": "main.py",
+          "function": "ignored_configuration",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "Named re-export keeps the required-result contract.",
+          "repair": "Return the plugin configuration."
+        },
+        {
+          "file": "main.py",
+          "function": "use_after_imported_close",
+          "code": "TP1001",
+          "certainty": "definite",
+          "rationale": "A helper imported through a named re-export closes the caller's token before use.",
+          "repair": "Inspect the token before passing it to the imported cleanup helper."
+        }
+      ]
+    },
+    {
+      "id": "report_exporter",
+      "title": "Report export and exceptional cleanup",
+      "kind": "repair",
+      "expected_coverage": "complete-for-supported-subset",
+      "cases": [
+        {
+          "file": "main.py",
+          "function": "interrupted_export",
+          "code": "TP1002",
+          "certainty": "definite",
+          "rationale": "The explicit exception abandons an open writer.",
+          "repair": "Finish the writer in finally during the raise."
+        },
+        {
+          "file": "main.py",
+          "function": "write_after_finalizing",
+          "code": "TP1001",
+          "certainty": "definite",
+          "rationale": "Writing uses the finalized writer.",
+          "repair": "Write before finishing."
+        },
+        {
+          "file": "main.py",
+          "function": "finalized_handoff",
+          "code": "TP1003",
+          "certainty": "definite",
+          "rationale": "An owning factory hands off a finalized writer.",
+          "repair": "Transfer the open writer to its caller."
+        },
+        {
+          "file": "main.py",
+          "function": "ignored_checksum",
+          "code": "TP3001",
+          "certainty": "definite",
+          "rationale": "The required checksum result is discarded.",
+          "repair": "Return the checksum."
+        }
+      ]
+    },
+    {
+      "id": "async_handoff",
+      "title": "Detached cleanup task",
+      "kind": "boundary",
+      "required_diagnostics": [
+        {
+          "code": "TP1002",
+          "certainty": "possible"
+        }
+      ],
+      "required_coverage_text": [
+        "created coroutine is not awaited"
+      ]
+    },
+    {
+      "id": "async_cancellation",
+      "title": "Cancellation during asynchronous close",
+      "kind": "boundary",
+      "required_diagnostics": [
+        {
+          "code": "TP1002",
+          "certainty": "possible"
+        }
+      ],
+      "required_coverage_text": [
+        "cancellation may interrupt"
+      ]
+    },
+    {
+      "id": "dynamic_plugin",
+      "title": "Dynamic plugin resolution and source non-execution",
+      "kind": "boundary",
+      "required_diagnostics": [
+        {
+          "code": "TP9001",
+          "certainty": "unknown"
+        }
+      ],
+      "required_coverage_text": []
+    },
+    {
+      "id": "repeat_close",
+      "title": "Repeated close without an idempotency model",
+      "kind": "boundary",
+      "required_diagnostics": [
+        {
+          "code": "TP9001",
+          "certainty": "unknown"
+        }
+      ],
+      "required_coverage_text": [
+        "repeat-close behavior is not modeled"
+      ]
+    }
+  ],
+  "oracle_revision": 3,
+  "oracle_revisions": [
+    "Draft 1 incorrectly assigned TP1003 to repeat-close and expected imported non-resource class methods and bare constructor statements to be supported. The draft reports and sources are retained separately. Revision 2 uses documented Owned-return violations, keeps descriptor controls local, and tests repeat-close as an explicit boundary.",
+    "Revision 3 adds an imported lifecycle helper with an independent use-after-close oracle after the previous candidate reported its effect as unknown. Resolution follows named re-exports while preserving unknown behavior for imports whose provider participates in a cycle."
+  ]
+}

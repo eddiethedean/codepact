@@ -2052,7 +2052,7 @@ fn final_function_bindings(
                 module: source,
                 level: 0,
                 names,
-                ..
+                range,
             } => {
                 for import in names {
                     let local = import.alias.as_deref().unwrap_or(&import.name);
@@ -2066,6 +2066,11 @@ fn final_function_bindings(
                             local.to_owned(),
                             format!("external:contextlib.{}", import.name),
                         );
+                    } else if let Some(binding) = functions
+                        .get(&format!("import:{module}:{}:{local}", range.start))
+                        .and_then(|definition| definition.binding_key.as_ref())
+                    {
+                        bindings.insert(local.to_owned(), binding.clone());
                     } else {
                         bindings.remove(local);
                     }
@@ -2183,8 +2188,13 @@ fn resolve_imported_function(
     files: &[SourceFile],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     functions: &ProjectFunctionMap,
+    cyclic_modules: &BTreeSet<String>,
     visited: &mut BTreeSet<(String, String)>,
 ) -> Option<FunctionBody> {
+    // A resolvable body does not make a cyclic import safe to assume at runtime.
+    if cyclic_modules.contains(module) {
+        return None;
+    }
     if !visited.insert((module.to_owned(), name.to_owned())) {
         return None;
     }
@@ -2240,6 +2250,7 @@ fn resolve_imported_function(
                             files,
                             summaries,
                             functions,
+                            cyclic_modules,
                             visited,
                         )
                     } else {
@@ -5914,6 +5925,7 @@ fn check_bodies_impl(
     only_file: Option<&str>,
     python_version: &str,
     models: &FlowModelCatalog,
+    cyclic_modules: &BTreeSet<String>,
 ) {
     let classes_with_unresolved_bases = files
         .iter()
@@ -6087,6 +6099,7 @@ fn check_bodies_impl(
                     files,
                     summaries,
                     &project_functions,
+                    cyclic_modules,
                     &mut BTreeSet::new(),
                 ) {
                     let binding = format!("import:{}:{}:{}", provider.module, range.start, local);
@@ -6562,6 +6575,7 @@ pub(crate) fn check_file_bodies(
     result: &mut Inspection,
     python_version: &str,
     models: &FlowModelCatalog,
+    cyclic_modules: &BTreeSet<String>,
 ) {
     check_bodies_impl(
         files,
@@ -6570,6 +6584,7 @@ pub(crate) fn check_file_bodies(
         Some(target_path),
         python_version,
         models,
+        cyclic_modules,
     );
 }
 
@@ -6642,6 +6657,7 @@ mod tests {
             &mut result,
             "3.11",
             &FlowModelCatalog::default(),
+            &BTreeSet::new(),
         );
         result
     }
