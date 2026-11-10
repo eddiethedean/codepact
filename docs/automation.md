@@ -1,8 +1,8 @@
 # Automation and CI
 
 CodePact 0.3.0 is published; pin `codepact` to 0.3.0 for published
-inspection/lifecycle behavior. The 0.4.0 adoption candidate is implemented in
-this checkout but is not yet published or pilot-qualified. Its policy examples
+inspection/lifecycle behavior. The 0.4.0 adoption tooling is a synthetic preview, with real-world usefulness
+unqualified. Its policy examples
 below run from a local checkout; see the [availability guide](availability.md).
 
 ## Run in a uv project

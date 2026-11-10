@@ -17,7 +17,7 @@ This policy applies to every phase and patch release, including 0.3 and later ph
 | G3 | Compatibility and runtime behavior | Pinned Python/checker/platform matrix passes for advertised combinations; runtime identity, introspection and optional enforcement behavior are documented and checked. |
 | G4 | Operational quality | No target-code execution; bounded analysis terminates with visible incompleteness; deterministic output. Record baseline time/memory, investigate regressions and verify Salsa fresh/updated parity and tracked-query reuse from 0.1; verify persistent-cache parity when introduced. |
 | G5 | Distribution | Matching tag/package versions; clean builds, Python metadata validation, Cargo dry run, clean install/import/CLI checks for each advertised artifact, licensing and provenance. |
-| G6 | User readiness | Examples and reference reflect shipped behavior; limitations, new diagnostics, configuration changes and migration steps are reviewed. Pilot requirements apply from 0.4 onward. |
+| G6 | User readiness | Examples and reference reflect shipped behavior; limitations, new diagnostics, configuration changes and migration steps are reviewed. Phase-specific preview/pilot requirements apply from 0.4 onward; the maintainer-approved 0.4 AD01-A2 scope is a synthetic preview with real-world usefulness unqualified. |
 | G7 | Release decision | Exact candidate revision, gate report, issue triage and accountable maintainer approval recorded. Missing evidence or a required failed gate blocks tagging. |
 | G8 | Publication completion | Authorized tag publishes both registries; downloaded artifacts match expected versions and hashes; smoke checks succeed and release notes link known limitations. |
 

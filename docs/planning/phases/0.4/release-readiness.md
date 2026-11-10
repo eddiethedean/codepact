@@ -1,11 +1,11 @@
 # 0.4 release readiness work plan
 
-Status: **Development and qualification work remain before a release can be
-approved.** This plan preserves the accepted AD01 requirements, including
-bounded-discovery amendment AD01-A1, and turns the held
-[release ledger](../../../releases/0.4.0-evidence.md) into an ordered work
-queue. Task names and proposed artifact paths below are work to do, not evidence
-of a passing gate.
+Status: **RR01–RR05 source qualification is complete; RR06 exact-distribution verification and RR07 maintainer approval are tracked in the [release ledger](../../../releases/0.4.0-evidence.md).**
+The [retained qualification record](evidence/qualification-2026-11-10/README.md)
+contains assertions, actual results and operational samples for all V04 rows.
+AD01-A2 qualifies the synthetic preview; real-world usefulness is unqualified.
+The sections below retain the original audit and work requirements as history;
+statements about pending source controls describe the starting point.
 
 ## Starting point and findings
 
@@ -55,7 +55,7 @@ still had its TP1002 suppressed after the resource's `closed_by` changed from
 `close` to `release`. The acquisition, exit and related spans were unchanged,
 so the previous source-span fingerprint omitted the changed contract.
 
-Fingerprint algorithm 4 includes the resolved resource symbol, lifecycle,
+The initial fingerprint algorithm 4 correction included the resolved resource symbol, lifecycle,
 access and provenance; synchronous must-use diagnostics retain their resolved
 callable identity. Private query transport retains those facts without adding
 fields to public inspection/check JSON. Findings reached through multiple
@@ -65,8 +65,7 @@ internal resolved evidence. Regression controls also rebind the imported
 resource while keeping both resource definitions selected, preserve harmless
 comment/location edits, and compare fresh and reused sessions.
 
-This correction requires a new source/distribution freeze. It does not yet
-qualify all changed effect-summary, collision, interruption or V04 controls.
+Final qualification advances this to algorithm 5 with canonical token/site identity and adds effect-summary, collision, interruption, scope and V04 controls. The release ledger identifies the new source/distribution freeze.
 
 The [23 retained configuration controls](evidence/config-qualification-2026-11-10/README.md)
 qualify V04-02 technically. The [14 CLI workloads](evidence/adoption-cli-2026-11-10/README.md)
@@ -80,7 +79,7 @@ final-candidate inherited comparisons and memory/pilot qualification remain.
 | --- | --- | --- | --- |
 | RR01 | Close input, baseline and output correctness risks | Review bounded readers/writers and traversal; exercise changed contract/effect identity, baseline collisions, interrupted updates, hard limits and failure recovery with independently expected results. | G2/G4, A01–A03/A07/A08 |
 | RR02 | Complete deterministic V04 qualification | Every V04-01–26 assertion maps to actual valid, invalid and unsupported controls; results carry revision, command, environment and retained artifacts. Complete the inherited V03 and CLI LE/AI mappings. | G2/G3, A01–A04/A06–A08/CS02 |
-| RR03 | Establish useful real-project adoption | Preregister a viable adoption evaluation, retain all six original results, prepare justified contracts where needed, and obtain the unchanged minimum of 30 distinct definite violations with at least 90% actionable across at least three reviewed projects, including async. | G6, A05/A06/CS02 |
+| RR03 | Qualify the synthetic preview | Meet [AD01-A2](synthetic-preview-protocol.md) for the frozen independent 33-case corpus, eight source repairs, four boundary projects and static-tool controls, including async, on the exact final artifact. Preserve unsuccessful field observations and disclose real-world usefulness as unqualified. | G6, A05/A06/CS02 |
 | RR04 | Complete operational measurements | One repeatable harness covers all accepted workloads with seven samples, medians/ranges, source/result hashes and query-event parity/reuse evidence, plus peak/retained-memory methods and reviewed regressions. | G4, A07/CS02 |
 | RR05 | Finish the release user journey | Complete external-tool decoding, CLI agent stale/truncated/failure handling, advisory/strict CI exits 0/1/2, repair with affected dependents, and release-version/availability documentation review. | G6, A06/A08 |
 | RR06 | Freeze and build the final candidate | All source, tests, documentation and raw evidence are committed; full local checks and Quality pass; build-only Release produces and verifies the complete distribution matrix for that exact candidate. | G2–G6 |
@@ -88,7 +87,7 @@ final-candidate inherited comparisons and memory/pilot qualification remain.
 
 Start RR03 feasibility work while completing RR01/RR02. Pilot viability can
 require substantial source-contract or analyzer work and determines whether
-the accepted useful-preview claim is attainable. Collect RR04 measurements
+the accepted synthetic preview claim is attainable. Collect RR04 measurements
 after semantic fixes; complete RR06 after the remaining source work is stable.
 
 ## RR02: missing qualification controls
@@ -109,7 +108,7 @@ required matrix rather than treating a test name as a full-row pass.
 A reference-index script can prevent stale matrix links. Semantic assertions
 and reviewed actual results remain the basis for each row's status.
 
-## RR03: make the pilot evaluate adoption
+## RR03: historical field work (superseded for 0.4 by AD01-A2)
 
 The three completed upstream scans yielded TP9001 boundaries and no eligible
 definite violations. A search of their primary source roots found no CodePact
@@ -154,10 +153,12 @@ Use the annotation-preparation route already permitted by the
    apply the accepted census/stratified procedure and retain every rationale.
    Expand the preregistered inventory if findings remain too few.
 
-If this process cannot meet A05, the accepted 0.4 release remains held. A
-different preview scope is a separate maintainer roadmap/AD01 amendment with
-revised public claims and acceptance criteria; it cannot be implemented by
-marking a pending gate Pass or lowering the observed sample denominator.
+The maintainer subsequently selected the synthetic preview release scope under
+[AD01-A2](synthetic-preview-protocol.md). The field observations and proposed
+adoption route above remain historical work for future field qualification.
+They are not scored as a passing field pilot. For current RR03, freeze and replay
+the independent corpus, all source repairs, static-tool controls and unsupported
+boundaries on the exact final distribution under the amended protocol.
 
 ## RR04: one operational harness
 

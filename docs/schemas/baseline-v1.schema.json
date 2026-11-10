@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["fingerprint_algorithm_version", "baseline_schema_version", "engine_version", "rule_semantic_version", "target_python_version", "model_catalog_version", "snapshot_id", "source_manifest", "logical_root", "include", "exclude", "selected_rules", "coverage_status", "coverage_reasons", "update_reason", "entries"],
   "properties": {
-    "fingerprint_algorithm_version": {"const": 4},
+    "fingerprint_algorithm_version": {"const": 5},
     "baseline_schema_version": {"const": 1},
     "engine_version": {"type": "string", "minLength": 1, "maxLength": 64},
     "rule_semantic_version": {"type": "integer", "minimum": 1},

@@ -1,0 +1,34 @@
+{
+  "base_revision": "b037af569e6591cd7cd2a34ed7b51b3f7ad565b4",
+  "binary_sha256": "150ca3c735509aa2e29001b5bde63da4f939a6832654508c00abdae1d03dd279",
+  "binary_version": "codepact 0.4.0",
+  "host": "macOS-26.5.2-arm64-arm-64bit",
+  "python": "3.11.15",
+  "cpu": "Apple M4 Pro",
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+  "manifest_sha256": "87ba6167485f8eacfbb7fa527f8ff7a74678cb6f9344bab1324e3879424ce003",
+  "source_sha256": {
+    "/Volumes/T7/coding/typepact/crates/codepact/src/adoption.rs": "7a170dbf6e5c4862fb4f8c6c3043563e2e96287b05c643aa07d9705d9c374e9a",
+    "/Volumes/T7/coding/typepact/crates/codepact/src/db.rs": "677010194ba5d6ad1194985c8054a72aaebfa0289e926495ab3e239f48947932",
+    "/Volumes/T7/coding/typepact/crates/codepact/src/flow.rs": "233d861033411ecc5749e54c6c617784ffb965580d84398b864696c0b639cb91",
+    "/Volumes/T7/coding/typepact/crates/codepact/src/frontend.rs": "09d1cd0e1f3401eb47fe5f13861f4809943d0470944501afa52a392e3b976856",
+    "/Volumes/T7/coding/typepact/crates/codepact/src/identifiers.rs": "f2e844411fd575791bd225465de792f70690c027d18efc41156c7f9bfa21bc5a",
+    "/Volumes/T7/coding/typepact/crates/codepact/src/lib.rs": "62dfcf4da96ab140c01c469f3ec61496e571b256c9f6bab4f655659c65693c13",
+    "/Volumes/T7/coding/typepact/crates/codepact/src/main.rs": "e1bd47b6f1a84ffcee2dec5dc68d76bb8213a8c4d471ba377d6f868595045163",
+    "/Volumes/T7/coding/typepact/crates/codepact/src/model.rs": "4351ddfa4209f9125a6d86aae4c45d08c24d7e50a688b80c37272a76e39c3ed5",
+    "/Volumes/T7/coding/typepact/crates/codepact/src/semantic.rs": "3178d5a13ca77f6422a5241ee76b6cc1ea568ac2faf39c6a1a07de6f251835d9",
+    "/Volumes/T7/coding/typepact/crates/codepact/src/source.rs": "5fc82dcf747de808706155bc77224117ffd0ceb1f9a9aaec32323ecb1996423c"
+  },
+  "baseline_examples_sha256": {
+    "benchmark_lifecycle": "dc483f8291234b7769dc7cfdcc3206d19dcf010bc19387ef124c716f2b9b8649",
+    "benchmark_phase03": "2d6b374fe83797b7ca0510121cdf5a9c113fcdc9e3cde227a8022ac276a78ba5"
+  },
+  "candidate_examples_sha256": {
+    "benchmark_lifecycle": "db2a924d1554d018078dd087e9a2e29661a78afb299c5768ecfcd978690a54bf",
+    "benchmark_phase03": "aed50037a36f25fe6280ca57a479aae689ea4628a59e7b2af76070c3a31760b4"
+  },
+  "published_03_crate_sha256": "b0f876b3f4e560ecf8b74462443350a1602dd4c92ef246120ff4a3c0a16224eb",
+  "runner_sha256": "7fac9cf2e1888c0defcfc1dde8c3e7c5b96ec10092e95d2e40345e88749ba9d4",
+  "real_world_usefulness": "unqualified",
+  "method": "Seven optimized samples; source API and full CLI oracles; no OS cache flush. /usr/bin/time -l per-workload peak RSS; ps reports retained session RSS after diagnostics are dropped. Corpus process timings include launch/output capture. No field precision or recall claim."
+}

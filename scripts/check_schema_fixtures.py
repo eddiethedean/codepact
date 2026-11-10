@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -41,6 +42,8 @@ def cli_output(arguments: list[str], expected_exit: int = 0) -> str:
         "--",
         *arguments,
     ]
+    if binary := os.environ.get("CODEPACT_QUALIFICATION_BINARY"):
+        command = [binary, *arguments]
     result = subprocess.run(
         command,
         check=False,

@@ -1,5 +1,7 @@
 # Bugs CodePact catches before runtime
 
+The intended 0.4 release scope is a synthetic preview under maintainer-approved AD01-A2. These engineered examples do not qualify real-world usefulness.
+
 CodePact checks lifecycle and result-use contracts that ordinary Python type
 checking and linting do not generally model. Its annotations preserve the
 underlying Python type: `Borrowed[T]` and `Owned[T]` are both still `T` to a
@@ -174,4 +176,4 @@ targets 3.11–3.13. This demonstrates that CodePact finds the listed semantic
 contracts in controlled inputs. It does not estimate real-project precision or
 prove that an external resource declaration matches runtime behavior. See the
 [corpus and test commands](synthetic-projects.md) and the separate
-[0.4 real-project pilot](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4/pilots.md).
+[synthetic preview qualification and retained field history](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4/synthetic-preview-protocol.md).

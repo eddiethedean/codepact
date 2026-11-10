@@ -95,6 +95,10 @@ fn measure(name: &str, files: &[SourceFile], verify: fn(&Inspection)) {
         .collect::<Vec<_>>();
 
     println!(
+        "SAMPLES {}",
+        serde_json::json!({"name":name,"source_bytes":files.iter().map(|file|file.source.len()).sum::<usize>(),"cold_ms":cold_samples.iter().map(|s|milliseconds(*s)).collect::<Vec<_>>(),"warm_ms":warm_samples.iter().map(|s|milliseconds(*s)).collect::<Vec<_>>() })
+    );
+    println!(
         "{name}: cold {:.3} ms ({} repeats), warm {:.3} ms, source {} bytes",
         milliseconds(median_duration(cold_samples)),
         REPEATS,

@@ -851,7 +851,12 @@ impl AnalysisSession {
                     &right.code,
                 ))
         });
-        result.assurance = "lifecycle-checking-for-supported-exit-flow".into();
+        result.assurance = if run_must_use {
+            crate::ADOPTION_ASSURANCE
+        } else {
+            "lifecycle-checking-for-supported-exit-flow"
+        }
+        .into();
         Ok(SessionInspection {
             revision,
             inspection: result,
@@ -4051,6 +4056,274 @@ mod tests {
             inline.policy_fingerprint,
             updated_baseline.policy_fingerprint
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn v04_20_21_policy_measurements_and_semantic_mutations_match_fresh_results() {
+        use std::time::Instant;
+        let executions = Arc::new(Mutex::new(Vec::<String>::new()));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                observed.lock().unwrap().push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            files: BTreeMap::new(),
+            revision: 0,
+            target_version: None,
+            model_catalog: crate::model::FlowModelCatalog::default(),
+            mutations_since_reset: 0,
+            cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
+        };
+        let root = std::env::temp_dir().join(format!(
+            "codepact-session-qualification-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let provider="from codepact import resource, must_use\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def status(self): return 1\n@must_use\ndef fetch() -> int: return 1\ndef shutdown(conn):\n    conn.close()\n";
+        let client="from provider import Connection, fetch, shutdown\ndef run():\n    fetch()\n    conn = Connection()\n    shutdown(conn)\n    conn.status()\n";
+        let original = vec![
+            SourceFile::new("provider.py", "provider", provider),
+            SourceFile::new("main.py", "main", client),
+            SourceFile::new("unrelated.py", "unrelated", "def value(): return 1\n"),
+        ];
+        let mut config = crate::adoption::resolve_config(
+            &root,
+            &crate::adoption::Overrides {
+                no_config: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let initial = session.check_with_must_use(&original, "3.11");
+        assert!(initial.diagnostics.iter().any(|d| d.code == "TP1001"));
+        let baseline_path = root.join("baseline.json");
+        crate::adoption::write_baseline(
+            &baseline_path,
+            &crate::CheckResult::from_inspection(initial.clone(), "3.11"),
+            &original,
+            &config,
+            false,
+            "session benchmark",
+        )
+        .unwrap();
+        let mut measurements = Vec::new();
+        for name in [
+            "noop",
+            "strict",
+            "threshold",
+            "severity",
+            "selection",
+            "suppression",
+            "baseline",
+        ] {
+            config.mode = if name == "strict" {
+                "strict"
+            } else {
+                "advisory"
+            }
+            .into();
+            config.fail_on = if name == "threshold" {
+                "warning"
+            } else {
+                "error"
+            }
+            .into();
+            config.severity.clear();
+            if name == "severity" {
+                config.severity.insert("TP3001".into(), "error".into());
+            }
+            config.enabled_rules = crate::adoption::DEFAULT_RULES
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            if name == "selection" {
+                config.enabled_rules.remove("TP3001");
+            }
+            let scenario_files = if name == "suppression" {
+                let mut files = original.clone();
+                files[1].source = client.replace(
+                    "    fetch()",
+                    "    fetch() # codepact: ignore[TP3001] -- benchmark acknowledgement",
+                );
+                files
+            } else {
+                original.clone()
+            };
+            let baseline = if name == "baseline" {
+                Some(baseline_path.as_path())
+            } else {
+                None
+            };
+            let mut semantic_ms = Vec::new();
+            let mut reporting_ms = Vec::new();
+            for _ in 0..7 {
+                executions.lock().unwrap().clear();
+                let start = Instant::now();
+                let result = session.check_with_must_use(&scenario_files, "3.11");
+                semantic_ms.push(start.elapsed().as_secs_f64() * 1000.);
+                let events = executions
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|k| k.contains("check_flow_file_query"))
+                    .count();
+                assert_eq!(events, 0, "{name}");
+                let fresh = crate::check_with_must_use(&scenario_files, "3.11");
+                assert_eq!(result, fresh);
+                let start = Instant::now();
+                let actual = crate::adoption::build_report(
+                    crate::CheckResult::from_inspection(result, "3.11"),
+                    &scenario_files,
+                    &config,
+                    baseline,
+                    None,
+                )
+                .unwrap();
+                reporting_ms.push(start.elapsed().as_secs_f64() * 1000.);
+                let expected = crate::adoption::build_report(
+                    crate::CheckResult::from_inspection(fresh, "3.11"),
+                    &scenario_files,
+                    &config,
+                    baseline,
+                    None,
+                )
+                .unwrap();
+                assert_eq!(
+                    serde_json::to_value(actual).unwrap(),
+                    serde_json::to_value(expected).unwrap()
+                );
+            }
+            measurements.push(serde_json::json!({"scenario":name,"semantic_ms":semantic_ms,"reporting_ms":reporting_ms,"flow_query_executions":0}));
+        }
+        println!(
+            "SESSION_QUALIFICATION {}",
+            serde_json::to_string(&measurements).unwrap()
+        );
+        let cases = [
+            (
+                "mustuse-decorator",
+                provider.replace("@must_use\n", ""),
+                client.to_string(),
+                "3.11",
+                true,
+            ),
+            (
+                "cleanup-effect",
+                provider.replace("    conn.close()", "    pass"),
+                client.to_string(),
+                "3.11",
+                true,
+            ),
+            (
+                "locations",
+                format!("\n# moved\n{provider}"),
+                format!("\n{client}"),
+                "3.11",
+                true,
+            ),
+            (
+                "target-312",
+                provider.to_string(),
+                client.to_string(),
+                "3.12",
+                false,
+            ),
+            (
+                "target-313",
+                provider.to_string(),
+                client.to_string(),
+                "3.13",
+                false,
+            ),
+            (
+                "failed-parse",
+                "def invalid(:\n".to_string(),
+                client.to_string(),
+                "3.11",
+                true,
+            ),
+            (
+                "recovery",
+                provider.to_string(),
+                client.to_string(),
+                "3.11",
+                true,
+            ),
+        ];
+        for (name, body, consumer, target, expect_unrelated_reuse) in cases {
+            let files = vec![
+                SourceFile::new("provider.py", "provider", body),
+                SourceFile::new("main.py", "main", consumer),
+                original[2].clone(),
+            ];
+            executions.lock().unwrap().clear();
+            let reused = session.check_with_must_use(&files, target);
+            let events = executions
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|k| k.contains("check_flow_file_query"))
+                .count();
+            let fresh_session = AnalysisSession::default().check_with_must_use(&files, target);
+            let one_shot = crate::check_with_must_use(&files, target);
+            assert_eq!(reused, fresh_session, "{name}");
+            assert_eq!(reused, one_shot, "{name}");
+            config.python_version = target.into();
+            let report = crate::adoption::build_report(
+                crate::CheckResult::from_inspection(reused.clone(), target),
+                &files,
+                &config,
+                Some(&baseline_path),
+                None,
+            )
+            .unwrap();
+            let fresh_report = crate::adoption::build_report(
+                crate::CheckResult::from_inspection(fresh_session.clone(), target),
+                &files,
+                &config,
+                Some(&baseline_path),
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                serde_json::to_value(report).unwrap(),
+                serde_json::to_value(fresh_report).unwrap(),
+                "{name}: report/baseline parity"
+            );
+
+            // A target change intentionally refreshes all files. Other edits
+            // must leave the unrelated module's flow query reusable.
+            if expect_unrelated_reuse && name != "failed-parse" && name != "recovery" {
+                assert!(events < files.len(), "{name}: {events} flow executions");
+            }
+            println!(
+                "SESSION_MUTATION {name}: flow_queries={events}, diagnostics={}",
+                reused.diagnostics.len()
+            );
+        }
+        let renamed = vec![
+            SourceFile::new("renamed_provider.py", "renamed_provider", provider),
+            SourceFile::new(
+                "main.py",
+                "main",
+                client.replace("from provider", "from renamed_provider"),
+            ),
+            original[2].clone(),
+        ];
+        assert_eq!(
+            session.check_with_must_use(&renamed, "3.11"),
+            crate::check_with_must_use(&renamed, "3.11")
+        );
+        let deleted = vec![renamed[1].clone(), renamed[2].clone()];
+        assert_eq!(
+            session.check_with_must_use(&deleted, "3.11"),
+            crate::check_with_must_use(&deleted, "3.11")
+        );
+        let recovered = session.check_with_must_use(&original, "3.11");
+        assert_eq!(recovered, initial);
         std::fs::remove_dir_all(root).unwrap();
     }
 }

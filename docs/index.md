@@ -8,10 +8,12 @@ Reports connect each finding to source locations and explain its certainty
 and the parts of the program that remain outside the supported analysis.
 
 ```{important}
-**Choose your version.** CodePact 0.3.0 is the published release. This site’s
-0.4.0 candidate documentation also describes project configuration, baselines,
-line suppressions, and must-use results available from the source checkout.
-The candidate is not published or pilot-qualified. See [release availability](availability.md).
+**Choose your scope and version.** CodePact 0.3.0 is the separately qualified
+published release. This site describes the 0.4.0 synthetic preview, including
+configuration, baselines, line suppressions and must-use results. Real-world
+usefulness is unqualified. Check [release availability](availability.md) for
+verified artifact and publication status; source-build instructions support
+candidate evaluation while publication is pending.
 ```
 
 ## Start with a working example

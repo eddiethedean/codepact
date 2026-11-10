@@ -1,7 +1,7 @@
 # Handle CodePact reports in CI
 
 The 0.3.0 release is published. The 0.4.0 project policy and expanded report
-are implemented in this checkout but have not been released or pilot-qualified.
+belong to the synthetic preview; real-world usefulness is unqualified.
 These examples keep those contracts separate; see the
 [availability guide](availability.md) before pinning a distribution.
 

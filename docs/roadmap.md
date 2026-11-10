@@ -7,7 +7,7 @@ CodePact 0.x grows from declaration inspection toward broader resource lifecycle
 | 0.1.x | Parse supported declarations and report contract facts, provenance, diagnostics, and coverage |
 | 0.2.x | Published bounded lifecycle flow checking and use-after-close analysis |
 | 0.3.x | Published: cleanup obligations and bounded async cancellation/cleanup |
-| 0.4.x | Adoption tooling and useful previews |
+| 0.4.x | Adoption tooling and synthetic preview |
 | 0.5.x | Ownership transfer, lexical borrowing and structured task lifetimes |
 | 0.6.x | Suspension-aware exclusive access, typestate, and effects |
 | 0.7.x | Typed outcomes and finite exhaustiveness |

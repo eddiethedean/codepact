@@ -77,7 +77,14 @@ the synchronous TP3001 result-use rule. These return `Inspection` so the
 existing `check` and `check_report` APIs keep their released rule set and schema
 1 meaning. A caller that needs the CLI adoption policy can wrap canonical
 results with the public `codepact::adoption` resolver and report builder. This
-candidate API has not been pilot-qualified or released.
+preview API is covered by synthetic controls; real-world usefulness is unqualified.
+
+The default adoption policy includes TP3001, so its canonical input must come
+from `check_with_must_use` using the same source files and target version.
+`build_report` and `write_baseline` reject a lifecycle-only result when must-use
+is selected, and reject cancelled or inspection-only results. A legacy lifecycle
+result remains usable when TP3001 is explicitly disabled. The report's
+`assurance` identifies the analyzed scope; it is part of snapshot identity.
 
 ## Incremental analysis session
 

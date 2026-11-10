@@ -78,7 +78,7 @@ runs the same pinned local gate on pushes and pull requests.
 ## Contribution notes
 
 - Add analyzer fixtures for supported behavior and explicit incomplete-coverage boundaries.
-- Use the [project-shaped synthetic controls](synthetic-projects.md) to check planted findings, source repairs and unknown boundaries without executing fixture code. These controls do not replace the real-project pilot.
+- Use the [project-shaped synthetic controls](synthetic-projects.md) to check planted findings, source repairs and unknown boundaries without executing fixture code. They qualify the 0.4 synthetic preview under AD01-A2; real-world usefulness remains unqualified.
 - Keep unsupported source visible; do not silently treat unknown declarations as resolved.
 - Preserve Python 3.11 compatibility for the helpers and type strictness in `python/codepact`.
 - Update documentation when changing the contract API, CLI, schema, supported Python targets, or limits.

@@ -48,11 +48,14 @@ fn assert_adoption_report_matches_check_result(
     report: &serde_json::Value,
     expected: &serde_json::Value,
 ) {
+    assert_eq!(report["assurance"], codepact::ADOPTION_ASSURANCE);
+    assert_eq!(expected["assurance"], codepact::LIFECYCLE_ASSURANCE);
+    assert_eq!(report["check_schema_version"], 2);
+    assert_eq!(expected["check_schema_version"], 1);
     for field in [
         "target_python_version",
         "model_catalog_version",
         "available_models",
-        "assurance",
         "contracts",
         "coverage",
     ] {
@@ -291,10 +294,7 @@ fn check_reports_one_use_after_close_at_the_call_site() {
         "{result:#?}"
     );
 
-    assert_eq!(
-        result["assurance"],
-        "lifecycle-checking-for-supported-exit-flow"
-    );
+    assert_eq!(result["assurance"], codepact::ADOPTION_ASSURANCE);
     let valid_source = source.strip_suffix("inspect(conn)\n").unwrap();
     let valid = codepact::check(
         &[codepact::SourceFile::new(

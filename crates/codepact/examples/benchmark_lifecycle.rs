@@ -184,6 +184,17 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
+    println!(
+        "SAMPLES {}",
+        serde_json::json!({
+            "objects":objects,
+            "cold_ms":cold_samples.iter().map(|s|milliseconds(*s)).collect::<Vec<_>>(),
+            "warm_ms":warm_samples.iter().map(|s|milliseconds(*s)).collect::<Vec<_>>(),
+            "unrelated_edit_ms":body_samples.iter().map(|s|milliseconds(*s)).collect::<Vec<_>>(),
+            "imported_effect_ms":effect_samples.iter().map(|s|milliseconds(*s)).collect::<Vec<_>>(),
+            "location_edit_ms":location_samples.iter().map(|s|milliseconds(*s)).collect::<Vec<_>>()
+        })
+    );
     println!("Objects: {objects}; repeats per incremental scenario: {REPEATS}");
     println!(
         "Source bytes: {}",

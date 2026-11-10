@@ -18,10 +18,11 @@ source without importing or executing your application.
 [Documentation](https://typepact.readthedocs.io/en/latest/) ·
 [Rule catalog](docs/rules.md) · [Roadmap](ROADMAP.md)
 
-**Release status:** 0.3.0 is published on PyPI and crates.io. This repository
-contains the **0.4.0 source candidate**, including configuration, baselines,
-suppressions, and must-use results. The candidate has not been published or
-pilot-qualified. See [availability and release evidence](docs/availability.md).
+**Release scope:** This checkout describes the **0.4.0 synthetic preview**,
+including configuration, baselines, suppressions, and must-use results.
+Real-world usefulness remains unqualified. See [availability and verified
+release evidence](docs/availability.md) for publication and artifact status.
+The separately qualified 0.3.0 release is available on PyPI and crates.io.
 APIs and report schemas remain provisional during 0.x.
 
 ## What it checks

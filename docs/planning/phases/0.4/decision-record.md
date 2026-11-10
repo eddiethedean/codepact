@@ -23,7 +23,7 @@ claim that it has passed.
 | Baselines | Use versioned semantic-anchor/evidence fingerprints with one-to-one matching. Ambiguous or stale matches remain visible; no line-number or source-order fallback. Update only through the explicit atomic `baseline update` operation. | Line-based or ordinal matching that keeps entries stable across edits. Rejected because it could hide newly inserted identical findings. | Complete V04-10–11 and V04-20–21 for insertion, collision, rename, reorder, semantic changes, stale entries, interruption and fresh/reused parity. Reconsider the fingerprint inputs or version when a reproducible false match or excessive harmless churn is found; never resolve ambiguity by hiding findings. |
 | Must-use | Provide the lightweight `@must_use`, `MustUse[T]`/`Annotated` and `discard` spellings. Enforce only resolved synchronous return contracts and immediate handling; do not track assigned values later abandoned. Unsupported async, generator and dynamic consumption remains a visible boundary. Preserve independent cleanup obligations. | Track eventual use, infer by symbol spelling or claim async/task consumption. Rejected because these would exceed the qualified identity and flow model. | Complete V04-12–16, including helper/type-checker compatibility, identities, aliases, descriptor ordering, mixed interfaces, cleanup overlap and unsupported cases. Reconsider expanded dataflow or async semantics only with a separate sound design, corpus and phase scope decision. |
 | Reporting limits | Retain inherited analyzer budgets and accept 64 KiB per config file; 16 MiB and 100,000 entries per baseline; 32 MiB per serialized checker report; 32 related sites, 2 KiB of optional source snippets and 8 KiB of explanation/repair text per finding. Hard-limit overflow returns 2; detail caps retain canonical findings, counts, coverage and exits while reporting omissions. | Unbounded input/output or silent omission. Rejected because both can cause resource exhaustion or false-clean reports. | Complete near-limit and recovery fixtures, bounded-allocation review, and ordinary-pilot measurements; record regressions against the 0.3 baseline for G4. Reconsider a numeric limit if representative data shows it is too low or unsafe; any change needs corresponding boundary tests and visible failure/omission behavior. No latency target is implied. |
-| Pilot evaluation | Use three distinct pinned real projects covering a synchronous library, service/CLI application and async application. Review at least 30 distinct definite violation findings and require at least 90% actionable under the frozen scope and protocol. Use a census when practical or a preregistered reproducible stratified sample; do not count synthetic findings. | Smaller or synthetic-only samples, selecting projects after seeing results, or counting possible/boundary findings toward the threshold. Rejected because these weaken reproducibility and invite selection bias. | Follow the accepted [pilot protocol](pilots.md): freeze projects and settings before scoring, retain labels/rationales/disagreements and per-project/rule counts, and review unknown boundaries separately. If the selected projects lack 30 eligible findings, expand the preregistered set and disclose it; do not lower the threshold or inject findings. Reconsider the protocol only before evaluation, with an explicit scope amendment. |
+| Original pilot evaluation (superseded for 0.4 by AD01-A2) | Use three distinct pinned real projects covering a synchronous library, service/CLI application and async application. Review at least 30 distinct definite violation findings and require at least 90% actionable under the frozen scope and protocol. Use a census when practical or a preregistered reproducible stratified sample; do not count synthetic findings. | Smaller or synthetic-only samples, selecting projects after seeing results, or counting possible/boundary findings toward the threshold. Rejected because these weaken reproducibility and invite selection bias. | Follow the accepted [pilot protocol](pilots.md): freeze projects and settings before scoring, retain labels/rationales/disagreements and per-project/rule counts, and review unknown boundaries separately. If the selected projects lack 30 eligible findings, expand the preregistered set and disclose it; do not lower the threshold or inject findings. Reconsider the protocol only before evaluation, with an explicit scope amendment. |
 
 ## Amendment AD01-A1 — bounded project discovery
 
@@ -52,14 +52,33 @@ appear in the capability contract and schemas, and include exact-boundary,
 overflow, recovery and operational evidence. This amendment does not itself
 pass V04-03/24 or G4.
 
+## Amendment AD01-A2 — synthetic preview release scope
+
+On 2026-11-10 the maintainer explicitly chose: “Amend 0.4 to a synthetic preview
+and explicitly leave real-world usefulness unqualified.” This supersedes the
+original field-pilot release requirement for 0.4. The original 30-finding/90%
+field criterion remains unmet and its results remain unchanged as history.
+
+The [synthetic preview protocol](synthetic-preview-protocol.md) defines final
+candidate scoring against the independent 33-case corpus, all eight repairs and
+four unsupported projects across three target versions, ordinary static-tool
+controls and exact-artifact reproduction. It is an engineered regression
+qualification, not an unseen evaluation or a field actionability estimate.
+Update A05, V04-26 and the corresponding A06/CS02 user-readiness scope accordingly.
+Other semantic, compatibility, operational and distribution gates remain required.
+G7 approval and publication authorization remain separate decisions.
+
 ## Acceptance record
+
+The additional direct maintainer decision AD01-A2 was accepted on 2026-11-10,
+with the exact scope and limits recorded above; it is not a release approval.
 
 | Maintainer | Date | Accepted decisions | Specification baseline | Basis | Release authorization |
 | --- | --- | --- | --- | --- | --- |
 | `eddiethedean` | 2026-11-09 | All eight proposed AD01 defaults, without amendment | Candidate specification at `06086544fa9075eddcafa67db1ae7412c7f9f803`; see linked specification and qualification evidence | Explicit maintainer direction; accepted alternatives, limitations and evidence requirements are recorded above | Separate decision; not granted |
 | `Codex`, under explicit maintainer delegation | 2026-11-09 | AD01-A1 bounded project-discovery limits | Current 0.4 specification and capability schema | The maintainer had authorized Codex to make the AD01 decision on their behalf | Separate decision; not granted |
 
-The original acceptance and AD01-A1 together define the accepted scope and
+The original acceptance with AD01-A1 and AD01-A2 define the accepted scope and
 support G1 for that scope. The V04 matrix, pilot protocol execution, operational
 qualification, distribution install checks and G2–G7 evidence remain separate
 requirements. Any change to an accepted default requires a recorded amendment

@@ -6002,13 +6002,17 @@ fn check_bodies_impl(
                     signature,
                     body,
                     is_async,
+                    is_generator,
                     decorators,
                     must_use_decorator,
                     range,
                     unsupported,
                     ..
                 } => {
-                    if (!decorators.is_empty() && !*must_use_decorator) || *unsupported {
+                    if (!decorators.is_empty() && !*must_use_decorator)
+                        || *unsupported
+                        || *is_generator
+                    {
                         continue;
                     }
                     let binding_key = format!("{}::{}:{}", file.module, name, range.start);
@@ -6085,7 +6089,8 @@ fn check_bodies_impl(
                             parameter_contracts: BTreeMap::new(),
                             return_access: None,
                             statements: method.body.clone(),
-                            supported_binding: !method.decorated || method.must_use_decorator,
+                            supported_binding: (!method.decorated || method.must_use_decorator)
+                                && !method.is_generator,
                             is_async: method.is_async,
                             binding_key: Some(format!(
                                 "{}::{}:{}:{}",

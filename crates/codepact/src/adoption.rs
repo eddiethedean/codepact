@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 pub const ADOPTION_SCHEMA_VERSION: u8 = 2;
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
-pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 4;
+pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 5;
 pub const RULE_SEMANTIC_VERSION: u8 = 1;
 pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"];
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
@@ -898,40 +898,35 @@ fn code_before_comment(line: &str) -> &str {
     }
     line
 }
-fn normalized_code(line: &str) -> String {
-    let source = code_before_comment(line);
-    let mut out = String::with_capacity(source.len());
-    let mut quote = None;
-    let mut escaped = false;
-    let mut pending_space = false;
-    for character in source.trim().chars() {
-        if let Some(delimiter) = quote {
-            out.push(character);
-            if escaped {
-                escaped = false;
-            } else if character == '\\' {
-                escaped = true;
-            } else if character == delimiter {
-                quote = None;
+fn normalized_code(source: &str) -> String {
+    let source = source.trim();
+    let parsed = ruff_python_parser::parse_unchecked(
+        source,
+        ParseOptions::from(Mode::Module).with_target_version(PythonVersion::PY313),
+    );
+    let tokens = parsed
+        .tokens()
+        .iter()
+        .filter_map(|token| {
+            let kind = token.kind();
+            if matches!(
+                kind,
+                TokenKind::Comment | TokenKind::NonLogicalNewline | TokenKind::EndOfFile
+            ) {
+                return None;
             }
-        } else if character == '\'' || character == '"' {
-            if pending_space && !out.is_empty() {
-                out.push(' ');
-            }
-            pending_space = false;
-            quote = Some(character);
-            out.push(character);
-        } else if character.is_whitespace() {
-            pending_space = true;
-        } else {
-            if pending_space && !out.is_empty() {
-                out.push(' ');
-            }
-            pending_space = false;
-            out.push(character);
-        }
-    }
-    out
+            let text = if matches!(
+                kind,
+                TokenKind::Indent | TokenKind::Dedent | TokenKind::Newline
+            ) {
+                ""
+            } else {
+                &source[token.start().to_usize()..token.end().to_usize()]
+            };
+            Some((format!("{kind:?}"), text))
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_string(&tokens).expect("canonical tokens serialize")
 }
 
 fn enclosing_declaration(source: &str, line: usize) -> String {
@@ -973,15 +968,41 @@ fn enclosing_declaration(source: &str, line: usize) -> String {
     }
 }
 
-fn normalized_span(source: &str, start: usize, end: usize) -> String {
-    source
-        .lines()
-        .skip(start.saturating_sub(1))
-        .take(end.saturating_sub(start.saturating_sub(1)).max(1))
-        .map(normalized_code)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+fn normalized_span(source: &str, span: &Span) -> String {
+    let offset = |line: usize, column: usize| {
+        source
+            .split_inclusive('\n')
+            .take(line.saturating_sub(1))
+            .map(str::len)
+            .sum::<usize>()
+            .saturating_add(column.saturating_sub(1))
+    };
+    let start = offset(span.line, span.column);
+    let end = offset(span.end_line, span.end_column);
+    normalized_code(source.get(start..end).unwrap_or(""))
+}
+
+type AnchorCache = BTreeMap<(String, usize, usize, usize, usize), String>;
+fn semantic_anchor(source: &str, span: &Span, cache: &mut AnchorCache) -> String {
+    cache
+        .entry((
+            span.file.clone(),
+            span.line,
+            span.column,
+            span.end_line,
+            span.end_column,
+        ))
+        .or_insert_with(|| {
+            hash(
+                serde_json::to_string(&(
+                    enclosing_declaration(source, span.line),
+                    normalized_span(source, span),
+                ))
+                .expect("semantic anchor serializes")
+                .as_bytes(),
+            )
+        })
+        .clone()
 }
 
 fn source_comments(source: &str) -> Vec<(usize, &str)> {
@@ -1011,7 +1032,11 @@ fn source_comments(source: &str) -> Vec<(usize, &str)> {
     comments
 }
 
-fn fingerprint(diagnostic: &CheckDiagnostic, contents: &BTreeMap<&str, &str>) -> String {
+fn fingerprint(
+    diagnostic: &CheckDiagnostic,
+    contents: &BTreeMap<&str, &str>,
+    cache: &mut AnchorCache,
+) -> String {
     let source = contents
         .get(diagnostic.primary.file.as_str())
         .copied()
@@ -1022,10 +1047,9 @@ fn fingerprint(diagnostic: &CheckDiagnostic, contents: &BTreeMap<&str, &str>) ->
         .map(|span| {
             let related_source = contents.get(span.file.as_str()).copied().unwrap_or("");
             format!(
-                "{}:{}:{}",
+                "{}:{}",
                 span.file,
-                enclosing_declaration(related_source, span.line),
-                normalized_span(related_source, span.line, span.end_line)
+                semantic_anchor(related_source, span, cache)
             )
         })
         .collect::<BTreeSet<_>>()
@@ -1037,8 +1061,7 @@ fn fingerprint(diagnostic: &CheckDiagnostic, contents: &BTreeMap<&str, &str>) ->
         RULE_SEMANTIC_VERSION.to_string(),
         diagnostic.code.clone(),
         diagnostic.primary.file.clone(),
-        enclosing_declaration(source, diagnostic.primary.line),
-        normalized_span(source, diagnostic.primary.line, diagnostic.primary.end_line),
+        semantic_anchor(source, &diagnostic.primary, cache),
         diagnostic.certainty.clone(),
         diagnostic.trust.clone(),
         diagnostic.completion.clone().unwrap_or_default(),
@@ -1193,6 +1216,24 @@ fn suppression_at(source: &str, target_line: usize, code: &str) -> Result<Option
     }))
 }
 
+fn validate_analysis_scope(result: &CheckResult, config: &EffectiveConfig) -> Result<(), String> {
+    if result.diagnostics.iter().any(|d| d.code == "TP9002") {
+        return Err(
+            "analysis was cancelled; no completed report or baseline can be published".into(),
+        );
+    }
+    if !matches!(
+        result.assurance.as_str(),
+        crate::ADOPTION_ASSURANCE | crate::LIFECYCLE_ASSURANCE
+    ) {
+        return Err("lifecycle analysis was not executed; declaration inspection alone cannot produce a check report".into());
+    }
+    if config.enabled_rules.contains("TP3001") && result.assurance != crate::ADOPTION_ASSURANCE {
+        return Err("must-use rules were requested but not analyzed; use check_with_must_use before building an adoption report or baseline".into());
+    }
+    Ok(())
+}
+
 pub fn build_report(
     mut result: CheckResult,
     files: &[SourceFile],
@@ -1200,6 +1241,7 @@ pub fn build_report(
     baseline_path: Option<&Path>,
     max: Option<usize>,
 ) -> Result<AdoptionReport, String> {
+    validate_analysis_scope(&result, config)?;
     let mut baseline_content_hash = String::new();
     let baseline = if let Some(path) = baseline_path {
         let (loaded, content_hash) = load_baseline_file(path, "baseline")?;
@@ -1234,6 +1276,9 @@ pub fn build_report(
         serde_json::to_vec(&(
             env!("CARGO_PKG_VERSION"),
             result.check_schema_version,
+            RULE_SEMANTIC_VERSION,
+            FINGERPRINT_ALGORITHM_VERSION,
+            &result.assurance,
             config.python_version.as_str(),
             result.model_catalog_version,
             &snapshot_manifest,
@@ -1281,10 +1326,11 @@ pub fn build_report(
         .as_bytes(),
     );
 
+    let mut anchors = AnchorCache::new();
     let mut candidates = BTreeMap::<String, usize>::new();
     for diagnostic in &result.diagnostics {
         *candidates
-            .entry(fingerprint(diagnostic, &contents))
+            .entry(fingerprint(diagnostic, &contents, &mut anchors))
             .or_default() += 1;
     }
 
@@ -1335,7 +1381,7 @@ pub fn build_report(
     let mut actionable_count = 0usize;
     let mut raw = Vec::new();
     for mut diagnostic in result.diagnostics {
-        let fp = fingerprint(&diagnostic, &contents);
+        let fp = fingerprint(&diagnostic, &contents, &mut anchors);
         let is_eligible = eligible(&diagnostic);
         let mut disposition = "active".to_string();
         let mut reason = None;
@@ -1595,6 +1641,7 @@ pub fn write_baseline(
     replace: bool,
     reason: &str,
 ) -> Result<BaselineUpdateSummary, String> {
+    validate_analysis_scope(result, config)?;
     if reason.trim().is_empty() {
         return Err("baseline update requires a nonempty reason".into());
     }
@@ -1632,13 +1679,14 @@ pub fn write_baseline(
         .iter()
         .map(|f| (f.path.as_str(), f.source.as_str()))
         .collect();
+    let mut anchors = AnchorCache::new();
     let mut candidate_counts = BTreeMap::<String, usize>::new();
     for diagnostic in &result.diagnostics {
         if !eligible(diagnostic) || !config.enabled_rules.contains(&diagnostic.code) {
             continue;
         }
         *candidate_counts
-            .entry(fingerprint(diagnostic, &content))
+            .entry(fingerprint(diagnostic, &content, &mut anchors))
             .or_default() += 1;
     }
     let mut entries = BTreeSet::new();
@@ -1654,7 +1702,7 @@ pub fn write_baseline(
         if d.semantic_identity.is_empty() {
             return Err("cannot baseline a finding without resolved contract identity; rerun analysis before updating the baseline".into());
         }
-        let finding_fingerprint = fingerprint(d, &content);
+        let finding_fingerprint = fingerprint(d, &content, &mut anchors);
         if candidate_counts.get(&finding_fingerprint) != Some(&1) {
             skipped_ambiguous += 1;
             continue;
@@ -1713,42 +1761,7 @@ pub fn write_baseline(
         entries: entries.into_iter().collect(),
     };
     let data = serialize_pretty_limited(&b, 16 * 1024 * 1024, "generated baseline")?;
-    let parent = path.parent().unwrap_or(Path::new("."));
-    fs::create_dir_all(parent).map_err(|e| format!("cannot create baseline directory: {e}"))?;
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|error| format!("cannot create baseline temporary identity: {error}"))?
-        .as_nanos();
-    let temp = parent.join(format!(
-        ".codepact-baseline-{}-{nonce}.tmp",
-        std::process::id()
-    ));
-    let write_result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp)
-            .map_err(|error| format!("cannot create temporary baseline: {error}"))?;
-        file.write_all(&data)
-            .map_err(|error| format!("cannot write temporary baseline: {error}"))?;
-        file.sync_all()
-            .map_err(|error| format!("cannot flush temporary baseline: {error}"))?;
-        if replace {
-            fs::rename(&temp, path)
-                .map_err(|error| format!("cannot atomically replace baseline: {error}"))?;
-        } else {
-            fs::hard_link(&temp, path).map_err(|error| {
-                format!("cannot install baseline without replacing an existing file: {error}")
-            })?;
-            fs::remove_file(&temp)
-                .map_err(|error| format!("cannot remove baseline temporary file: {error}"))?;
-        }
-        Ok::<(), String>(())
-    })();
-    if write_result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    write_result?;
+    install_baseline_atomically(path, &data, replace, |_| Ok(()))?;
     let unchanged = entries_intersection_count(&previous_entries, &b.entries);
     Ok(BaselineUpdateSummary {
         baseline_schema_version: BASELINE_SCHEMA_VERSION,
@@ -1768,6 +1781,51 @@ pub fn write_baseline(
         snapshot_id,
         coverage_status: result.coverage.status.clone(),
     })
+}
+
+fn install_baseline_atomically(
+    path: &Path,
+    data: &[u8],
+    replace: bool,
+    before_commit: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let parent = path.parent().unwrap_or(Path::new("."));
+    fs::create_dir_all(parent).map_err(|e| format!("cannot create baseline directory: {e}"))?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("cannot create baseline temporary identity: {error}"))?
+        .as_nanos();
+    let temp = parent.join(format!(
+        ".codepact-baseline-{}-{nonce}.tmp",
+        std::process::id()
+    ));
+    let write_result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .map_err(|error| format!("cannot create temporary baseline: {error}"))?;
+        file.write_all(data)
+            .map_err(|error| format!("cannot write temporary baseline: {error}"))?;
+        file.sync_all()
+            .map_err(|error| format!("cannot flush temporary baseline: {error}"))?;
+        before_commit(&temp)?;
+        if replace {
+            fs::rename(&temp, path)
+                .map_err(|error| format!("cannot atomically replace baseline: {error}"))?;
+        } else {
+            fs::hard_link(&temp, path).map_err(|error| {
+                format!("cannot install baseline without replacing an existing file: {error}")
+            })?;
+            fs::remove_file(&temp)
+                .map_err(|error| format!("cannot remove baseline temporary file: {error}"))?;
+        }
+        Ok::<(), String>(())
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    write_result
 }
 
 fn entries_intersection_count(old: &BTreeSet<BaselineEntry>, new: &[BaselineEntry]) -> usize {
@@ -1872,5 +1930,45 @@ mod tests {
         assert!(!glob_match(&pattern, &path));
         assert!(glob_match("**/*.py", "src/main.py"));
         assert!(glob_match("**/*.py", "main.py"));
+    }
+    #[test]
+    fn interrupted_baseline_commit_preserves_existing_bytes_and_cleans_temporary() {
+        let root = std::env::temp_dir().join(format!(
+            "codepact-atomic-interruption-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let destination = root.join("baseline.json");
+        std::fs::write(&destination, b"previous complete baseline").unwrap();
+        let error = super::install_baseline_atomically(
+            &destination,
+            b"next complete baseline",
+            true,
+            |temporary| {
+                assert_eq!(std::fs::read(temporary).unwrap(), b"next complete baseline");
+                assert_eq!(
+                    std::fs::read(&destination).unwrap(),
+                    b"previous complete baseline"
+                );
+                Err("injected interruption before commit".into())
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("interruption"));
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            b"previous complete baseline"
+        );
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        super::install_baseline_atomically(&destination, b"next complete baseline", true, |_| {
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            b"next complete baseline"
+        );
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

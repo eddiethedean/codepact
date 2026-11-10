@@ -16,16 +16,18 @@ project slug has not been renamed.
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
-| CodePact 0.4.0 | Source implementation candidate; not published or pilot-qualified | `codepact`, `codepact-cli`, Rust crate `codepact` | Adoption configuration/policy, JSON report schema 2, baselines, suppressions, and synchronous must-use preview; see the 0.4 phase plan |
+| CodePact 0.4.0 | Synthetic preview; qualification and publication status in the release record | `codepact`, `codepact-cli`, Rust crate `codepact` | Adoption configuration/policy, JSON report schema 2, baselines, suppressions, and synchronous must-use preview; see the 0.4 phase plan |
 | CodePact 0.3.0 | Published | `codepact`, `codepact-cli`, Rust crate `codepact` | Declaration inspection, lifecycle checking, cleanup obligations, and bounded intratask cancellation/cleanup; see the specification |
 | TypePact 0.2.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Declaration inspection and bounded synchronous lifecycle checking |
 | TypePact 0.1.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Contract declaration inspection |
 
-The latest published packages and crate are 0.3.0. To reproduce that release,
-check out tag `v0.3.0` and record the full Git commit with results. The current
-repository metadata describes the unreleased 0.4.0 candidate; those packages
-are available only by building this checkout and are not a distribution or
-platform-support claim.
+The [0.4.0 release record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md)
+is the source of verified qualification, artifact and publication status. The
+0.4.0 synthetic preview does not qualify real-world usefulness. Publication is
+complete only when its G8 record verifies registry downloads and clean installs.
+To reproduce the separately qualified 0.3 release, check out `v0.3.0` and record
+the full Git commit. Source-build instructions below also support evaluating
+an exact 0.4 revision while publication is pending.
 
 ## Install CodePact 0.3.0
 

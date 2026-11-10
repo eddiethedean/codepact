@@ -221,6 +221,7 @@ pub(crate) struct MethodBody {
     pub range: SourceRange,
     pub body: Vec<FlowStatement>,
     pub is_async: bool,
+    pub is_generator: bool,
     pub decorated: bool,
 }
 
@@ -253,6 +254,7 @@ pub(crate) enum Declaration {
         decorators: Vec<AstExpr>,
         must_use_decorator: bool,
         is_async: bool,
+        is_generator: bool,
         unsupported: bool,
         body: Vec<FlowStatement>,
         range: SourceRange,
@@ -1403,6 +1405,7 @@ pub(crate) fn parse_frontend(
                             range: source_range(method),
                             body: flow_statements(&method.body, &mut expression_budget),
                             is_async: method.is_async,
+                            is_generator: contains_yield(&method.body),
                             decorated: !method.decorator_list.is_empty(),
                         })
                     })
@@ -1452,6 +1455,7 @@ pub(crate) fn parse_frontend(
                         &must_use_names,
                     ),
                     is_async: function.is_async,
+                    is_generator: contains_yield(&function.body),
                     unsupported: function
                         .type_params
                         .as_ref()
@@ -2028,6 +2032,32 @@ fn assignment_roots(target: &Expr, names: &mut std::collections::BTreeSet<String
             _ => {}
         }
     }
+}
+
+fn contains_yield(statements: &[Stmt]) -> bool {
+    #[derive(Default)]
+    struct YieldVisitor {
+        found: bool,
+    }
+    impl<'a> Visitor<'a> for YieldVisitor {
+        fn visit_stmt(&mut self, statement: &'a Stmt) {
+            if !matches!(statement, Stmt::FunctionDef(_) | Stmt::ClassDef(_)) {
+                walk_stmt(self, statement);
+            }
+        }
+        fn visit_expr(&mut self, expression: &'a Expr) {
+            match expression {
+                Expr::Yield(_) | Expr::YieldFrom(_) => self.found = true,
+                Expr::Lambda(_) => {}
+                _ => walk_expr(self, expression),
+            }
+        }
+    }
+    let mut visitor = YieldVisitor::default();
+    for statement in statements {
+        visitor.visit_stmt(statement);
+    }
+    visitor.found
 }
 
 fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {

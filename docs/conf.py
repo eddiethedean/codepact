@@ -39,7 +39,7 @@ nitpick_ignore = [
 ]
 
 html_theme = "sphinx_rtd_theme"
-html_title = "CodePact documentation — 0.4.0 candidate"
+html_title = "CodePact documentation — 0.4.0 synthetic preview"
 html_baseurl = os.environ.get("READTHEDOCS_CANONICAL_URL", "")
 html_context = {
     "display_github": True,

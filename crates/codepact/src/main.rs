@@ -125,8 +125,20 @@ fn discover_python_files_inner(
     Ok(())
 }
 
+macro_rules! stderr_line {
+    ($($arguments:tt)*) => {{
+        let _ = write_stderr(&format!("{}\n", format_args!($($arguments)*)));
+    }};
+}
+fn write_stderr(value: &str) -> Result<(), String> {
+    std::io::stderr()
+        .lock()
+        .write_all(value.as_bytes())
+        .map_err(|error| format!("cannot write stderr: {error}"))
+}
+
 fn usage() {
-    eprintln!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--config PYPROJECT|--no-config] [--python-version VERSION] [--mode advisory|strict] [--fail-on error|warning] [--rules CODE[,CODE...]] [--severity CODE=LEVEL] [--json|--output-format text|json|concise] [--baseline FILE] [--max-diagnostics N] [FILE...]\n       codepact baseline update --output FILE --reason TEXT [--replace] [--json] [check options]\n       codepact capabilities --json\n       codepact explain RULE --json\n       codepact --version");
+    stderr_line!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--config PYPROJECT|--no-config] [--python-version VERSION] [--mode advisory|strict] [--fail-on error|warning] [--rules CODE[,CODE...]] [--severity CODE=LEVEL] [--json|--output-format text|json|concise] [--baseline FILE] [--max-diagnostics N] [FILE...]\n       codepact baseline update --output FILE --reason TEXT [--replace] [--json] [check options]\n       codepact capabilities --json\n       codepact explain RULE --json\n       codepact --version");
 }
 
 fn module_from_relative_path(path: &Path, python_version: &str) -> Result<String, String> {
@@ -178,10 +190,10 @@ fn emit_failure(format: &str, message: String) -> ExitCode {
                 )
             });
         if let Err(error) = write_stdout(&value) {
-            eprintln!("codepact: {error}");
+            stderr_line!("codepact: {error}");
         }
     } else {
-        eprintln!("codepact: {message}");
+        stderr_line!("codepact: {message}");
     }
     ExitCode::from(2)
 }
@@ -190,6 +202,72 @@ fn resolve_project_root(root: &Path) -> Result<PathBuf, String> {
     codepact::adoption::reject_symlink_components(root, "project root")?;
     fs::canonicalize(root)
         .map_err(|error| format!("cannot resolve project root {}: {error}", root.display()))
+}
+
+const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
+struct BoundedText {
+    value: String,
+    maximum: usize,
+    overflow: bool,
+}
+impl BoundedText {
+    fn new(maximum: usize) -> Self {
+        Self {
+            value: String::new(),
+            maximum,
+            overflow: false,
+        }
+    }
+    fn push_str(&mut self, text: &str) {
+        if self.overflow || text.len() > self.maximum.saturating_sub(self.value.len()) {
+            self.overflow = true;
+        } else {
+            self.value.push_str(text);
+        }
+    }
+    fn push(&mut self, character: char) {
+        let mut bytes = [0; 4];
+        self.push_str(character.encode_utf8(&mut bytes));
+    }
+}
+impl std::ops::Deref for BoundedText {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.value
+    }
+}
+impl std::fmt::Display for BoundedText {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.value, formatter)
+    }
+}
+impl std::fmt::Write for BoundedText {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.push_str(text);
+        if self.overflow {
+            Err(std::fmt::Error)
+        } else {
+            Ok(())
+        }
+    }
+}
+fn concise_record(
+    span: &codepact::Span,
+    severity: &str,
+    code: &str,
+    role: &str,
+    message: &str,
+) -> String {
+    format!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+        serde_json::to_string(&span.file).unwrap(),
+        span.line,
+        span.column,
+        severity,
+        code,
+        role,
+        serde_json::to_string(message).unwrap()
+    )
 }
 
 fn write_stdout(value: &str) -> Result<(), String> {
@@ -207,6 +285,12 @@ fn write_stdout(value: &str) -> Result<(), String> {
             }
         })
         .map_err(|error| format!("cannot write output: {error}"))
+}
+
+fn framed_stdout_bytes(value: &str) -> usize {
+    value
+        .len()
+        .saturating_add(usize::from(!value.is_empty() && !value.ends_with('\n')))
 }
 
 fn main() -> ExitCode {
@@ -266,7 +350,7 @@ fn main() -> ExitCode {
             "services": {"pagination": false,"mcp": false,"language_server": false,"persistent_cache": false}
         })).unwrap();
         if let Err(error) = write_stdout(&output) {
-            eprintln!("codepact: {error}");
+            stderr_line!("codepact: {error}");
             return ExitCode::from(2);
         }
         return ExitCode::SUCCESS;
@@ -300,7 +384,7 @@ fn main() -> ExitCode {
             "automatic_fix":false
         })).unwrap();
         if let Err(error) = write_stdout(&output) {
-            eprintln!("codepact: {error}");
+            stderr_line!("codepact: {error}");
             return ExitCode::from(2);
         }
         return ExitCode::SUCCESS;
@@ -559,7 +643,7 @@ fn main() -> ExitCode {
         }))
         .unwrap();
         if let Err(error) = write_stdout(&output) {
-            eprintln!("codepact: {error}");
+            stderr_line!("codepact: {error}");
             return ExitCode::from(2);
         }
         return ExitCode::SUCCESS;
@@ -683,12 +767,6 @@ fn main() -> ExitCode {
         paths.extend(discovered);
         paths.sort();
         paths.dedup();
-        if paths.len() > codepact::DEFAULT_MAX_INPUT_FILES {
-            return emit_failure(
-                &output_format,
-                "project input exceeds the 10,000 file limit".into(),
-            );
-        }
     }
 
     let mut files = Vec::new();
@@ -716,9 +794,16 @@ fn main() -> ExitCode {
                 )
             }
         };
-        if !physical_files.insert(canonical_path.clone()) {
+        if physical_files.contains(&canonical_path) {
             continue;
         }
+        if physical_files.len() >= codepact::DEFAULT_MAX_INPUT_FILES {
+            return emit_failure(
+                &output_format,
+                "project input exceeds the 10,000 file limit".into(),
+            );
+        }
+        physical_files.insert(canonical_path.clone());
         let logical_path = match &root {
             Some(root) => match canonical_path.strip_prefix(root) {
                 Ok(r) => r.to_path_buf(),
@@ -866,7 +951,7 @@ fn main() -> ExitCode {
         match value {
             Ok(v) => {
                 if let Err(error) = write_stdout(&v) {
-                    eprintln!("codepact: {error}");
+                    stderr_line!("codepact: {error}");
                     return ExitCode::from(2);
                 }
             }
@@ -900,7 +985,7 @@ fn main() -> ExitCode {
         if output_format == "json" {
             let output = serde_json::to_string_pretty(&summary).unwrap();
             if let Err(error) = write_stdout(&output) {
-                eprintln!("codepact: {error}");
+                stderr_line!("codepact: {error}");
                 return ExitCode::from(2);
             }
         } else {
@@ -914,14 +999,17 @@ fn main() -> ExitCode {
                 summary.snapshot_id,
             );
             if let Err(error) = write_stdout(&output) {
-                eprintln!("codepact: {error}");
+                stderr_line!("codepact: {error}");
                 return ExitCode::from(2);
             }
-            if summary.coverage_status != "complete-for-supported-subset" {
-                eprintln!(
-                    "baseline records incomplete coverage: {}",
+            if summary.coverage_status != "complete-for-supported-subset"
+                && write_stderr(&format!(
+                    "baseline records incomplete coverage: {}\n",
                     summary.coverage_status
-                );
+                ))
+                .is_err()
+            {
+                return ExitCode::from(2);
             }
         }
         return ExitCode::SUCCESS;
@@ -931,11 +1019,12 @@ fn main() -> ExitCode {
         Ok(r) => r,
         Err(e) => return emit_failure(&output_format, e),
     };
-    let mut stdout_text = String::new();
-    let mut stderr_text = String::new();
+    let mut stdout_text = BoundedText::new(MAX_REPORT_BYTES);
+    let mut stderr_text = BoundedText::new(MAX_REPORT_BYTES);
     match output_format.as_str() {
         "json" => {
-            stdout_text = match adoption::serialize_report(&report) {
+            // The JSON serializer enforces the same byte cap before this move.
+            stdout_text.value = match adoption::serialize_report(&report) {
                 Ok(value) => value,
                 Err(error) => {
                     return emit_failure("json", format!("serialization failure: {error}"))
@@ -948,35 +1037,28 @@ fn main() -> ExitCode {
                 .iter()
                 .filter(|diagnostic| diagnostic.actionable)
             {
-                let path = serde_json::to_string(&diagnostic.diagnostic.primary.file).unwrap();
-                let message = serde_json::to_string(&diagnostic.diagnostic.message).unwrap();
-                use std::fmt::Write as FmtWrite;
-                let _ = writeln!(
-                    &mut stdout_text,
-                    "{path}\t{}\t{}\t{}\t{}\tprimary\t{message}",
-                    diagnostic.diagnostic.primary.line,
-                    diagnostic.diagnostic.primary.column,
-                    diagnostic.effective_severity,
-                    diagnostic.diagnostic.code
-                );
+                stdout_text.push_str(&concise_record(
+                    &diagnostic.diagnostic.primary,
+                    &diagnostic.effective_severity,
+                    &diagnostic.diagnostic.code,
+                    "primary",
+                    &diagnostic.diagnostic.message,
+                ));
                 for related in &diagnostic.diagnostic.related {
-                    let path = serde_json::to_string(&related.file).unwrap();
-                    let related_message = serde_json::to_string(&format!(
+                    let message = format!(
                         "related evidence for {} at {}:{}:{}",
                         diagnostic.diagnostic.code,
                         diagnostic.diagnostic.primary.file,
                         diagnostic.diagnostic.primary.line,
                         diagnostic.diagnostic.primary.column
-                    ))
-                    .unwrap();
-                    let _ = writeln!(
-                        &mut stdout_text,
-                        "{path}\t{}\t{}\t{}\t{}\trelated\t{related_message}",
-                        related.line,
-                        related.column,
-                        diagnostic.effective_severity,
-                        diagnostic.diagnostic.code
                     );
+                    stdout_text.push_str(&concise_record(
+                        related,
+                        &diagnostic.effective_severity,
+                        &diagnostic.diagnostic.code,
+                        "related",
+                        &message,
+                    ));
                 }
             }
             stderr_text.push_str(&format!(
@@ -1095,12 +1177,21 @@ fn main() -> ExitCode {
             }
         }
     }
+    if stdout_text.overflow
+        || stderr_text.overflow
+        || framed_stdout_bytes(&stdout_text).saturating_add(stderr_text.len()) > MAX_REPORT_BYTES
+    {
+        return emit_failure(
+            &output_format,
+            "rendered report exceeds the 32 MiB byte limit".into(),
+        );
+    }
     if let Err(error) = write_stdout(&stdout_text) {
-        eprintln!("codepact: {error}");
+        stderr_line!("codepact: {error}");
         return ExitCode::from(2);
     }
-    if !stderr_text.is_empty() {
-        eprint!("{stderr_text}");
+    if !stderr_text.is_empty() && write_stderr(&stderr_text).is_err() {
+        return ExitCode::from(2);
     }
     ExitCode::from(report.exit_code)
 }
@@ -1235,5 +1326,51 @@ mod tests {
         assert!(error.contains("2 directory-depth limit"));
         assert!(files.is_empty());
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn bounded_human_reports_accept_exact_bytes_and_reject_overflow_before_allocation() {
+        use std::fmt::Write;
+        let mut text = super::BoundedText::new(3);
+        text.push_str("é");
+        text.push('x');
+        assert_eq!(&*text, "éx");
+        assert!(!text.overflow);
+        assert!(write!(&mut text, "y").is_err());
+        assert!(text.overflow);
+        assert_eq!(&*text, "éx");
+        text.push_str("further output must not be allocated");
+        assert_eq!(text.len(), 3);
+    }
+
+    #[test]
+    fn concise_records_round_trip_adversarial_path_message_and_both_roles() {
+        let path = "space colon: tab\t newline\nemoji🙂";
+        let message = "message: \"quoted\"\tline\ncombining e\u{301}";
+        let span = codepact::Span {
+            file: path.into(),
+            line: 3,
+            column: 5,
+            end_line: 3,
+            end_column: 6,
+        };
+        for role in ["primary", "related"] {
+            let record = super::concise_record(&span, "error", "TP1001", role, message);
+            let fields = record
+                .trim_end_matches('\n')
+                .split('\t')
+                .collect::<Vec<_>>();
+            assert_eq!(fields.len(), 7);
+            assert_eq!(serde_json::from_str::<String>(fields[0]).unwrap(), path);
+            assert_eq!(fields[1..6], ["3", "5", "error", "TP1001", role]);
+            assert_eq!(serde_json::from_str::<String>(fields[6]).unwrap(), message);
+            assert_eq!(record.lines().count(), 1);
+        }
+    }
+    #[test]
+    fn rendered_report_accounting_includes_exactly_one_transport_newline() {
+        assert_eq!(super::framed_stdout_bytes(""), 0);
+        assert_eq!(super::framed_stdout_bytes("é"), 3);
+        assert_eq!(super::framed_stdout_bytes("é\n"), 3);
+        assert_eq!(super::framed_stdout_bytes("a").saturating_add("b".len()), 3);
     }
 }

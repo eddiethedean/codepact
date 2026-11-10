@@ -19,6 +19,8 @@ pub use model::{
 };
 pub(crate) use source::span as source_span;
 pub const SCHEMA_VERSION: u8 = 0;
+pub const LIFECYCLE_ASSURANCE: &str = "lifecycle-checking-for-supported-exit-flow";
+pub const ADOPTION_ASSURANCE: &str = "lifecycle-and-must-use-checking-for-supported-exit-flow";
 pub const DEFAULT_MAX_SOURCE_BYTES: usize = 1_000_000;
 pub const DEFAULT_MAX_DECLARATIONS: usize = 10_000;
 pub const DEFAULT_MAX_INPUT_FILES: usize = 10_000;

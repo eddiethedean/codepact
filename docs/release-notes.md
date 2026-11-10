@@ -1,9 +1,11 @@
 # Release notes
 
-## 0.4.0 — source candidate, unpublished
+## 0.4.0 — synthetic preview
 
-This checkout implements adoption tooling on top of the released lifecycle
-checker. It has not been pilot-qualified or published. The
+This release adds adoption tooling on top of the released lifecycle checker.
+Its scope is a synthetic preview; real-world usefulness is unqualified.
+Qualification and verified publication status are recorded in the
+[release ledger](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md). Baseline fingerprint algorithm 5 adds canonical Python-token matching, including equivalent whitespace and multiline calls; earlier candidate baselines require explicit regeneration. The
 [phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4-adoption.md)
 records the remaining qualification gates.
 
@@ -11,9 +13,9 @@ records the remaining qualification gates.
   setting origins, and advisory/strict check policy.
 - Explicit baseline creation and replacement with stable finding matching,
   plus line suppressions that require exact eligible codes and a reason.
-- Baseline fingerprint algorithm 4 includes resolved resource/callable identity.
+- Baseline fingerprint algorithm 5 includes resolved resource/callable identity.
   Changed cleanup declarations and imported resource identities reopen findings;
-  algorithm 3 baselines require explicit regeneration.
+  algorithm 3/4 baselines require explicit regeneration.
 - Synchronous must-use contracts through `@must_use`, `MustUse[T]`, and
   `MustUseResult`, with TP3001 for supported bare discarded calls.
 - CLI check schema 2, text/JSON/concise output, bounded detail reporting,

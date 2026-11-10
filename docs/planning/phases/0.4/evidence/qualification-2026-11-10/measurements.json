@@ -1,0 +1,1286 @@
+[
+  {
+    "revision": "candidate",
+    "kind": "lifecycle",
+    "objects": 1,
+    "samples": {
+      "cold_ms": [
+        2.275375,
+        0.447334,
+        0.358792,
+        0.339834,
+        0.314833,
+        0.317792,
+        0.25791600000000003
+      ],
+      "imported_effect_ms": [
+        0.142416,
+        0.129333,
+        0.126709,
+        0.126041,
+        0.126625,
+        0.125917,
+        0.125541
+      ],
+      "location_edit_ms": [
+        0.114083,
+        0.113584,
+        0.112792,
+        0.112792,
+        0.113792,
+        0.112125,
+        0.11175
+      ],
+      "objects": 1,
+      "unrelated_edit_ms": [
+        0.15687500000000001,
+        0.141375,
+        0.129875,
+        0.127292,
+        0.125833,
+        0.12695800000000002,
+        0.124375
+      ],
+      "warm_ms": [
+        0.007625,
+        0.005834000000000001,
+        0.005417,
+        0.005332999999999999,
+        0.005208999999999999,
+        0.0052499999999999995,
+        0.005332999999999999
+      ]
+    },
+    "peak_rss_bytes": 5734400
+  },
+  {
+    "revision": "candidate",
+    "kind": "lifecycle",
+    "objects": 250,
+    "samples": {
+      "cold_ms": [
+        7.412667000000001,
+        6.873959,
+        6.988833,
+        6.986667000000001,
+        6.936,
+        6.974167,
+        6.972792
+      ],
+      "imported_effect_ms": [
+        8.139292,
+        8.06075,
+        8.026125,
+        8.036042,
+        8.006459000000001,
+        8.013,
+        7.999709000000001
+      ],
+      "location_edit_ms": [
+        5.667333,
+        5.670125,
+        5.514,
+        5.5045839999999995,
+        5.532,
+        5.497417,
+        5.514667
+      ],
+      "objects": 250,
+      "unrelated_edit_ms": [
+        5.978625,
+        5.773833,
+        5.726,
+        5.874875,
+        5.881125,
+        5.839708,
+        5.859458
+      ],
+      "warm_ms": [
+        0.471916,
+        0.464042,
+        0.463917,
+        0.465541,
+        0.462209,
+        0.466166,
+        0.463458
+      ]
+    },
+    "peak_rss_bytes": 15384576
+  },
+  {
+    "revision": "candidate",
+    "kind": "lifecycle",
+    "objects": 1000,
+    "samples": {
+      "cold_ms": [
+        29.237709000000002,
+        28.184625,
+        28.114459,
+        28.111542,
+        28.131,
+        28.731165999999998,
+        28.344583
+      ],
+      "imported_effect_ms": [
+        34.556833000000005,
+        34.361416999999996,
+        33.67975,
+        33.490208,
+        32.996708,
+        33.187542,
+        33.115417
+      ],
+      "location_edit_ms": [
+        24.092291,
+        24.1695,
+        24.203792,
+        24.307458,
+        24.164375,
+        23.919209,
+        23.659209
+      ],
+      "objects": 1000,
+      "unrelated_edit_ms": [
+        24.4965,
+        24.235459000000002,
+        24.798834,
+        24.280083,
+        24.021,
+        24.090209,
+        24.513333000000003
+      ],
+      "warm_ms": [
+        1.8465,
+        1.787125,
+        1.789791,
+        1.7916670000000001,
+        1.795333,
+        1.790792,
+        1.815
+      ]
+    },
+    "peak_rss_bytes": 44695552
+  },
+  {
+    "revision": "candidate",
+    "kind": "cleanup-async",
+    "objects": 16,
+    "samples": [
+      {
+        "cold_ms": [
+          5.1449169999999995,
+          1.748375,
+          1.615458,
+          1.577041,
+          1.6076249999999999,
+          1.572,
+          1.5658340000000002
+        ],
+        "name": "try/except/else/finally + while + multiple closing managers",
+        "source_bytes": 4716,
+        "warm_ms": [
+          0.005958000000000001,
+          0.005875,
+          0.004208,
+          0.004041,
+          0.004041,
+          0.004,
+          0.003958
+        ]
+      },
+      {
+        "cold_ms": [
+          0.789166,
+          0.715125,
+          0.7072499999999999,
+          0.700208,
+          0.6992079999999999,
+          0.693875,
+          0.7042080000000001
+        ],
+        "name": "direct awaited async close + cancellation",
+        "source_bytes": 1576,
+        "warm_ms": [
+          0.022167,
+          0.020834000000000002,
+          0.020375,
+          0.02025,
+          0.023917,
+          0.02025,
+          0.020208
+        ]
+      }
+    ],
+    "peak_rss_bytes": 7307264
+  },
+  {
+    "revision": "candidate",
+    "kind": "cleanup-async",
+    "objects": 128,
+    "samples": [
+      {
+        "cold_ms": [
+          45.348958,
+          43.985875,
+          43.662708,
+          44.111875000000005,
+          44.213834,
+          43.9735,
+          43.481333
+        ],
+        "name": "try/except/else/finally + while + multiple closing managers",
+        "source_bytes": 36104,
+        "warm_ms": [
+          0.00925,
+          0.006,
+          0.005541,
+          0.005332999999999999,
+          0.005292000000000001,
+          0.005291,
+          0.0052499999999999995
+        ]
+      },
+      {
+        "cold_ms": [
+          16.493167,
+          15.960958000000002,
+          16.502333,
+          16.9665,
+          16.837541,
+          16.940792,
+          16.405458000000003
+        ],
+        "name": "direct awaited async close + cancellation",
+        "source_bytes": 11124,
+        "warm_ms": [
+          0.157,
+          0.138375,
+          0.136625,
+          0.136166,
+          0.136042,
+          0.136166,
+          0.135875
+        ]
+      }
+    ],
+    "peak_rss_bytes": 54902784
+  },
+  {
+    "revision": "published-0.3",
+    "kind": "lifecycle",
+    "objects": 1,
+    "samples": {
+      "cold_ms": [
+        1.161334,
+        0.187417,
+        0.16145800000000002,
+        0.135167,
+        0.13033399999999998,
+        0.12466699999999999,
+        0.121333
+      ],
+      "imported_effect_ms": [
+        0.12999999999999998,
+        0.119375,
+        0.1175,
+        0.115833,
+        0.117375,
+        0.11604099999999999,
+        0.116083
+      ],
+      "location_edit_ms": [
+        0.104125,
+        0.10341700000000001,
+        0.10291700000000001,
+        0.102833,
+        0.10425,
+        0.102167,
+        0.10225000000000001
+      ],
+      "objects": 1,
+      "unrelated_edit_ms": [
+        0.129541,
+        0.13674999999999998,
+        0.13037500000000002,
+        0.11570799999999999,
+        0.11462499999999999,
+        0.11412499999999999,
+        0.113875
+      ],
+      "warm_ms": [
+        0.006125,
+        0.005084,
+        0.0047079999999999995,
+        0.0045000000000000005,
+        0.004417,
+        0.0043749999999999995,
+        0.0045000000000000005
+      ]
+    },
+    "peak_rss_bytes": 5488640
+  },
+  {
+    "revision": "published-0.3",
+    "kind": "lifecycle",
+    "objects": 250,
+    "samples": {
+      "cold_ms": [
+        6.960959,
+        6.412375,
+        6.392167,
+        6.343083999999999,
+        6.3400419999999995,
+        6.3241249999999996,
+        6.318042
+      ],
+      "imported_effect_ms": [
+        7.696708,
+        7.688375,
+        7.6504579999999995,
+        7.676125,
+        7.706791,
+        7.693916000000001,
+        7.6832080000000005
+      ],
+      "location_edit_ms": [
+        5.357791,
+        5.352666,
+        5.3715,
+        5.349208,
+        5.357708,
+        5.35075,
+        5.370958
+      ],
+      "objects": 250,
+      "unrelated_edit_ms": [
+        5.605875,
+        5.538875,
+        5.495458,
+        5.560833000000001,
+        5.584083,
+        5.532667,
+        5.4867919999999994
+      ],
+      "warm_ms": [
+        0.39149999999999996,
+        0.37429199999999996,
+        0.371792,
+        0.37175,
+        0.3715,
+        0.37254200000000004,
+        0.371875
+      ]
+    },
+    "peak_rss_bytes": 14548992
+  },
+  {
+    "revision": "published-0.3",
+    "kind": "lifecycle",
+    "objects": 1000,
+    "samples": {
+      "cold_ms": [
+        32.227125,
+        31.307707999999998,
+        30.929792000000003,
+        30.967167,
+        30.936124999999997,
+        30.503958,
+        30.276500000000002
+      ],
+      "imported_effect_ms": [
+        36.715583,
+        36.636833,
+        36.96025,
+        36.861292,
+        37.681833,
+        37.266875,
+        36.43625
+      ],
+      "location_edit_ms": [
+        26.253999999999998,
+        26.09675,
+        26.021375,
+        26.232958,
+        26.256625,
+        26.107499999999998,
+        26.026291999999998
+      ],
+      "objects": 1000,
+      "unrelated_edit_ms": [
+        27.256290999999997,
+        27.186208,
+        27.052542,
+        27.050458,
+        27.107042,
+        27.048458,
+        26.984333
+      ],
+      "warm_ms": [
+        1.5099580000000001,
+        1.479,
+        1.464042,
+        1.466917,
+        1.4701250000000001,
+        1.467584,
+        1.479667
+      ]
+    },
+    "peak_rss_bytes": 53985280
+  },
+  {
+    "revision": "published-0.3",
+    "kind": "cleanup-async",
+    "objects": 16,
+    "samples": [
+      {
+        "cold_ms": [
+          2.511542,
+          1.540959,
+          1.491292,
+          1.505958,
+          1.469333,
+          1.47425,
+          1.457042
+        ],
+        "name": "try/except/else/finally + while + multiple closing managers",
+        "source_bytes": 4716,
+        "warm_ms": [
+          0.0055,
+          0.004125,
+          0.003792,
+          0.0038330000000000005,
+          0.0037500000000000003,
+          0.003666,
+          0.003708
+        ]
+      },
+      {
+        "cold_ms": [
+          0.714917,
+          0.656334,
+          0.642833,
+          0.6355,
+          0.632709,
+          0.6290830000000001,
+          0.628166
+        ],
+        "name": "direct awaited async close + cancellation",
+        "source_bytes": 1576,
+        "warm_ms": [
+          0.017625000000000002,
+          0.016625,
+          0.015958,
+          0.015792,
+          0.015708,
+          0.015666,
+          0.01575
+        ]
+      }
+    ],
+    "peak_rss_bytes": 7258112
+  },
+  {
+    "revision": "published-0.3",
+    "kind": "cleanup-async",
+    "objects": 128,
+    "samples": [
+      {
+        "cold_ms": [
+          44.483208000000005,
+          42.242834,
+          41.716,
+          43.608291,
+          43.658457999999996,
+          43.61525,
+          43.087917000000004
+        ],
+        "name": "try/except/else/finally + while + multiple closing managers",
+        "source_bytes": 36104,
+        "warm_ms": [
+          0.009375,
+          0.005915999999999999,
+          0.005291,
+          0.005208,
+          0.005167,
+          0.005083000000000001,
+          0.0050420000000000005
+        ]
+      },
+      {
+        "cold_ms": [
+          16.489375,
+          15.722,
+          15.795041999999999,
+          15.853124999999999,
+          15.854582999999998,
+          15.75625,
+          15.728458
+        ],
+        "name": "direct awaited async close + cancellation",
+        "source_bytes": 11124,
+        "warm_ms": [
+          0.114375,
+          0.11141699999999999,
+          0.107125,
+          0.1065,
+          0.106833,
+          0.10675000000000001,
+          0.107125
+        ]
+      }
+    ],
+    "peak_rss_bytes": 54591488
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "csv_importer",
+    "variant": "buggy",
+    "samples_ms": [
+      4.932708,
+      3.408209,
+      3.286333,
+      3.47375,
+      3.579083,
+      3.539334,
+      3.492542
+    ],
+    "median_ms": 3.492542,
+    "min_ms": 3.286333,
+    "max_ms": 4.932708,
+    "output_sha256": "4ce2b5661b92e6ff4d7923fc4cbe208490767ec3065f10edf902ce90dc558d85",
+    "output_bytes": 10465,
+    "peak_rss_bytes": 5619712,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 786,
+      "declarations": 2
+    },
+    "counts": {
+      "TP1001": 1,
+      "TP1002": 1,
+      "TP1003": 1,
+      "TP3001": 1
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/handles.py": "9eeb9dcd7269e3dac0ebc64d631a316a464682b7c016ee6bb4235e62ddbaee8a",
+      "src/main.py": "9f58b2d8a40264807bc8e977941b5870b8be0e1f2ff5636be48fda45172bfce8"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "csv_importer",
+    "variant": "fixed",
+    "samples_ms": [
+      3.474125,
+      3.487375,
+      3.396042,
+      3.327375,
+      3.483667,
+      3.395584,
+      3.391208
+    ],
+    "median_ms": 3.396042,
+    "min_ms": 3.327375,
+    "max_ms": 3.487375,
+    "output_sha256": "fd87e52f018542b8b34146ee80eb006c98876b8e1f5c152b0b9f2ba6ae240bf5",
+    "output_bytes": 5795,
+    "peak_rss_bytes": 5472256,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 851,
+      "declarations": 2
+    },
+    "counts": {},
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/handles.py": "9eeb9dcd7269e3dac0ebc64d631a316a464682b7c016ee6bb4235e62ddbaee8a",
+      "src/main.py": "c22dcfe2cc9bdee1903940e7ba2d1571dc5cc51778f67e575d68701b227235c5"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "warehouse_loader",
+    "variant": "buggy",
+    "samples_ms": [
+      3.365709,
+      3.4865,
+      3.441,
+      3.514541,
+      3.517958,
+      3.597041,
+      3.337333
+    ],
+    "median_ms": 3.4865,
+    "min_ms": 3.337333,
+    "max_ms": 3.597041,
+    "output_sha256": "56edc8a9943f83fc938260590852efd20daf1d82db743abb665f7f0e7dedea2b",
+    "output_bytes": 10481,
+    "peak_rss_bytes": 5767168,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 860,
+      "declarations": 2
+    },
+    "counts": {
+      "TP1001": 1,
+      "TP1002": 1,
+      "TP1003": 1,
+      "TP3001": 1
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/warehouse.py": "35d8758a797c051f6733acf5a906ff6b91c4765f137d99ea40a5ca081d60dece",
+      "src/main.py": "1baf73849583d7fbba631eac5632832e5249d4c923bd68dd865dd653000d1e0d"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "warehouse_loader",
+    "variant": "fixed",
+    "samples_ms": [
+      3.42675,
+      3.339292,
+      3.475292,
+      3.519084,
+      3.406625,
+      3.412417,
+      3.448417
+    ],
+    "median_ms": 3.42675,
+    "min_ms": 3.339292,
+    "max_ms": 3.519084,
+    "output_sha256": "d606a48fc4f8c67f50948c45f28a9da5af3a68f2b87aa0d986e5754df2ef60be",
+    "output_bytes": 5814,
+    "peak_rss_bytes": 5570560,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 854,
+      "declarations": 2
+    },
+    "counts": {},
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/warehouse.py": "35d8758a797c051f6733acf5a906ff6b91c4765f137d99ea40a5ca081d60dece",
+      "src/main.py": "ad6d5f0f23f922c3085c6dad972eb885fa8469c1e7d8bb08ad4ed4a0bdb7c3a7"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "web_handler",
+    "variant": "buggy",
+    "samples_ms": [
+      3.666375,
+      3.552458,
+      3.513583,
+      3.395167,
+      3.5135,
+      3.545458,
+      3.577209
+    ],
+    "median_ms": 3.545458,
+    "min_ms": 3.395167,
+    "max_ms": 3.666375,
+    "output_sha256": "ea7a51498a45f523895c0eb88c5b6d6cfdbbc3646692159a02006eef25f10d60",
+    "output_bytes": 10460,
+    "peak_rss_bytes": 5750784,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 880,
+      "declarations": 2
+    },
+    "counts": {
+      "TP1001": 1,
+      "TP1002": 1,
+      "TP2001": 1,
+      "TP3001": 1
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/service.py": "7b306bb3523fba53c8631d08d361a43ce2530b7d55b4117150d4cff707b4f9de",
+      "src/main.py": "fa8e7e90bfcf7064d51331e36bf93bba15cc3c4be9b66c01ef94356baf90ca13"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "web_handler",
+    "variant": "fixed",
+    "samples_ms": [
+      3.4165,
+      3.438834,
+      3.242125,
+      3.346208,
+      3.442,
+      3.478084,
+      3.480875
+    ],
+    "median_ms": 3.438834,
+    "min_ms": 3.242125,
+    "max_ms": 3.480875,
+    "output_sha256": "da0916ec7f55b8077c81a044f84162f75191741d9470498ec00aa6d4246c3573",
+    "output_bytes": 5798,
+    "peak_rss_bytes": 5586944,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 969,
+      "declarations": 2
+    },
+    "counts": {},
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/service.py": "7b306bb3523fba53c8631d08d361a43ce2530b7d55b4117150d4cff707b4f9de",
+      "src/main.py": "2408f8458ce94ee80b91e470faae95936ca0685a56fc09e6f80c6599f680de0f"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "artifact_packager",
+    "variant": "buggy",
+    "samples_ms": [
+      3.666584,
+      3.423166,
+      3.564917,
+      3.505166,
+      3.714625,
+      3.459209,
+      3.591542
+    ],
+    "median_ms": 3.564917,
+    "min_ms": 3.423166,
+    "max_ms": 3.714625,
+    "output_sha256": "fb889a9854e9488369ea002345f6be4642fe381654cdd7c4bd037dff9c9db0b0",
+    "output_bytes": 11475,
+    "peak_rss_bytes": 5701632,
+    "coverage": {
+      "status": "incomplete",
+      "reasons": [
+        "main.py:25: unknown call effect for builder"
+      ],
+      "source_bytes": 854,
+      "declarations": 2
+    },
+    "counts": {
+      "TP1001": 1,
+      "TP1002": 1,
+      "TP2001": 1,
+      "TP3001": 1,
+      "TP9001": 1
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/archive.py": "fff04e2f9728a4a7a45fa93f7a000ecbe9f0f590c43192cbbc9523db762d83cc",
+      "src/main.py": "4abbdc5d479083ab1a69eac8fea6d149b590b597fa6755f819390d380ddef782"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "artifact_packager",
+    "variant": "fixed",
+    "samples_ms": [
+      3.564666,
+      3.468625,
+      3.314584,
+      3.67575,
+      3.41125,
+      3.431917,
+      3.342833
+    ],
+    "median_ms": 3.431917,
+    "min_ms": 3.314584,
+    "max_ms": 3.67575,
+    "output_sha256": "80d18c4c0dda860b0189ad5c3c4f06d5b34b6a263dbb355f9cb5658c46179d3d",
+    "output_bytes": 6842,
+    "peak_rss_bytes": 5586944,
+    "coverage": {
+      "status": "incomplete",
+      "reasons": [
+        "main.py:28: unknown call effect for builder"
+      ],
+      "source_bytes": 920,
+      "declarations": 2
+    },
+    "counts": {
+      "TP9001": 1
+    },
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/archive.py": "fff04e2f9728a4a7a45fa93f7a000ecbe9f0f590c43192cbbc9523db762d83cc",
+      "src/main.py": "494e09a5b96e478beaaef9df607db5d57e9c3828ef753b1320d32ff39465e65d"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "sdk_client",
+    "variant": "buggy",
+    "samples_ms": [
+      3.562958,
+      3.556541,
+      3.569666,
+      3.65425,
+      3.546834,
+      3.520458,
+      3.623583
+    ],
+    "median_ms": 3.562958,
+    "min_ms": 3.520458,
+    "max_ms": 3.65425,
+    "output_sha256": "05c4250983b28dcede64fc8f57e686c5771f04aafea43836ea2e298ab58ff1a8",
+    "output_bytes": 19891,
+    "peak_rss_bytes": 5603328,
+    "coverage": {
+      "status": "incomplete",
+      "reasons": [
+        "main.py:22: unknown call effect for Catalog",
+        "main.py:22: resource-valued call result is not tracked",
+        "main.py:23: unresolved method receiver may affect tracked resources",
+        "main.py:27: unresolved method receiver may affect tracked resources",
+        "main.py:31: unresolved method receiver may affect tracked resources",
+        "main.py:36: unknown call effect for operation",
+        "main.py:40: unknown call effect for Catalog",
+        "main.py:40: resource-valued call result is not tracked",
+        "main.py:41: unresolved method receiver may affect tracked resources",
+        "main.py:5: unsupported flow weakens tracked resources"
+      ],
+      "source_bytes": 738,
+      "declarations": 0
+    },
+    "counts": {
+      "TP3001": 4,
+      "TP9001": 10
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/catalog.py": "9402d063d287793c542929a231d834735c8612a864247963fc30e10233a18a86",
+      "src/main.py": "748c527e3181d4a76cdacf6fcd675ad056b54d78664879e88c49d0f27b20be9c"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "sdk_client",
+    "variant": "fixed",
+    "samples_ms": [
+      3.472458,
+      3.411167,
+      3.434791,
+      3.35925,
+      3.447917,
+      3.612625,
+      3.548542
+    ],
+    "median_ms": 3.447917,
+    "min_ms": 3.35925,
+    "max_ms": 3.612625,
+    "output_sha256": "406b3ffcc2575853a3fee802b0d5e2e80236d55f91aee88d85823bc43aa5d08e",
+    "output_bytes": 14962,
+    "peak_rss_bytes": 5554176,
+    "coverage": {
+      "status": "incomplete",
+      "reasons": [
+        "main.py:22: unknown call effect for Catalog",
+        "main.py:22: resource-valued call result is not tracked",
+        "main.py:23: unresolved method receiver may affect tracked resources",
+        "main.py:27: unresolved method receiver may affect tracked resources",
+        "main.py:31: unresolved method receiver may affect tracked resources",
+        "main.py:36: unknown call effect for operation",
+        "main.py:40: unknown call effect for Catalog",
+        "main.py:40: resource-valued call result is not tracked",
+        "main.py:41: unresolved method receiver may affect tracked resources",
+        "main.py:5: unsupported flow weakens tracked resources"
+      ],
+      "source_bytes": 762,
+      "declarations": 0
+    },
+    "counts": {
+      "TP9001": 10
+    },
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/catalog.py": "9402d063d287793c542929a231d834735c8612a864247963fc30e10233a18a86",
+      "src/main.py": "fbec3feb3d69d1368d626667587b8362e006a0b28c704a7ecb208e777b780bd7"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "async_worker",
+    "variant": "buggy",
+    "samples_ms": [
+      3.407959,
+      3.53375,
+      3.53225,
+      3.387708,
+      3.474292,
+      3.514625,
+      3.393417
+    ],
+    "median_ms": 3.474292,
+    "min_ms": 3.387708,
+    "max_ms": 3.53375,
+    "output_sha256": "0d3dcc7a61804112d98963655f94c530dca437678e5c9f630f6053b85c45cf92",
+    "output_bytes": 10464,
+    "peak_rss_bytes": 5718016,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 785,
+      "declarations": 2
+    },
+    "counts": {
+      "TP1001": 1,
+      "TP1002": 1,
+      "TP1003": 1,
+      "TP3001": 1
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/broker.py": "a08b4317a02262b75bb3631a4d20639b17e984a11a63366277538ba31fa6631f",
+      "src/main.py": "2ff570ee97a8380effbb9861b800c99ae6af3c0cdd13d32be3c56c0f184a1e5d"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "async_worker",
+    "variant": "fixed",
+    "samples_ms": [
+      3.303917,
+      3.26375,
+      3.294167,
+      3.1915,
+      3.425958,
+      3.28225,
+      3.343875
+    ],
+    "median_ms": 3.294167,
+    "min_ms": 3.1915,
+    "max_ms": 3.425958,
+    "output_sha256": "07d3277ea548921b5c25c81cfcd081f3ee815a6f6dd2c171c75e477220f7ee7f",
+    "output_bytes": 5798,
+    "peak_rss_bytes": 5439488,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 776,
+      "declarations": 2
+    },
+    "counts": {},
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/broker.py": "a08b4317a02262b75bb3631a4d20639b17e984a11a63366277538ba31fa6631f",
+      "src/main.py": "d45a93acbbdedaf391b0f9a3fafbe406ac441ee0078f592f39875af04c70b7ff"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "plugin_runner",
+    "variant": "buggy",
+    "samples_ms": [
+      3.848042,
+      3.862792,
+      3.88025,
+      3.8175,
+      4.041209,
+      3.903542,
+      3.921542
+    ],
+    "median_ms": 3.88025,
+    "min_ms": 3.8175,
+    "max_ms": 4.041209,
+    "output_sha256": "9d9f72c46abd2cd15a5556f0690de815cd7a26322a1aa515a389ef675980516e",
+    "output_bytes": 13596,
+    "peak_rss_bytes": 6078464,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 1050,
+      "declarations": 5
+    },
+    "counts": {
+      "TP1001": 1,
+      "TP1002": 1,
+      "TP1003": 1,
+      "TP2001": 1,
+      "TP3001": 1
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/provider.py": "d8edc20b90b5d6591cf67b4f1c67ec148bdbf7afa33856296c613505480c3886",
+      "src/bridge.py": "5cddb89ba0ff8d3914b99aba082f66f9e132307ff99dd01aa4468f5e5ff07641",
+      "src/main.py": "0dc6f3a0a6a1fdddf6aacb6c1bcefaa0f8211ca480d3d532ed9b3d46d05fc788"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "plugin_runner",
+    "variant": "fixed",
+    "samples_ms": [
+      3.743625,
+      3.813042,
+      3.685875,
+      3.681416,
+      3.752792,
+      3.642541,
+      3.704959
+    ],
+    "median_ms": 3.704959,
+    "min_ms": 3.642541,
+    "max_ms": 3.813042,
+    "output_sha256": "95eaee6a4710321a20f4c844b78c92755959b45011216b27bd22c21ae3762e4c",
+    "output_bytes": 7160,
+    "peak_rss_bytes": 5816320,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 1076,
+      "declarations": 4
+    },
+    "counts": {},
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/provider.py": "d8edc20b90b5d6591cf67b4f1c67ec148bdbf7afa33856296c613505480c3886",
+      "src/bridge.py": "5cddb89ba0ff8d3914b99aba082f66f9e132307ff99dd01aa4468f5e5ff07641",
+      "src/main.py": "b6ea58ef471669c91a46c3d4fa318532b9a021379cc5a840026c7ae60d3d6661"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "report_exporter",
+    "variant": "buggy",
+    "samples_ms": [
+      3.476666,
+      3.382834,
+      3.329958,
+      3.37825,
+      3.451625,
+      3.344125,
+      3.553209
+    ],
+    "median_ms": 3.382834,
+    "min_ms": 3.329958,
+    "max_ms": 3.553209,
+    "output_sha256": "08ee7dd581011d9b55be94f8693ccc6df1db55036237a04186285414723c6abe",
+    "output_bytes": 10443,
+    "peak_rss_bytes": 5701632,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 838,
+      "declarations": 2
+    },
+    "counts": {
+      "TP1001": 1,
+      "TP1002": 1,
+      "TP1003": 1,
+      "TP3001": 1
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/writer.py": "73693a48daddb41267774437c92f788b14faa1fccbaffe56ee47fe143e531b03",
+      "src/main.py": "05c0cdbe8948b9992ca8d4ed1e4f9fbb5846364f71c7ccde1de76d3ab9d2fee2"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "report_exporter",
+    "variant": "fixed",
+    "samples_ms": [
+      3.402917,
+      3.445084,
+      3.375708,
+      3.445417,
+      3.424458,
+      3.404709,
+      3.313541
+    ],
+    "median_ms": 3.404709,
+    "min_ms": 3.313541,
+    "max_ms": 3.445417,
+    "output_sha256": "b028cfaadce7e1e8099822d92a903fc622ae299faa6d23abd071e0f3ada2eb82",
+    "output_bytes": 5793,
+    "peak_rss_bytes": 5472256,
+    "coverage": {
+      "status": "complete-for-supported-subset",
+      "reasons": [],
+      "source_bytes": 873,
+      "declarations": 2
+    },
+    "counts": {},
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/writer.py": "73693a48daddb41267774437c92f788b14faa1fccbaffe56ee47fe143e531b03",
+      "src/main.py": "24eabf709c45ef2b0056036b1011b17be5bacf52d873b9e4b00af39985c987a1"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "async_handoff",
+    "variant": "boundary",
+    "samples_ms": [
+      3.121875,
+      3.255334,
+      3.158375,
+      3.1815,
+      3.156458,
+      3.262708,
+      3.133333
+    ],
+    "median_ms": 3.158375,
+    "min_ms": 3.121875,
+    "max_ms": 3.262708,
+    "output_sha256": "5950ddeb4a90e9382cf1edbdac96f09fc3e78e7927f163968ed98790f02447b6",
+    "output_bytes": 11374,
+    "peak_rss_bytes": 5373952,
+    "coverage": {
+      "status": "incomplete",
+      "reasons": [
+        "main.py:1: module imports are not resolved in 0.1",
+        "main.py:19: unresolved method receiver may affect tracked resources",
+        "main.py:18: created coroutine is not awaited before this scope exit; captured resource effects remain unresolved"
+      ],
+      "source_bytes": 349,
+      "declarations": 2
+    },
+    "counts": {
+      "TP1002": 2,
+      "TP9001": 3
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/main.py": "a0dc458bca915abc56ddcb58c5de6004e8bbbb3d5e0e074d6027d4ef4781d82a"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "async_cancellation",
+    "variant": "boundary",
+    "samples_ms": [
+      3.036958,
+      2.947625,
+      2.948416,
+      2.869583,
+      3.196208,
+      2.9985,
+      3.014125
+    ],
+    "median_ms": 2.9985,
+    "min_ms": 2.869583,
+    "max_ms": 3.196208,
+    "output_sha256": "6a917d0922a12c5a329a3478090e0b9d312743b28115a785e33820a226179940",
+    "output_bytes": 7462,
+    "peak_rss_bytes": 5193728,
+    "coverage": {
+      "status": "incomplete",
+      "reasons": [
+        "main.py:12: cancellation may interrupt the awaited operation or its cleanup"
+      ],
+      "source_bytes": 205,
+      "declarations": 1
+    },
+    "counts": {
+      "TP1002": 1,
+      "TP9001": 1
+    },
+    "exit": 1,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/main.py": "bee502ca2093f87c50415f6d3b2e01de8119a02c2a297e6cd553f095bdbd7dfe"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "dynamic_plugin",
+    "variant": "boundary",
+    "samples_ms": [
+      3.111667,
+      2.973375,
+      3.065708,
+      2.971542,
+      3.200042,
+      3.034708,
+      3.018167
+    ],
+    "median_ms": 3.034708,
+    "min_ms": 2.971542,
+    "max_ms": 3.200042,
+    "output_sha256": "edca264f5bf7122fe332604e574e57255fc525ce011404c57820b49160ef970c",
+    "output_bytes": 9760,
+    "peak_rss_bytes": 4997120,
+    "coverage": {
+      "status": "incomplete",
+      "reasons": [
+        "main.py:1: module imports are not resolved in 0.1",
+        "main.py:9: unresolved method receiver may affect tracked resources",
+        "main.py:9: resource-valued call result is not tracked",
+        "main.py:10: unresolved method receiver may affect tracked resources",
+        "main.py:5: unresolved method call may affect tracked resources"
+      ],
+      "source_bytes": 285,
+      "declarations": 0
+    },
+    "counts": {
+      "TP9001": 5
+    },
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/main.py": "de18aceffd76f8de2a331f03737845239604b6dadb195e3d8a69b1814fff7531"
+    }
+  },
+  {
+    "kind": "preview-corpus",
+    "project": "repeat_close",
+    "variant": "boundary",
+    "samples_ms": [
+      2.983291,
+      2.976209,
+      2.880708,
+      2.9165,
+      2.885917,
+      2.884416,
+      3.124167
+    ],
+    "median_ms": 2.9165,
+    "min_ms": 2.880708,
+    "max_ms": 3.124167,
+    "output_sha256": "eb09613ffa64baea0a1eb8cb8866424f5ac5849a29fc7bd83d68f2da1358a9bb",
+    "output_bytes": 6085,
+    "peak_rss_bytes": 4980736,
+    "coverage": {
+      "status": "incomplete",
+      "reasons": [
+        "main.py:14: repeat-close behavior is not modeled"
+      ],
+      "source_bytes": 241,
+      "declarations": 1
+    },
+    "counts": {
+      "TP9001": 1
+    },
+    "exit": 0,
+    "input_sha256": {
+      "pyproject.toml": "86bb61db7735e0b2e04d49a62c6973bb9bae28816d13d8d63100eba5466f94c3",
+      "src/main.py": "d7262bd40a250995ece26937877c91dbfb5eef0e4834967a18462e89494bd5d3"
+    }
+  }
+]

@@ -28,9 +28,18 @@ keep their meaning; new must-use contracts do not transfer ownership or discharg
 cleanup. Baselines should be created only after reviewing findings. See the
 [adoption workflow](adopting.md) and [schema transition](output.md).
 
-Candidate baselines now use fingerprint algorithm 4. Algorithm 3 baselines
+Candidate baselines now use fingerprint algorithm 5. Algorithm 3/4 baselines
 fail with exit 2 and require an explicit reviewed `baseline update`.
 Changed resolved resource/cleanup contracts reopen findings.
+
+Generate a new file, review its entries, then point the project configuration
+at that file. An unsupported old baseline cannot be replaced in place through
+`--replace`, because existing baseline documents are validated before update.
+
+```sh
+codepact baseline update --output baseline-v5.json --reason "Reviewed findings after fingerprint upgrade"
+codepact check --baseline baseline-v5.json --json
+```
 
 Rust callers constructing `Diagnostic` or `CheckDiagnostic` literals must
 initialize the new `semantic_identity` field. The analyzer supplies this

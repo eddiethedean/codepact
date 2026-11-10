@@ -84,6 +84,18 @@ code points or terminal cells. End positions are exclusive. Logical file paths
 are root-relative and use `/` separators. Convert byte columns to code-point
 offsets before highlighting in an editor.
 
+Text and concise reports share the 32 MiB rendered-report cap across stdout
+and report metadata on stderr. Overflow returns exit 2 before a partial report
+is published; bounded evidence never implies a clean result. JSON serialization
+checks its cap before writing stdout.
+
+Reports selecting TP3001 carry
+`assurance: lifecycle-and-must-use-checking-for-supported-exit-flow`.
+Lifecycle-only Rust results cannot claim that rule was checked. Cancelled or
+inspection-only inputs cannot be converted into completed check reports.
+The snapshot includes the analyzed scope, semantic rule revision and baseline
+fingerprint algorithm revision.
+
 ## Policy and exit interpretation
 
 Advisory mode fails on active findings at or above `fail-on`; the default is
@@ -102,8 +114,8 @@ suppressed.
 
 Baseline schema 1 contains checker/rule/model/target identity, a source
 manifest, coverage state, a required update reason, and eligible finding
-entries. Fingerprints use algorithm version 4. Resolved resource contracts and must-use
-callable identities participate in matching. Version 3 baselines must be
+entries. Fingerprints use algorithm version 5. Resolved resource contracts and must-use
+callable identities and canonical Python tokens participate in matching. Version 3/4 baselines must be
 regenerated explicitly; unsupported versions fail with exit 2. A changed line/comment can keep
 an unambiguous match; duplicate identical sites are treated as ambiguous so a
 new finding is not hidden by an ordinal fallback. Incompatible or stale entries
@@ -148,3 +160,40 @@ for raw_line in sys.stdin:
 Concise stdout contains only actionable location records. Counts and coverage
 status go to stderr. Suppressed and non-actionable audit findings are available
 in JSON. Use JSON when a consumer needs the complete policy/audit contract.
+
+## Validate retained reports before using them
+
+The source checkout includes a [reference consumer](https://github.com/eddiethedean/codepact/blob/main/scripts/consume_check_report.py)
+for CLI agents and external tools. With the development dependencies installed,
+run it against the current workspace and a trusted snapshot ID from the latest
+completed analysis of that workspace:
+
+```sh
+uv run --locked python scripts/consume_check_report.py report.json \
+  --root "$CURRENT_CODEPACT_ROOT" --expected-snapshot "$CURRENT_CODEPACT_SNAPSHOT"
+```
+
+`CURRENT_CODEPACT_ROOT` is the effective module root from the current settings;
+it can be a configured source directory rather than the repository directory.
+The expected identity must reflect the latest source, configuration, baseline,
+model and scope. Recheck after changing any of them. Copying the ID from an old
+report cannot establish freshness. The consumer independently checks current
+source hashes and validates the report against the published local schemas.
+Schema reference resolution uses local resources.
+
+| Consumer result | Meaning |
+| --- | --- |
+| `policy-passed` | Current, complete for the supported subset, with a passing selected policy |
+| `policy-failed` | Current completed analysis failed its selected policy |
+| `incomplete-supported-scope` | Analysis contains unresolved boundaries |
+| `limited-recheck-required` | Detail limits omit evidence; request sufficient output before repairing |
+| `stale-recheck-required` | The expected snapshot or current source bytes differ |
+| `execution-failed` | No completed analysis result exists |
+| `invalid-or-unavailable-report` | Unsupported schema, inconsistent identity/counts or unreadable input |
+
+Only `policy-passed` exits 0; the other recognized results exit 1, while invalid
+input exits 2. A policy pass can include explicitly acknowledged findings and
+never proves general runtime safety. The reference `editor_column` helper
+converts one-based UTF-8 byte columns to code-point columns against the current
+source line, rejecting offsets inside a code point. It supports Unicode and
+CRLF input without treating byte columns as screen coordinates.

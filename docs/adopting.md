@@ -1,8 +1,8 @@
-# Adopt the 0.4 tooling candidate
+# Adopt the 0.4 synthetic preview
 
 CodePact 0.3.0 is the published release. The configuration, baseline, policy
-and must-use behavior below is implemented in the 0.4.0 source candidate in
-this checkout; it has not been pilot-qualified or published. See the
+and must-use behavior below belongs to the 0.4.0 synthetic preview.
+Real-world usefulness remains unqualified. See the
 [availability guide](availability.md) for distribution status and the
 [phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4-adoption.md)
 for qualification gates.
@@ -155,6 +155,8 @@ change or a failed/incomplete execution.
 ```
 
 The report contract and schemas are in the [output reference](output.md).
-Qualification requires three representative pilots, including an async
-application, and at least 30 labeled definite findings. Those phase gates
-remain pending until that evidence exists.
+Maintainer-approved [AD01-A2](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4/synthetic-preview-protocol.md)
+qualifies the independent synthetic bug/repair and boundary corpus, including
+async examples, ordinary static-tool controls and exact-artifact replay. The
+original field-pilot observations remain insufficient to qualify real-world
+usefulness.

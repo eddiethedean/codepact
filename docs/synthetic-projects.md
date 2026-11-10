@@ -44,6 +44,7 @@ do not validate that declared contracts match external libraries or operating
 system resources. Some examples deliberately retain unknown effects; an
 advisory exit of zero must be read together with its coverage status.
 
-Synthetic findings do not count toward the 0.4 real-project pilot or release
-gate A05. See the [pilot protocol](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4/pilots.md)
-for that separate qualification.
+Maintainer-approved [AD01-A2](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.4/synthetic-preview-protocol.md)
+uses this independent corpus for 0.4 synthetic preview qualification. Planted
+findings do not become field-pilot findings; the original real-project results
+remain historical and insufficient to qualify real-world usefulness.

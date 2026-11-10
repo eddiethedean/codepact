@@ -1,5 +1,11 @@
 # 0.4 pilot and onboarding protocol
 
+**Historical field protocol:** maintainer-approved AD01-A2 supersedes this as
+0.4's release acceptance requirement. The [synthetic preview protocol](synthetic-preview-protocol.md)
+now governs A05. The original field criterion below remains unmet, and none of
+its past results or labels are reclassified. Real-world usefulness is unqualified.
+
+
 Status: **AD01 accepted this protocol and the initial pinned project set on 2026-11-09. The six pinned projects were replayed on source candidate `eb093c9` on 2026-11-10; three completed with zero eligible definite findings and three failed before analysis. No findings have been labeled and A05 remains pending.** See the [pilot results](pilot-results-2026-11-09.md) and [exact-candidate replay](evidence/2026-11-10-candidate-eb093c/pilot/README.md). This protocol defines the evidence needed for [A05/A06/CS02](../0.4-adoption.md), not a promise that every Python project is analyzable.
 
 The project inventory and frozen initial sample settings are recorded in the

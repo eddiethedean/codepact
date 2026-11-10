@@ -5,8 +5,8 @@
 CodePact 0.3.0 is published on PyPI and crates.io. It provides declaration
 inspection, lifecycle checking, and bounded cleanup obligations. The previous
 0.1.0 and 0.2.0 releases used the former package names. See
-[availability](availability.md). The 0.4.0 adoption-tooling candidate is
-implemented in this checkout, but is not distributed or pilot-qualified.
+[availability](availability.md). The 0.4.0 adoption tooling is a synthetic preview. Real-world usefulness
+is unqualified; the availability record identifies verified distributions.
 
 ## Does CodePact import or run my application?
 

@@ -124,7 +124,10 @@ fn install_snapshot(source: &Path, destination: &Path) {
 
 fn run_cli(root: &Path, target: &str, extra: &[&str]) -> Output {
     let before = files(root);
-    let output = Command::new(env!("CARGO_BIN_EXE_codepact"))
+    let binary = std::env::var_os("CODEPACT_QUALIFICATION_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_codepact")));
+    let output = Command::new(binary)
         .current_dir(root)
         .args(["check", "--json", "--python-version", target])
         .args(extra)

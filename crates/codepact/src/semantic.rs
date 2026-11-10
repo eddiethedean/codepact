@@ -336,13 +336,13 @@ fn inspect_inner(
                             method.returns.as_ref(),
                             &state.imports,
                         ) {
-                            Ok(true) if method.is_async => {
+                            Ok(true) if method.is_async || method.is_generator => {
                                 if run_must_use {
                                     unsupported(
                                         &mut result,
                                         file,
                                         method.range,
-                                        "must-use result consumption for async methods is unsupported in 0.4",
+                                        "must-use result consumption for async or generator methods is unsupported in 0.4",
                                     );
                                 }
                             }
@@ -365,6 +365,7 @@ fn inspect_inner(
                     }
                     let pending_methods = methods
                         .iter()
+                        .filter(|method| !method.is_generator)
                         .map(|method| {
                             let is_static = method.decorators.iter().any(|decorator| {
                                 canonical(decorator, &state.imports).as_deref()
@@ -490,6 +491,7 @@ fn inspect_inner(
                     range,
                     body,
                     is_async,
+                    is_generator,
                     ..
                 } => {
                     let marked = function_is_must_use(decorators, returns.as_ref(), &state.imports);
@@ -532,12 +534,12 @@ fn inspect_inner(
                         canonical(decorator, &state.imports).as_deref()
                             == Some("codepact::must_use")
                     });
-                    if run_must_use && marked && *is_async {
+                    if run_must_use && marked && (*is_async || *is_generator) {
                         unsupported(
                             &mut result,
                             file,
                             *range,
-                            "must-use result consumption for async functions is unsupported in 0.4",
+                            "must-use result consumption for async or generator functions is unsupported in 0.4",
                         );
                     }
                     if *has_unsupported_syntax {
@@ -585,20 +587,22 @@ fn inspect_inner(
                         }
                         // Python evaluates eager annotations before installing the new function binding.
                         state.clear_name(name, &file.module, &mut bindings);
-                        if marked && !*is_async {
+                        if marked && !*is_async && !*is_generator {
                             state.must_use_callables.insert(
                                 name.clone(),
                                 crate::source_span(&file.path, &file.source, *range),
                             );
                         }
-                        pending_must_use_bodies.push((
-                            body.clone(),
-                            None,
-                            parameters
-                                .iter()
-                                .map(|parameter| parameter.name.clone())
-                                .collect(),
-                        ));
+                        if !*is_generator {
+                            pending_must_use_bodies.push((
+                                body.clone(),
+                                None,
+                                parameters
+                                    .iter()
+                                    .map(|parameter| parameter.name.clone())
+                                    .collect(),
+                            ));
+                        }
                         if !has_unsupported_syntax {
                             state.callables.insert(name.clone());
                         }

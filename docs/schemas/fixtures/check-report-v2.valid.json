@@ -1,6 +1,6 @@
 {
   "actionable_diagnostics": 0,
-  "assurance": "lifecycle-checking-for-supported-exit-flow",
+  "assurance": "lifecycle-and-must-use-checking-for-supported-exit-flow",
   "audit_diagnostics": 0,
   "available_models": [],
   "baseline": {
