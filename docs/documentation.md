@@ -14,10 +14,13 @@ Install uv, then run from the repository root:
 make check-docs
 ```
 
-The target validates JSON schema fixtures, checks relative documentation links,
+The target validates JSON schema fixtures and eight live CLI documents, checks relative documentation links,
 and rebuilds every public page with the pinned Sphinx environment. Missing
 references and warnings fail the build. An unrelated system `sphinx-build`
-cannot change the selected toolchain.
+cannot change the selected toolchain. Live CLI validation needs Rust/Cargo in
+the development environment. The Read the Docs hook uses the explicit
+`--fixtures-only` mode so hosting needs only Python; GitHub CI retains the full
+live-output validation.
 
 The default output is `target/docs/html`. To choose another directory:
 

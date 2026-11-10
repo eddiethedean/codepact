@@ -206,3 +206,15 @@ Retained artifact SHA-256:
 - `session-samples.json`: `c86c31817f6a550bc585cc7e57b34f3609ef9379c7a703f44ce068cb1603303d`
 - `adoption-cli.json`: `00a00914cb371ae6e7bfc5128aae8d73b4c1cec306aab0b6e2d5cb8ce29bdaed`
 - `configuration.json`: `aec4cd16d8124b8af7e153528112bf68acb7731be2c2325cbbea8eb9caee26a9`
+
+## Python-only documentation hosting
+
+A final deployment review found the Read the Docs pre-build hook unnecessarily
+required Cargo for live-output validation. The explicit `--fixtures-only` mode
+now validates all nine schemas and 13 fixtures on the Python-only host;
+`make check-docs` and Quality continue checking all eight live CLI documents.
+The [hosting control](docs-hosting.log) was run with `PATH=/nonexistent` and an
+unavailable CLI path, proving the selected hook does not invoke Cargo or a
+native executable. Both modes, strict Python typing/Ruff and the full strict
+docs build passed. This changes deployment orchestration only; every analyzer
+source hash and all retained semantic/performance evidence remain unchanged.

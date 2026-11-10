@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -59,6 +60,13 @@ def cli_output(arguments: list[str], expected_exit: int = 0) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    _ = parser.add_argument(
+        "--fixtures-only",
+        action="store_true",
+        help="validate published schemas/fixtures without invoking the Rust CLI",
+    )
+    fixtures_only = cast(bool, parser.parse_args().fixtures_only)
     schema_paths = sorted(SCHEMA_ROOT.glob("*.schema.json"))
     if not schema_paths:
         print("no published JSON schemas were found", file=sys.stderr)
@@ -100,6 +108,10 @@ def main() -> int:
                     f"invalid fixture unexpectedly validates: {invalid_path}"
                 )
             checked += 1
+
+    if fixtures_only:
+        print(f"Validated {len(schemas)} schemas and {checked} valid/invalid fixtures")
+        return 0
 
     emitted_count = 0
 
