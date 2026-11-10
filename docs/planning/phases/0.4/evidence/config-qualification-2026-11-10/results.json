@@ -1,0 +1,347 @@
+{
+  "binary_sha256": "be2dd8078aa8f2c3edd2e8e889f91024c4d08eaf4498b729631f865dc9cf5ffa",
+  "python": "3.11.14",
+  "host": "macOS-26.5.2-arm64-arm-64bit",
+  "source_sha256": {
+    "crates/codepact/src/adoption.rs": "14b001601cedcc8c485a5cfd7ff28b6b1d904280b9248cf27366c11a19db82d7",
+    "crates/codepact/src/db.rs": "a7109ea7066c490a722a6b7359164b8f10c2f0b54c14d5c5addded368344ac3a",
+    "crates/codepact/src/flow.rs": "adbc062255ba0b024f99ad2dc09403bb7fccd096f8e7a4474d053f0fba0075d8",
+    "crates/codepact/src/frontend.rs": "f01d3ea8a02c03f7bd0872b8afcef6df4c050c1ff546afcfca352473cda8a1a9",
+    "crates/codepact/src/identifiers.rs": "f2e844411fd575791bd225465de792f70690c027d18efc41156c7f9bfa21bc5a",
+    "crates/codepact/src/lib.rs": "c39fa9dc8f660bb03876cae560944d6c49626c29bbf507920e4129afc2c91293",
+    "crates/codepact/src/main.rs": "5027b4e34996cc71a722a7fda4e1d8e9d308db7e16a77a638941560de8a97e52",
+    "crates/codepact/src/model.rs": "4351ddfa4209f9125a6d86aae4c45d08c24d7e50a688b80c37272a76e39c3ed5",
+    "crates/codepact/src/semantic.rs": "174439cbb6c4c0b55e9dc76a9d6b2f7504a906362419a2cecb504895dd7180a2",
+    "crates/codepact/src/source.rs": "5fc82dcf747de808706155bc77224117ffd0ceb1f9a9aaec32323ecb1996423c"
+  },
+  "runner_sha256": "4f2a743a2d85f8437c592cb0af508b781a5e706e3672acfc3c1eba2a0a6ac249",
+  "cases": [
+    {
+      "name": "unknown-key=true",
+      "config": "[tool.codepact]\nconfig-version=1\nunknown-key=true\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "unknown-key",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid [tool.codepact] configuration: unknown field `unknown-key`, expected one of `config-version`, `root`, `python-version`, `include`, `exclude`, `enabled-rules`, `mode`, `fail-on`, `baseline`, `severity`\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "config-version=2",
+      "config": "[tool.codepact]\nconfig-version=2\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "version",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"unsupported config-version 2; expected 1\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "config-version='1'",
+      "config": "[tool.codepact]\nconfig-version='1'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "config-version",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid [tool.codepact] configuration: invalid type: string \\\"1\\\", expected u8\\nin `config-version`\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "root=1",
+      "config": "[tool.codepact]\nconfig-version=1\nroot=1\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "root",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid [tool.codepact] configuration: invalid type: integer `1`, expected path string\\nin `root`\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "python-version='3.14'",
+      "config": "[tool.codepact]\nconfig-version=1\npython-version='3.14'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "3.14",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"unsupported Python target version 3.14\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "include='src/**/*.py'",
+      "config": "[tool.codepact]\nconfig-version=1\ninclude='src/**/*.py'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "include",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid [tool.codepact] configuration: invalid type: string \\\"src/**/*.py\\\", expected a sequence\\nin `include`\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "exclude=[1]",
+      "config": "[tool.codepact]\nconfig-version=1\nexclude=[1]\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "exclude",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid [tool.codepact] configuration: invalid type: integer `1`, expected a string\\nin `exclude`\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "enabled-rules='TP3001'",
+      "config": "[tool.codepact]\nconfig-version=1\nenabled-rules='TP3001'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "enabled-rules",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid [tool.codepact] configuration: invalid type: string \\\"TP3001\\\", expected a sequence\\nin `enabled-rules`\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "enabled-rules=['TP9999']",
+      "config": "[tool.codepact]\nconfig-version=1\nenabled-rules=['TP9999']\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "TP9999",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"unknown rule identifier TP9999\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "enabled-rules=['TP3001','TP3001']",
+      "config": "[tool.codepact]\nconfig-version=1\nenabled-rules=['TP3001','TP3001']\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "duplicate",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"duplicate rule identifier TP3001\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "include=['../outside.py']",
+      "config": "[tool.codepact]\nconfig-version=1\ninclude=['../outside.py']\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "pattern",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid root-relative path pattern \\\"../outside.py\\\"\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "include=['src/../outside.py']",
+      "config": "[tool.codepact]\nconfig-version=1\ninclude=['src/../outside.py']\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "pattern",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid root-relative path pattern \\\"src/../outside.py\\\"\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "mode='unknown'",
+      "config": "[tool.codepact]\nconfig-version=1\nmode='unknown'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "mode",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"mode must be advisory or strict\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "fail-on='info'",
+      "config": "[tool.codepact]\nconfig-version=1\nfail-on='info'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "fail-on",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"fail-on must be error or warning\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "severity='warning'",
+      "config": "[tool.codepact]\nconfig-version=1\nseverity='warning'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "severity",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid [tool.codepact] configuration: invalid type: string \\\"warning\\\", expected a map\\nin `severity`\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "[tool.codepact.severity]\nTP3001='fatal'",
+      "config": "[tool.codepact]\nconfig-version=1\n[tool.codepact.severity]\nTP3001='fatal'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "severity",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid severity for TP3001: fatal\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "[tool.codepact.severity]\nTP9001='info'",
+      "config": "[tool.codepact]\nconfig-version=1\n[tool.codepact.severity]\nTP9001='info'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "TP9001",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"severity for mandatory rule TP9001 cannot be overridden\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "mode='strict'\nmode='advisory'",
+      "config": "[tool.codepact]\nconfig-version=1\nmode='strict'\nmode='advisory'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "duplicate",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid TOML configuration: TOML parse error at line 4, column 1\\n  |\\n4 | mode='advisory'\\n  | ^^^^\\nduplicate key\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "missing-version",
+      "config": "[tool.codepact]\nmode='strict'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "config-version",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid [tool.codepact] configuration: missing field `config-version`\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "invalid-toml",
+      "config": "[tool.codepact\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "TOML",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"invalid TOML configuration: TOML parse error at line 1, column 15\\n  |\\n1 | [tool.codepact\\n  |               ^\\nunclosed table, expected `]`\\n\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "unrelated-tool",
+      "config": "[tool.other]\nunknown='accepted'\n[tool.codepact]\nconfig-version=1\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--show-settings",
+        "--json"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "expected_message_fragment": "",
+      "stdout": "{\n  \"baseline\": null,\n  \"config_file\": \"/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-config-qualification-qc_u5hna/pyproject.toml\",\n  \"enabled_rules\": [\n    \"TP1001\",\n    \"TP1002\",\n    \"TP1003\",\n    \"TP2001\",\n    \"TP3001\"\n  ],\n  \"exclude\": [],\n  \"execution_status\": \"settings-resolved\",\n  \"fail_on\": \"error\",\n  \"include\": [\n    \"**/*.py\"\n  ],\n  \"mode\": \"advisory\",\n  \"python_version\": \"3.11\",\n  \"root\": \"/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-config-qualification-qc_u5hna\",\n  \"settings_origins\": {\n    \"baseline\": \"default\",\n    \"enabled-rules\": \"default\",\n    \"exclude\": \"default\",\n    \"fail-on\": \"default\",\n    \"include\": \"default\",\n    \"mode\": \"default\",\n    \"python-version\": \"default\",\n    \"root\": \"pyproject-directory\"\n  },\n  \"severity\": {}\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "no-tool-table",
+      "config": "[tool.other]\nunknown='accepted'\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--show-settings",
+        "--json"
+      ],
+      "exit": 0,
+      "expected_exit": 0,
+      "expected_message_fragment": "",
+      "stdout": "{\n  \"baseline\": null,\n  \"config_file\": \"/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-config-qualification-qc_u5hna/pyproject.toml\",\n  \"enabled_rules\": [\n    \"TP1001\",\n    \"TP1002\",\n    \"TP1003\",\n    \"TP2001\",\n    \"TP3001\"\n  ],\n  \"exclude\": [],\n  \"execution_status\": \"settings-resolved\",\n  \"fail_on\": \"error\",\n  \"include\": [\n    \"**/*.py\"\n  ],\n  \"mode\": \"advisory\",\n  \"python_version\": \"3.11\",\n  \"root\": \"/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-config-qualification-qc_u5hna\",\n  \"settings_origins\": {\n    \"baseline\": \"default\",\n    \"enabled-rules\": \"default\",\n    \"exclude\": \"default\",\n    \"fail-on\": \"default\",\n    \"include\": \"default\",\n    \"mode\": \"default\",\n    \"python-version\": \"default\",\n    \"root\": \"current-directory\"\n  },\n  \"severity\": {}\n}\n",
+      "stderr": ""
+    },
+    {
+      "name": "conflicting-config-flags",
+      "config": "[tool.codepact]\nconfig-version=1\n",
+      "command": [
+        "/Volumes/T7/coding/typepact/target/debug/codepact",
+        "check",
+        "--json",
+        "--config",
+        "pyproject.toml",
+        "--no-config"
+      ],
+      "exit": 2,
+      "expected_exit": 2,
+      "expected_message_fragment": "--config",
+      "stdout": "{\n  \"check_schema_version\": 2,\n  \"engine_version\": \"0.4.0\",\n  \"error\": {\n    \"category\": \"configuration-or-execution\",\n    \"message\": \"--config conflicts with --no-config\"\n  },\n  \"execution_status\": \"failed\",\n  \"report_schema_version\": 2\n}\n",
+      "stderr": ""
+    }
+  ]
+}

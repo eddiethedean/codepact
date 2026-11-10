@@ -1758,3 +1758,164 @@ fn baseline_rejects_unsupported_versions_and_duplicate_entries_without_hiding_fi
         .contains("duplicate entries"));
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn baseline_resource_identity_refreshes_changed_contracts_and_resolved_imports() {
+    let root = project("baseline-resource-contract-identity");
+    let provider = "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def release(self): pass\n";
+    let client = "from first import Connection\ndef run():\n    conn = Connection()\n";
+    fs::write(root.join("first.py"), provider).unwrap();
+    fs::write(root.join("second.py"), provider).unwrap();
+    fs::write(root.join("main.py"), client).unwrap();
+    let created = cli(
+        &root,
+        &[
+            "baseline",
+            "update",
+            "--no-config",
+            "--output",
+            "baseline.json",
+            "--reason",
+            "reviewed existing cleanup debt",
+        ],
+    );
+    assert_eq!(
+        created.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let check = || {
+        let output = cli(
+            &root,
+            &[
+                "check",
+                "--no-config",
+                "--baseline",
+                "baseline.json",
+                "--json",
+            ],
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let finding = report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["code"] == "TP1002")
+            .unwrap()
+            .clone();
+        (output.status.code(), finding)
+    };
+    let (status, original) = check();
+    assert_eq!(status, Some(0));
+    assert_eq!(original["disposition"], "suppressed-baseline");
+    // A moved declaration/comment must not invalidate an unchanged contract.
+    fs::write(
+        root.join("first.py"),
+        format!("# harmless comment\n\n{provider}"),
+    )
+    .unwrap();
+    assert_eq!(check().1["fingerprint"], original["fingerprint"]);
+    assert_eq!(check().1["disposition"], "suppressed-baseline");
+    // A changed cleanup declaration must reopen the finding even though the
+    // acquisition, exit, certainty and display text have not changed.
+    fs::write(
+        root.join("first.py"),
+        provider.replace("closed_by='close'", "closed_by='release'"),
+    )
+    .unwrap();
+    let (status, changed) = check();
+    assert_eq!(status, Some(1));
+    assert_eq!(changed["disposition"], "active");
+    assert_ne!(changed["fingerprint"], original["fingerprint"]);
+    // Both resources remain in the selected project. Only the resolved import
+    // changes; a global contract-catalog hash would miss this counterexample.
+    fs::write(root.join("first.py"), provider).unwrap();
+    fs::write(
+        root.join("main.py"),
+        client.replace("from first", "from second"),
+    )
+    .unwrap();
+    let (status, rebound) = check();
+    assert_eq!(status, Some(1));
+    assert_eq!(rebound["disposition"], "active");
+    assert_ne!(rebound["fingerprint"], original["fingerprint"]);
+    // Historical identities cannot be silently applied under the new algorithm.
+    let mut baseline: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("baseline.json")).unwrap()).unwrap();
+    baseline["fingerprint_algorithm_version"] = 3.into();
+    fs::write(
+        root.join("baseline.json"),
+        serde_json::to_vec(&baseline).unwrap(),
+    )
+    .unwrap();
+    let rejected = cli(
+        &root,
+        &[
+            "check",
+            "--no-config",
+            "--baseline",
+            "baseline.json",
+            "--json",
+        ],
+    );
+    assert_eq!(rejected.status.code(), Some(2));
+    let failure: serde_json::Value = serde_json::from_slice(&rejected.stdout).unwrap();
+    assert_eq!(failure["execution_status"], "failed");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn contract_identity_survives_reused_queries_without_changing_public_json() {
+    use codepact::{AnalysisSession, SourceFile};
+    let root = project("baseline-missing-internal-identity");
+    let config = codepact::adoption::resolve_config(
+        &root,
+        &codepact::adoption::Overrides {
+            no_config: true,
+            root: Some(root.clone()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut session = AnalysisSession::default();
+    for cleanup in ["close", "release", "close"] {
+        let files = [SourceFile::new("main.py", "main", format!(
+            "from codepact import resource\n@resource(closed_by='{cleanup}')\nclass Connection:\n    def close(self): pass\n    def release(self): pass\ndef run():\n    conn = Connection()\n"
+        ))];
+        let reused = session.check_with_must_use(&files, "3.11");
+        let fresh = AnalysisSession::default().check_with_must_use(&files, "3.11");
+        assert_eq!(reused, fresh);
+        let leak = reused
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "TP1002")
+            .unwrap();
+        assert_eq!(leak.semantic_identity.len(), 1);
+        assert!(leak.semantic_identity[0].contains(cleanup));
+        let public = serde_json::to_value(&reused).unwrap();
+        assert!(public["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|d| d.get("semantic_identity").is_none()));
+        // Public reports are audit artifacts, not a transport for the internal
+        // resolved facts needed to create safe baseline identities.
+        let checked = codepact::CheckResult::from_inspection(reused, "3.11");
+        let decoded: codepact::CheckResult =
+            serde_json::from_value(serde_json::to_value(checked).unwrap()).unwrap();
+        let destination = root.join("baseline.json");
+        let error = codepact::adoption::write_baseline(
+            &destination,
+            &decoded,
+            &files,
+            &config,
+            false,
+            "lost evidence",
+        )
+        .unwrap_err();
+        assert!(error.contains("without resolved contract identity"));
+        assert!(!destination.exists());
+    }
+    fs::remove_dir_all(root).unwrap();
+}

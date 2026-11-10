@@ -15,7 +15,7 @@
     }
   ],
   "exclude": [],
-  "fingerprint_algorithm_version": 3,
+  "fingerprint_algorithm_version": 4,
   "include": [
     "**/*.py"
   ],

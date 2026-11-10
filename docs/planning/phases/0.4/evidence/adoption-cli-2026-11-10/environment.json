@@ -1,0 +1,5 @@
+{
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+  "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)",
+  "cpu": "arm64; model unavailable because sandbox denied sysctl"
+}

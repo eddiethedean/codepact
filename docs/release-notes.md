@@ -11,6 +11,9 @@ records the remaining qualification gates.
   setting origins, and advisory/strict check policy.
 - Explicit baseline creation and replacement with stable finding matching,
   plus line suppressions that require exact eligible codes and a reason.
+- Baseline fingerprint algorithm 4 includes resolved resource/callable identity.
+  Changed cleanup declarations and imported resource identities reopen findings;
+  algorithm 3 baselines require explicit regeneration.
 - Synchronous must-use contracts through `@must_use`, `MustUse[T]`, and
   `MustUseResult`, with TP3001 for supported bare discarded calls.
 - CLI check schema 2, text/JSON/concise output, bounded detail reporting,

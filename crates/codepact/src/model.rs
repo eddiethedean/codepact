@@ -336,6 +336,9 @@ pub struct Lifecycle {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Diagnostic {
+    /// Internal canonical contract evidence; excluded from public JSON.
+    #[serde(skip)]
+    pub semantic_identity: Vec<String>,
     pub code: String,
     pub severity: String,
     pub message: String,
@@ -390,6 +393,9 @@ pub struct CheckModelMetadata {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CheckDiagnostic {
+    /// Internal canonical contract evidence used for baseline identity.
+    #[serde(skip)]
+    pub semantic_identity: Vec<String>,
     pub code: String,
     pub severity: String,
     pub message: String,
@@ -486,6 +492,7 @@ impl CheckResult {
                     _ => None,
                 };
                 CheckDiagnostic {
+                    semantic_identity: diagnostic.semantic_identity,
                     code: diagnostic.code,
                     severity: diagnostic.severity,
                     message: diagnostic.message,

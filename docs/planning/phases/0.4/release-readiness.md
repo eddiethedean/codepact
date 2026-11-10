@@ -48,6 +48,32 @@ repeatable schema check validates fixtures plus eight current CLI outputs:
 capabilities, explanations, completed/failing checks, settings, baseline,
 baseline-update, and inspection documents.
 
+## Baseline identity correction in development
+
+RR01 reproduced a false baseline match: a function acquiring `Connection()`
+still had its TP1002 suppressed after the resource's `closed_by` changed from
+`close` to `release`. The acquisition, exit and related spans were unchanged,
+so the previous source-span fingerprint omitted the changed contract.
+
+Fingerprint algorithm 4 includes the resolved resource symbol, lifecycle,
+access and provenance; synchronous must-use diagnostics retain their resolved
+callable identity. Private query transport retains those facts without adding
+fields to public inspection/check JSON. Findings reached through multiple
+paths combine their contract identities deterministically. Old algorithm 3
+baselines fail validation, and baseline creation refuses findings lacking the
+internal resolved evidence. Regression controls also rebind the imported
+resource while keeping both resource definitions selected, preserve harmless
+comment/location edits, and compare fresh and reused sessions.
+
+This correction requires a new source/distribution freeze. It does not yet
+qualify all changed effect-summary, collision, interruption or V04 controls.
+
+The [23 retained configuration controls](evidence/config-qualification-2026-11-10/README.md)
+qualify V04-02 technically. The [14 CLI workloads](evidence/adoption-cli-2026-11-10/README.md)
+retain seven optimized samples with independent oracles for MustUse, config,
+discovery, baseline matching and reporting. Session query-event measurements,
+final-candidate inherited comparisons and memory/pilot qualification remain.
+
 ## Critical path
 
 | Order | Work | Concrete completion condition | Gates |

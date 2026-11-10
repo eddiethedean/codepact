@@ -37,6 +37,7 @@ pub(crate) fn cancelled_inspection(files: &[SourceFile]) -> Inspection {
         assurance: "contract-inspection-only".into(),
         contracts: Vec::new(),
         diagnostics: vec![Diagnostic {
+            semantic_identity: Vec::new(),
             code: "TP9002".into(),
             severity: "warning".into(),
             message: "analysis cancelled; no result was published".into(),
@@ -86,6 +87,7 @@ fn input_warning(result: &mut Inspection, path: &str, message: &str) {
     result.coverage.status = "incomplete".into();
     result.coverage.reasons.push(format!("{path}:1: {message}"));
     result.diagnostics.push(Diagnostic {
+        semantic_identity: Vec::new(),
         code: "TP9001".into(),
         severity: "warning".into(),
         message: message.into(),

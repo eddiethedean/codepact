@@ -880,6 +880,21 @@ fn span(file: &SourceFile, range: SourceRange) -> Span {
     crate::source_span(&file.path, &file.source, range)
 }
 
+fn contract_identity(contract: Option<&Contract>) -> Vec<String> {
+    contract
+        .into_iter()
+        .map(|contract| {
+            serde_json::to_string(&(
+                &contract.base_symbol,
+                &contract.lifecycle,
+                &contract.access,
+                &contract.provenance,
+            ))
+            .expect("canonical contract identity serializes")
+        })
+        .collect()
+}
+
 fn report(
     result: &mut Inspection,
     code: &str,
@@ -887,6 +902,7 @@ fn report(
     primary: Span,
     related: Vec<Span>,
     certainty: &str,
+    identity: Vec<String>,
 ) {
     if let Some(existing) = result.diagnostics.iter_mut().find(|diagnostic| {
         diagnostic.code == code
@@ -905,9 +921,13 @@ fn report(
                 existing.related.push(related_span);
             }
         }
+        existing.semantic_identity.extend(identity);
+        existing.semantic_identity.sort();
+        existing.semantic_identity.dedup();
         return;
     }
     result.diagnostics.push(Diagnostic {
+        semantic_identity: identity,
         code: code.into(),
         severity: if certainty == "definite" {
             "error"
@@ -996,6 +1016,7 @@ fn report_cleanup_exit(
                         .into_iter()
                         .collect(),
                     "definite",
+                    contract_identity(exit.state.resources.get(object)),
                 );
                 continue;
             }
@@ -1016,6 +1037,7 @@ fn report_cleanup_exit(
                     } else {
                         "possible"
                     },
+                    contract_identity(exit.state.resources.get(object)),
                 );
             }
             if mask & UNKNOWN != 0 {
@@ -1085,6 +1107,11 @@ fn report_cleanup_exit(
                 && diagnostic.message.ends_with(&format!("on {exit_kind}"))
                 && diagnostic.related.first() == Some(origin)
         }) {
+            existing
+                .semantic_identity
+                .extend(contract_identity(resource));
+            existing.semantic_identity.sort();
+            existing.semantic_identity.dedup();
             for span in related {
                 if !existing.related.contains(&span) {
                     existing.related.push(span);
@@ -1102,6 +1129,7 @@ fn report_cleanup_exit(
                 exit_span.clone(),
                 related,
                 certainty,
+                contract_identity(resource),
             );
         }
     }
@@ -1177,6 +1205,7 @@ fn boundary_at_span(result: &mut Inspection, primary: Span, message: &str) {
     }
     result.coverage.reasons.push(reason);
     result.diagnostics.push(Diagnostic {
+        semantic_identity: Vec::new(),
         code: "TP9001".into(),
         severity: "warning".into(),
         message: message.into(),
@@ -1475,6 +1504,7 @@ fn check_borrowed_precondition(
                 .filter_map(|object| env.close_origins.get(object).cloned())
                 .collect(),
             if has_open { "possible" } else { "definite" },
+            contract_identity(definition.parameter_contracts.get(parameter)),
         );
     }
 }
@@ -2964,6 +2994,7 @@ fn consume_expr(
                                 primary,
                                 related,
                                 certainty,
+                                contract_identity(resource.as_ref()),
                             );
                         }
                         if env.borrowed.contains(object) && is_close {
@@ -2980,6 +3011,7 @@ fn consume_expr(
                                         .into_iter()
                                         .collect(),
                                     "definite",
+                                    contract_identity(resource.as_ref()),
                                 );
                             }
                         }
@@ -3007,6 +3039,7 @@ fn consume_expr(
                                             .into_iter()
                                             .collect(),
                                         certainty,
+                                        contract_identity(resource.as_ref()),
                                     );
                                     let mut closed_path = env.clone();
                                     closed_path.objects.insert(object.clone(), CLOSED);

@@ -1,0 +1,31 @@
+{
+  "base_revision": "84c099f1671811cca5586474c6b3a88c6d8d7f41",
+  "source_sha256": {
+    "crates/codepact/src/adoption.rs": "14b001601cedcc8c485a5cfd7ff28b6b1d904280b9248cf27366c11a19db82d7",
+    "crates/codepact/src/db.rs": "a7109ea7066c490a722a6b7359164b8f10c2f0b54c14d5c5addded368344ac3a",
+    "crates/codepact/src/flow.rs": "adbc062255ba0b024f99ad2dc09403bb7fccd096f8e7a4474d053f0fba0075d8",
+    "crates/codepact/src/frontend.rs": "f01d3ea8a02c03f7bd0872b8afcef6df4c050c1ff546afcfca352473cda8a1a9",
+    "crates/codepact/src/identifiers.rs": "f2e844411fd575791bd225465de792f70690c027d18efc41156c7f9bfa21bc5a",
+    "crates/codepact/src/lib.rs": "c39fa9dc8f660bb03876cae560944d6c49626c29bbf507920e4129afc2c91293",
+    "crates/codepact/src/main.rs": "5027b4e34996cc71a722a7fda4e1d8e9d308db7e16a77a638941560de8a97e52",
+    "crates/codepact/src/model.rs": "4351ddfa4209f9125a6d86aae4c45d08c24d7e50a688b80c37272a76e39c3ed5",
+    "crates/codepact/src/semantic.rs": "174439cbb6c4c0b55e9dc76a9d6b2f7504a906362419a2cecb504895dd7180a2",
+    "crates/codepact/src/source.rs": "5fc82dcf747de808706155bc77224117ffd0ceb1f9a9aaec32323ecb1996423c"
+  },
+  "logs_sha256_uncompressed": {
+    "required-checks.log.gz": "494f2f1d025b5a5d18baffb3fc021e8bf50773d227d07a20b3e5118da8ca2730",
+    "docs-checks.log.gz": "6ff39ab921e9cd9b1e0144f3ba3a9eb4beb0b6c539e04b32684fcdd4e0aa404a"
+  },
+  "commands": [
+    {
+      "command": "CARGO_HOME=/private/tmp/codepact-local-cargo CARGO_NET_OFFLINE=true CARGO_AUDIT_ARGS=--no-fetch CARGO_DENY_ARGS=--disable-fetch UV_PYTHON=3.11 UV_CACHE_DIR=/private/tmp/codepact-review-uv uv run --locked make check",
+      "exit": 2,
+      "result": "All non-docs targets passed, including workspace and packaged crate tests/install, Python typing/lint/package smokes, dependency audit/deny, MSRV and inspector. Last docs step failed only fetching Sphinx due sandbox DNS."
+    },
+    {
+      "command": "CARGO_HOME=/private/tmp/codepact-local-cargo CARGO_NET_OFFLINE=true UV_OFFLINE=true UV_PYTHON=3.11 UV_CACHE_DIR=/private/tmp/codepact-review-uv uv run --locked make check-docs",
+      "exit": 0,
+      "result": "After fetching pinned dependencies and fixing the new evidence link: 9 schemas, 13 fixtures, 8 current CLI JSON outputs, 105 docs link checks and strict Sphinx pass."
+    }
+  ]
+}

@@ -1083,6 +1083,7 @@ pub(crate) fn combine_project(
             overflow.file, overflow.line
         ));
         result.diagnostics.push(Diagnostic {
+            semantic_identity: Vec::new(),
             code: "TP9001".into(),
             severity: "warning".into(),
             message: "project contract limit reached; remaining contracts were not emitted".into(),
@@ -1800,6 +1801,7 @@ fn merge_annotation_metadata(
 fn metadata_conflict(result: &mut Inspection, primary: Span, related: Span, message: &str) {
     result.coverage.status = "incomplete".into();
     result.diagnostics.push(Diagnostic {
+        semantic_identity: Vec::new(),
         code: "TP4002".into(),
         severity: "error".into(),
         message: message.into(),
@@ -1844,6 +1846,7 @@ fn report_annotation_problem(
         }
         result.coverage.status = "incomplete".into();
         result.diagnostics.push(Diagnostic {
+            semantic_identity: Vec::new(),
             code: "TP4002".into(),
             severity: "error".into(),
             message: message.into(),
@@ -2689,6 +2692,7 @@ fn walk_must_use_body(
                 if let Some((resolved, declaration)) = resolved {
                     let primary = crate::source_span(&file.path, &file.source, value.range);
                     result.diagnostics.push(Diagnostic {
+                        semantic_identity: vec![resolved.clone()],
                         code: "TP3001".into(),
                         severity: "warning".into(),
                         message: format!("must-use result from {resolved} is discarded"),
@@ -3206,6 +3210,7 @@ fn unsupported(result: &mut Inspection, file: &SourceFile, range: SourceRange, m
         .reasons
         .push(format!("{}:{}: {message}", file.path, primary.line));
     result.diagnostics.push(Diagnostic {
+        semantic_identity: Vec::new(),
         code: "TP9001".into(),
         severity: "warning".into(),
         message: message.into(),
@@ -3229,6 +3234,7 @@ fn unsupported_related_import(
         .reasons
         .push(format!("{}:{}: {message}", file.path, primary.line));
     result.diagnostics.push(Diagnostic {
+        semantic_identity: Vec::new(),
         code: "TP9001".into(),
         severity: "warning".into(),
         message: message.into(),
@@ -3248,6 +3254,7 @@ fn declaration_error(
 ) {
     result.coverage.status = "incomplete".into();
     result.diagnostics.push(Diagnostic {
+        semantic_identity: Vec::new(),
         code: code.into(),
         severity: "error".into(),
         message: message.into(),
@@ -3273,6 +3280,7 @@ fn syntax_error(result: &mut Inspection, file: &SourceFile, summary: &ParseSumma
         crate::source_span(&file.path, &file.source, range).line
     ));
     result.diagnostics.push(Diagnostic {
+        semantic_identity: Vec::new(),
         code: "TP4001".into(),
         severity: "error".into(),
         message: format!(

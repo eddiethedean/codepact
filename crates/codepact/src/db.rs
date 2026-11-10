@@ -7,6 +7,53 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+// Query transport preserves private identity evidence without changing public schemas.
+fn encode_inspection(value: &Inspection) -> Result<String, serde_json::Error> {
+    let identities: Vec<_> = value
+        .diagnostics
+        .iter()
+        .map(|d| &d.semantic_identity)
+        .collect();
+    serde_json::to_string(&(value, identities))
+}
+
+fn decode_inspection(value: &str) -> Result<Inspection, serde_json::Error> {
+    let (mut inspection, identities): (Inspection, Vec<Vec<String>>) = serde_json::from_str(value)?;
+    for (diagnostic, identity) in inspection.diagnostics.iter_mut().zip(identities) {
+        diagnostic.semantic_identity = identity;
+    }
+    Ok(inspection)
+}
+
+fn encode_module_analysis(
+    value: &crate::semantic::ModuleAnalysis,
+) -> Result<String, serde_json::Error> {
+    let identities: Vec<_> = value
+        .inspection
+        .diagnostics
+        .iter()
+        .map(|d| &d.semantic_identity)
+        .collect();
+    serde_json::to_string(&(&value.inspection, identities, &value.exports))
+}
+
+fn decode_module_analysis(
+    value: &str,
+) -> Result<crate::semantic::ModuleAnalysis, serde_json::Error> {
+    let (mut inspection, identities, exports): (
+        Inspection,
+        Vec<Vec<String>>,
+        crate::semantic::SemanticExports,
+    ) = serde_json::from_str(value)?;
+    for (diagnostic, identity) in inspection.diagnostics.iter_mut().zip(identities) {
+        diagnostic.semantic_identity = identity;
+    }
+    Ok(crate::semantic::ModuleAnalysis {
+        exports,
+        inspection,
+    })
+}
+
 #[derive(Deserialize, Serialize)]
 struct FlowFileContext {
     model_catalog: crate::model::FlowModelCatalog,
@@ -112,7 +159,7 @@ fn inspect_module_query(
             },
         )
     });
-    serde_json::to_string(&analysis).expect("module analysis serializes")
+    encode_module_analysis(&analysis).expect("module analysis serializes")
 }
 
 #[salsa::tracked(returns(clone))]
@@ -122,7 +169,7 @@ fn module_exports_query(
     python_version: String,
     context_json: String,
 ) -> String {
-    let analysis: crate::semantic::ModuleAnalysis = serde_json::from_str(&inspect_module_query(
+    let analysis: crate::semantic::ModuleAnalysis = decode_module_analysis(&inspect_module_query(
         db,
         file,
         python_version,
@@ -152,7 +199,7 @@ fn inspect_project_query(
     });
     if exceeds_limit {
         db.unwind_if_revision_cancelled();
-        return serde_json::to_string(&crate::source_limit_inspection(&sizes))
+        return encode_inspection(&crate::source_limit_inspection(&sizes))
             .expect("source-limit result serializes");
     }
 
@@ -169,7 +216,7 @@ fn inspect_project_query(
             .saturating_add(summary.declarations.as_ref().map_or(0, std::vec::Vec::len));
         if total_declarations > crate::DEFAULT_MAX_TOTAL_AST_DECLARATIONS {
             db.unwind_if_revision_cancelled();
-            return serde_json::to_string(&crate::invalid_input_inspection(
+            return encode_inspection(&crate::invalid_input_inspection(
                 &source.path,
                 "total declaration work exceeds the 50,000 statement request limit",
                 total_source_bytes,
@@ -193,7 +240,7 @@ fn inspect_project_query(
             crate::semantic::context_for_module(source, summary, &plan, &computed_exports);
         let context_json = serde_json::to_string(&context).expect("module context serializes");
         let analysis: crate::semantic::ModuleAnalysis =
-            serde_json::from_str(&inspect_module_query(
+            decode_module_analysis(&inspect_module_query(
                 db,
                 file,
                 python_version.clone(),
@@ -210,7 +257,7 @@ fn inspect_project_query(
     }
     let inspection = crate::semantic::combine_project(plan.inspection, module_inspections);
     db.unwind_if_revision_cancelled();
-    serde_json::to_string(&inspection).expect("project inspection result serializes")
+    encode_inspection(&inspection).expect("project inspection result serializes")
 }
 
 #[salsa::tracked(returns(clone))]
@@ -244,7 +291,7 @@ fn check_flow_file_query(
         })
         .collect();
     let mut inspection: Inspection =
-        serde_json::from_str(&inspection_json).expect("flow file input deserializes");
+        decode_inspection(&inspection_json).expect("flow file input deserializes");
     let context: FlowFileContext =
         serde_json::from_str(&flow_context_json).expect("flow file context deserializes");
     crate::flow::reset_flow_budget(flow_budget);
@@ -263,7 +310,7 @@ fn check_flow_file_query(
         },
     );
     db.unwind_if_revision_cancelled();
-    serde_json::to_string(&inspection).expect("flow file result serializes")
+    encode_inspection(&inspection).expect("flow file result serializes")
 }
 
 #[salsa::tracked(returns(clone))]
@@ -292,7 +339,7 @@ fn check_flow_query(
         .collect();
     let cyclic_modules = crate::semantic::cyclic_import_modules(&sources, &summaries);
     let mut inspection: Inspection =
-        serde_json::from_str(&inspection_json).expect("inspection query result deserializes");
+        decode_inspection(&inspection_json).expect("inspection query result deserializes");
     inspection.diagnostics.retain(|diagnostic| {
         !diagnostic
             .message
@@ -376,10 +423,10 @@ fn check_flow_query(
             python_version.clone(),
             flow_budget,
             flow_context_json,
-            serde_json::to_string(&flow_input).expect("flow file input serializes"),
+            encode_inspection(&flow_input).expect("flow file input serializes"),
         );
         let flow: Inspection =
-            serde_json::from_str(&flow_json).expect("flow file result deserializes");
+            decode_inspection(&flow_json).expect("flow file result deserializes");
         inspection.diagnostics.extend(flow.diagnostics);
         for reason in flow.coverage.reasons {
             if !inspection.coverage.reasons.contains(&reason) {
@@ -391,7 +438,7 @@ fn check_flow_query(
         }
     }
     db.unwind_if_revision_cancelled();
-    serde_json::to_string(&inspection).expect("check result serializes")
+    encode_inspection(&inspection).expect("check result serializes")
 }
 
 #[derive(Clone, Debug)]
@@ -775,8 +822,7 @@ impl AnalysisSession {
             self.inspect_cancellable_with_must_use(files, python_version, run_must_use)?;
         let revision = inspected.revision;
         let inspection = inspected.inspection;
-        let inspection_json =
-            serde_json::to_string(&inspection).expect("inspection result serializes");
+        let inspection_json = encode_inspection(&inspection).expect("inspection result serializes");
         let model_catalog_json =
             serde_json::to_string(&self.model_catalog).expect("flow model catalog serializes");
         let result_json = salsa::Cancelled::catch(|| {
@@ -790,7 +836,7 @@ impl AnalysisSession {
         });
         let result_json = result_json.map_err(|_| AnalysisCancelled)?;
         let mut result: Inspection =
-            serde_json::from_str(&result_json).expect("check query returns valid JSON");
+            decode_inspection(&result_json).expect("check query returns valid JSON");
         result.diagnostics.sort_by(|left, right| {
             (
                 &left.primary.file,
@@ -915,7 +961,7 @@ impl AnalysisSession {
             )
         })
         .map_err(|_| AnalysisCancelled)?;
-        let inspection = serde_json::from_str(&result).expect("project query returns valid JSON");
+        let inspection = decode_inspection(&result).expect("project query returns valid JSON");
         Ok(SessionInspection {
             revision: self.revision,
             inspection,

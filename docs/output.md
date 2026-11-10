@@ -102,7 +102,9 @@ suppressed.
 
 Baseline schema 1 contains checker/rule/model/target identity, a source
 manifest, coverage state, a required update reason, and eligible finding
-entries. Fingerprints use algorithm version 3. A changed line/comment can keep
+entries. Fingerprints use algorithm version 4. Resolved resource contracts and must-use
+callable identities participate in matching. Version 3 baselines must be
+regenerated explicitly; unsupported versions fail with exit 2. A changed line/comment can keep
 an unambiguous match; duplicate identical sites are treated as ambiguous so a
 new finding is not hidden by an ordinal fallback. Incompatible or stale entries
 remain unmatched and visible in the check summary.

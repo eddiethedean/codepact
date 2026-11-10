@@ -1,0 +1,903 @@
+{
+  "client_source": "from provider import Connection\ndef run():\n    conn = Connection()\n",
+  "records": [
+    {
+      "binary_sha256": "39e8f348db4df29a1a769206b0eee83456d0d45f6ece7ef0a48b35d93b15115d",
+      "fixed": false,
+      "baseline": {
+        "fingerprint_algorithm_version": 3,
+        "baseline_schema_version": 1,
+        "engine_version": "0.4.0",
+        "rule_semantic_version": 1,
+        "target_python_version": "3.11",
+        "model_catalog_version": 2,
+        "snapshot_id": "e5e31cf89f382382dbb7237451fd50af21269ea1c5c487e2e9592d4510843afe",
+        "source_manifest": [
+          {
+            "logical_path": "main.py",
+            "sha256": "d654dd2bcb8a909334ffa6cd9b1df427cbdc26e95e7c0d40177d1e9e8a114b9e"
+          },
+          {
+            "logical_path": "provider.py",
+            "sha256": "86546b8db6153695cd3bb1e1677395a32944aa0dd34b59def6a175f60b746135"
+          }
+        ],
+        "logical_root": ".",
+        "include": [
+          "**/*.py"
+        ],
+        "exclude": [],
+        "selected_rules": [
+          "TP1001",
+          "TP1002",
+          "TP1003",
+          "TP2001",
+          "TP3001"
+        ],
+        "coverage_status": "complete-for-supported-subset",
+        "coverage_reasons": [],
+        "update_reason": "reviewed cleanup debt",
+        "entries": [
+          {
+            "fingerprint": "90f7306e03b7ff504e56b5770573070cf868109aee7546429c561e4cc26a35d5",
+            "code": "TP1002",
+            "logical_path": "main.py",
+            "certainty": "definite",
+            "trust": "declared-unverified",
+            "completion": "fallthrough",
+            "explanation": "owned resource cleanup obligation remains open on fallthrough"
+          }
+        ]
+      },
+      "observations": [
+        {
+          "label": "original",
+          "provider_source": "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def release(self): pass\n",
+          "command": [
+            "/private/tmp/codepact-317ef90-pilot-venv/bin/codepact",
+            "check",
+            "--no-config",
+            "--baseline",
+            "baseline.json",
+            "--json"
+          ],
+          "exit": 0,
+          "report": {
+            "execution_status": "completed",
+            "engine_version": "0.4.0",
+            "report_schema_version": 2,
+            "check_schema_version": 2,
+            "target_python_version": "3.11",
+            "model_catalog_version": 2,
+            "available_models": [
+              {
+                "id": "TPM-CTX-001",
+                "qualified_symbol": "contextlib.closing",
+                "source_revisions": [
+                  "CPython v3.11.0 Lib/contextlib.py",
+                  "CPython v3.12.0 Lib/contextlib.py",
+                  "CPython v3.13.0 Lib/contextlib.py"
+                ],
+                "source_urls": [
+                  "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+                ],
+                "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+                "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+                "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+              },
+              {
+                "id": "TPM-CTX-002",
+                "qualified_symbol": "contextlib.aclosing",
+                "source_revisions": [
+                  "CPython v3.11.0 Lib/contextlib.py",
+                  "CPython v3.12.0 Lib/contextlib.py",
+                  "CPython v3.13.0 Lib/contextlib.py"
+                ],
+                "source_urls": [
+                  "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+                ],
+                "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+                "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+                "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+              }
+            ],
+            "assurance": "lifecycle-checking-for-supported-exit-flow",
+            "contracts": [
+              {
+                "schema_version": 0,
+                "base_symbol": "provider.Connection",
+                "display_name": "Connection",
+                "lifecycle": {
+                  "closed_by": "close"
+                },
+                "access": "unspecified",
+                "source": {
+                  "file": "provider.py",
+                  "line": 2,
+                  "column": 1,
+                  "end_line": 2,
+                  "end_column": 29
+                },
+                "provenance": [
+                  {
+                    "origin": "python-resource-decorator",
+                    "trust": "declared-unverified"
+                  }
+                ]
+              }
+            ],
+            "coverage": {
+              "status": "complete-for-supported-subset",
+              "reasons": [],
+              "source_bytes": 198,
+              "declarations": 1
+            },
+            "diagnostics": [
+              {
+                "code": "TP1002",
+                "severity": "error",
+                "message": "owned resource cleanup obligation remains open on fallthrough",
+                "primary": {
+                  "file": "main.py",
+                  "line": 2,
+                  "column": 1,
+                  "end_line": 3,
+                  "end_column": 24
+                },
+                "related": [
+                  {
+                    "file": "main.py",
+                    "line": 3,
+                    "column": 5,
+                    "end_line": 3,
+                    "end_column": 24
+                  }
+                ],
+                "certainty": "definite",
+                "completion": "fallthrough",
+                "trust": "declared-unverified",
+                "coverage_reason": null,
+                "repair": "Close the resource on every reported exit, or return it through a resolved Owned[T] boundary.",
+                "fingerprint": "90f7306e03b7ff504e56b5770573070cf868109aee7546429c561e4cc26a35d5",
+                "base_severity": "error",
+                "effective_severity": "error",
+                "disposition": "suppressed-baseline",
+                "disposition_reason": "matching finding in configured baseline",
+                "explanation_id": "TP1002.R001",
+                "actionable": false,
+                "message_omitted_bytes": 0,
+                "repair_omitted_bytes": 0,
+                "related_sites_omitted": 0
+              }
+            ],
+            "counts": {
+              "TP1002": 1
+            },
+            "counts_by_certainty": {
+              "definite": 1
+            },
+            "counts_by_disposition": {
+              "suppressed-baseline": 1
+            },
+            "total_diagnostics": 1,
+            "actionable_diagnostics": 0,
+            "returned_diagnostics": 1,
+            "audit_diagnostics": 1,
+            "policy_failures": [],
+            "policy_warnings": [],
+            "unused_suppressions": [],
+            "details_truncated": false,
+            "snapshot_algorithm_version": 1,
+            "snapshot_id": "1733aeb17a9efffb00c31379959fd000d7a29c64cdff3cbdb63d4904387ad955",
+            "semantic_fingerprint": "874506085d8b6be057721fc37fa77352aecf3de772bbc824d479ff0186c5e65a",
+            "policy_fingerprint": "d9bad25b7b5a3c77155ed1202e87afe46f1af32405a110d05aa4d192c0904f5b",
+            "model_fingerprint": "b853763e15dcc12a605065aa5723d0d47cbe939311991b80056ee8ccddae31b7",
+            "snapshot_manifest": [
+              {
+                "logical_path": "main.py",
+                "sha256": "d654dd2bcb8a909334ffa6cd9b1df427cbdc26e95e7c0d40177d1e9e8a114b9e"
+              },
+              {
+                "logical_path": "provider.py",
+                "sha256": "86546b8db6153695cd3bb1e1677395a32944aa0dd34b59def6a175f60b746135"
+              }
+            ],
+            "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-contract-counterexample-f7s8wgm1",
+            "logical_root": ".",
+            "config_file": null,
+            "selected_files": [
+              "main.py",
+              "provider.py"
+            ],
+            "include": [
+              "**/*.py"
+            ],
+            "exclude": [],
+            "selected_rules": [
+              "TP1001",
+              "TP1002",
+              "TP1003",
+              "TP2001",
+              "TP3001"
+            ],
+            "disabled_rules": [],
+            "mode": "advisory",
+            "fail_on": "error",
+            "settings_origins": {
+              "baseline": "command-line",
+              "enabled-rules": "default",
+              "exclude": "default",
+              "fail-on": "default",
+              "include": "default",
+              "mode": "default",
+              "python-version": "default",
+              "root": "current-directory"
+            },
+            "baseline": {
+              "configured": true,
+              "compatible": true,
+              "entries": 1,
+              "matched": 1,
+              "unmatched": 0,
+              "update_reason": "reviewed cleanup debt"
+            },
+            "exit_code": 0
+          }
+        },
+        {
+          "label": "changed-contract",
+          "provider_source": "from codepact import resource\n@resource(closed_by='release')\nclass Connection:\n    def close(self): pass\n    def release(self): pass\n",
+          "command": [
+            "/private/tmp/codepact-317ef90-pilot-venv/bin/codepact",
+            "check",
+            "--no-config",
+            "--baseline",
+            "baseline.json",
+            "--json"
+          ],
+          "exit": 0,
+          "report": {
+            "execution_status": "completed",
+            "engine_version": "0.4.0",
+            "report_schema_version": 2,
+            "check_schema_version": 2,
+            "target_python_version": "3.11",
+            "model_catalog_version": 2,
+            "available_models": [
+              {
+                "id": "TPM-CTX-001",
+                "qualified_symbol": "contextlib.closing",
+                "source_revisions": [
+                  "CPython v3.11.0 Lib/contextlib.py",
+                  "CPython v3.12.0 Lib/contextlib.py",
+                  "CPython v3.13.0 Lib/contextlib.py"
+                ],
+                "source_urls": [
+                  "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+                ],
+                "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+                "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+                "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+              },
+              {
+                "id": "TPM-CTX-002",
+                "qualified_symbol": "contextlib.aclosing",
+                "source_revisions": [
+                  "CPython v3.11.0 Lib/contextlib.py",
+                  "CPython v3.12.0 Lib/contextlib.py",
+                  "CPython v3.13.0 Lib/contextlib.py"
+                ],
+                "source_urls": [
+                  "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+                ],
+                "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+                "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+                "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+              }
+            ],
+            "assurance": "lifecycle-checking-for-supported-exit-flow",
+            "contracts": [
+              {
+                "schema_version": 0,
+                "base_symbol": "provider.Connection",
+                "display_name": "Connection",
+                "lifecycle": {
+                  "closed_by": "release"
+                },
+                "access": "unspecified",
+                "source": {
+                  "file": "provider.py",
+                  "line": 2,
+                  "column": 1,
+                  "end_line": 2,
+                  "end_column": 31
+                },
+                "provenance": [
+                  {
+                    "origin": "python-resource-decorator",
+                    "trust": "declared-unverified"
+                  }
+                ]
+              }
+            ],
+            "coverage": {
+              "status": "complete-for-supported-subset",
+              "reasons": [],
+              "source_bytes": 200,
+              "declarations": 1
+            },
+            "diagnostics": [
+              {
+                "code": "TP1002",
+                "severity": "error",
+                "message": "owned resource cleanup obligation remains open on fallthrough",
+                "primary": {
+                  "file": "main.py",
+                  "line": 2,
+                  "column": 1,
+                  "end_line": 3,
+                  "end_column": 24
+                },
+                "related": [
+                  {
+                    "file": "main.py",
+                    "line": 3,
+                    "column": 5,
+                    "end_line": 3,
+                    "end_column": 24
+                  }
+                ],
+                "certainty": "definite",
+                "completion": "fallthrough",
+                "trust": "declared-unverified",
+                "coverage_reason": null,
+                "repair": "Close the resource on every reported exit, or return it through a resolved Owned[T] boundary.",
+                "fingerprint": "90f7306e03b7ff504e56b5770573070cf868109aee7546429c561e4cc26a35d5",
+                "base_severity": "error",
+                "effective_severity": "error",
+                "disposition": "suppressed-baseline",
+                "disposition_reason": "matching finding in configured baseline",
+                "explanation_id": "TP1002.R001",
+                "actionable": false,
+                "message_omitted_bytes": 0,
+                "repair_omitted_bytes": 0,
+                "related_sites_omitted": 0
+              }
+            ],
+            "counts": {
+              "TP1002": 1
+            },
+            "counts_by_certainty": {
+              "definite": 1
+            },
+            "counts_by_disposition": {
+              "suppressed-baseline": 1
+            },
+            "total_diagnostics": 1,
+            "actionable_diagnostics": 0,
+            "returned_diagnostics": 1,
+            "audit_diagnostics": 1,
+            "policy_failures": [],
+            "policy_warnings": [],
+            "unused_suppressions": [],
+            "details_truncated": false,
+            "snapshot_algorithm_version": 1,
+            "snapshot_id": "c0ee6e2ad45d31b0174776f0bfa91db4d74a373842fe41187177c7603b70f7d4",
+            "semantic_fingerprint": "22fbbd74d3478addfbb2e2dafa85147fcefa91c5b58101d3865978b853ad898c",
+            "policy_fingerprint": "d9bad25b7b5a3c77155ed1202e87afe46f1af32405a110d05aa4d192c0904f5b",
+            "model_fingerprint": "b853763e15dcc12a605065aa5723d0d47cbe939311991b80056ee8ccddae31b7",
+            "snapshot_manifest": [
+              {
+                "logical_path": "main.py",
+                "sha256": "d654dd2bcb8a909334ffa6cd9b1df427cbdc26e95e7c0d40177d1e9e8a114b9e"
+              },
+              {
+                "logical_path": "provider.py",
+                "sha256": "bd7f8e786cbe2f22b9b2050ad1ff64fbe25a68276bcdfc1f92adbf5842c3754b"
+              }
+            ],
+            "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-contract-counterexample-f7s8wgm1",
+            "logical_root": ".",
+            "config_file": null,
+            "selected_files": [
+              "main.py",
+              "provider.py"
+            ],
+            "include": [
+              "**/*.py"
+            ],
+            "exclude": [],
+            "selected_rules": [
+              "TP1001",
+              "TP1002",
+              "TP1003",
+              "TP2001",
+              "TP3001"
+            ],
+            "disabled_rules": [],
+            "mode": "advisory",
+            "fail_on": "error",
+            "settings_origins": {
+              "baseline": "command-line",
+              "enabled-rules": "default",
+              "exclude": "default",
+              "fail-on": "default",
+              "include": "default",
+              "mode": "default",
+              "python-version": "default",
+              "root": "current-directory"
+            },
+            "baseline": {
+              "configured": true,
+              "compatible": true,
+              "entries": 1,
+              "matched": 1,
+              "unmatched": 0,
+              "update_reason": "reviewed cleanup debt"
+            },
+            "exit_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "binary_sha256": "f6727edbc1857617a726be1ef37901ad42ee37869fdf6fe4f41db1a3b29d4dc4",
+      "fixed": true,
+      "baseline": {
+        "fingerprint_algorithm_version": 4,
+        "baseline_schema_version": 1,
+        "engine_version": "0.4.0",
+        "rule_semantic_version": 1,
+        "target_python_version": "3.11",
+        "model_catalog_version": 2,
+        "snapshot_id": "e5e31cf89f382382dbb7237451fd50af21269ea1c5c487e2e9592d4510843afe",
+        "source_manifest": [
+          {
+            "logical_path": "main.py",
+            "sha256": "d654dd2bcb8a909334ffa6cd9b1df427cbdc26e95e7c0d40177d1e9e8a114b9e"
+          },
+          {
+            "logical_path": "provider.py",
+            "sha256": "86546b8db6153695cd3bb1e1677395a32944aa0dd34b59def6a175f60b746135"
+          }
+        ],
+        "logical_root": ".",
+        "include": [
+          "**/*.py"
+        ],
+        "exclude": [],
+        "selected_rules": [
+          "TP1001",
+          "TP1002",
+          "TP1003",
+          "TP2001",
+          "TP3001"
+        ],
+        "coverage_status": "complete-for-supported-subset",
+        "coverage_reasons": [],
+        "update_reason": "reviewed cleanup debt",
+        "entries": [
+          {
+            "fingerprint": "e8c4bdefc86269bbe6088174299699324bd5d71dc075fcf1f4788ecb3f49f18d",
+            "code": "TP1002",
+            "logical_path": "main.py",
+            "certainty": "definite",
+            "trust": "declared-unverified",
+            "completion": "fallthrough",
+            "explanation": "owned resource cleanup obligation remains open on fallthrough"
+          }
+        ]
+      },
+      "observations": [
+        {
+          "label": "original",
+          "provider_source": "from codepact import resource\n@resource(closed_by='close')\nclass Connection:\n    def close(self): pass\n    def release(self): pass\n",
+          "command": [
+            "/Volumes/T7/coding/typepact/target/release/codepact",
+            "check",
+            "--no-config",
+            "--baseline",
+            "baseline.json",
+            "--json"
+          ],
+          "exit": 0,
+          "report": {
+            "execution_status": "completed",
+            "engine_version": "0.4.0",
+            "report_schema_version": 2,
+            "check_schema_version": 2,
+            "target_python_version": "3.11",
+            "model_catalog_version": 2,
+            "available_models": [
+              {
+                "id": "TPM-CTX-001",
+                "qualified_symbol": "contextlib.closing",
+                "source_revisions": [
+                  "CPython v3.11.0 Lib/contextlib.py",
+                  "CPython v3.12.0 Lib/contextlib.py",
+                  "CPython v3.13.0 Lib/contextlib.py"
+                ],
+                "source_urls": [
+                  "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+                ],
+                "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+                "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+                "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+              },
+              {
+                "id": "TPM-CTX-002",
+                "qualified_symbol": "contextlib.aclosing",
+                "source_revisions": [
+                  "CPython v3.11.0 Lib/contextlib.py",
+                  "CPython v3.12.0 Lib/contextlib.py",
+                  "CPython v3.13.0 Lib/contextlib.py"
+                ],
+                "source_urls": [
+                  "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+                ],
+                "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+                "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+                "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+              }
+            ],
+            "assurance": "lifecycle-checking-for-supported-exit-flow",
+            "contracts": [
+              {
+                "schema_version": 0,
+                "base_symbol": "provider.Connection",
+                "display_name": "Connection",
+                "lifecycle": {
+                  "closed_by": "close"
+                },
+                "access": "unspecified",
+                "source": {
+                  "file": "provider.py",
+                  "line": 2,
+                  "column": 1,
+                  "end_line": 2,
+                  "end_column": 29
+                },
+                "provenance": [
+                  {
+                    "origin": "python-resource-decorator",
+                    "trust": "declared-unverified"
+                  }
+                ]
+              }
+            ],
+            "coverage": {
+              "status": "complete-for-supported-subset",
+              "reasons": [],
+              "source_bytes": 198,
+              "declarations": 1
+            },
+            "diagnostics": [
+              {
+                "code": "TP1002",
+                "severity": "error",
+                "message": "owned resource cleanup obligation remains open on fallthrough",
+                "primary": {
+                  "file": "main.py",
+                  "line": 2,
+                  "column": 1,
+                  "end_line": 3,
+                  "end_column": 24
+                },
+                "related": [
+                  {
+                    "file": "main.py",
+                    "line": 3,
+                    "column": 5,
+                    "end_line": 3,
+                    "end_column": 24
+                  }
+                ],
+                "certainty": "definite",
+                "completion": "fallthrough",
+                "trust": "declared-unverified",
+                "coverage_reason": null,
+                "repair": "Close the resource on every reported exit, or return it through a resolved Owned[T] boundary.",
+                "fingerprint": "e8c4bdefc86269bbe6088174299699324bd5d71dc075fcf1f4788ecb3f49f18d",
+                "base_severity": "error",
+                "effective_severity": "error",
+                "disposition": "suppressed-baseline",
+                "disposition_reason": "matching finding in configured baseline",
+                "explanation_id": "TP1002.R001",
+                "actionable": false,
+                "message_omitted_bytes": 0,
+                "repair_omitted_bytes": 0,
+                "related_sites_omitted": 0
+              }
+            ],
+            "counts": {
+              "TP1002": 1
+            },
+            "counts_by_certainty": {
+              "definite": 1
+            },
+            "counts_by_disposition": {
+              "suppressed-baseline": 1
+            },
+            "total_diagnostics": 1,
+            "actionable_diagnostics": 0,
+            "returned_diagnostics": 1,
+            "audit_diagnostics": 1,
+            "policy_failures": [],
+            "policy_warnings": [],
+            "unused_suppressions": [],
+            "details_truncated": false,
+            "snapshot_algorithm_version": 1,
+            "snapshot_id": "fa36de7716aefe96b7dcfcc62e18e4e7d74a9fac3d98522615857e60e164df9b",
+            "semantic_fingerprint": "874506085d8b6be057721fc37fa77352aecf3de772bbc824d479ff0186c5e65a",
+            "policy_fingerprint": "e80cd2c7ed130b1636e1f221fadcb928ec5590bd025916134881db9c5400f1ec",
+            "model_fingerprint": "b853763e15dcc12a605065aa5723d0d47cbe939311991b80056ee8ccddae31b7",
+            "snapshot_manifest": [
+              {
+                "logical_path": "main.py",
+                "sha256": "d654dd2bcb8a909334ffa6cd9b1df427cbdc26e95e7c0d40177d1e9e8a114b9e"
+              },
+              {
+                "logical_path": "provider.py",
+                "sha256": "86546b8db6153695cd3bb1e1677395a32944aa0dd34b59def6a175f60b746135"
+              }
+            ],
+            "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-contract-counterexample-h6ftyet4",
+            "logical_root": ".",
+            "config_file": null,
+            "selected_files": [
+              "main.py",
+              "provider.py"
+            ],
+            "include": [
+              "**/*.py"
+            ],
+            "exclude": [],
+            "selected_rules": [
+              "TP1001",
+              "TP1002",
+              "TP1003",
+              "TP2001",
+              "TP3001"
+            ],
+            "disabled_rules": [],
+            "mode": "advisory",
+            "fail_on": "error",
+            "settings_origins": {
+              "baseline": "command-line",
+              "enabled-rules": "default",
+              "exclude": "default",
+              "fail-on": "default",
+              "include": "default",
+              "mode": "default",
+              "python-version": "default",
+              "root": "current-directory"
+            },
+            "baseline": {
+              "configured": true,
+              "compatible": true,
+              "entries": 1,
+              "matched": 1,
+              "unmatched": 0,
+              "update_reason": "reviewed cleanup debt"
+            },
+            "exit_code": 0
+          }
+        },
+        {
+          "label": "changed-contract",
+          "provider_source": "from codepact import resource\n@resource(closed_by='release')\nclass Connection:\n    def close(self): pass\n    def release(self): pass\n",
+          "command": [
+            "/Volumes/T7/coding/typepact/target/release/codepact",
+            "check",
+            "--no-config",
+            "--baseline",
+            "baseline.json",
+            "--json"
+          ],
+          "exit": 1,
+          "report": {
+            "execution_status": "completed",
+            "engine_version": "0.4.0",
+            "report_schema_version": 2,
+            "check_schema_version": 2,
+            "target_python_version": "3.11",
+            "model_catalog_version": 2,
+            "available_models": [
+              {
+                "id": "TPM-CTX-001",
+                "qualified_symbol": "contextlib.closing",
+                "source_revisions": [
+                  "CPython v3.11.0 Lib/contextlib.py",
+                  "CPython v3.12.0 Lib/contextlib.py",
+                  "CPython v3.13.0 Lib/contextlib.py"
+                ],
+                "source_urls": [
+                  "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+                ],
+                "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+                "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+                "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+              },
+              {
+                "id": "TPM-CTX-002",
+                "qualified_symbol": "contextlib.aclosing",
+                "source_revisions": [
+                  "CPython v3.11.0 Lib/contextlib.py",
+                  "CPython v3.12.0 Lib/contextlib.py",
+                  "CPython v3.13.0 Lib/contextlib.py"
+                ],
+                "source_urls": [
+                  "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+                  "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+                ],
+                "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+                "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+                "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+              }
+            ],
+            "assurance": "lifecycle-checking-for-supported-exit-flow",
+            "contracts": [
+              {
+                "schema_version": 0,
+                "base_symbol": "provider.Connection",
+                "display_name": "Connection",
+                "lifecycle": {
+                  "closed_by": "release"
+                },
+                "access": "unspecified",
+                "source": {
+                  "file": "provider.py",
+                  "line": 2,
+                  "column": 1,
+                  "end_line": 2,
+                  "end_column": 31
+                },
+                "provenance": [
+                  {
+                    "origin": "python-resource-decorator",
+                    "trust": "declared-unverified"
+                  }
+                ]
+              }
+            ],
+            "coverage": {
+              "status": "complete-for-supported-subset",
+              "reasons": [],
+              "source_bytes": 200,
+              "declarations": 1
+            },
+            "diagnostics": [
+              {
+                "code": "TP1002",
+                "severity": "error",
+                "message": "owned resource cleanup obligation remains open on fallthrough",
+                "primary": {
+                  "file": "main.py",
+                  "line": 2,
+                  "column": 1,
+                  "end_line": 3,
+                  "end_column": 24
+                },
+                "related": [
+                  {
+                    "file": "main.py",
+                    "line": 3,
+                    "column": 5,
+                    "end_line": 3,
+                    "end_column": 24
+                  }
+                ],
+                "certainty": "definite",
+                "completion": "fallthrough",
+                "trust": "declared-unverified",
+                "coverage_reason": null,
+                "repair": "Close the resource on every reported exit, or return it through a resolved Owned[T] boundary.",
+                "fingerprint": "430508088f0135b9c8334bd0aa140f7f746721af8a87457a4e02a61657c80298",
+                "base_severity": "error",
+                "effective_severity": "error",
+                "disposition": "active",
+                "disposition_reason": null,
+                "explanation_id": "TP1002.R001",
+                "actionable": true,
+                "message_omitted_bytes": 0,
+                "repair_omitted_bytes": 0,
+                "related_sites_omitted": 0
+              }
+            ],
+            "counts": {
+              "TP1002": 1
+            },
+            "counts_by_certainty": {
+              "definite": 1
+            },
+            "counts_by_disposition": {
+              "active": 1
+            },
+            "total_diagnostics": 1,
+            "actionable_diagnostics": 1,
+            "returned_diagnostics": 1,
+            "audit_diagnostics": 0,
+            "policy_failures": [
+              "TP1002 owned resource cleanup obligation remains open on fallthrough"
+            ],
+            "policy_warnings": [
+              "1 baseline entries no longer match current findings"
+            ],
+            "unused_suppressions": [],
+            "details_truncated": false,
+            "snapshot_algorithm_version": 1,
+            "snapshot_id": "cf778b886f0983d945f314106ae5c5131c59d06c7d0a2608b7e7cf86e871d622",
+            "semantic_fingerprint": "22fbbd74d3478addfbb2e2dafa85147fcefa91c5b58101d3865978b853ad898c",
+            "policy_fingerprint": "e80cd2c7ed130b1636e1f221fadcb928ec5590bd025916134881db9c5400f1ec",
+            "model_fingerprint": "b853763e15dcc12a605065aa5723d0d47cbe939311991b80056ee8ccddae31b7",
+            "snapshot_manifest": [
+              {
+                "logical_path": "main.py",
+                "sha256": "d654dd2bcb8a909334ffa6cd9b1df427cbdc26e95e7c0d40177d1e9e8a114b9e"
+              },
+              {
+                "logical_path": "provider.py",
+                "sha256": "bd7f8e786cbe2f22b9b2050ad1ff64fbe25a68276bcdfc1f92adbf5842c3754b"
+              }
+            ],
+            "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-contract-counterexample-h6ftyet4",
+            "logical_root": ".",
+            "config_file": null,
+            "selected_files": [
+              "main.py",
+              "provider.py"
+            ],
+            "include": [
+              "**/*.py"
+            ],
+            "exclude": [],
+            "selected_rules": [
+              "TP1001",
+              "TP1002",
+              "TP1003",
+              "TP2001",
+              "TP3001"
+            ],
+            "disabled_rules": [],
+            "mode": "advisory",
+            "fail_on": "error",
+            "settings_origins": {
+              "baseline": "command-line",
+              "enabled-rules": "default",
+              "exclude": "default",
+              "fail-on": "default",
+              "include": "default",
+              "mode": "default",
+              "python-version": "default",
+              "root": "current-directory"
+            },
+            "baseline": {
+              "configured": true,
+              "compatible": true,
+              "entries": 1,
+              "matched": 0,
+              "unmatched": 1,
+              "update_reason": "reviewed cleanup debt"
+            },
+            "exit_code": 1
+          }
+        }
+      ]
+    }
+  ]
+}

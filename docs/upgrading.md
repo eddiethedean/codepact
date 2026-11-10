@@ -28,6 +28,16 @@ keep their meaning; new must-use contracts do not transfer ownership or discharg
 cleanup. Baselines should be created only after reviewing findings. See the
 [adoption workflow](adopting.md) and [schema transition](output.md).
 
+Candidate baselines now use fingerprint algorithm 4. Algorithm 3 baselines
+fail with exit 2 and require an explicit reviewed `baseline update`.
+Changed resolved resource/cleanup contracts reopen findings.
+
+Rust callers constructing `Diagnostic` or `CheckDiagnostic` literals must
+initialize the new `semantic_identity` field. The analyzer supplies this
+internal evidence; public JSON omits it. Generate baselines from fresh analysis:
+deserializing a public report cannot restore the resolved facts, and baseline
+creation then fails before writing a file.
+
 ## Move from TypePact to CodePact 0.3
 
 CodePact is the renamed project and 0.3.0 is the first release under the new

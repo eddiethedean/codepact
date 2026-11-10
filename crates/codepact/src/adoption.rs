@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 pub const ADOPTION_SCHEMA_VERSION: u8 = 2;
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
-pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 3;
+pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 4;
 pub const RULE_SEMANTIC_VERSION: u8 = 1;
 pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"];
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
@@ -1043,6 +1043,7 @@ fn fingerprint(diagnostic: &CheckDiagnostic, contents: &BTreeMap<&str, &str>) ->
         diagnostic.trust.clone(),
         diagnostic.completion.clone().unwrap_or_default(),
         related,
+        serde_json::to_string(&diagnostic.semantic_identity).expect("identity serializes"),
     ]
     .join("\0");
     hash(encoding.as_bytes())
@@ -1370,6 +1371,7 @@ pub fn build_report(
             completion: baseline_entry.completion.clone(),
         };
         if is_eligible
+            && !diagnostic.semantic_identity.is_empty()
             && disposition == "active"
             && baseline.as_ref().is_some_and(|(entries, compatible, _)| {
                 *compatible && candidates.get(&fp) == Some(&1) && entries.contains(&baseline_key)
@@ -1649,6 +1651,9 @@ pub fn write_baseline(
         if suppression_at(source, d.primary.line, &d.code)?.is_some() {
             continue;
         }
+        if d.semantic_identity.is_empty() {
+            return Err("cannot baseline a finding without resolved contract identity; rerun analysis before updating the baseline".into());
+        }
         let finding_fingerprint = fingerprint(d, &content);
         if candidate_counts.get(&finding_fingerprint) != Some(&1) {
             skipped_ambiguous += 1;
@@ -1786,6 +1791,7 @@ pub fn suppression_diagnostic(
     message: String,
 ) -> CheckDiagnostic {
     CheckDiagnostic {
+        semantic_identity: Vec::new(),
         code: "TP4002".into(),
         severity: "error".into(),
         message,

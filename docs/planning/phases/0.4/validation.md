@@ -1,6 +1,6 @@
 # 0.4 validation matrix
 
-Status: **AD01 scope is accepted; all V04 rows and technical phase gates remain pending.** The references below are partial automated evidence, not full-row passes. The [synthetic project evaluation](synthetic-projects-2026-11-09.md) and [November 10 corpus-quality follow-up](synthetic-projects-2026-11-10.md) exercise controlled findings, repairs, static-tool controls and unsupported boundaries; neither counts toward A05. Partial pilot results and performance measurements are recorded in the [pilot results](pilot-results-2026-11-09.md) and [performance evidence](performance-2026-11-09.md); neither completes its qualification criteria. IDs are independent of V01/V02/V03. The [specification](specification.md) supplies the accepted AD01 contracts; the [phase plan](../0.4-adoption.md) maps work packages and A01–A08/CS02.
+Status: **AD01 scope is accepted; V04-02 technical controls pass; other V04 rows and technical phase gates remain pending.** The references below are partial automated evidence, not full-row passes. The [synthetic project evaluation](synthetic-projects-2026-11-09.md) and [November 10 corpus-quality follow-up](synthetic-projects-2026-11-10.md) exercise controlled findings, repairs, static-tool controls and unsupported boundaries; neither counts toward A05. Partial pilot results and performance measurements are recorded in the [pilot results](pilot-results-2026-11-09.md) and [performance evidence](performance-2026-11-09.md); neither completes its qualification criteria. IDs are independent of V01/V02/V03. The [specification](specification.md) supplies the accepted AD01 contracts; the [phase plan](../0.4-adoption.md) maps work packages and A01–A08/CS02.
 
 ## Required matrix
 
@@ -37,9 +37,15 @@ Each applicable row needs valid, invalid and unsupported controls. Assert canoni
 
 CLI portions of LE-V01/LE-V02 map to V04-05–07, V04-18 and V04-25. CLI AI-V01 maps to V04-05–08/25, AI-V02 to V04-22–23, AI-V03 to V04-17/19/21/24, and AI-V04 to V04-04/24. LSP/MCP parity, unsaved-editor versions and client delivery remain 0.8 work; future structured-task repair fixtures follow CS03.
 
+## Recorded technical qualification
+
+| Row | Technical status | Evidence and review |
+| --- | --- | --- |
+| V04-02 | Pass | [23 configuration controls](evidence/config-qualification-2026-11-10/README.md), with exact source/binary hashes, commands, inputs and outputs; Codex technical review, 2026-11-10. Accountable maintainer gate signoff remains separate. |
+
 ## Current candidate test references
 
-These tests exercise a subset of the listed assertions. Each V04 row still
+These tests exercise a subset of the listed assertions. Each remaining V04 row
 requires its full valid/invalid/unsupported controls and retained evidence
 before it can be marked Pass.
 
@@ -56,6 +62,7 @@ before it can be marked Pass.
 | `advisory_strict_and_mandatory_severity_follow_policy_contract` and `policy_truth_table_keeps_severity_certainty_coverage_and_rule_selection_separate` | V04-08 |
 | `line_suppression_is_reasoned_and_does_not_delete_the_audit_finding` and `invalid_suppressions_cannot_be_baselined_and_stale_targets_do_not_hide_findings` | V04-09/10 |
 | `baseline_update_is_explicit_and_baseline_only_hides_matching_results`, `baseline_preserves_unambiguous_sites_and_surfaces_inserted_duplicates`, and `baseline_inputs_and_replace_targets_are_validated_before_source_discovery` | V04-10/11 |
+| `baseline_resource_identity_refreshes_changed_contracts_and_resolved_imports` and `contract_identity_survives_reused_queries_without_changing_public_json` | V04-10/11/21 controls for changed cleanup declarations, resolved import rebinding, unchanged declaration movement, algorithm 3 rejection, fresh/reused identity parity and refusal to generate a baseline after private evidence was lost through public JSON. These close the reproduced stale-contract suppression defect; effect-summary changes and the remaining matrix assertions still need qualification. |
 | `baseline_replace_refusal_and_failed_input_preserve_the_previous_file` | Existing bytes survive a refused replacement and a fatal invalid-UTF-8 input; valid replacement succeeds and cleans up its temporary file for V04-11 |
 | `suppression_targets_only_the_primary_start_line_and_retains_raw_findings` and `baseline_rejects_unsupported_versions_and_duplicate_entries_without_hiding_findings` | Partial V04-09/11 |
 | `limited_json_serialization_accepts_exact_limit_and_rejects_overflow` and `limited_json_serialization_reports_serializer_errors_separately` in `crates/codepact/src/adoption.rs` | Exact output limit, overflow rejection and serialization-error classification for V04-19 |
