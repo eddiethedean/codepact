@@ -5,6 +5,9 @@ labeled and no actionability percentage is claimed. The six frozen revisions
 were replayed on exact implementation candidate `83ae561` on 2026-11-10; see
 the [current-candidate replay](evidence/2026-11-10-candidate-83ae/pilot/README.md).
 
+The later source-candidate replay after the synthetic-corpus analyzer fixes is
+retained in the [2026-11-10 `eb093c9` pilot evidence](evidence/2026-11-10-candidate-eb093c/pilot/README.md).
+
 ## Run identity
 
 - Candidate source revision: `620656b8a8a28ac57a29e589164dc9b58c8141d8`.

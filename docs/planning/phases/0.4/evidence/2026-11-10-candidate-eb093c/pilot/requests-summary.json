@@ -1,0 +1,25 @@
+{
+  "certainty": {
+    "unknown": 5006
+  },
+  "coverage_reasons": 5006,
+  "coverage_status": "incomplete",
+  "diagnostics": {
+    "TP9001": 5006
+  },
+  "dirty_before": false,
+  "eligible_definite_findings": 0,
+  "execution_status": "completed",
+  "exit_code": 0,
+  "gzip_sha256": "27377144c6896420b9defa5095579aa5d982429d2ce5c3ad3a20fb895ac180fb",
+  "json_bytes": 5354054,
+  "json_sha256": "df7b809b939f784dab836cc86d39bd17b8b27159afffbb5673453b411b710c17",
+  "project": "requests",
+  "report_exit_code": 0,
+  "revision": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
+  "selected_files": 37,
+  "source_bytes": 407127,
+  "stderr_bytes": 0,
+  "stderr_sha256": null,
+  "tree": "0c8b989695d73c087123936657c0fbfe3034471f"
+}

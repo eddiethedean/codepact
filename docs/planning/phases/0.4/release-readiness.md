@@ -9,16 +9,15 @@ of a passing gate.
 
 ## Starting point and findings
 
-The exact implementation candidate `f4859b0` passed local `uv run --locked
-make check`, [Quality run 42732580869](https://github.com/eddiethedean/codepact/actions/runs/42732580869),
-and [build-only Release run 42733943867](https://github.com/eddiethedean/codepact/actions/runs/42733943867).
-The later evidence-only tree `c8cf0e2` passed [Quality run
-42735581630](https://github.com/eddiethedean/codepact/actions/runs/42735581630).
-The synthetic evaluation and imported-helper flow fix described in the
-[synthetic project report](synthetic-projects-2026-11-09.md), followed by the
-[November 10 corpus-quality check](synthetic-projects-2026-11-10.md), are later
-source and test changes; they need exact-candidate checks before reuse as
-release evidence. The [V04 matrix](validation.md) still lacks complete row-level
+The latest checked implementation snapshot, `eb093c9`, contains the expanded
+synthetic corpus, fixes exercised by those fixtures, and representative
+feature-set examples in the user docs. It passed the full local check and
+[Quality run 42763947397](https://github.com/eddiethedean/codepact/actions/runs/42763947397).
+Its [build-only Release run 42814622714](https://github.com/eddiethedean/codepact/actions/runs/42814622714)
+passed the complete distribution workflow. The [current-candidate pilot
+replay](evidence/2026-11-10-candidate-eb093c/pilot/README.md) still has no
+eligible definite findings in completed scans; three of six projects fail
+before analysis. The [V04 matrix](validation.md) still lacks complete row-level
 qualification, the operational record covers only part of the required
 workloads, and the real-project pilot has no eligible acceptance sample.
 

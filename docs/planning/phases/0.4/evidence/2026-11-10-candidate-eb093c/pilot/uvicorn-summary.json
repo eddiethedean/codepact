@@ -1,0 +1,25 @@
+{
+  "certainty": {
+    "unknown": 10842
+  },
+  "coverage_reasons": 8765,
+  "coverage_status": "incomplete",
+  "diagnostics": {
+    "TP9001": 10842
+  },
+  "dirty_before": false,
+  "eligible_definite_findings": 0,
+  "execution_status": "completed",
+  "exit_code": 0,
+  "gzip_sha256": "143abbe6586a065f2a3351d10667132fdd8f9e72262bb330dd41168bdde358bd",
+  "json_bytes": 11598692,
+  "json_sha256": "3071b307543552b4f4d8216533eb546a2e434c541f0fd329f176e1838be826ee",
+  "project": "uvicorn",
+  "report_exit_code": 0,
+  "revision": "a99c1b76ee9caea67ff98e2ccc457bd372db193f",
+  "selected_files": 84,
+  "source_bytes": 629571,
+  "stderr_bytes": 0,
+  "stderr_sha256": null,
+  "tree": "8fbdd8d45f2ad93f09b5524237d769a524cee086"
+}
