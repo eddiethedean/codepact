@@ -1259,21 +1259,6 @@ fn ownership_model_revision(result: &CheckResult) -> Option<&str> {
         .map(String::as_str)
 }
 
-fn suppression_at(source: &str, target_line: usize, code: &str) -> Result<Option<String>, String> {
-    let Some((_, comment)) = source_comments(source)
-        .into_iter()
-        .find(|(line, _)| *line == target_line)
-    else {
-        return Ok(None);
-    };
-    Ok(parse_suppression(comment)?.and_then(|(codes, reason)| {
-        codes
-            .iter()
-            .any(|candidate| candidate == code)
-            .then_some(reason)
-    }))
-}
-
 fn validate_analysis_scope(result: &CheckResult, config: &EffectiveConfig) -> Result<(), String> {
     if result.diagnostics.iter().any(|d| d.code == "TP9002") {
         return Err(
@@ -1716,20 +1701,27 @@ pub fn write_baseline(
     if reason.len() > 8 * 1024 {
         return Err("baseline update reason exceeds the 8 KiB limit".into());
     }
+    let mut suppressions_by_path = BTreeMap::new();
     for source in files {
+        let mut suppressions_by_line = BTreeMap::new();
+        let mut previous_comment_line = None;
         for (line, comment) in source_comments(&source.source) {
-            if comment
+            // Baseline matching uses the first comment for each computed line.
+            let first_on_line = previous_comment_line.replace(line) != Some(line);
+            if !comment
                 .strip_prefix('#')
                 .is_some_and(|text| text.trim_start().starts_with("codepact:"))
             {
-                if let Err(message) = parse_suppression(comment) {
-                    return Err(format!(
-                        "invalid suppression at {}:{line}: {message}",
-                        source.path
-                    ));
-                }
+                continue;
+            }
+            let suppression = parse_suppression(comment).map_err(|message| {
+                format!("invalid suppression at {}:{line}: {message}", source.path)
+            })?;
+            if let Some((codes, _)) = suppression.filter(|_| first_on_line) {
+                suppressions_by_line.insert(line, codes);
             }
         }
+        suppressions_by_path.insert(source.path.as_str(), suppressions_by_line);
     }
     reject_symlink_components(path, "baseline destination")?;
     if path.exists() && !replace {
@@ -1763,8 +1755,11 @@ pub fn write_baseline(
         if !eligible(d) || !config.enabled_rules.contains(&d.code) {
             continue;
         }
-        let source = content.get(d.primary.file.as_str()).copied().unwrap_or("");
-        if suppression_at(source, d.primary.line, &d.code)?.is_some() {
+        if suppressions_by_path
+            .get(d.primary.file.as_str())
+            .and_then(|lines| lines.get(&d.primary.line))
+            .is_some_and(|codes| codes.contains(&d.code))
+        {
             continue;
         }
         if d.semantic_identity.is_empty() {

@@ -535,6 +535,52 @@ fn v04_13_15_unsupported_descriptor_async_generator_and_dynamic_calls_are_bounda
 }
 
 #[test]
+fn baseline_excludes_only_the_matching_file_line_and_rule() {
+    let p = Project::new("baseline-suppression-index");
+    let prefix = "from codepact import must_use\n@must_use\ndef fetch(x: int) -> int: return x\n";
+    p.write(
+        "a.py",
+        &format!(
+            "{prefix}fetch(1)  # codepact: ignore[TP3001] -- intentional discard\n\
+             fetch(2)  # codepact: ignore[TP1001] -- different rule\n"
+        ),
+    );
+    p.write("b.py", &format!("{prefix}fetch(1)\n"));
+    let update = p.run(&[
+        "baseline",
+        "update",
+        "--no-config",
+        "--output",
+        "baseline.json",
+        "--reason",
+        "existing findings",
+    ]);
+    assert!(update.status.success(), "{:?}", update);
+
+    let report = p.check(&["--baseline", "baseline.json", "--fail-on", "warning"], 0);
+    let must_use_findings = findings(&report, "TP3001");
+    let dispositions = must_use_findings
+        .iter()
+        .map(|finding| {
+            (
+                finding["primary"]["file"].as_str().unwrap(),
+                finding["primary"]["line"].as_u64().unwrap(),
+                finding["disposition"].as_str().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        dispositions,
+        [
+            ("a.py", 4, "suppressed-inline"),
+            ("a.py", 5, "suppressed-baseline"),
+            ("b.py", 4, "suppressed-baseline"),
+        ]
+    );
+    assert_eq!(report["baseline"]["entries"], 2);
+}
+
+#[test]
 fn literal_if_uses_only_the_reachable_resource_flow() {
     let p = Project::new("literal-if-resource-flow");
     let prefix = "from codepact import resource\n\
