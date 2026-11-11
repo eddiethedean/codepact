@@ -61,6 +61,10 @@ fields and containers, returned aliases, dynamic dispatch, relative and star
 imports, import cycles, and ambiguous modules remain outside the released
 subset. Consult [limitations](limitations.md).
 
+Starting in CodePact 0.5.1, the lifecycle checker follows only the reachable
+branch of `if True` and `if False`. For unresolved conditions it joins the
+reachable outcomes of both branches.
+
 ## CodePact 0.3.0 cleanup behavior
 
 CodePact 0.3.0 extends cleanup checking across supported synchronous exit

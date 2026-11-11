@@ -12,6 +12,9 @@
 - Rust adoption reports keep the same policy fingerprint and snapshot ID
   when callers reorder source files containing inline suppressions.
   [Issue #9](https://github.com/eddiethedean/codepact/issues/9)
+- Lifecycle checks follow the reachable branch of `if True` and `if False`.
+  A definite use-after-close in reachable code fails the default advisory check.
+  [Issue #5](https://github.com/eddiethedean/codepact/issues/5)
 - Baseline matching includes the exact engine version. Review and regenerate
   a 0.5.0 baseline when upgrading to 0.5.1.
   [Baseline workflow](adopting.md#record-the-initial-findings)
