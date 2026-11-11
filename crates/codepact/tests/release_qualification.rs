@@ -535,6 +535,43 @@ fn v04_13_15_unsupported_descriptor_async_generator_and_dynamic_calls_are_bounda
 }
 
 #[test]
+fn literal_if_uses_only_the_reachable_resource_flow() {
+    let p = Project::new("literal-if-resource-flow");
+    let prefix = "from codepact import resource\n\
+                  @resource(closed_by='close')\n\
+                  class R:\n    def close(self): pass\n    def read(self): pass\n\
+                  def run():\n    r = R()\n";
+    for (body, exit) in [
+        ("    r.close()\n    r.read()\n", 1),
+        ("    if True:\n        r.close()\n    r.read()\n", 1),
+        (
+            "    if False:\n        pass\n    else:\n        r.close()\n    r.read()\n",
+            1,
+        ),
+        (
+            "    if False:\n        r.close()\n    r.read()\n    r.close()\n",
+            0,
+        ),
+        (
+            "    if True:\n        r.close()\n        return\n    r.read()\n",
+            0,
+        ),
+    ] {
+        p.write("main.py", &format!("{prefix}{body}"));
+        let report = p.check(&[], exit);
+        assert_eq!(
+            report["coverage"]["status"],
+            "complete-for-supported-subset"
+        );
+        assert_eq!(report["total_diagnostics"], exit);
+        if exit == 1 {
+            assert_eq!(report["diagnostics"][0]["code"], "TP1001");
+            assert_eq!(report["diagnostics"][0]["certainty"], "definite");
+        }
+    }
+}
+
+#[test]
 fn report_snapshot_is_independent_of_suppressed_source_file_order() {
     use codepact::{
         adoption::{build_report, resolve_config, Overrides},

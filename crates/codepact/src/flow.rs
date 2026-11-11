@@ -4187,6 +4187,23 @@ fn execute(
                 );
                 continue;
             }
+            if let AstExprKind::Boolean(value) = &test.kind {
+                let branch = if *value { body } else { alternate };
+                let control_depth = env.control_depth;
+                env.control_depth += 1;
+                outcomes.append(execute(
+                    branch,
+                    env,
+                    file,
+                    contracts,
+                    functions,
+                    result,
+                    depth + 1,
+                ));
+                env.control_depth = control_depth;
+                ownership::cap_handles(env, file, *range, result);
+                continue;
+            }
             let before = Box::new(env.clone());
             let mut left = Box::new((*before).clone());
             left.control_depth = left.control_depth.saturating_add(1);
