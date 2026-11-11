@@ -9,6 +9,9 @@
 - `codepact --version` and `codepact -V` report an output error and exit with
   status 2 if stdout is a closed pipe.
   [Issue #11](https://github.com/eddiethedean/codepact/issues/11)
+- Rust adoption reports keep the same policy fingerprint and snapshot ID
+  when callers reorder source files containing inline suppressions.
+  [Issue #9](https://github.com/eddiethedean/codepact/issues/9)
 - Baseline matching includes the exact engine version. Review and regenerate
   a 0.5.0 baseline when upgrading to 0.5.1.
   [Baseline workflow](adopting.md#record-the-initial-findings)

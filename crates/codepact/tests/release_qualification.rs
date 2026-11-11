@@ -535,6 +535,54 @@ fn v04_13_15_unsupported_descriptor_async_generator_and_dynamic_calls_are_bounda
 }
 
 #[test]
+fn report_snapshot_is_independent_of_suppressed_source_file_order() {
+    use codepact::{
+        adoption::{build_report, resolve_config, Overrides},
+        check_with_ownership, SourceFile,
+    };
+
+    let p = Project::new("suppression-snapshot-order");
+    let config = resolve_config(
+        &p.0,
+        &Overrides {
+            no_config: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut files = [
+        SourceFile::new(
+            "a.py",
+            "a",
+            "pass  # codepact: ignore[TP3001] -- first reason\n\n\n\n\n\n\n\n\npass  # codepact: ignore[TP3001] -- second reason\n",
+        ),
+        SourceFile::new(
+            "b.py",
+            "b",
+            "pass  # codepact: ignore[TP3001] -- another file\n",
+        ),
+    ];
+    let report = |files: &[SourceFile]| {
+        let checked = check_with_ownership(files, &config.python_version, config.ownership);
+        let report = build_report(checked, files, &config, None, None).unwrap();
+        assert_eq!(report.exit_code, 0);
+        assert_eq!(report.unused_suppressions, ["a.py:1", "a.py:10", "b.py:1"]);
+        report
+    };
+
+    let original = report(&files);
+    files.reverse();
+    let reordered = report(&files);
+    assert_eq!(original.policy_fingerprint, reordered.policy_fingerprint);
+    assert_eq!(original.snapshot_id, reordered.snapshot_id);
+
+    files[0].source = files[0].source.replace("another file", "updated reason");
+    let changed = report(&files);
+    assert_ne!(original.policy_fingerprint, changed.policy_fingerprint);
+    assert_ne!(original.snapshot_id, changed.snapshot_id);
+}
+
+#[test]
 fn v04_19_related_and_explanation_limits_preserve_full_policy() {
     use codepact::{AnalysisSession, CheckResult, SourceFile};
     let p = Project::new("detail-limits");

@@ -1332,14 +1332,15 @@ pub fn build_report(
     for file in files {
         contents.insert(file.path.as_str(), file.source.as_str());
     }
-    let mut snapshot_manifest = files
+    let mut files_by_path = files.iter().collect::<Vec<_>>();
+    files_by_path.sort_by(|a, b| a.path.cmp(&b.path));
+    let snapshot_manifest = files_by_path
         .iter()
         .map(|file| SnapshotFile {
             logical_path: file.path.clone(),
             sha256: hash(file.source.as_bytes()),
         })
         .collect::<Vec<_>>();
-    snapshot_manifest.sort_by(|a, b| a.logical_path.cmp(&b.logical_path));
     let semantic_fingerprint = hash(
         serde_json::to_vec(&(
             env!("CARGO_PKG_VERSION"),
@@ -1359,7 +1360,7 @@ pub fn build_report(
             .map_err(|error| format!("cannot encode model fingerprint: {error}"))?
             .as_slice(),
     );
-    let suppression_policy = files
+    let suppression_policy = files_by_path
         .iter()
         .flat_map(|file| {
             source_comments(&file.source)
