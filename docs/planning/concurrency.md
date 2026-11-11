@@ -1,6 +1,6 @@
 # Concurrent resource safety
 
-Adopted 2026-10-31. CS01 and CS02 are complete for the published 0.3 and 0.4 scopes. CS03–CS07 remain planned. [0.3.0 release evidence](../releases/0.3.0-evidence.md) · [0.4.0 release evidence](../releases/0.4.0-evidence.md)
+Adopted 2026-10-31. CS01–CS03 are complete for the published 0.3–0.5 scopes. CS04–CS07 remain planned. [0.3.0 release evidence](../releases/0.3.0-evidence.md) · [0.4.0 release evidence](../releases/0.4.0-evidence.md) · [0.5.0 release evidence](../releases/0.5.0-evidence.md)
 
 ## Outcome and scope
 

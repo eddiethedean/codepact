@@ -1,8 +1,11 @@
 # Release and capability availability
 
-CodePact 0.5.0 adds experimental ownership to the published lifecycle and
-adoption tools. [Release notes](release-notes.md) ·
-[0.5.0 qualification record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md)
+CodePact 0.5.0 was published on November 10, 2026. The release adds
+experimental ownership to the lifecycle and adoption tools. All 25 tagged
+jobs passed. The 11 PyPI files and the crates.io archive match the tagged
+release. [Tag](https://github.com/eddiethedean/codepact/tree/v0.5.0) ·
+[Release workflow](https://github.com/eddiethedean/codepact/actions/runs/42953619530) ·
+[Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md)
 
 CodePact 0.4.0 was published on November 10, 2026 as a synthetic preview.
 Tag `v0.4.0` points to `817dc2c0a85857ad7af0745e3933f875c403ab67`.
@@ -23,7 +26,7 @@ or [build a local HTML preview](documentation.md).
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
-| CodePact 0.5.0 | Ownership preview | `codepact`, `codepact-cli`, Rust crate `codepact` | Opt-in moves, lexical borrows, and a bounded TaskGroup model |
+| CodePact 0.5.0 | Published ownership preview | `codepact`, `codepact-cli`, Rust crate `codepact` | Opt-in moves, lexical borrows, and a bounded TaskGroup model |
 | CodePact 0.4.0 | Published synthetic preview | `codepact`, `codepact-cli`, Rust crate `codepact` | Adoption configuration/policy, JSON report schema 2, baselines, suppressions, and synchronous must-use preview; see the 0.4 phase plan |
 | CodePact 0.3.0 | Published | `codepact`, `codepact-cli`, Rust crate `codepact` | Declaration inspection, lifecycle checking, cleanup obligations, and bounded intratask cancellation/cleanup; see the specification |
 | TypePact 0.2.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Declaration inspection and bounded synchronous lifecycle checking |

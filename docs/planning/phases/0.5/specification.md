@@ -1,6 +1,6 @@
 # 0.5 ownership specification
 
-Status **Implemented in the 0.5.0 development candidate**. Maintainer acceptance and publication qualification are pending. [Phase plan](../0.5-ownership.md) · [Validation matrix](validation.md)
+Status **Published and verified in 0.5.0**. Ownership checks are opt-in. [Phase plan](../0.5-ownership.md) · [Validation matrix](validation.md)
 
 ## Opt-in and syntax
 

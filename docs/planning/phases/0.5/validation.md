@@ -1,6 +1,6 @@
 # 0.5 validation matrix — V05
 
-Status **local qualification recorded, release review pending**. Rows specify acceptance oracles and evidence to retain. [Phase plan and gates](../0.5-ownership.md) · [Ownership specification](specification.md)
+Status **qualified for the published 0.5.0 release**. Rows specify acceptance oracles and evidence to retain. [Phase plan and gates](../0.5-ownership.md) · [Ownership specification](specification.md)
 
 ## Required rows
 

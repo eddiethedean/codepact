@@ -2,14 +2,16 @@
 
 ## 0.5.0 — experimental ownership
 
-CodePact 0.5.0 adds opt-in explicit transfers, lexical shared borrows, and
+Published on November 10, 2026, CodePact 0.5.0 adds opt-in explicit transfers,
+lexical shared borrows, and
 structured task lifetimes for a bounded CPython `asyncio.TaskGroup` model. It
 includes the typed identity helper `codepact.move` and experimental rules
 TP2002–TP2006. The existing lifecycle and must-use policy remains the default.
 Install matching 0.5.0 helpers and CLI. Review baseline scope before enabling
 the new checks. Synthetic examples qualify the supported scope.
 [Installation](install.md) · [Experimental ownership](ownership.md) ·
-[Migration](upgrading.md#upgrade-from-04-to-05)
+[Migration](upgrading.md#upgrade-from-04-to-05) ·
+[Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md)
 
 ## 0.4.0 — synthetic preview
 
