@@ -2,10 +2,9 @@
 
 ## Which version can I install now?
 
-CodePact 0.4.0 is published on PyPI and crates.io as a synthetic preview.
-It includes project policy, baselines, and synchronous must-use checks.
-Build the 0.5 development candidate from source to try opt-in moves, borrows,
-and TaskGroup checks. [Install CodePact](install.md) ·
+Install CodePact 0.5.0 from PyPI or crates.io. Its default scope includes
+project policy, baselines, and synchronous must-use checks. Enable experimental
+ownership to try moves, lexical borrows, and TaskGroup checks. [Install CodePact](install.md) ·
 [Experimental ownership](ownership.md)
 
 ## Does CodePact import or run my application?
@@ -48,9 +47,9 @@ and checker resolve different subsets of syntax.
 
 ## Will I need Rust to install the CodePact command?
 
-The 0.4.0 release provides native CLI wheels for supported platforms, which do
+The CLI distribution provides native CLI wheels for supported platforms, which do
 not need Rust at installation. The published wheels and source archives passed
-build, digest, install, and smoke checks recorded in the [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md).
+release checks described in the [availability guide](availability.md).
 Building from source requires Rust 1.96 or newer and a linker. See
 [installation](install.md).
 

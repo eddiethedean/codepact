@@ -22,7 +22,7 @@ The fixtures illustrate version boundaries and rejection behavior; they do not
 qualify release or pilot gates.
 
 
-## Ownership scope in the 0.5 candidate
+## Experimental ownership scope
 
 Schema 2 accepts `experimental-ownership-checking-for-supported-exit-flow` in
 `assurance`. Experimental rule selection requires that assurance value. The

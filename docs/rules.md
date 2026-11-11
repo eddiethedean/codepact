@@ -18,7 +18,7 @@ shipped with your CLI.
 | `TP9001` | 0.1.0 | An unsupported or unresolved construct leaves coverage incomplete | Supply a missing supported input or reduce the pilot to a documented subset. Do not treat the boundary as a pass. |
 | `TP9002` | Rust inspection convenience API | Cancellation produced an incomplete report; cancellable APIs return `AnalysisCancelled` | Treat the result as cancelled and retry only if the host still needs the current revision. |
 
-The 0.4 CLI uses TP3001 at warning severity by default. Its result-use
+The CLI uses TP3001 at warning severity by default. Its result-use
 contract accepts `@must_use`, `MustUse[T]`, and
 `Annotated[T, MustUseResult()]` on resolved synchronous returns. Assignment and
 direct argument/return forwarding count as immediate handling only; they do not
@@ -66,7 +66,7 @@ with `codepact inspect-contracts`.
 
 ## Experimental ownership rules
 
-These rules require the 0.5 candidate and an explicit ownership opt-in.
+These rules require CodePact 0.5.0 and an explicit ownership opt-in.
 [Try the experimental checker](ownership.md)
 
 | Code | Meaning | First repair to consider |

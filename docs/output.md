@@ -1,14 +1,14 @@
 # JSON and concise output
 
 CodePact has separate versioned envelopes for declaration inspection, the Rust
-checker API, the 0.4 CLI report, baselines and static metadata. Package versions
+checker API, the CLI check report, baselines and static metadata. Package versions
 do not imply schema versions.
 
 | Output | Schema |
 | --- | --- |
 | `inspect-contracts --json` and Rust `Inspection` | [inspection schema 0](schemas/inspection-v0.schema.json) |
 | Rust `CheckResult` from `check_report` | [checker result schema 1](schemas/check-result-v1.schema.json) |
-| 0.4 CLI `check --json` | [adoption report schema 2](schemas/check-report-v2.schema.json) |
+| CLI `check --json` | [adoption report schema 2](schemas/check-report-v2.schema.json) |
 | Baseline file | [baseline schema 1](schemas/baseline-v1.schema.json) |
 | `capabilities --json` | [capabilities schema 1](schemas/capabilities-v1.schema.json) |
 | `explain RULE --json` | [explanation schema 1](schemas/explanation-v1.schema.json) |
@@ -59,6 +59,16 @@ identities, but not output format, detail limit or wall-clock time. The separate
 fingerprints identify semantic inputs, policy inputs and the model catalog.
 `project_root` can vary between checkouts; logical paths and finding
 fingerprints are relative to the project root.
+
+## Experimental ownership scope
+
+With ownership enabled, schema 2 reports use the assurance value
+`experimental-ownership-checking-for-supported-exit-flow`. The selected
+rules can include TP2002–TP2006. The settings and snapshot identify the
+semantic scope. When the TaskGroup model is selected, `available_models`
+includes its runtime assumption and CPython pin. Read its coverage alongside
+the diagnostics. Baseline matching includes the ownership scope and selected
+model revision. [Ownership guide](ownership.md) · [Schema downloads](schemas.md)
 
 ## Diagnostic fields and locations
 

@@ -14,7 +14,7 @@ bug, repair, and coverage controls.
 - **Resources and aliases.** Custom `__new__`, dynamic dispatch, and aliases
   stored in arbitrary fields or containers can prevent a lifecycle proof.
 - **Recursion and concurrency.** The published checker leaves recursive
-  effects and general task lifetimes unresolved. The 0.5 candidate adds
+  effects and general task lifetimes unresolved. The 0.5 ownership opt-in adds
   bounded support for selected recursive summaries and TaskGroup patterns.
   [Experimental ownership scope](ownership.md#scope-and-report-migration)
 
@@ -105,7 +105,7 @@ and the [0.3 validation map](https://github.com/eddiethedean/codepact/blob/main/
 ## Provisional interfaces
 
 The helper API, CLI flags, and diagnostics can change during 0.x. Inspection
-JSON uses schema 0. The published 0.4 CLI check report uses schema 2, and the
+JSON uses schema 0. The CLI check report introduced in 0.4 uses schema 2, and the
 Rust `check_report` result uses schema 1. Pin matching package versions and read the
 schema identifier before consuming a report.
 [Schema reference](schemas.md) · [Upgrade guide](upgrading.md)

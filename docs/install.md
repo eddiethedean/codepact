@@ -1,14 +1,14 @@
 # Installation
 
-Install **0.4.0** for the published preview. To try explicit moves and TaskGroup
-checks, build the 0.5 development candidate from source.
+Install **0.5.0** from PyPI or crates.io. Explicit moves, lexical borrowing,
+and TaskGroup checks are available as an opt-in experiment.
 
 | I need | Choose |
 | --- | --- |
 | Python annotations and the checker in my project | [Python helpers and matching CLI](#python-helpers-and-matching-cli) |
 | A command for a source tree or CI job | [Standalone CLI](#standalone-command) |
 | An embedded checker or reusable analysis session | [Rust library](#rust-library) |
-| The 0.5 experimental ownership rules | [Candidate source build](#try-the-05-development-candidate) |
+| A reproducible checkout of the release | [Build from source](#build-from-source) |
 
 [Published artifacts and platform support](availability.md)
 
@@ -17,14 +17,14 @@ checks, build the 0.5 development candidate from source.
 In an existing uv project:
 
 ```sh
-uv add codepact==0.4.0
+uv add codepact==0.5.0
 uv run --locked codepact --version
 ```
 
 Or install with pip:
 
 ```sh
-python -m pip install 'codepact==0.4.0'
+python -m pip install 'codepact==0.5.0'
 codepact --version
 ```
 
@@ -42,7 +42,7 @@ from codepact.rust import Borrowed, Owned
 Install only the native analyzer when Python helper imports are unnecessary:
 
 ```sh
-uv tool install codepact-cli==0.4.0
+uv tool install codepact-cli==0.5.0
 codepact --version
 ```
 
@@ -52,7 +52,7 @@ a Rust compiler or depend on a particular CPython ABI.
 ## Rust library
 
 ```sh
-cargo add codepact@0.4.0
+cargo add codepact@0.5.0
 ```
 
 Use the [Rust API reference](rust-api.md) for one-shot checks and reusable sessions.
@@ -63,7 +63,7 @@ Source builds require Rust 1.96+, a linker, and the locked Cargo dependencies.
 With Python 3.11+, uv, and Rust 1.96+ installed:
 
 ```sh
-git clone --branch v0.4.0 https://github.com/eddiethedean/codepact.git
+git clone --branch v0.5.0 https://github.com/eddiethedean/codepact.git
 cd codepact
 uv sync --locked
 uv run --locked codepact --version
@@ -81,24 +81,6 @@ For a Rust-only build from that checkout:
 cargo build --release --locked
 ./target/release/codepact --version
 ```
-
-## Try the 0.5 development candidate
-
-From a CodePact checkout on the development branch, install the locked
-workspace with uv. This builds matching helpers and CLI. Record the Git SHA
-and check the CLI version before comparing reports.
-
-```sh
-git clone https://github.com/eddiethedean/codepact.git
-cd codepact
-git rev-parse HEAD
-uv sync --locked
-uv run --locked codepact --version
-```
-
-The candidate examples expect `codepact 0.5.0`. Follow the
-[ownership guide](ownership.md) to enable experimental checks in a sample
-project. The published 0.4 installation commands above use release artifacts.
 
 ## Compatibility
 
@@ -121,6 +103,6 @@ uv run --locked codepact --version
 uv run --locked python -c "from codepact import resource; from codepact.rust import Borrowed, Owned"
 ```
 
-For a project using published dependencies, the command should print
-`codepact 0.4.0`. Then follow the [quick start](quickstart.md). If an executable
+For a project pinned to 0.5.0, the command should print
+`codepact 0.5.0`. Then follow the [quick start](quickstart.md). If an executable
 or dependency cannot be found, use [troubleshooting](troubleshooting.md).

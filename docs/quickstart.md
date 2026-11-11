@@ -1,6 +1,6 @@
 # Quick start
 
-Run a check with the published CodePact 0.4.0 CLI, read a definite
+Run a check with the published CodePact 0.5.0 CLI, read a definite
 use-after-close finding, and repair the example.
 
 ## Install in your project
@@ -8,12 +8,12 @@ use-after-close finding, and repair the example.
 In an existing uv project, install the helper package and its matching CLI.
 
 ```sh
-uv add codepact==0.4.0
+uv add codepact==0.5.0
 uv run --locked codepact --version
 mkdir -p demo
 ```
 
-The version command prints `codepact 0.4.0`.
+The version command prints `codepact 0.5.0`.
 [Standalone CLI, pip, and Rust installs](install.md)
 
 ## Declare a resource

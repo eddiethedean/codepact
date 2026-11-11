@@ -34,7 +34,7 @@ Save its consumer as `src/client.py`:
 From `my-project`, install CodePact and inspect the two files:
 
 ```sh
-uv add codepact==0.4.0
+uv add codepact==0.5.0
 uv run codepact inspect-contracts --root src src/models.py src/client.py
 ```
 

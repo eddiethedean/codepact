@@ -1,5 +1,30 @@
 # Upgrade CodePact
 
+## Upgrade from 0.4 to 0.5
+
+Update the helper and its matching CLI with `uv add codepact==0.5.0`, then
+commit the updated lockfile. Standalone CLI and Rust users can install their
+matching 0.5.0 distributions directly. [Installation](install.md)
+
+Existing projects use the same default lifecycle and must-use scope.
+Enable `experimental-ownership = true` to check explicit moves and lexical
+borrows. Enable `assume-default-task-factory = true` separately for the
+bounded TaskGroup model under the documented CPython assumptions.
+
+- **Report consumers.** Schema 2 adds ownership rules TP2002–TP2006 and the
+  assurance value `experimental-ownership-checking-for-supported-exit-flow`.
+  Accept that value and the new rule metadata before enabling the opt-in.
+- **Baselines.** Ownership scope and the selected TaskGroup model revision
+  are part of matching. Review findings and regenerate the baseline under
+  the new scope when you opt in. An earlier baseline cannot suppress
+  experimental findings.
+- **Rust integrations.** Use `check_with_ownership` or the matching
+  `AnalysisSession` methods to select the experimental scope. Existing
+  default entry points retain their result types.
+
+[Experimental ownership](ownership.md) · [Report schemas](schemas.md) ·
+[Rust API](rust-api.md)
+
 ## Upgrade from 0.3 to 0.4
 
 CodePact 0.4.0 is published as a synthetic preview. Update the project

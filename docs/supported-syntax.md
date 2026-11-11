@@ -106,6 +106,19 @@ transition. External or unresolved close behavior remains incomplete.
 
 The Python helper package supports Python 3.11 and later. The analyzer source grammar currently supports Python 3.11, 3.12, and 3.13. Select the target with `--python-version`; the default is 3.11. Target-specific Unicode identifier rules are applied during analysis.
 
+## Experimental ownership
+
+CodePact 0.5.0 adds opt-in checking for exact `codepact.move` calls,
+tracked local handles, and resolved `Owned` and `Borrowed` calls. The
+checker can follow bounded recursive source summaries. Unresolved aliases,
+escapes, and dynamic or native effects can leave coverage incomplete.
+
+The opt-in TaskGroup model covers `async with asyncio.TaskGroup() as group`
+and direct `group.create_task(worker(...))` calls to resolved coroutine
+functions under the documented default CPython factory assumption. Detached
+tasks, custom factories, and thread or process handoffs remain boundaries.
+[Supported ownership examples and limits](ownership.md)
+
 ## Input and work limits
 
 The analyzer bounds memory and work per request:

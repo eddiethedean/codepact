@@ -3,9 +3,8 @@ Python API reference
 
 .. note::
 
-   This reference is generated from the 0.4 source candidate. ``must_use``,
-   ``discard``, ``MustUseResult``, and ``MustUse`` require that candidate;
-   they are unavailable in the published 0.3 helper package.
+   This reference is generated from the 0.5.0 source. ``move`` was added in
+   0.5.0. The must-use helpers are available from 0.4.0.
 
 The ``codepact`` package contains lightweight runtime helpers and static typing metadata. It does not load the analyzer executable when imported.
 
@@ -30,9 +29,19 @@ The runtime helper also accepts ``resource(Connection, closed_by="close")``. Sou
 ``must_use`` attaches ``MustUseResult`` metadata to and returns the original
 callable. It preserves the callable's parameters, result type and identity; it
 does not wrap or enforce the function at runtime. The source checker uses the
-marker on supported synchronous returns in the 0.4 adoption candidate.
+marker on supported synchronous returns.
 ``discard`` evaluates the given value and returns ``None`` without changing
 resource ownership, cleanup or exception behavior.
+
+``codepact.move``
+-----------------
+
+.. autofunction:: codepact.move
+
+The helper returns the same object with the same underlying type. With
+experimental ownership enabled, the checker treats a supported call as an
+explicit transfer of the tracked handle and its cleanup duty.
+See :doc:`ownership` for transfer and TaskGroup examples.
 
 Contract metadata
 -----------------

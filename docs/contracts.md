@@ -52,7 +52,7 @@ The metadata classes and aliases are also exported from `codepact.contracts`. Su
 
 ## Mark a must-use return
 
-The 0.4 CLI recognizes synchronous function and method results
+The CLI recognizes synchronous function and method results
 declared in any of these equivalent forms:
 
 ```python
@@ -115,3 +115,10 @@ Metadata on an alias describes that alias. It does not mutate the underlying cla
 The resource helper decorator has a small runtime effect: it stores metadata on the class. Parameter and return annotations remain ordinary Python typing metadata. The analyzer does not verify method bodies, ownership transfer, exclusivity, cleanup, or use-after-close.
 
 All inspected facts are marked `declared-unverified`. CodePact reports what the source declares; it does not prove that the implementation honors it. See [output](output.md) and [current limitations](limitations.md).
+
+## Transfer a resource explicitly
+
+With experimental ownership enabled in 0.5.0, `receiver = move(source)`
+transfers a tracked handle and its cleanup duty. A plain assignment creates
+an alias. A supported call can also pass `move(source)` to an `Owned`
+parameter. [Ownership guide](ownership.md)

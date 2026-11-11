@@ -50,13 +50,13 @@ missed cleanup, and discarded results directly in source.
 ::::{container} cp-release-strip
 
 :::{container} cp-release cp-release-published
-**0.4.0 · Published preview**
+**0.5.0 · Release**
 
 [Install from PyPI or crates.io](availability.md)
 :::
 
-:::{container} cp-release cp-release-candidate
-**0.5.0 · Development candidate**
+:::{container} cp-release cp-release-ownership
+**Experimental ownership**
 
 [Try opt-in ownership checking](ownership.md)
 :::

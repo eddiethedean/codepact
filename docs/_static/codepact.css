@@ -385,7 +385,7 @@ a:focus-visible, button:focus-visible, input:focus-visible {
   background: #f7f9ff;
 }
 .cp-release-published { background: var(--cp-mint); border-color: #cce8db; }
-.cp-release-candidate { background: #f2f1ff; border-color: #e0dcfa; }
+.cp-release-ownership { background: #f2f1ff; border-color: #e0dcfa; }
 .cp-release p { margin: 0; font-size: .86rem; }
 .cp-release strong { color: var(--cp-ink); }
 

@@ -38,7 +38,7 @@ the async boundaries where the analyzer reports incomplete coverage.
 
 ## Catalog-inspired examples
 
-The 0.5 candidate includes an additional suite of eight bug/repair pairs and
+The 0.5 suite includes an additional suite of eight bug/repair pairs and
 four boundary and comparison projects. The 21 expected findings span cleanup,
 borrow and ownership violations, and dropped must-use results. Every repair
 passes strict mode with the same project settings and provider source.

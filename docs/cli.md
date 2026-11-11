@@ -1,6 +1,6 @@
 # Command-line reference
 
-This reference covers the published CodePact 0.4.0 synthetic preview.
+This reference covers CodePact 0.5.0.
 The analyzer reads Python source without importing or executing the project.
 [Release availability](availability.md)
 
@@ -31,7 +31,7 @@ codepact explain RULE --json
 ```
 
 `inspect-contracts` keeps the inspection interface: it requires explicit files
-and returns inspection schema 0. `check --json` uses the 0.4 CLI adoption
+and returns inspection schema 0. `check --json` uses the CLI adoption
 report, schema 2. The Rust `check` API returns `Inspection` (schema 0), and
 `check_report` returns `CheckResult` (schema 1).
 [JSON output reference](output.md)
@@ -170,7 +170,7 @@ or apply edits; no automatic fixes are advertised.
 
 ## Experimental ownership options
 
-The 0.5 development candidate accepts `--experimental-ownership` and
+CodePact 0.5.0 accepts `--experimental-ownership` and
 `--no-experimental-ownership` on `check` and `baseline update`. An explicit
 flag overrides `experimental-ownership` in the project configuration.
 The TaskGroup model additionally requires

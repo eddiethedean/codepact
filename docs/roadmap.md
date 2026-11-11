@@ -8,13 +8,13 @@ CodePact 0.x grows from declaration inspection toward broader resource lifecycle
 | 0.2.x | Published bounded lifecycle flow checking and use-after-close analysis |
 | 0.3.x | Published: cleanup obligations and bounded async cancellation/cleanup |
 | 0.4.x | Published preview of adoption tooling and synchronous must-use checking |
-| 0.5.x | Development candidate with opt-in ownership transfer, lexical borrowing, and structured task lifetimes |
+| 0.5.x | Release with opt-in ownership transfer, lexical borrowing, and structured task lifetimes |
 | 0.6.x | Suspension-aware exclusive access, typestate, and effects |
 | 0.7.x | Typed outcomes and finite exhaustiveness |
 | 0.8.x | Ecosystem integrations, shared lint language server and IDE diagnostics |
 | 0.9.x | Stabilization and a 1.0 readiness decision |
 
-The roadmap describes direction, not arbitrary Python ownership proofs or memory-safety guarantees. CodePact 0.4.0 is published as a synthetic preview. The phase-specific gates and G1–G8 passed, with real-world usefulness unqualified. Read [availability](availability.md) for the current package boundary and [release notes](release-notes.md) for published behavior. Each phase must define its supported subset and evidence before a release claim is made.
+The roadmap describes direction, not arbitrary Python ownership proofs or memory-safety guarantees. CodePact 0.5.0 adds experimental ownership to the 0.4 adoption preview. Qualification is synthetic and field usefulness remains unqualified. Read [availability](availability.md) for the current package boundary and [release notes](release-notes.md) for published behavior. Each phase must define its supported subset and evidence before a release claim is made.
 
 The published 0.4.0 release includes CLI reporting foundations. The shared language server, inline CodePact diagnostics and problem-list entries remain planned for 0.8. Target editors are VS Code, PyCharm/IntelliJ, Neovim and Emacs; support depends on verified client/version combinations.
 

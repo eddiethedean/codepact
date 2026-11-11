@@ -67,10 +67,10 @@ and [environment-variable reference](https://docs.readthedocs.com/platform/stabl
 
 ## Connect the existing project
 
-The configured Read the Docs project uses the `typepact` slug. Verify a
-successful build and a public version URL in the service dashboard before
-linking readers to it. The [GitHub documentation index](https://github.com/eddiethedean/codepact/blob/main/docs/README.md)
-provides direct links to the guides in the repository.
+The [hosted documentation](https://codepact.readthedocs.io/en/latest/index.html)
+uses the `codepact` project on Read the Docs. The
+[GitHub documentation index](https://github.com/eddiethedean/codepact/blob/main/docs/README.md)
+links to the guide sources.
 
 In its Read the Docs dashboard:
 
@@ -78,8 +78,8 @@ In its Read the Docs dashboard:
    configuration path is `.readthedocs.yaml`.
 2. Confirm the repository integration/webhook is active so pushes trigger builds.
 3. Enable `main` for the `latest` documentation and verify that the landing
-   page shows the published 0.4.0 synthetic preview.
-4. Enable `v0.4.0` for the documentation snapshot from the tagged commit.
+   page shows the current 0.5.0 documentation.
+4. Enable `v0.5.0` for the documentation snapshot from the tagged commit.
    Publish post-release documentation updates from `main`.
 5. Optionally enable pull request previews for reviewing documentation changes.
 

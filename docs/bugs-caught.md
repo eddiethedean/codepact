@@ -1,6 +1,8 @@
 # Bugs CodePact catches before runtime
 
-The intended 0.4 release scope is a synthetic preview under maintainer-approved AD01-A2. These engineered examples do not qualify real-world usefulness.
+The examples below demonstrate the published default checking scope. The 0.5
+ownership examples cover moves and outstanding task borrows separately.
+[Experimental ownership](ownership.md) · [Synthetic corpus](synthetic-projects.md)
 
 CodePact checks lifecycle and result-use contracts that ordinary Python type
 checking and linting do not generally model. Its annotations preserve the

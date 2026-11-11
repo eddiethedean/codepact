@@ -78,6 +78,11 @@ def exercise(environment: Path, workdir: Path, env: dict[str, str]) -> None:
     )
     run([str(python), str(helper_check)], cwd=workdir, environment=env)
     root = Path(__file__).resolve().parents[1]
+    run(
+        [str(python), "-I", str(root / "scripts/verify_installed_package.py")],
+        cwd=workdir,
+        environment=env,
+    )
     smoke = root / "scripts/smoke_release_cli.py"
     run(
         [str(python), str(smoke), "--binary", str(binary)],

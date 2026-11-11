@@ -2,15 +2,15 @@
 
 Start with a narrow source root and an advisory report. Review what the
 checker covered before choosing which results should fail CI. The examples
-use the published 0.4.0 preview.
+use the 0.5.0 default scope.
 [Release scope and qualification](availability.md)
 
-## Install the preview
+## Install 0.5.0
 
 In your uv project, install the helper and matching CLI:
 
 ```sh
-uv add codepact==0.4.0
+uv add codepact==0.5.0
 uv run --locked codepact --version
 uv run --locked codepact capabilities --json
 ```
@@ -103,7 +103,7 @@ call. Broad or file-wide ignores are not supported.
 
 ## Mark a must-use result
 
-The 0.4 CLI accepts three synchronous return declarations:
+The CLI accepts three synchronous return declarations:
 
 ```python
 from typing import Annotated

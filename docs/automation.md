@@ -1,7 +1,7 @@
 # Automation and CI
 
 Use `check` to gate supported lifecycle behavior or `inspect-contracts` to
-review declarations in explicit files. The examples pin the published 0.4.0
+review declarations in explicit files. The examples pin the 0.5.0
 CLI. Preserve the original exit status when saving a JSON report.
 [Release availability](availability.md) · [Report handling](ci-reporting.md)
 
@@ -42,7 +42,7 @@ jobs:
           python-version: '3.11'
       - name: Check resource contracts
         run: >-
-          uv tool run --from codepact-cli==0.4.0 codepact check
+          uv tool run --from codepact-cli==0.5.0 codepact check
           --root src --python-version 3.11 --mode strict --json
           > codepact-report.json
       - name: Upload the report
@@ -82,14 +82,14 @@ policy, see [report handling](ci-reporting.md).
 Set a narrow root for the project you want to analyze:
 
 ```sh
-uv add codepact==0.4.0
+uv add codepact==0.5.0
 uv run --locked codepact check --root path/to/source --json > checking.json
 ```
 
 Replace the input path with your project's source directory. To build the
 command from source, use Rust 1.96+ and record the checked-out Git SHA.
 
-Use the installed 0.4 CLI to inspect settings and compare advisory and strict reports:
+Use the installed CLI to inspect settings and compare advisory and strict reports:
 
 ```sh
 uv run --locked codepact check --show-settings --json
@@ -100,5 +100,5 @@ uv run --locked codepact check --mode strict --json > codepact-strict-report.jso
 Status `1` identifies a completed report that failed the
 selected policy; status `2` is a failed invocation/check. Inspect
 `execution_status`, `report_schema_version`, `coverage.status`,
-`details_truncated` and `snapshot_id`. See the [0.4 adoption guide](adopting.md),
+`details_truncated` and `snapshot_id`. See the [adoption guide](adopting.md),
 [CLI reference](cli.md) and [CI report example](ci-reporting.md).

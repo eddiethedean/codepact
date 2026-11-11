@@ -1,7 +1,7 @@
-# Experimental ownership in the 0.5 candidate
+# Experimental ownership
 
-The 0.5 development candidate adds explicit moves, lexical borrows, and a
-bounded model for `asyncio.TaskGroup`. [Build matching 0.5 helpers and CLI](install.md#try-the-05-development-candidate)
+CodePact 0.5.0 adds explicit moves, lexical borrows, and a bounded model for
+`asyncio.TaskGroup`. [Install matching helpers and CLI](install.md)
 
 ## Enable ownership checks
 

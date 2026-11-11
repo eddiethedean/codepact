@@ -1,6 +1,6 @@
 # Support and maintenance
 
-CodePact 0.4.0 is the published synthetic preview of adoption tooling.
+CodePact 0.5.0 includes an opt-in ownership preview.
 APIs, diagnostics, and schemas remain provisional during the 0.x series.
 [Release availability](availability.md)
 

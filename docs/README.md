@@ -1,8 +1,10 @@
 # CodePact documentation
 
+[Browse the hosted documentation](https://codepact.readthedocs.io/en/latest/index.html)
+
 Start with the [quick start](quickstart.md) to run a check, read a finding,
 and repair a resource lifecycle bug. [Installation](install.md) covers the
-published 0.4.0 preview and the 0.5 development candidate.
+0.5.0 packages and source builds.
 
 | I want to | Read |
 | --- | --- |

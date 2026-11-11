@@ -1,10 +1,10 @@
 # Rust API reference
 
-The published `codepact` crate exposes the same inspector and lifecycle checker used by the command-line program. CodePact 0.4.0 is available on crates.io.
+The published `codepact` crate exposes the same inspector and lifecycle checker used by the command-line program. Use CodePact 0.5.0 for the API shown here.
 
 ## Install
 
-Add the released crate to a Cargo project with `cargo add codepact@0.4.0`. To
+Add the released crate to a Cargo project with `cargo add codepact@0.5.0`. To
 build the workspace crate from source, run this from the repository root:
 
 ```sh
@@ -145,7 +145,7 @@ An `Ok` return does not establish successful declaration analysis. Check the ret
 ## Public types and limits
 
 The crate root exports the following result and input types. The 0.x API is
-provisional. [CodePact 0.4.0 rustdoc](https://docs.rs/codepact/0.4.0/codepact/) ·
+provisional. [CodePact 0.5.0 rustdoc](https://docs.rs/codepact/0.5.0/codepact/) ·
 [Historical TypePact 0.2.0 rustdoc](https://docs.rs/typepact/0.2.0/typepact/)
 
 | Type or function | Purpose |
@@ -208,7 +208,7 @@ cancellable method when the host must distinguish cancellation from a completed
 analysis.
 
 
-## Experimental ownership in the 0.5 candidate
+## Experimental ownership
 
 `codepact::check_with_ownership` and
 `AnalysisSession::check_with_ownership_cancellable` return structured check

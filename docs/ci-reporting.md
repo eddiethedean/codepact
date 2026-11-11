@@ -2,18 +2,18 @@
 
 Capture both the CodePact process exit status and its JSON output. A policy
 failure can still return a complete report with source evidence. The examples
-use the published 0.4.0 CLI and report schema 2.
+use the 0.5.0 CLI and report schema 2.
 [GitHub Actions example](automation.md#run-the-checker-in-github-actions) ·
 [Release availability](availability.md)
 
-## Published 0.4.0 policy
+## Check report schema 2
 
-Use the published 0.4.0 CLI and capture status 1 reports without losing
+Use the 0.5.0 CLI and capture status 1 reports without losing
 them to shell `set -e`:
 
 ```sh
 set +e
-uv tool run --from codepact-cli==0.4.0 \
+uv tool run --from codepact-cli==0.5.0 \
   codepact check --mode strict --json > codepact-report.json
 check_exit=$?
 set -e

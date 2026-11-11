@@ -1,6 +1,6 @@
 # Check a resource lifecycle
 
-Use CodePact 0.4.0 to reproduce a use after close, read its evidence, and
+Use CodePact 0.5.0 to reproduce a use after close, read its evidence, and
 make the example pass. [Configure check policy](adopting.md)
 
 ## Install and run
@@ -8,7 +8,7 @@ make the example pass. [Configure check policy](adopting.md)
 Install the matching helper and CLI packages in your project:
 
 ```sh
-uv add codepact==0.4.0
+uv add codepact==0.5.0
 ```
 
 The analyzer reads Python source as text; it does not import the example.
@@ -87,7 +87,7 @@ uv run --locked codepact check --root demo --json
 ```
 
 Read both `diagnostics` and `coverage`. A successful exit can include possible
-findings or incomplete analysis. The default 0.4 CLI report uses checker
+findings or incomplete analysis. The default CLI report uses checker
 schema 2 and the assurance value
 `lifecycle-and-must-use-checking-for-supported-exit-flow`. Declaration
 provenance remains `declared-unverified`. [Output reference](output.md)
