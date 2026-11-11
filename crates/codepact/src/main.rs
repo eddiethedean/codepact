@@ -301,7 +301,9 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
     if command == "--version" || command == "-V" {
-        println!("codepact {}", env!("CARGO_PKG_VERSION"));
+        if let Err(error) = write_stdout(concat!("codepact ", env!("CARGO_PKG_VERSION"))) {
+            return emit_failure("text", error);
+        }
         return ExitCode::SUCCESS;
     }
     if command == "--help" || command == "-h" {
