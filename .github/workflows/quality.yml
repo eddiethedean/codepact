@@ -32,7 +32,7 @@ jobs:
         env:
           UV_NO_INDEX: "1"
           UV_FIND_LINKS: ${{ runner.temp }}/docs-wheels
-        run: python scripts/check_docs_examples.py
+        run: python scripts/check_docs_examples.py --checkout
       - name: Check the Rust integration example
         run: cargo run --locked -p codepact --example adoption_report
 

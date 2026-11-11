@@ -90,6 +90,51 @@ fn assert_adoption_report_matches_check_result(
 }
 
 #[test]
+fn coverage_diagnostics_describe_the_limitation_without_a_release_number() {
+    let root = fixture_root().with_extension("future-annotation-coverage");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("sample.py"),
+        "from __future__ import annotations\n",
+    )
+    .unwrap();
+
+    let check = |options: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_codepact"))
+            .current_dir(&root)
+            .args(["check", "--no-config", "--mode", "strict"])
+            .args(options)
+            .output()
+            .expect("CLI starts")
+    };
+    let text = check(&[]);
+    assert_eq!(text.status.code(), Some(1));
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        text.lines().any(|line| {
+            line == "sample.py:1:1: warning TP9001: future annotations are not resolved"
+        }),
+        "{text}"
+    );
+
+    let json = check(&["--json"]);
+    assert_eq!(json.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(report["coverage"]["status"], "incomplete");
+    assert_eq!(report["diagnostics"][0]["code"], "TP9001");
+    assert_eq!(
+        report["diagnostics"][0]["message"],
+        "future annotations are not resolved"
+    );
+    assert_eq!(
+        report["coverage"]["reasons"][0],
+        "sample.py:1: future annotations are not resolved"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn phase03_text_and_json_reports_agree_on_cleanup_diagnostics() {
     let root = fixture_root().with_extension("phase03-report-parity");
     let _ = fs::remove_dir_all(&root);

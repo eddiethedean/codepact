@@ -2200,8 +2200,7 @@ fn v03_11_contextlib_module_support_does_not_resolve_other_module_imports() {
     ));
     assert!(
         result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.code == "TP9001"
-                && diagnostic.message == "module imports are not resolved in 0.1"
+            diagnostic.code == "TP9001" && diagnostic.message == "module imports are not resolved"
         }),
         "{result:#?}"
     );

@@ -10,7 +10,7 @@ project = "CodePact"
 author = "CodePact contributors"
 copyright = "2026, CodePact contributors"
 version = "0.5"
-release = "0.5.0"
+release = "0.5.1"
 
 extensions = [
     "myst_parser",

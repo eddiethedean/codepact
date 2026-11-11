@@ -210,7 +210,7 @@ fn inspect_inner(
                             &mut result,
                             file,
                             *range,
-                            "future annotations are not resolved in 0.1",
+                            "future annotations are not resolved",
                         );
                     } else {
                         process_import_from(
@@ -257,7 +257,7 @@ fn inspect_inner(
                                 &mut result,
                                 file,
                                 item.range,
-                                "module imports are not resolved in 0.1",
+                                "module imports are not resolved",
                             );
                         }
                     }
@@ -478,7 +478,7 @@ fn inspect_inner(
                         &mut result,
                         file,
                         *range,
-                        "Python type-alias statements are not resolved in 0.1",
+                        "Python type-alias statements are not resolved",
                     );
                     state.clear_module(&file.module, &mut bindings);
                 }
@@ -555,7 +555,7 @@ fn inspect_inner(
                             &mut result,
                             file,
                             *range,
-                            "decorated functions are unresolved in 0.1",
+                            "decorated functions are unresolved",
                         );
                         state.clear_module(&file.module, &mut bindings);
                     } else {
@@ -1887,7 +1887,7 @@ fn lower_function_annotation(
                 result,
                 file,
                 expression.range,
-                "string and future annotations are not resolved in 0.1",
+                "string and future annotations are not resolved",
             );
         } else if parsed.has_resource || parsed.access != Access::Unspecified {
             unsupported(
@@ -2015,9 +2015,7 @@ fn parse_annotation(
             conflict: None,
             conflict_spans: Vec::new(),
             unsupported_reason: match expression.kind {
-                AstExprKind::String(_) => {
-                    Some("string and future annotations are not resolved in 0.1")
-                }
+                AstExprKind::String(_) => Some("string and future annotations are not resolved"),
                 AstExprKind::Call { .. } | AstExprKind::Other | AstExprKind::OtherCalls(..) => {
                     Some("computed annotation expressions are unsupported")
                 }

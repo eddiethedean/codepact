@@ -133,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "codepact"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "ruff_python_ast",
  "ruff_python_parser",
