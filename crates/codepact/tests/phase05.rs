@@ -660,3 +660,100 @@ fn v05_04_async_owned_precondition_is_checked_at_coroutine_creation() {
     has(&result, "TP2005");
     assert_eq!(result.coverage.status, "incomplete");
 }
+
+#[test]
+fn v05_11_checked_method_retains_the_callers_task_borrow() {
+    let result = group(
+        "@resource(closed_by='close')\nclass D:\n    def close(self): pass\n    def read(self): pass\n    def finish(self): self.close()\nasync def worker(a: Borrowed[D]):\n    a.read()\nasync def run():\n    a = D()\n    async with TaskGroup() as group:\n        group.create_task(worker(a))\n        a.finish()\n",
+    );
+    let finding = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP2006")
+        .expect("delegated close conflicts with the outstanding task borrow");
+    assert_eq!(finding.certainty, "definite");
+    assert_eq!(finding.related.len(), 1);
+}
+
+#[test]
+fn v05_11_group_target_rebinding_does_not_complete_an_older_coroutine() {
+    let result = group(
+        "async def run():\n    a = C()\n    pending = read(a)\n    saved = pending\n    try:\n        async with TaskGroup() as pending:\n            await pending\n    finally:\n        a.close()\n",
+    );
+    has(&result, "TP2006");
+    assert_eq!(result.coverage.status, "incomplete");
+}
+
+#[test]
+fn v05_12_task_group_wraps_body_exception_after_waiting() {
+    let source = "async def run():\n    a = C()\n    try:\n        async with TaskGroup() as group:\n            group.create_task(read(a))\n            raise ValueError()\n    except HANDLER:\n        a.close()\n";
+    let wrong_handler = group(&source.replace("HANDLER", "ValueError"));
+    assert!(
+        wrong_handler.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002"
+                && diagnostic.completion.as_deref() == Some("raise")
+                && diagnostic.certainty == "definite"
+        }),
+        "{wrong_handler:#?}"
+    );
+    let matching_handler = group(&source.replace("HANDLER", "ExceptionGroup"));
+    assert!(
+        matching_handler.diagnostics.is_empty(),
+        "{matching_handler:#?}"
+    );
+}
+
+#[test]
+fn v05_04_non_owning_method_cannot_discharge_a_moved_duty() {
+    let result = check(
+        "@resource(closed_by='close')\nclass Receiver:\n    def close(self): pass\n    def dispose(self, value): value.close()\ndef run():\n    a = C()\n    receiver = Receiver()\n    receiver.dispose(move(a))\n    receiver.close()\n",
+    );
+    has(&result, "TP2001");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP1002" && diagnostic.certainty == "definite"
+        }),
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v05_06_move_retains_the_known_closed_branch() {
+    let result =
+        check("def run(flag):\n    a = C()\n    if flag:\n        a.close()\n    b = move(a)\n");
+    let finding = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP2003")
+        .expect("closed predecessor produces a possible transfer conflict");
+    assert_eq!(finding.certainty, "possible");
+}
+
+#[test]
+fn v05_07_lambda_capture_stays_local_until_the_closure_escapes() {
+    let source =
+        "def observe(a: Borrowed[C]):\n    read_local = lambda: a.read()\n    alias = read_local\n";
+    let local = check(&format!(
+        "{source}def run():\n    a = C()\n    observe(a)\n    a.close()\n"
+    ));
+    assert!(local.diagnostics.is_empty(), "{local:#?}");
+    let escaped = check(&format!("{source}    return alias\n"));
+    has(&escaped, "TP2004");
+}
+
+#[test]
+fn v05_12_task_capture_checks_apply_at_worker_entry() {
+    let result = group(
+        "def observe(value): pass\nasync def worker():\n    local = C()\n    observe(local)\n    local.close()\nasync def run():\n    async with TaskGroup() as group:\n        group.create_task(worker())\n",
+    );
+    assert!(result.diagnostics.is_empty(), "{result:#?}");
+    let capture = group(
+        "async def worker(value): pass\nasync def run():\n    a = C()\n    async with TaskGroup() as group:\n        group.create_task(worker(a))\n    a.close()\n",
+    );
+    assert!(
+        capture.coverage.reasons.iter().any(|reason| {
+            reason.contains("task capture lacks a resolved Borrowed or transferred Owned parameter")
+        }),
+        "{capture:#?}"
+    );
+}

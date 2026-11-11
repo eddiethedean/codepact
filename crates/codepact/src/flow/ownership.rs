@@ -22,7 +22,8 @@ pub(super) struct OwnershipState {
     pub(super) task_names: BTreeMap<String, (String, String)>,
     pub(super) pending_task: Option<(String, String)>,
     pub(super) incompatible_task_factory: bool,
-    pub(super) executing_task: bool,
+    pub(super) entering_task: bool,
+    inherited_captures: BTreeMap<String, Vec<CaptureSite>>,
     pub(super) imported_callables: BTreeMap<(usize, String), String>,
     invalidated_modules: BTreeSet<String>,
 }
@@ -64,7 +65,6 @@ impl OwnershipState {
         let parent = parent.ownership.as_deref()?;
         let mut child = Self::new(parent.mode, return_owned)?;
         child.incompatible_task_factory = parent.incompatible_task_factory;
-        child.executing_task = parent.executing_task;
         child.invalidated_modules = parent.invalidated_modules.clone();
         Some(child)
     }
@@ -157,6 +157,13 @@ impl OwnershipState {
             joined.pending_task = None;
         }
         joined
+    }
+
+    pub(super) fn inherit_capture_sites(&mut self, parent: &State, object: &str) {
+        let sites = live_capture_sites(parent, object);
+        if !sites.is_empty() {
+            self.inherited_captures.insert(object.to_owned(), sites);
+        }
     }
 
     pub(super) fn apply_runtime_effects(&mut self, other: &Self) {
@@ -466,8 +473,20 @@ pub(super) fn argument_escapes(
     affected
 }
 
-fn live_capture_sites(env: &State, object: &str) -> Vec<(SourceRange, bool, bool)> {
-    let mut sites = Vec::new();
+#[derive(Clone, PartialEq, Eq)]
+struct CaptureSite {
+    origin: Span,
+    possible: bool,
+    scheduled: bool,
+}
+
+fn live_capture_sites(env: &State, object: &str) -> Vec<CaptureSite> {
+    let mut sites = env
+        .ownership
+        .as_ref()
+        .and_then(|ownership| ownership.inherited_captures.get(object))
+        .cloned()
+        .unwrap_or_default();
     for (id, coroutine) in &env.coroutines {
         if coroutine.consumed
             || !coroutine
@@ -483,11 +502,11 @@ fn live_capture_sites(env: &State, object: &str) -> Vec<(SourceRange, bool, bool
                 .values()
                 .find_map(|group| group.tasks.get(id))
         });
-        sites.push((
-            coroutine.range,
-            coroutine.ambiguous || task.is_some_and(|task| task.possible),
-            task.is_some(),
-        ));
+        sites.push(CaptureSite {
+            origin: coroutine.origin.clone(),
+            possible: coroutine.ambiguous || task.is_some_and(|task| task.possible),
+            scheduled: task.is_some(),
+        });
     }
     sites
 }
@@ -508,7 +527,7 @@ pub(super) fn check_close(
         return;
     }
     let mut identity = contract_identity(env.resources.get(object));
-    if sites.iter().any(|(_, _, scheduled)| *scheduled) {
+    if sites.iter().any(|site| site.scheduled) {
         if let Some(revision) = crate::model::task_group_revision(&env.target_python_version) {
             identity.push(format!("TPM-TASK-001@{revision}"));
         }
@@ -518,8 +537,8 @@ pub(super) fn check_close(
         "TP2006",
         "resource closes while a coroutine or task borrow remains outstanding",
         span(file, range),
-        sites.iter().map(|(site, _, _)| span(file, *site)).collect(),
-        if possible_receiver || sites.iter().all(|(_, possible, _)| *possible) {
+        sites.iter().map(|site| site.origin.clone()).collect(),
+        if possible_receiver || sites.iter().all(|site| site.possible) {
             "possible"
         } else {
             "definite"
@@ -603,11 +622,11 @@ pub(super) fn transfer(
         || conflicts
             .iter()
             .any(|(alias, values)| values.len() == 1 && !env.unknown_places.contains(*alias))
-        || capture_sites.iter().any(|(_, possible, _)| !possible);
+        || capture_sites.iter().any(|site| !site.possible);
     let possible_conflict = !conflicts.is_empty() || !capture_sites.is_empty();
     if known_conflict
         || possible_conflict
-        || mask == CLOSED
+        || mask & CLOSED != 0
         || ownership.owners.get(name) != Some(object)
     {
         let mut related = conflicts
@@ -619,20 +638,28 @@ pub(super) fn transfer(
                     .or_else(|| ownership.argument_origins.get(*alias))
                     .cloned()
             })
-            .chain(capture_sites.iter().map(|(range, _, _)| span(file, *range)))
+            .chain(capture_sites.iter().map(|capture| capture.origin.clone()))
             .collect::<Vec<_>>();
         related.extend(env.duty_origins.get(object).cloned());
+        related.extend(env.close_origins.get(object).cloned());
+        let definite = known_conflict
+            || mask == CLOSED
+            || (ownership.owners.get(name) != Some(object) && !possible_conflict);
+        if !definite && mask & CLOSED != 0 {
+            boundary(
+                result,
+                file,
+                range,
+                "ownership transfer cannot establish open ownership on every path",
+            );
+        }
         report(
             result,
             "TP2003",
             "ownership transfer requires an open owner without a conflicting live alias or borrow",
             site,
             related,
-            if known_conflict || mask == CLOSED || !possible_conflict {
-                "definite"
-            } else {
-                "possible"
-            },
+            if definite { "definite" } else { "possible" },
             identity,
         );
         return None;
@@ -1027,7 +1054,7 @@ pub(super) fn verify_call_binding(
         // A checked function without an Owned parameter may use the view,
         // but its effects cannot acquire the duty.
         if explicit
-            || ownership.executing_task
+            || ownership.entering_task
             || targets
                 .iter()
                 .any(|object| parent.duty_origins.contains_key(object))
@@ -1035,7 +1062,7 @@ pub(super) fn verify_call_binding(
             for object in targets {
                 child.duty_origins.remove(object);
                 if explicit
-                    || ownership.executing_task
+                    || ownership.entering_task
                     || expected.is_some_and(|contract| contract.access == "shared")
                 {
                     child.borrowed.insert(object.clone());
@@ -1046,7 +1073,7 @@ pub(super) fn verify_call_binding(
                 }
             }
         }
-        if ownership.executing_task && expected.is_none_or(|contract| contract.access != "shared") {
+        if ownership.entering_task && expected.is_none_or(|contract| contract.access != "shared") {
             boundary_at_span(
                 result,
                 call_site.clone(),

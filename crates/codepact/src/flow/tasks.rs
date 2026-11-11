@@ -61,6 +61,8 @@ pub(super) fn enter_group(
     ownership.group_names.insert(target.clone(), id.clone());
     env.places.remove(target);
     env.unknown_places.remove(target);
+    env.coroutine_aliases.remove(target);
+    env.unknown_coroutine_aliases.remove(target);
     env.shadowed_functions.insert(target.clone());
     env.shadowed_classes.insert(target.clone());
     Some(id)
@@ -295,7 +297,7 @@ pub(super) fn clear_captures(record: &CoroutineRecord, env: &mut State) {
 pub(super) fn join_group(
     id: &str,
     range: SourceRange,
-    aborting: bool,
+    incoming: Option<&CompletionKind>,
     env: &mut State,
     file: &SourceFile,
     contracts: &[Contract],
@@ -316,9 +318,14 @@ pub(super) fn join_group(
         );
         return;
     };
+    let aborting = matches!(
+        incoming,
+        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled)
+    );
+    let body_exception = incoming.and_then(|kind| completion_exception_name(kind, env));
     let mut interrupted = env.clone();
     interrupted.pending_raises.clear();
-    let mut child_can_raise = false;
+    let mut child_errors = BTreeSet::new();
     let mut normal_possible = true;
     for (task_id, task) in &group.tasks {
         let Some(record) = env.coroutines.get(task_id).cloned() else {
@@ -330,7 +337,10 @@ pub(super) fn join_group(
             );
             continue;
         };
-        if task.cancelled_before_start && !task.possible && !group.incomplete {
+        if (task.cancelled_before_start || (aborting && !task.may_have_started))
+            && !task.possible
+            && !group.incomplete
+        {
             for continuation in [&mut *env, &mut interrupted] {
                 if let Some(coroutine) = continuation.coroutines.get_mut(task_id) {
                     coroutine.consumed = true;
@@ -346,7 +356,7 @@ pub(super) fn join_group(
             .ownership
             .as_mut()
             .expect("task execution")
-            .executing_task = true;
+            .entering_task = true;
         restore_captures(&record, &mut execution);
         // The parent may already have violated the borrow. The worker's
         // contracted entry is open; TP2006 retains the parent-side witness.
@@ -364,6 +374,11 @@ pub(super) fn join_group(
                 execution.objects.insert(object.clone(), OPEN);
             }
         }
+        execution
+            .coroutines
+            .get_mut(task_id)
+            .expect("running coroutine is retained")
+            .consumed = true;
         execution.awaited_call = Some((record.file_path.clone(), record.invocation.range));
         consume_expr(
             &record.invocation,
@@ -379,7 +394,12 @@ pub(super) fn join_group(
             matches!(exit.kind, CompletionKind::Cancelled)
                 || raised_exception_name(exit) == Some("CancelledError")
         };
-        child_can_raise |= exits.iter().any(|exit| !cancelled(exit));
+        child_errors.extend(
+            exits
+                .iter()
+                .filter(|exit| !cancelled(exit))
+                .map(|exit| raised_exception_name(exit).map(str::to_owned)),
+        );
         let has_completion = execution.alive || !exits.is_empty();
         let mut normal_outcomes = exits
             .iter()
@@ -473,6 +493,22 @@ pub(super) fn join_group(
     }
     if aborting {
         *env = interrupted;
+        match (incoming, body_exception) {
+            (_, Some("KeyboardInterrupt" | "SystemExit")) => {}
+            (Some(CompletionKind::Cancelled), _) | (_, Some("CancelledError")) => {
+                if !child_errors.is_empty() {
+                    queue_group_error(env, range, None, &child_errors);
+                }
+            }
+            _ => {
+                if body_exception.is_some() {
+                    queue_group_error(env, range, body_exception, &child_errors);
+                } else {
+                    queue_raise(env, range, None);
+                }
+                env.alive = false;
+            }
+        }
         return;
     }
     if !group.tasks.is_empty() {
@@ -482,14 +518,49 @@ pub(super) fn join_group(
             kind: CompletionKind::Cancelled,
         });
     }
-    if child_can_raise {
-        env.pending_raises.push(FlowExit {
-            state: interrupted,
-            range,
-            kind: CompletionKind::Raise(None),
-        });
+    if !child_errors.is_empty() {
+        queue_group_error(&mut interrupted, range, None, &child_errors);
+        env.pending_raises
+            .extend(take_pending_raises(&mut interrupted));
     }
     env.alive = normal_possible;
+}
+
+fn queue_group_error(
+    env: &mut State,
+    range: SourceRange,
+    body_exception: Option<&str>,
+    child_errors: &BTreeSet<Option<String>>,
+) {
+    // Special child failures may escape directly. Keep the type open when
+    // child exits disagree or the original exception type was unresolved.
+    let ordinary_child_errors = child_errors.iter().all(|error| {
+        error
+            .as_deref()
+            .and_then(|name| builtin_exception_match(name, "Exception"))
+            == Some(true)
+    });
+    let group_type = match body_exception {
+        Some(name)
+            if builtin_exception_match(name, "Exception") == Some(true)
+                && ordinary_child_errors =>
+        {
+            Some("ExceptionGroup")
+        }
+        Some("BaseException" | "BaseExceptionGroup" | "GeneratorExit") if ordinary_child_errors => {
+            Some("BaseExceptionGroup")
+        }
+        None if !child_errors.is_empty() && ordinary_child_errors => Some("ExceptionGroup"),
+        _ => None,
+    };
+    queue_raise(
+        env,
+        range,
+        group_type.map(|name| AstExpr {
+            range,
+            kind: AstExprKind::Name(name.into()),
+        }),
+    );
 }
 
 fn apply_worker_cleanup(

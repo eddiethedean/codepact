@@ -71,6 +71,7 @@ struct MethodInvocation<'a> {
     parent: &'a State,
     call_key: String,
     call_site: String,
+    caller: &'a SourceFile,
 }
 
 type ProjectFunctionMap = BTreeMap<(String, String), FunctionBody>;
@@ -124,6 +125,7 @@ struct CoroutineRecord {
     file_path: String,
     captures: BTreeMap<String, CapturedCoroutinePlace>,
     range: SourceRange,
+    origin: Span,
     consumed: bool,
     ambiguous: bool,
 }
@@ -1480,6 +1482,9 @@ fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<St
         if let (Some(child), Some(parent)) = (child.ownership.as_mut(), parent.ownership.as_ref()) {
             child.copy_transfers(parent, object);
         }
+        if let Some(ownership) = child.ownership.as_mut() {
+            ownership.inherit_capture_sites(parent, object);
+        }
         if let Some(mask) = parent.objects.get(object) {
             child.objects.insert(object.clone(), *mask);
         }
@@ -1568,6 +1573,7 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         parent,
         call_key,
         call_site,
+        caller,
     } = invocation;
     let (module_function_bindings, module_class_bindings) =
         module_bindings_for_child(parent, definition);
@@ -1631,9 +1637,20 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
                 child.places.insert(parameter.clone(), targets.clone());
                 copy_object_metadata(&mut child, parent, targets);
                 if parent.unknown_places.contains(actual) {
-                    child.unknown_places.insert(parameter);
+                    child.unknown_places.insert(parameter.clone());
                 }
             }
+        }
+        if parent.ownership.is_some() {
+            ownership::verify_call_binding(
+                definition,
+                &parameter,
+                argument,
+                parent,
+                &mut child,
+                &span(caller, argument.range),
+                context.result,
+            );
         }
     }
     let returned = execute(
@@ -2575,6 +2592,7 @@ fn register_pending_coroutine(
         file_path: file.path.clone(),
         captures,
         range: expression.range,
+        origin: span(file, expression.range),
         consumed: false,
         ambiguous: false,
     };
@@ -2784,6 +2802,14 @@ fn consume_expr_impl(
             }
         }
         let before = env.clone();
+        if env.ownership.is_some() {
+            if let Some(record) = coroutine_id
+                .as_ref()
+                .and_then(|id| env.coroutines.get_mut(id))
+            {
+                record.consumed = true;
+            }
+        }
         env.awaited_call = coroutine.as_ref().map_or_else(
             || Some((file.path.clone(), awaited.range)),
             |record| Some((record.file_path.clone(), record.invocation.range)),
@@ -3324,6 +3350,7 @@ fn consume_expr_impl(
                                     arguments,
                                     keywords,
                                     parent: env,
+                                    caller: file,
                                     call_key: method_key,
                                     call_site: format!(
                                         "{}:{}:{}",
@@ -3518,7 +3545,7 @@ fn consume_expr_impl(
                     branch_raises.extend(alternative.pending_raises.iter().cloned());
                     if uncertain_receiver {
                         for diagnostic in &mut result.diagnostics[diagnostic_start..] {
-                            if diagnostic.code == "TP1001"
+                            if matches!(diagnostic.code.as_str(), "TP1001" | "TP2006")
                                 && diagnostic.primary != span(file, expr.range)
                             {
                                 diagnostic.certainty = "possible".into();
@@ -4440,17 +4467,21 @@ fn expression_exception_names(expression: &AstExpr) -> Option<Vec<&str>> {
 }
 
 fn raised_exception_name(exit: &FlowExit) -> Option<&str> {
-    if matches!(exit.kind, CompletionKind::Cancelled) {
+    completion_exception_name(&exit.kind, &exit.state)
+}
+
+fn completion_exception_name<'a>(kind: &'a CompletionKind, state: &State) -> Option<&'a str> {
+    if matches!(kind, CompletionKind::Cancelled) {
         return Some("CancelledError");
     }
-    let CompletionKind::Raise(Some(expression)) = &exit.kind else {
+    let CompletionKind::Raise(Some(expression)) = kind else {
         return None;
     };
     let name = match &expression.kind {
         AstExprKind::Call { function, .. } => expr_name(function),
         _ => expr_name(expression),
     }?;
-    is_unshadowed_exception_handler_name(name, &exit.state).then_some(name)
+    is_unshadowed_exception_handler_name(name, state).then_some(name)
 }
 
 fn known_builtin_exception(name: &str) -> bool {
@@ -4465,7 +4496,8 @@ fn builtin_exception_parents(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "CancelledError" => &["BaseException"],
         "BaseException" => &[],
-        "Exception" => &["BaseException"],
+        "Exception" | "BaseExceptionGroup" => &["BaseException"],
+        "ExceptionGroup" => &["BaseExceptionGroup", "Exception"],
         "ArithmeticError" | "AssertionError" | "AttributeError" | "BufferError" | "EOFError"
         | "ImportError" | "LookupError" | "MemoryError" | "NameError" | "ReferenceError"
         | "RuntimeError" | "StopAsyncIteration" | "StopIteration" | "SyntaxError"
@@ -5359,13 +5391,9 @@ fn execute_with(
                 ContextCleanupFrame::Modeled(cleanup) => {
                     path.state.alive = true;
                     path.state.pending_raises.clear();
-                    let aborting = matches!(
-                        path.completion.as_ref().map(|(kind, _)| kind),
-                        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled)
-                    );
                     run_context_cleanup(
                         &cleanup,
-                        aborting,
+                        path.completion.as_ref().map(|(kind, _)| kind),
                         &mut path.state,
                         file,
                         contracts,
@@ -5796,7 +5824,7 @@ fn contextlib_cleanup_method(expression: &AstExpr, env: &State) -> Option<&'stat
 
 fn run_context_cleanup(
     cleanup: &ContextCleanup,
-    aborting: bool,
+    incoming: Option<&CompletionKind>,
     env: &mut State,
     file: &SourceFile,
     contracts: &[Contract],
@@ -5807,7 +5835,7 @@ fn run_context_cleanup(
         tasks::join_group(
             &cleanup.receiver,
             cleanup.range,
-            aborting,
+            incoming,
             env,
             file,
             contracts,
@@ -5878,6 +5906,18 @@ fn execute_non_if_statement(
                 .cloned();
             env.coroutine_aliases.remove(name);
             env.unknown_coroutine_aliases.remove(name);
+            if let (Some(ownership), AstExprKind::Closure(captures)) =
+                (env.ownership.as_mut(), &value.kind)
+            {
+                ownership.define_closure(name, captures);
+                env.places.remove(name);
+                env.unknown_places.remove(name);
+                env.class_bindings.remove(name);
+                env.function_bindings.remove(name);
+                env.shadowed_classes.insert(name.clone());
+                env.shadowed_functions.insert(name.clone());
+                return None;
+            }
             let source_function_binding = env
                 .ownership
                 .as_ref()
@@ -6066,6 +6106,7 @@ fn execute_non_if_statement(
                                             arguments,
                                             keywords,
                                             parent: env,
+                                            caller: file,
                                             call_key: init_key,
                                             call_site: format!(
                                                 "{}:{}:{}",
