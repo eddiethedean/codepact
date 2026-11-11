@@ -1089,9 +1089,13 @@ fn capabilities_and_rule_explanations_publish_the_supported_surface_and_limits()
     assert_eq!(capabilities["services"]["persistent_cache"], false);
 
     let rules = capabilities["rules"].as_array().unwrap();
-    assert_eq!(rules.len(), 9);
+    assert_eq!(rules.len(), 9 + codepact::adoption::OWNERSHIP_RULES.len());
     for rule in rules {
         let code = rule["code"].as_str().unwrap();
+        if codepact::adoption::OWNERSHIP_RULES.contains(&code) {
+            assert_eq!(rule["tier"], "experimental");
+            assert_eq!(rule["enabled_by_default"], false);
+        }
         let explanation = cli(&root, &["explain", code, "--json"]);
         assert_eq!(explanation.status.code(), Some(0), "{code}");
         let document: serde_json::Value = serde_json::from_slice(&explanation.stdout).unwrap();

@@ -452,3 +452,188 @@ fn synthetic_unknown_boundaries_cannot_be_interpreted_as_verified_clean() {
         }
     }
 }
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmellManifest {
+    catalog: String,
+    pairs: Vec<SmellPair>,
+    boundaries: Vec<SmellBoundary>,
+    controls: Vec<SmellControl>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmellPair {
+    project: String,
+    smells: Vec<String>,
+    findings: Vec<SmellFinding>,
+    #[serde(default)]
+    boundaries: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+struct SmellFinding {
+    function: String,
+    site: String,
+    code: String,
+    certainty: String,
+    completion: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmellBoundary {
+    project: String,
+    smells: Vec<String>,
+    reasons: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SmellControl {
+    project: String,
+    smells: Vec<String>,
+}
+
+fn assert_smell_report(
+    document: &Value,
+    root: &Path,
+    expected_findings: &[SmellFinding],
+    expected_boundaries: &[String],
+) {
+    assert_eq!(
+        document["coverage"]["status"],
+        if expected_boundaries.is_empty() {
+            "complete-for-supported-subset"
+        } else {
+            "incomplete"
+        },
+        "{document:#}"
+    );
+    let source = fs::read_to_string(root.join("src/main.py")).unwrap();
+    let lines = source.lines().collect::<Vec<_>>();
+    let mut actual_findings = Vec::new();
+    let mut actual_boundaries = BTreeSet::new();
+    for diagnostic in document["diagnostics"].as_array().unwrap() {
+        assert_eq!(diagnostic["disposition"], "active");
+        let code = diagnostic["code"].as_str().unwrap();
+        if code == "TP9001" {
+            assert_eq!(diagnostic["certainty"], "unknown");
+            let message = diagnostic["message"].as_str().unwrap();
+            let reason = expected_boundaries
+                .iter()
+                .find(|reason| message.contains(reason.as_str()))
+                .unwrap_or_else(|| panic!("unexpected boundary: {diagnostic:#}"));
+            actual_boundaries.insert(reason);
+            continue;
+        }
+        assert_eq!(diagnostic["primary"]["file"], "main.py", "{diagnostic:#}");
+        let line = diagnostic["primary"]["line"].as_u64().unwrap() as usize;
+        actual_findings.push(SmellFinding {
+            function: containing_function(root, "main.py", line),
+            site: lines[line - 1].trim().to_owned(),
+            code: code.to_owned(),
+            certainty: diagnostic["certainty"].as_str().unwrap().to_owned(),
+            completion: diagnostic["completion"].as_str().map(str::to_owned),
+        });
+    }
+    let mut expected_findings = expected_findings.iter().collect::<Vec<_>>();
+    let mut actual_findings = actual_findings.iter().collect::<Vec<_>>();
+    expected_findings.sort();
+    actual_findings.sort();
+    assert_eq!(actual_findings, expected_findings, "{document:#}");
+    assert_eq!(actual_boundaries, expected_boundaries.iter().collect());
+}
+
+#[test]
+fn code_smell_corpus_matches_cli_oracles_on_all_targets() {
+    let corpus = corpus_root().join("code_smells");
+    let manifest: SmellManifest =
+        serde_json::from_slice(&fs::read(corpus.join("manifest.json")).unwrap()).unwrap();
+    assert_eq!(manifest.catalog, "https://www.codesmells.org/");
+    let mut rules = BTreeSet::new();
+    for pair in &manifest.pairs {
+        assert!(!pair.smells.is_empty() && !pair.findings.is_empty());
+        rules.extend(pair.findings.iter().map(|finding| finding.code.as_str()));
+        let project = corpus.join(&pair.project);
+        let mut buggy_files = files(&project.join("buggy"));
+        let mut fixed_files = files(&project.join("fixed"));
+        assert_ne!(
+            buggy_files.remove("src/main.py").unwrap(),
+            fixed_files.remove("src/main.py").unwrap()
+        );
+        assert_eq!(
+            buggy_files, fixed_files,
+            "{} changed shared files",
+            pair.project
+        );
+        for target in TARGETS {
+            let workspace = Workspace::new(&format!("smell-{}-{target}", pair.project));
+            install_snapshot(&project.join("buggy"), &workspace.0);
+            let buggy = run_cli(&workspace.0, target, &["--mode", "strict"]);
+            assert_eq!(buggy.status.code(), Some(1));
+            let buggy = report(&buggy);
+            assert_smell_report(&buggy, &workspace.0, &pair.findings, &pair.boundaries);
+
+            install_snapshot(&project.join("fixed"), &workspace.0);
+            let fixed = run_cli(&workspace.0, target, &["--mode", "strict"]);
+            assert_eq!(
+                fixed.status.code(),
+                Some(0),
+                "{}",
+                String::from_utf8_lossy(&fixed.stdout)
+            );
+            let fixed = report(&fixed);
+            assert_smell_report(&fixed, &workspace.0, &[], &[]);
+            for field in [
+                "policy_fingerprint",
+                "model_fingerprint",
+                "selected_files",
+                "assurance",
+            ] {
+                assert_eq!(buggy[field], fixed[field], "{}: {field}", pair.project);
+            }
+        }
+    }
+    assert_eq!(
+        rules,
+        [
+            "TP1001", "TP1002", "TP1003", "TP2001", "TP2002", "TP2003", "TP2004", "TP2005",
+            "TP2006", "TP3001"
+        ]
+        .into_iter()
+        .collect()
+    );
+    for boundary in manifest.boundaries {
+        assert!(!boundary.smells.is_empty() && !boundary.reasons.is_empty());
+        let project = corpus.join(boundary.project).join("boundary");
+        for target in TARGETS {
+            let advisory = run_cli(&project, target, &["--mode", "advisory"]);
+            let strict = run_cli(&project, target, &["--mode", "strict"]);
+            assert_eq!(advisory.status.code(), Some(0));
+            assert_eq!(strict.status.code(), Some(1));
+            let advisory = report(&advisory);
+            let strict = report(&strict);
+            assert_smell_report(&advisory, &project, &[], &boundary.reasons);
+            assert_smell_report(&strict, &project, &[], &boundary.reasons);
+            assert_eq!(
+                canonical_diagnostics(&advisory),
+                canonical_diagnostics(&strict)
+            );
+        }
+    }
+    let marked = corpus.join("delivery_status/buggy/src/main.py");
+    let unmarked = corpus.join("unmarked_status/control/src/main.py");
+    assert_eq!(fs::read(marked).unwrap(), fs::read(unmarked).unwrap());
+    for control in manifest.controls {
+        assert!(!control.smells.is_empty());
+        let project = corpus.join(control.project).join("control");
+        for target in TARGETS {
+            let output = run_cli(&project, target, &["--mode", "strict"]);
+            assert_eq!(output.status.code(), Some(0));
+            assert_smell_report(&report(&output), &project, &[], &[]);
+        }
+    }
+}

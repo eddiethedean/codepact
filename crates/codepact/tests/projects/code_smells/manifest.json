@@ -1,0 +1,103 @@
+{
+  "catalog": "https://www.codesmells.org/",
+  "pairs": [
+    {
+      "project": "batch_teardown",
+      "smells": ["Required Setup or Teardown Code"],
+      "findings": [
+        {"function": "skip_empty", "site": "return", "code": "TP1002", "certainty": "definite", "completion": "return"},
+        {"function": "reject_invalid", "site": "raise ValueError(\"invalid footer\")", "code": "TP1002", "certainty": "definite", "completion": "raise"},
+        {"function": "flush_after_scope", "site": "spool.write()  # The closing context has already released the spool.", "code": "TP1001", "certainty": "definite"},
+        {"function": "open_spool", "site": "return spool", "code": "TP1003", "certainty": "definite", "completion": "return"},
+        {"function": "flush_optional", "site": "def flush_optional(stop: bool) -> None:", "code": "TP1002", "certainty": "possible", "completion": "fallthrough"},
+        {"function": "flush_optional", "site": "spool.write()", "code": "TP1001", "certainty": "possible"}
+      ]
+    },
+    {
+      "project": "delivery_status",
+      "smells": ["Afraid To Fail"],
+      "findings": [
+        {"function": "ship", "site": "confirm_address()", "code": "TP3001", "certainty": "definite"},
+        {"function": "schedule", "site": "reserve_slot()", "code": "TP3001", "certainty": "definite"},
+        {"function": "release", "site": "can_dispatch()", "code": "TP3001", "certainty": "definite"}
+      ]
+    },
+    {
+      "project": "preview_side_effects",
+      "smells": ["Side Effects"],
+      "findings": [
+        {"function": "preview", "site": "local_view.close()", "code": "TP2001", "certainty": "definite"},
+        {"function": "render", "site": "decoder.read()", "code": "TP1001", "certainty": "definite"}
+      ]
+    },
+    {
+      "project": "global_receipt",
+      "smells": ["Global Data"],
+      "findings": [
+        {"function": "record", "site": "cached = view", "code": "TP2004", "certainty": "definite"}
+      ],
+      "boundaries": ["resource assignment escapes to a global or enclosing scope"]
+    },
+    {
+      "project": "exposed_cursor",
+      "smells": ["Indecent Exposure"],
+      "findings": [
+        {"function": "export_handles", "site": "return [view]", "code": "TP2004", "certainty": "definite"},
+        {"function": "make_reader", "site": "return lambda: view.read()", "code": "TP2004", "certainty": "definite"}
+      ],
+      "boundaries": ["unsupported flow weakens tracked resources"]
+    },
+    {
+      "project": "aliased_upload",
+      "smells": ["Mutable Data"],
+      "findings": [
+        {"function": "duplicate_owner", "site": "_queued_owner = move(owner)", "code": "TP2003", "certainty": "definite"},
+        {"function": "retry_after_handoff", "site": "owner.write()", "code": "TP2002", "certainty": "definite"}
+      ],
+      "boundaries": ["resource-valued call result is not tracked"]
+    },
+    {
+      "project": "forwarded_buffer",
+      "smells": ["Tramp Data"],
+      "findings": [
+        {"function": "hand_off", "site": "def hand_off(buffer: Annotated[Buffer, OwnedAccess()]) -> None:", "code": "TP1002", "certainty": "definite", "completion": "fallthrough"},
+        {"function": "hand_off", "site": "finish(buffer)", "code": "TP2005", "certainty": "definite"}
+      ],
+      "boundaries": ["callee has an invalid Borrowed close effect"]
+    },
+    {
+      "project": "async_index",
+      "smells": ["Required Setup or Teardown Code"],
+      "findings": [
+        {"function": "cancel_scan", "site": "index.close()", "code": "TP2006", "certainty": "definite"},
+        {"function": "build_index", "site": "async with TaskGroup() as inner:", "code": "TP1002", "certainty": "definite", "completion": "cancelled"},
+        {"function": "build_index", "site": "index.close()", "code": "TP2006", "certainty": "definite"}
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "project": "opaque_factory",
+      "smells": ["Hidden Dependencies"],
+      "reasons": [
+        "unsupported flow weakens tracked resources",
+        "nested CodePact contracts are unsupported in this annotation form",
+        "resource-valued call result is not tracked",
+        "unknown call effect for factory",
+        "unresolved method receiver may affect tracked resources"
+      ]
+    },
+    {
+      "project": "detached_index",
+      "smells": ["Required Setup or Teardown Code"],
+      "reasons": [
+        "unknown call effect for create_task",
+        "created coroutine is not awaited before this scope exit"
+      ]
+    }
+  ],
+  "controls": [
+    {"project": "design_controls", "smells": ["Duplicated Code", "Flag Argument", "Magic Number"]},
+    {"project": "unmarked_status", "smells": ["Afraid To Fail"]}
+  ]
+}

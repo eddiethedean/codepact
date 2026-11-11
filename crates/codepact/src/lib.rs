@@ -21,6 +21,26 @@ pub(crate) use source::span as source_span;
 pub const SCHEMA_VERSION: u8 = 0;
 pub const LIFECYCLE_ASSURANCE: &str = "lifecycle-checking-for-supported-exit-flow";
 pub const ADOPTION_ASSURANCE: &str = "lifecycle-and-must-use-checking-for-supported-exit-flow";
+pub const OWNERSHIP_ASSURANCE: &str = "experimental-ownership-checking-for-supported-exit-flow";
+
+/// Select the experimental transfer and borrowing analysis.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Ownership {
+    #[default]
+    Disabled,
+    Enabled,
+    /// The analyzed program uses CPython's default, non-eager task factory.
+    AssumeDefaultTaskFactory,
+}
+
+impl Ownership {
+    pub fn is_enabled(self) -> bool {
+        self != Self::Disabled
+    }
+}
 pub const DEFAULT_MAX_SOURCE_BYTES: usize = 1_000_000;
 pub const DEFAULT_MAX_DECLARATIONS: usize = 10_000;
 pub const DEFAULT_MAX_INPUT_FILES: usize = 10_000;
@@ -119,6 +139,15 @@ pub fn check(files: &[SourceFile], python_version: &str) -> Inspection {
 /// Existing `check` and `check_report` keep the released rule set.
 pub fn check_with_must_use(files: &[SourceFile], python_version: &str) -> Inspection {
     AnalysisSession::default().check_with_must_use(files, python_version)
+}
+
+/// Check lifecycle, must-use, and the selected experimental ownership scope.
+pub fn check_with_ownership(
+    files: &[SourceFile],
+    python_version: &str,
+    ownership: Ownership,
+) -> CheckResult {
+    AnalysisSession::default().check_with_ownership(files, python_version, ownership)
 }
 
 /// Check resource cleanup duties and return the versioned checker-specific

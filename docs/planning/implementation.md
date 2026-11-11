@@ -35,9 +35,7 @@ Completion: pilot projects can run in CI with stable exit codes; modeled cleanup
 
 ## Phase 3: introduce ownership experimentally
 
-Add explicit move semantics, handle validity, ownership obligation transfer and lexical borrow regions. Verify callee preconditions/effects across supported modules. Define recursive-summary widening and escape policies.
-
-Completion: use-after-move, double transfer, close-through-borrow and known conflicting aliases are diagnosed. Containers, callbacks and foreign code cannot silently restore uniqueness. Experimental status is documented.
+The [0.5 ownership plan](phases/0.5-ownership.md) orders explicit moves, handle validity, duty transfer, lexical borrowing, cross-module effects and structured task lifetimes. OW01 reviews the opt-in, supported syntax, recursive limits and reviewed TaskGroup models. The candidate [specification](phases/0.5/specification.md) and [V05 matrix](phases/0.5/validation.md) map O01–O07 and CS03 to evidence.
 
 ## Phase 4: expand contract expressiveness
 

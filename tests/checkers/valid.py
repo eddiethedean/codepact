@@ -1,6 +1,6 @@
 from typing import assert_type
 
-from codepact import discard, must_use
+from codepact import discard, move, must_use
 from codepact.contracts import Borrowed, MustUse, Owned
 from codepact.rust import Borrowed as ExplicitBorrowed
 from codepact.rust import MustUse as ExplicitMustUse
@@ -30,3 +30,4 @@ assert_type(fetch_explicit(), Connection)
 assert_type(discard(fetch("discard")), None)
 must_use_alias: ExplicitMustUse[Connection] = Connection()
 assert_type(must_use_alias, Connection)
+assert_type(move(owned), Connection)

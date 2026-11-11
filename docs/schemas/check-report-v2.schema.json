@@ -4,13 +4,15 @@
   "title": "CodePact CLI adoption report, schema 2",
   "type": "object", "additionalProperties": false,
   "required": ["execution_status", "engine_version", "report_schema_version", "check_schema_version", "target_python_version", "model_catalog_version", "available_models", "assurance", "contracts", "coverage", "diagnostics", "counts", "counts_by_certainty", "counts_by_disposition", "total_diagnostics", "actionable_diagnostics", "returned_diagnostics", "audit_diagnostics", "policy_failures", "policy_warnings", "unused_suppressions", "details_truncated", "snapshot_algorithm_version", "snapshot_id", "semantic_fingerprint", "policy_fingerprint", "model_fingerprint", "snapshot_manifest", "project_root", "logical_root", "config_file", "selected_files", "include", "exclude", "selected_rules", "disabled_rules", "mode", "fail_on", "settings_origins", "baseline", "exit_code"],
-  "allOf": [{"if": {"properties": {"selected_rules": {"contains": {"const": "TP3001"}}}}, "then": {"properties": {"assurance": {"const": "lifecycle-and-must-use-checking-for-supported-exit-flow"}}}}],
+  "allOf": [{"if": {"properties": {"selected_rules": {"contains": {"const": "TP3001"}}}}, "then": {"properties": {"assurance": {"enum": ["lifecycle-and-must-use-checking-for-supported-exit-flow", "experimental-ownership-checking-for-supported-exit-flow"]}}}},
+    {"if": {"properties": {"selected_rules": {"contains": {"enum": ["TP2002", "TP2003", "TP2004", "TP2005", "TP2006"]}}}}, "then": {"properties": {"assurance": {"const": "experimental-ownership-checking-for-supported-exit-flow"}}}}
+  ],
   "properties": {
     "execution_status": {"const": "completed"}, "engine_version": {"type": "string"},
     "report_schema_version": {"const": 2}, "check_schema_version": {"const": 2},
     "target_python_version": {"type": "string"}, "model_catalog_version": {"type": "integer", "minimum": 0},
     "available_models": {"type": "array", "items": {"$ref": "check-result-v1.schema.json#/$defs/model"}},
-    "assurance": {"enum": ["lifecycle-checking-for-supported-exit-flow", "lifecycle-and-must-use-checking-for-supported-exit-flow"]},
+    "assurance": {"enum": ["lifecycle-checking-for-supported-exit-flow", "lifecycle-and-must-use-checking-for-supported-exit-flow", "experimental-ownership-checking-for-supported-exit-flow"]},
     "contracts": {"type": "array", "items": {"$ref": "inspection-v0.schema.json#/$defs/contract"}},
     "coverage": {"$ref": "inspection-v0.schema.json#/$defs/coverage"},
     "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},

@@ -1,0 +1,11 @@
+{
+  "pairs": [
+    {"project": "ownership_transfer", "code": "TP2002", "certainty": "definite", "line": 17},
+    {"project": "ownership_borrow", "code": "TP2004", "certainty": "definite", "line": 15},
+    {"project": "ownership_task_group", "code": "TP2006", "certainty": "definite", "line": 25}
+  ],
+  "boundary": {
+    "project": "ownership_boundary",
+    "reasons": ["unknown call effect for hook", "unknown call effect for create_task"]
+  }
+}

@@ -1,6 +1,6 @@
 # Concurrent resource safety
 
-Status: **Planned**, adopted 2026-10-31. This is the shared design for resource safety in async tasks and at multiprocessing boundaries. It does not expand the published inspector or the synchronous 0.2.0 lifecycle checker. No gate below has passed.
+Adopted 2026-10-31. CS01 and CS02 are complete for the published 0.3 and 0.4 scopes. CS03–CS07 remain planned. [0.3.0 release evidence](../releases/0.3.0-evidence.md) · [0.4.0 release evidence](../releases/0.4.0-evidence.md)
 
 ## Outcome and scope
 
@@ -23,6 +23,8 @@ The [root roadmap](../../ROADMAP.md) remains authoritative. Each CS gate below i
 | CS07 | 0.9 | Audit every async/process claim against the model matrix and CS evidence; exclude unsupported or experimental behavior from stable guarantees. |
 
 ## Coroutine and structured task semantics
+
+The 0.5 proposal specifies the initial TaskGroup subset, transfer commit points and required CS03 controls. [Ownership specification](phases/0.5/specification.md#structured-tasks-and-cs03) · [V05 validation matrix](phases/0.5/validation.md)
 
 Calling a coroutine function creates a coroutine; it does not establish that its body ran, a resource was consumed, or cleanup completed. Distinguish creation, scheduling, running, cancellation requested and joined/completed tasks. Model resource capture when work can retain an alias, including coroutine creation, rather than waiting until first execution. Do not grant an async close's successful postcondition merely because its coroutine was created.
 

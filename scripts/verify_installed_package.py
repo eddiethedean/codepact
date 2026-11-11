@@ -23,6 +23,7 @@ class CheckResult(TypedDict):
 def main() -> None:
     version = importlib.metadata.version("codepact-cli")
     assert importlib.metadata.metadata("codepact-cli")["Requires-Python"] == ">=3.11"
+    supports_ownership = tuple(map(int, version.split(".")[:2])) >= (0, 5)
     if "--cli-only" not in sys.argv:
         import codepact
 
@@ -35,6 +36,9 @@ def main() -> None:
         assert package.is_relative_to(Path(sys.prefix))
         assert (package / "py.typed").is_file()
         assert "codepact._native" not in sys.modules
+        if supports_ownership:
+            resource = object()
+            assert codepact.move(resource) is resource
     executable = Path(sysconfig.get_path("scripts")) / (
         "codepact.exe" if sys.platform == "win32" else "codepact"
     )
@@ -110,6 +114,44 @@ def main() -> None:
         assert findings[0]["certainty"] == "definite"
         assert findings[0]["related"], findings[0]
         assert not lifecycle_marker.exists()
+        if supports_ownership:
+            lifecycle_source.write_text(
+                f"open({str(lifecycle_marker)!r}, 'w').close()\n"
+                "from codepact import move, resource\n"
+                "@resource(closed_by='close')\n"
+                "class Connection:\n"
+                "    def close(self): pass\n"
+                "def transfer():\n"
+                "    source = Connection()\n"
+                "    receiver = move(source)\n"
+                "    source.close()\n"
+                "    receiver.close()\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    str(executable),
+                    "check",
+                    "--root",
+                    str(check_root),
+                    "--experimental-ownership",
+                    "--json",
+                ],
+                cwd=temporary,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 1, result.stderr
+            checked = cast(CheckResult, json.loads(result.stdout))
+            moved = [
+                finding
+                for finding in checked["diagnostics"]
+                if finding["code"] == "TP2002"
+            ]
+            assert len(moved) == 1 and moved[0]["certainty"] == "definite"
+            assert moved[0]["related"]
+            assert not lifecycle_marker.exists()
     print(f"Installed distribution and Rust CLI verified: {version}")
 
 

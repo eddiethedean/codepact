@@ -1,0 +1,5 @@
+[tool.codepact]
+config-version = 1
+root = "src"
+fail-on = "warning"
+experimental-ownership = true

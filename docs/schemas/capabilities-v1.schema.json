@@ -19,8 +19,8 @@
       "type": "object", "additionalProperties": false,
       "required": ["code", "semantic_version", "tier", "enabled_by_default", "explanation_id"],
       "properties": {
-        "code": {"enum": ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001", "TP4001", "TP4002", "TP9001", "TP9002"]},
-        "semantic_version": {"type": "integer", "minimum": 1}, "tier": {"enum": ["stable", "mandatory"]},
+        "code": {"enum": ["TP1001", "TP1002", "TP1003", "TP2001", "TP2002", "TP2003", "TP2004", "TP2005", "TP2006", "TP3001", "TP4001", "TP4002", "TP9001", "TP9002"]},
+        "semantic_version": {"type": "integer", "minimum": 1}, "tier": {"enum": ["stable", "mandatory", "experimental"]},
         "enabled_by_default": {"type": "boolean"}, "explanation_id": {"type": "string"}
       }
     },

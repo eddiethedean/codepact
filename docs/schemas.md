@@ -20,3 +20,14 @@ Valid and invalid JSON fixtures are maintained in the
 [repository fixture directory](https://github.com/eddiethedean/codepact/tree/main/docs/schemas/fixtures).
 The fixtures illustrate version boundaries and rejection behavior; they do not
 qualify release or pilot gates.
+
+
+## Ownership scope in the 0.5 candidate
+
+Schema 2 accepts `experimental-ownership-checking-for-supported-exit-flow` in
+`assurance`. Experimental rule selection requires that assurance value. The
+settings response exposes `experimental_ownership` and
+`assume_default_task_factory`. Schema 1 capabilities add the experimental
+rule tier, and schema 1 baselines can record `ownership` and
+`ownership_model_revision`. Update strict consumers before enabling ownership.
+Earlier baselines remain readable and cannot match across ownership scopes.

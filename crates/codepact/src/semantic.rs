@@ -889,7 +889,7 @@ fn summary_uses_contract_wrapper(summary: &ParseSummary) -> bool {
                         .iter()
                         .any(|(_, value)| expression_uses_wrapper(value, imports))
             }
-            AstExprKind::Tuple(values) => values
+            AstExprKind::Tuple(values) | AstExprKind::Collection(values) => values
                 .iter()
                 .any(|value| expression_uses_wrapper(value, imports)),
             _ => false,
@@ -1266,6 +1266,7 @@ fn register_import(original: &str, local: &str, module: &str, state: &mut FileSt
         "codepact.resource" => "codepact::resource",
         "codepact.must_use" => "codepact::must_use",
         "codepact.discard" => "codepact::discard",
+        "codepact.move" => "codepact::move",
         "builtins.staticmethod" => "builtins::staticmethod",
         "builtins.classmethod" => "builtins::classmethod",
         "codepact.Resource" | "codepact.contracts.Resource" => "codepact::contracts::Resource",
@@ -2017,7 +2018,7 @@ fn parse_annotation(
                 AstExprKind::String(_) => {
                     Some("string and future annotations are not resolved in 0.1")
                 }
-                AstExprKind::Call { .. } | AstExprKind::Other | AstExprKind::OtherCalls(_) => {
+                AstExprKind::Call { .. } | AstExprKind::Other | AstExprKind::OtherCalls(..) => {
                     Some("computed annotation expressions are unsupported")
                 }
                 AstExprKind::Tuple(_) if contains_codepact_contract(expression, state) => {
@@ -2320,10 +2321,10 @@ fn contains_must_use_marker(expression: &AstExpr, imports: &BTreeMap<String, Str
                     .iter()
                     .any(|argument| contains_must_use_marker(argument, imports))
         }
-        AstExprKind::Tuple(arguments) => arguments
+        AstExprKind::Tuple(arguments) | AstExprKind::Collection(arguments) => arguments
             .iter()
             .any(|argument| contains_must_use_marker(argument, imports)),
-        AstExprKind::OtherCalls(calls) => calls.iter().any(|call| {
+        AstExprKind::OtherCalls(calls, _) => calls.iter().any(|call| {
             canonical_path(call, imports).is_some_and(|identity| {
                 matches!(
                     identity.as_str(),
@@ -2524,10 +2525,10 @@ fn expression_has_marked_call(
                     expression_has_marked_call(argument, marked, instances, class_scope)
                 })
         }
-        AstExprKind::Tuple(arguments) => arguments
+        AstExprKind::Tuple(arguments) | AstExprKind::Collection(arguments) => arguments
             .iter()
             .any(|argument| expression_has_marked_call(argument, marked, instances, class_scope)),
-        AstExprKind::OtherCalls(calls) => calls
+        AstExprKind::OtherCalls(calls, _) => calls
             .iter()
             .any(|name| resolve_marked_callable(name, marked, instances, class_scope).is_some()),
         _ => false,
@@ -2575,10 +2576,13 @@ fn has_unsupported_nested_marked_call(
                     expression_has_marked_call(argument, marked, instances, class_scope)
                 })
         }
-        AstExprKind::Tuple(arguments) => arguments
+        AstExprKind::Tuple(arguments) | AstExprKind::Collection(arguments) => arguments
             .iter()
             .any(|argument| expression_has_marked_call(argument, marked, instances, class_scope)),
-        AstExprKind::OtherCalls(_) | AstExprKind::Other | AstExprKind::DepthLimit => {
+        AstExprKind::OtherCalls(..)
+        | AstExprKind::Other
+        | AstExprKind::Starred(_)
+        | AstExprKind::DepthLimit => {
             expression_has_marked_call(expression, marked, instances, class_scope)
         }
         _ => false,
@@ -3051,7 +3055,7 @@ fn contains_codepact_contract(expression: &AstExpr, state: &FileState) -> bool {
                     .iter()
                     .any(|(_, value)| contains_codepact_contract(value, state))
         }
-        AstExprKind::Tuple(values) => values
+        AstExprKind::Tuple(values) | AstExprKind::Collection(values) => values
             .iter()
             .any(|value| contains_codepact_contract(value, state)),
         _ => false,

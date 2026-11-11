@@ -14,9 +14,11 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, released scope, V02 matrix and performance record |
 | [0.3 cleanup plan](phases/0.3-cleanup.md) | Published cleanup and bounded async behavior with verified artifacts |
 | [0.4 adoption plan](phases/0.4-adoption.md) | Published synthetic preview with completed A01–A08, CS02, and G1–G8 |
+| [0.5 ownership plan](phases/0.5-ownership.md) | Development candidate for transfer, lexical borrowing and TaskGroup semantics with local V05 evidence |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
+| [Follow-on contract phases](phases/contract-extensions.md) | Proposed value, field, and dependency checks with prerequisites and acceptance cases |
 | [Limitations](limitations.md) | Ownership, aliasing, dynamic code and assurance boundaries |
 | [Compatibility](compatibility.md) | Python typing, versions and ecosystem integration |
 | [Linting and IDE diagnostics](linting-and-editors.md) | Lint command, shared language server, editor targets and validation gates |

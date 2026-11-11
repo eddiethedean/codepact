@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 pub const CHECK_SCHEMA_VERSION: u8 = 1;
 pub const CHECK_MODEL_CATALOG_VERSION: u8 = 2;
+pub(crate) const TASK_GROUP_CATALOG_VERSION: u8 = 3;
 
 /// Lifecycle postconditions used by CodePact-owned effect summaries. These
 /// records are internal model inputs; they do not add user annotation syntax.
@@ -391,6 +392,30 @@ pub struct CheckModelMetadata {
     pub qualification: String,
 }
 
+pub(crate) fn task_group_revision(target: &str) -> Option<&'static str> {
+    match target {
+        "3.11" => Some("v3.11.15"),
+        "3.12" => Some("v3.12.13"),
+        "3.13" => Some("v3.13.16"),
+        _ => None,
+    }
+}
+
+pub(crate) fn task_group_metadata(target: &str) -> Option<CheckModelMetadata> {
+    let revision = task_group_revision(target)?;
+    Some(CheckModelMetadata {
+        id: "TPM-TASK-001".into(),
+        qualified_symbol: "asyncio.TaskGroup".into(),
+        source_revisions: vec![revision.into()],
+        source_urls: vec![format!(
+            "https://github.com/python/cpython/blob/{revision}/Lib/asyncio/taskgroups.py"
+        )],
+        selection_rule: "Exact asyncio.TaskGroup with the explicit default-task-factory assumption.".into(),
+        modeled_behavior: "Local scheduling and completion at group exit, including exceptional exit and cancellation. Completion and resource cleanup have separate effects.".into(),
+        qualification: "Experimental source model under a project-declared runtime assumption.".into(),
+    })
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CheckDiagnostic {
     /// Internal canonical contract evidence used for baseline identity.
@@ -465,6 +490,7 @@ impl CheckResult {
                 let trust = match diagnostic.code.as_str() {
                     "TP1001" | "TP1002" | "TP1003" | "TP2001" => "declared-unverified",
                     "TP9001" | "TP9002" => "unknown-boundary",
+                    "TP2006" if diagnostic.semantic_identity.iter().any(|id| id.starts_with("TPM-TASK-001@")) => "reviewed-model",
                     _ => "static-source",
                 };
                 let repair = match diagnostic.code.as_str() {
@@ -483,6 +509,11 @@ impl CheckResult {
                     "TP2001" => Some(
                         "Leave cleanup to the owner or pass an explicitly owned resource.".into(),
                     ),
+                    "TP2002" => Some("Use the receiving handle or move after the last use of the source.".into()),
+                    "TP2003" => Some("End conflicting aliases or borrows before transferring the owner.".into()),
+                    "TP2004" => Some("Keep the borrowed view inside the checked region and leave cleanup to its owner.".into()),
+                    "TP2005" => Some("Pass a uniquely held resource through codepact.move, or declare a verified shared borrow.".into()),
+                    "TP2006" => Some("Keep the resource open until the tracked coroutine or group has completed.".into()),
                     "TP3001" => Some(
                         "Handle the result, assign it for immediate handling, or call codepact.discard when abandonment is intentional.".into(),
                     ),

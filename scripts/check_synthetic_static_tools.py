@@ -15,8 +15,12 @@ def project_variants(corpus: Path) -> list[Path]:
             continue
         if (project / "buggy").is_dir():
             variants.extend((project / "buggy", project / "fixed"))
-        elif (project / "boundary").is_dir():
-            variants.append(project / "boundary")
+        else:
+            variants.extend(
+                project / variant
+                for variant in ("boundary", "control")
+                if (project / variant).is_dir()
+            )
     return variants
 
 
@@ -28,7 +32,7 @@ def main() -> int:
         print("pyright is required to validate the synthetic project controls")
         return 2
 
-    variants = project_variants(corpus)
+    variants = project_variants(corpus) + project_variants(corpus / "code_smells")
     failures = 0
     for project in variants:
         config = project / "pyrightconfig.json"

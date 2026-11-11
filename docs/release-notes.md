@@ -1,5 +1,14 @@
 # Release notes
 
+## 0.5.0 — unpublished candidate
+
+The candidate adds opt-in explicit transfers, lexical shared borrows, and
+structured task lifetimes for a bounded CPython `asyncio.TaskGroup` model. It
+includes the typed identity helper `codepact.move` and experimental rules
+TP2002–TP2006. The existing lifecycle and must-use policy remains the default.
+Use the matching 0.5 helper and CLI builds, and review baseline scope before
+enabling the new checks. [Experimental ownership guide](ownership.md)
+
 ## 0.4.0 — synthetic preview
 
 Published on November 10, 2026, CodePact 0.4.0 adds adoption tooling to the

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codepact import discard, must_use
+from codepact import discard, move, must_use
 from codepact.contracts import MustUseResult
 from codepact.rust import MustUse
 
@@ -21,6 +21,11 @@ class AdoptionHelperTests(unittest.TestCase):
     def test_must_use_alias_preserves_the_underlying_type(self) -> None:
         self.assertIs(MustUse[int].__origin__, int)
         self.assertIsInstance(MustUse[int].__metadata__[0], MustUseResult)
+
+    def test_move_preserves_identity(self) -> None:
+        value = object()
+        self.assertIs(move(value), value)
+        self.assertIs(move(value=value), value)
 
     def test_discard_is_a_noop_over_the_value(self) -> None:
         self.assertIsNone(discard(object()))

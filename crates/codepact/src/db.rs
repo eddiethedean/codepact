@@ -58,6 +58,7 @@ fn decode_module_analysis(
 struct FlowFileContext {
     model_catalog: crate::model::FlowModelCatalog,
     cyclic_modules: BTreeSet<String>,
+    ownership: crate::Ownership,
 }
 
 #[salsa::input]
@@ -303,9 +304,12 @@ fn check_flow_file_query(
                 &sources,
                 &summaries,
                 &mut inspection,
-                &python_version,
-                &context.model_catalog,
-                &context.cyclic_modules,
+                crate::flow::FlowOptions {
+                    python_version: &python_version,
+                    models: &context.model_catalog,
+                    cyclic_modules: &context.cyclic_modules,
+                    ownership: context.ownership,
+                },
             );
         },
     );
@@ -320,6 +324,7 @@ fn check_flow_query(
     python_version: String,
     model_catalog_json: String,
     inspection_json: String,
+    ownership: crate::Ownership,
 ) -> String {
     db.unwind_if_revision_cancelled();
     let model_catalog: crate::model::FlowModelCatalog =
@@ -414,6 +419,7 @@ fn check_flow_query(
         let flow_context_json = serde_json::to_string(&FlowFileContext {
             model_catalog: model_catalog.for_resource_symbols(&resource_symbols),
             cyclic_modules: cyclic_modules.clone(),
+            ownership,
         })
         .expect("flow file context serializes");
         let flow_json = check_flow_file_query(
@@ -553,6 +559,7 @@ pub struct AnalysisSession {
     files: BTreeMap<String, FileInput>,
     revision: u64,
     target_version: Option<String>,
+    ownership: crate::Ownership,
     model_catalog: crate::model::FlowModelCatalog,
     mutations_since_reset: usize,
     cancellation: Arc<Mutex<salsa::CancellationToken>>,
@@ -794,7 +801,12 @@ impl AnalysisSession {
         files: &[SourceFile],
         python_version: &str,
     ) -> Result<SessionInspection, AnalysisCancelled> {
-        self.check_cancellable_with_must_use(files, python_version, false)
+        self.check_cancellable_with_options(
+            files,
+            python_version,
+            false,
+            crate::Ownership::Disabled,
+        )
     }
 
     pub fn check_with_must_use_cancellable(
@@ -802,21 +814,77 @@ impl AnalysisSession {
         files: &[SourceFile],
         python_version: &str,
     ) -> Result<SessionInspection, AnalysisCancelled> {
-        self.check_cancellable_with_must_use(files, python_version, true)
+        self.check_cancellable_with_options(files, python_version, true, crate::Ownership::Disabled)
     }
 
-    fn check_cancellable_with_must_use(
+    pub fn check_with_ownership(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+        ownership: crate::Ownership,
+    ) -> crate::CheckResult {
+        self.check_with_ownership_cancellable(files, python_version, ownership)
+            .map(|checked| checked.result)
+            .unwrap_or_else(|_| {
+                crate::CheckResult::from_inspection(
+                    crate::cancelled_inspection(files),
+                    python_version,
+                )
+            })
+    }
+
+    pub fn check_with_ownership_cancellable(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+        ownership: crate::Ownership,
+    ) -> Result<SessionCheckResult, AnalysisCancelled> {
+        let checked =
+            self.check_cancellable_with_options(files, python_version, true, ownership)?;
+        let mut result = crate::CheckResult::from_inspection_with_models(
+            checked.inspection,
+            python_version,
+            &self.model_catalog,
+        );
+        if let Some(model) = crate::model::task_group_metadata(python_version)
+            .filter(|_| ownership == crate::Ownership::AssumeDefaultTaskFactory)
+        {
+            result.model_catalog_version = crate::model::TASK_GROUP_CATALOG_VERSION;
+            result.available_models.push(model);
+            result
+                .available_models
+                .sort_by(|left, right| left.id.cmp(&right.id));
+        }
+        Ok(SessionCheckResult {
+            revision: checked.revision,
+            result,
+        })
+    }
+
+    fn check_cancellable_with_options(
         &mut self,
         files: &[SourceFile],
         python_version: &str,
         run_must_use: bool,
+        ownership: crate::Ownership,
     ) -> Result<SessionInspection, AnalysisCancelled> {
         if let Some(mut inspection) = rejected_check_input(files) {
-            inspection.assurance = "lifecycle-checking-for-supported-exit-flow".into();
+            inspection.assurance = if ownership.is_enabled() {
+                crate::OWNERSHIP_ASSURANCE
+            } else if run_must_use {
+                crate::ADOPTION_ASSURANCE
+            } else {
+                crate::LIFECYCLE_ASSURANCE
+            }
+            .into();
             return Ok(SessionInspection {
                 revision: self.revision,
                 inspection,
             });
+        }
+        if self.ownership != ownership {
+            self.ownership = ownership;
+            self.revision = self.revision.saturating_add(1);
         }
         let inspected =
             self.inspect_cancellable_with_must_use(files, python_version, run_must_use)?;
@@ -832,6 +900,7 @@ impl AnalysisSession {
                 python_version.to_string(),
                 model_catalog_json,
                 inspection_json,
+                ownership,
             )
         });
         let result_json = result_json.map_err(|_| AnalysisCancelled)?;
@@ -851,7 +920,9 @@ impl AnalysisSession {
                     &right.code,
                 ))
         });
-        result.assurance = if run_must_use {
+        result.assurance = if ownership.is_enabled() {
+            crate::OWNERSHIP_ASSURANCE
+        } else if run_must_use {
             crate::ADOPTION_ASSURANCE
         } else {
             "lifecycle-checking-for-supported-exit-flow"
@@ -983,6 +1054,63 @@ mod tests {
     };
 
     #[test]
+    fn phase05_ownership_changes_refresh_dependents_and_reuse_unrelated_files() {
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured = events.clone();
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                captured.lock().unwrap().push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            ..AnalysisSession::default()
+        };
+        let provider = "from codepact import resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass R:\n    def read(self): pass\n    def close(self): pass\ndef inspect(r: Borrowed[R]):\n    r.read()\n";
+        let main = SourceFile::new("main.py", "main", "from codepact import move\nfrom provider import R, inspect\ndef run():\n    a = R()\n    inspect(a)\n    b = move(a)\n    b.close()\n");
+        let unrelated = SourceFile::new(
+            "independent.py",
+            "independent",
+            "def independent():\n    return 1\n",
+        );
+        let project = |source: String| {
+            [
+                main.clone(),
+                SourceFile::new("provider.py", "provider", source),
+                unrelated.clone(),
+            ]
+        };
+        let flow_executions = || {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .count()
+        };
+
+        let original = project(provider.into());
+        let mode = crate::Ownership::Enabled;
+        assert!(session
+            .check_with_ownership(&original, "3.11", mode)
+            .diagnostics
+            .is_empty());
+        assert_eq!(flow_executions(), 3);
+        events.lock().unwrap().clear();
+        let changed = project(provider.replace("    r.read()", "    return r"));
+        let reused = session.check_with_ownership(&changed, "3.11", mode);
+        assert_eq!(flow_executions(), 2);
+        assert_eq!(reused, crate::check_with_ownership(&changed, "3.11", mode));
+        assert!(reused
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP2004"));
+        events.lock().unwrap().clear();
+        assert_eq!(session.check_with_ownership(&changed, "3.11", mode), reused);
+        assert_eq!(flow_executions(), 0);
+    }
+
+    #[test]
     fn unchanged_session_inspection_reuses_the_project_query() {
         let executions = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&executions);
@@ -996,6 +1124,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -1028,6 +1157,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -1099,6 +1229,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -1200,6 +1331,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -1283,6 +1415,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -1853,6 +1986,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -2075,6 +2209,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -2208,6 +2343,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -2350,6 +2486,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -2528,6 +2665,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -2650,6 +2788,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -2705,6 +2844,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -2886,6 +3026,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -2973,6 +3114,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -3132,6 +3274,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -3205,6 +3348,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -3289,6 +3433,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -3403,6 +3548,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -3505,6 +3651,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -3597,6 +3744,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -3824,6 +3972,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -3894,6 +4043,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),
@@ -4073,6 +4223,7 @@ mod tests {
             files: BTreeMap::new(),
             revision: 0,
             target_version: None,
+            ownership: crate::Ownership::Disabled,
             model_catalog: crate::model::FlowModelCatalog::default(),
             mutations_since_reset: 0,
             cancellation: Arc::new(Mutex::new(salsa::CancellationToken::default())),

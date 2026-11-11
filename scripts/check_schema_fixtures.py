@@ -142,6 +142,12 @@ def main() -> int:
         cli_output(["explain", "TP1001", "--json"]),
     )
 
+    validate_emitted(
+        "ownership explanation",
+        "explanation-v1.schema.json",
+        cli_output(["explain", "TP2002", "--json"]),
+    )
+
     with tempfile.TemporaryDirectory(prefix="codepact-schema-output-") as temp:
         root = Path(temp)
         project = root / "project"
@@ -207,6 +213,37 @@ def main() -> int:
             "baseline update",
             "baseline-update-v1.schema.json",
             baseline_summary,
+        )
+        validate_emitted(
+            "ownership check",
+            "check-report-v2.schema.json",
+            cli_output([*check_args, "--experimental-ownership"]),
+        )
+        validate_emitted(
+            "ownership settings",
+            "settings-v1.schema.json",
+            cli_output([*check_args, "--experimental-ownership", "--show-settings"]),
+        )
+        _ = cli_output(
+            [
+                "baseline",
+                "update",
+                "--output",
+                str(baseline_path),
+                "--replace",
+                "--reason",
+                "ownership schema validation",
+                "--root",
+                str(project),
+                "--no-config",
+                "--experimental-ownership",
+                "--json",
+            ]
+        )
+        validate_emitted(
+            "ownership baseline",
+            "baseline-v1.schema.json",
+            baseline_path.read_text(encoding="utf-8"),
         )
         validate_emitted(
             "inspection",

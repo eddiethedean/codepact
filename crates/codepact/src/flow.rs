@@ -12,6 +12,11 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+mod ownership;
+mod recursion;
+mod tasks;
+use ownership::OwnershipState;
+
 const OPEN: u8 = 1;
 const CLOSED: u8 = 2;
 const UNKNOWN: u8 = 4;
@@ -72,6 +77,7 @@ type ProjectFunctionMap = BTreeMap<(String, String), FunctionBody>;
 
 #[derive(Clone, Default, PartialEq, Eq)]
 struct State {
+    ownership: Option<Box<OwnershipState>>,
     places: BTreeMap<String, BTreeSet<String>>,
     unknown_places: BTreeSet<String>,
     shadowed_classes: BTreeSet<String>,
@@ -126,6 +132,7 @@ struct CoroutineRecord {
 struct CapturedCoroutinePlace {
     targets: BTreeSet<String>,
     unknown: bool,
+    transferred: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -354,7 +361,10 @@ fn bind_arguments<'a>(
         || arguments.iter().any(|arg| {
             matches!(
                 arg.kind,
-                AstExprKind::Other | AstExprKind::OtherCalls(_) | AstExprKind::DepthLimit
+                AstExprKind::Other
+                    | AstExprKind::OtherCalls(..)
+                    | AstExprKind::Starred(_)
+                    | AstExprKind::DepthLimit
             )
         })
     {
@@ -462,7 +472,10 @@ fn expression_may_return_resource(expression: &AstExpr) -> bool {
         | AstExprKind::Call { .. }
         | AstExprKind::Await(_)
         | AstExprKind::Other
-        | AstExprKind::OtherCalls(_)
+        | AstExprKind::OtherCalls(..)
+        | AstExprKind::Collection(_)
+        | AstExprKind::Starred(_)
+        | AstExprKind::Closure(_)
         | AstExprKind::DepthLimit => true,
     }
 }
@@ -504,6 +517,9 @@ fn call_may_return_resource(
     file: &SourceFile,
     functions: &FunctionMap,
 ) -> bool {
+    if tasks::returns_task_handle_or_status(expression, env) {
+        return false;
+    }
     if let Some((receiver, method, _, _)) = called_method(expression) {
         return expr_name(receiver)
             .and_then(|name| env.places.get(name))
@@ -544,6 +560,9 @@ fn call_may_return_resource(
 
 fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     let mut joined = left.clone();
+    if let (Some(left), Some(right)) = (left.ownership.as_deref(), right.ownership.as_deref()) {
+        joined.ownership = Some(Box::new(OwnershipState::join(left, right)));
+    }
     let mut effects = JoinEffects::default();
     let returned_targets: BTreeSet<_> = left
         .pending_return_targets
@@ -611,6 +630,7 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
                     let place = record.captures.entry(capture.clone()).or_default();
                     place.targets.extend(right_place.targets.iter().cloned());
                     place.unknown |= right_place.unknown;
+                    place.transferred &= right_place.transferred;
                 }
             }
             (Some(left_record), None) => {
@@ -715,8 +735,16 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
             joined.unknown_places.insert(place.clone());
             let missing_path_is_unbound = if left_targets.is_some() {
                 !right.unknown_places.contains(&place)
+                    && !right
+                        .ownership
+                        .as_ref()
+                        .is_some_and(|o| o.definitely_moved(&place))
             } else {
                 !left.unknown_places.contains(&place)
+                    && !left
+                        .ownership
+                        .as_ref()
+                        .is_some_and(|o| o.definitely_moved(&place))
             };
             if missing_path_is_unbound {
                 effects.possibly_unbound.push(place.clone());
@@ -833,11 +861,20 @@ fn project_call_exit(parent: &State, child: &FlowExit, call_range: SourceRange) 
     state.alive = true;
     state.pending_raises.clear();
     state.pending_return_targets = None;
+    if let (Some(parent), Some(child)) = (state.ownership.as_mut(), child.state.ownership.as_ref())
+    {
+        parent.apply_runtime_effects(child);
+    }
     state.coroutine_budget_overflow = child
         .state
         .coroutine_budget_overflow
         .or(parent.coroutine_budget_overflow);
     for object in parent.objects.keys() {
+        if let (Some(target), Some(source)) =
+            (state.ownership.as_mut(), child.state.ownership.as_ref())
+        {
+            target.copy_transfers(source, object);
+        }
         if child.state.forbidden_borrowed_closes.contains(object) {
             if child.state.escaped.contains(object) {
                 state.escaped.insert(object.clone());
@@ -960,6 +997,9 @@ fn report_cleanup_exit(
             .pending_return_targets
             .clone()
             .or_else(|| {
+                if exit.state.ownership.is_some() {
+                    return None;
+                }
                 value
                     .as_ref()
                     .and_then(expr_name)
@@ -995,9 +1035,11 @@ fn report_cleanup_exit(
             .pending_return_targets
             .clone()
             .or_else(|| match &exit.kind {
-                CompletionKind::Return(Some(value)) => expr_name(value)
-                    .filter(|name| !exit.state.unknown_places.contains(*name))
-                    .and_then(|name| exit.state.places.get(name).cloned()),
+                CompletionKind::Return(Some(value)) if exit.state.ownership.is_none() => {
+                    expr_name(value)
+                        .filter(|name| !exit.state.unknown_places.contains(*name))
+                        .and_then(|name| exit.state.places.get(name).cloned())
+                }
                 _ => None,
             })
             .unwrap_or_default();
@@ -1098,6 +1140,9 @@ fn report_cleanup_exit(
             "possible"
         };
         let mut related = vec![origin.clone()];
+        if let Some(ownership) = exit.state.ownership.as_ref() {
+            related.extend(ownership.transfer_sites(object).cloned());
+        }
         if let Some(close) = exit.state.close_origins.get(object) {
             related.push(close.clone());
         }
@@ -1233,15 +1278,15 @@ fn take_flow_step(
     if within_budget {
         return true;
     }
-    weaken(
-        env,
-        env.places
-            .values()
-            .flatten()
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter(),
-    );
+    let affected = if let Some(ownership) = env.ownership.as_mut() {
+        for group in ownership.groups.values_mut() {
+            group.incomplete = true;
+        }
+        env.objects.keys().cloned().collect::<Vec<_>>()
+    } else {
+        env.places.values().flatten().cloned().collect::<Vec<_>>()
+    };
+    weaken(env, affected.into_iter());
     let first = FLOW_BUDGET_REPORTED.with(|reported| {
         if reported.get() {
             false
@@ -1262,6 +1307,7 @@ fn take_flow_step(
 }
 
 pub(crate) fn reset_flow_budget(limit: usize) {
+    recursion::reset();
     FLOW_STEPS.with(|steps| steps.set(0));
     FLOW_STEP_LIMIT.with(|budget| budget.set(limit));
     FLOW_BUDGET_REPORTED.with(|reported| reported.set(false));
@@ -1431,6 +1477,9 @@ fn collect_assigned_names(statements: &[FlowStatement], names: &mut BTreeSet<Str
 
 fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<String>) {
     for object in objects {
+        if let (Some(child), Some(parent)) = (child.ownership.as_mut(), parent.ownership.as_ref()) {
+            child.copy_transfers(parent, object);
+        }
         if let Some(mask) = parent.objects.get(object) {
             child.objects.insert(object.clone(), *mask);
         }
@@ -1523,6 +1572,7 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
     let (module_function_bindings, module_class_bindings) =
         module_bindings_for_child(parent, definition);
     let mut child = State {
+        ownership: OwnershipState::for_child(parent, false),
         alive: true,
         call_stack: parent.call_stack.clone(),
         function_bindings: module_function_bindings.clone(),
@@ -1620,6 +1670,9 @@ fn apply_call_object_effects(
     extra_objects: &BTreeSet<String>,
     object: &str,
 ) {
+    if let (Some(parent), Some(child)) = (parent.ownership.as_mut(), child.ownership.as_ref()) {
+        parent.copy_transfers(child, object);
+    }
     if let Some(mask) = child.objects.get(object) {
         parent.objects.insert(object.to_owned(), *mask);
     }
@@ -1644,6 +1697,9 @@ fn apply_call_object_effects(
 }
 
 fn apply_call_effects(parent: &mut State, child: &State, extra_objects: &BTreeSet<String>) {
+    if let (Some(parent), Some(child)) = (parent.ownership.as_mut(), child.ownership.as_ref()) {
+        parent.apply_runtime_effects(child);
+    }
     // A call child contains the caller-reachable arguments and escaped objects,
     // plus resources created locally by that function. Transfer only keys that
     // already belong to the caller or cross the boundary as an explicit result.
@@ -1708,6 +1764,11 @@ fn resolved_await_call(
     let Some(name) = expr_name(receiver) else {
         return false;
     };
+    if let Some(definition) =
+        ownership::qualified_function_key(name, method, env).and_then(|key| functions.get(&key))
+    {
+        return definition.is_async;
+    }
     env.places.get(name).is_some_and(|targets| {
         !targets.is_empty()
             && targets.iter().all(|object| {
@@ -2086,7 +2147,11 @@ fn final_function_bindings(
             } => {
                 for import in names {
                     let local = import.alias.as_deref().unwrap_or(&import.name);
-                    if source == "codepact" && import.name == "discard" {
+                    if let Some(external) = ownership::external_member(source, &import.name)
+                        .filter(|_| !supplied_modules.contains(source))
+                    {
+                        bindings.insert(local.to_owned(), external.into());
+                    } else if source == "codepact" && import.name == "discard" {
                         bindings.insert(local.to_owned(), "external:codepact.discard".into());
                     } else if source == "contextlib"
                         && !supplied_modules.contains(source)
@@ -2112,8 +2177,12 @@ fn final_function_bindings(
                         .alias
                         .as_deref()
                         .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default());
-                    if import.name == "contextlib" && !supplied_modules.contains(&import.name) {
-                        bindings.insert(local.to_owned(), "external:contextlib".into());
+                    if matches!(import.name.as_str(), "contextlib" | "codepact" | "asyncio")
+                        && !supplied_modules.contains(&import.name)
+                    {
+                        bindings.insert(local.to_owned(), format!("external:{}", import.name));
+                    } else if supplied_modules.contains(&import.name) {
+                        bindings.insert(local.to_owned(), format!("module:{}", import.name));
                     } else {
                         bindings.remove(local);
                     }
@@ -2157,7 +2226,12 @@ fn external_module_bindings(
             } => {
                 for import in names {
                     let local = import.alias.as_deref().unwrap_or(&import.name);
-                    let external = if module == "codepact" && import.name == "discard" {
+                    let external = if let Some(external) =
+                        ownership::external_member(module, &import.name)
+                            .filter(|_| !supplied_modules.contains(module))
+                    {
+                        Some(external.into())
+                    } else if module == "codepact" && import.name == "discard" {
                         Some("external:codepact.discard".into())
                     } else if module == "contextlib"
                         && !supplied_modules.contains(module)
@@ -2183,11 +2257,35 @@ fn external_module_bindings(
                         .alias
                         .as_deref()
                         .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default());
-                    if import.name == "contextlib" && !supplied_modules.contains(&import.name) {
-                        bindings.insert(local.to_owned(), "external:contextlib".into());
+                    if matches!(import.name.as_str(), "contextlib" | "codepact" | "asyncio")
+                        && !supplied_modules.contains(&import.name)
+                    {
+                        bindings.insert(local.to_owned(), format!("external:{}", import.name));
+                    } else if supplied_modules.contains(&import.name) {
+                        bindings.insert(local.to_owned(), format!("module:{}", import.name));
                     } else {
                         bindings.remove(local);
                     }
+                }
+            }
+            Declaration::Assignment {
+                name: Some(name),
+                value: Some(value),
+                ..
+            } => {
+                let external = match &value.kind {
+                    AstExprKind::Name(source) => bindings.get(source).cloned(),
+                    AstExprKind::Attribute(base, member) => expr_name(base)
+                        .and_then(|name| bindings.get(name))
+                        .and_then(|binding| binding.strip_prefix("external:"))
+                        .and_then(|module| ownership::external_member(module, member))
+                        .map(str::to_owned),
+                    _ => None,
+                };
+                if let Some(external) = external {
+                    bindings.insert(name.clone(), external);
+                } else {
+                    bindings.remove(name);
                 }
             }
             Declaration::Function { name, .. }
@@ -2366,6 +2464,10 @@ fn capture_coroutine_place(
         expression.kind = AstExprKind::Other;
         return true;
     };
+    let transferred = env
+        .ownership
+        .as_ref()
+        .is_some_and(|ownership| ownership.transfer_arguments.contains(name));
     let Some(targets) = env.places.get(name) else {
         let unknown = env.unknown_places.contains(name);
         let synthetic = format!("__codepact_coro_{}_{}", id, *next_capture);
@@ -2375,6 +2477,7 @@ fn capture_coroutine_place(
             CapturedCoroutinePlace {
                 targets: BTreeSet::new(),
                 unknown,
+                transferred: false,
             },
         );
         expression.kind = AstExprKind::Name(synthetic);
@@ -2388,6 +2491,7 @@ fn capture_coroutine_place(
         CapturedCoroutinePlace {
             targets: targets.clone(),
             unknown,
+            transferred,
         },
     );
     expression.kind = AstExprKind::Name(synthetic);
@@ -2481,6 +2585,7 @@ fn register_pending_coroutine(
             let existing_place = existing.captures.entry(capture).or_default();
             existing_place.targets.extend(place.targets);
             existing_place.unknown |= place.unknown;
+            existing_place.transferred &= place.transferred;
         }
         boundary(
             result,
@@ -2544,7 +2649,85 @@ fn consume_expr(
     result: &mut Inspection,
     depth: usize,
 ) {
+    if let Some(ownership) = env.ownership.as_mut() {
+        ownership.pending_move = false;
+        ownership.pending_task = None;
+        env.pending_return_targets = None;
+        env.pending_coroutine_result = None;
+        if let AstExprKind::Call { function, .. } = &expr.kind {
+            if depth <= MAX_CALL_DEPTH && env.call_depth < MAX_CALL_DEPTH {
+                if ownership::external_identity(function, env).as_deref() == Some(ownership::MOVE) {
+                    if take_flow_step(env, file, expr.range, result) {
+                        ownership::move_call(expr, env, file, contracts, functions, result, depth);
+                    }
+                    return;
+                }
+                let prepared =
+                    ownership::prepare_call(expr, env, file, contracts, functions, result, depth);
+                if env.alive && !prepared.invalid_receiver {
+                    consume_expr_impl(
+                        &prepared.expression,
+                        env,
+                        file,
+                        contracts,
+                        functions,
+                        result,
+                        depth,
+                    );
+                }
+                prepared.release(env);
+                return;
+            }
+        } else if let Some(name) = expr_name(expr) {
+            ownership::check_moved(name, env, file, expr.range, result);
+            return;
+        }
+    }
+    consume_expr_impl(expr, env, file, contracts, functions, result, depth);
+}
+
+fn consume_expr_impl(
+    expr: &AstExpr,
+    env: &mut State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+    depth: usize,
+) {
     if let AstExprKind::Await(awaited) = &expr.kind {
+        tasks::allow_tasks_to_start(env);
+        if env.ownership.is_some()
+            && matches!(awaited.kind, AstExprKind::Call { .. })
+            && resolved_await_call(awaited, file, env, functions)
+        {
+            let previous_await = env.awaited_call.take();
+            consume_expr(awaited, env, file, contracts, functions, result, depth + 1);
+            env.awaited_call = previous_await;
+            if let Some(id) = env.pending_coroutine_result.take() {
+                let alias = format!(":direct-await:{}", expr.range.start);
+                env.coroutine_aliases.insert(alias.clone(), id);
+                let rewritten = AstExpr {
+                    range: expr.range,
+                    kind: AstExprKind::Await(Box::new(AstExpr {
+                        range: awaited.range,
+                        kind: AstExprKind::Name(alias.clone()),
+                    })),
+                };
+                consume_expr_impl(&rewritten, env, file, contracts, functions, result, depth);
+                env.coroutine_aliases.remove(&alias);
+                return;
+            }
+            if env.alive {
+                boundary(
+                    result,
+                    file,
+                    expr.range,
+                    "awaited source call did not establish a coroutine capture",
+                );
+            }
+            return;
+        }
         let coroutine_id = expr_name(awaited)
             .and_then(|name| env.coroutine_aliases.get(name))
             .cloned();
@@ -2595,6 +2778,11 @@ fn consume_expr(
             }
             let _ = id;
         }
+        if env.ownership.is_some() {
+            if let Some(record) = &coroutine {
+                tasks::restore_captures(record, env);
+            }
+        }
         let before = env.clone();
         env.awaited_call = coroutine.as_ref().map_or_else(
             || Some((file.path.clone(), awaited.range)),
@@ -2618,6 +2806,13 @@ fn consume_expr(
             if let Some(record) = env.coroutines.get_mut(id) {
                 record.consumed = true;
             }
+            if env.ownership.is_some() {
+                for exit in &mut env.pending_raises {
+                    if let Some(record) = exit.state.coroutines.get_mut(id) {
+                        record.consumed = true;
+                    }
+                }
+            }
             if coroutine.as_ref().is_some_and(|record| record.ambiguous) {
                 for object in coroutine
                     .iter()
@@ -2632,7 +2827,11 @@ fn consume_expr(
             .as_ref()
             .and_then(|(_, model)| model.cancelled);
         let has_modeled_cancellation = modeled_close.is_some();
-        if before.alive
+        let exact_source_coroutine = env.ownership.is_some() && coroutine.as_ref().is_some_and(|record| {
+            !record.ambiguous && matches!(&record.invocation.kind, AstExprKind::Call { function, .. } if expr_name(function).is_some())
+        });
+        if !exact_source_coroutine
+            && before.alive
             && (resolved || env.alive)
             && (!has_modeled_cancellation || modeled_cancelled.is_some())
         {
@@ -2747,12 +2946,10 @@ fn consume_expr(
                 );
             }
         }
-        for capture in &capture_names {
-            env.places.remove(capture);
-            env.unknown_places.remove(capture);
+        if let Some(record) = &coroutine {
+            tasks::clear_captures(record, env);
             for exit in &mut env.pending_raises {
-                exit.state.places.remove(capture);
-                exit.state.unknown_places.remove(capture);
+                tasks::clear_captures(record, &mut exit.state);
             }
         }
         if !resolved && env.alive {
@@ -2789,7 +2986,9 @@ fn consume_expr(
     if !take_flow_step(env, file, expr.range, result) {
         return;
     }
-    evaluate_call_arguments(expr, env, file, contracts, functions, result, depth);
+    if env.ownership.is_none() {
+        evaluate_call_arguments(expr, env, file, contracts, functions, result, depth);
+    }
     if !env.alive {
         return;
     }
@@ -2820,6 +3019,27 @@ fn consume_expr(
                 queue_raise(env, expr.range, None);
             }
             return;
+        }
+    }
+    if env.ownership.is_some() && tasks::task_call(expr, env, file, result) {
+        return;
+    }
+    if let AstExprKind::Call {
+        arguments,
+        keywords,
+        ..
+    } = &expr.kind
+    {
+        if env.ownership.as_ref().is_some_and(|ownership| {
+            !ownership.group_names.is_empty() || !ownership.task_names.is_empty()
+        }) {
+            let names = arguments
+                .iter()
+                .chain(keywords.iter().map(|(_, value)| value))
+                .filter_map(expr_name)
+                .map(str::to_owned)
+                .collect();
+            ownership::escape_task_handles(env, &names, file, expr.range, result);
         }
     }
     if let Some((receiver, method, arguments, keywords)) = called_method(expr) {
@@ -2995,6 +3215,16 @@ fn consume_expr(
                                 related,
                                 certainty,
                                 contract_identity(resource.as_ref()),
+                            );
+                        }
+                        if is_close {
+                            ownership::check_close(
+                                env,
+                                object,
+                                file,
+                                expr.range,
+                                result,
+                                uncertain_receiver,
                             );
                         }
                         if env.borrowed.contains(object) && is_close {
@@ -3429,6 +3659,15 @@ fn consume_expr(
                         }
                     };
                 if definition.is_async && !is_awaited_call(expr, file, env) {
+                    if env.ownership.is_some() {
+                        ownership::check_coroutine_arguments(
+                            definition,
+                            &bindings,
+                            env,
+                            &span(file, expr.range),
+                            result,
+                        );
+                    }
                     register_pending_coroutine(
                         expr,
                         env,
@@ -3438,7 +3677,7 @@ fn consume_expr(
                     );
                     return;
                 }
-                if env.call_stack.contains(callee) {
+                if env.ownership.is_none() && env.call_stack.contains(callee) {
                     weaken(
                         env,
                         env.places
@@ -3459,6 +3698,10 @@ fn consume_expr(
                 let (module_function_bindings, module_class_bindings) =
                     module_bindings_for_child(env, definition);
                 let mut child = State {
+                    ownership: OwnershipState::for_child(
+                        env,
+                        definition.return_access.as_deref() == Some("owned"),
+                    ),
                     alive: true,
                     call_stack: env.call_stack.clone(),
                     function_bindings: module_function_bindings.clone(),
@@ -3509,7 +3752,9 @@ fn consume_expr(
                             if let Some(contract) = definition.parameter_contracts.get(&parameter) {
                                 for object in targets {
                                     if contract.access == "owned" {
-                                        owned_entry_objects.insert(object.clone());
+                                        if env.ownership.is_none() {
+                                            owned_entry_objects.insert(object.clone());
+                                        }
                                         child
                                             .duty_origins
                                             .entry(object.clone())
@@ -3527,6 +3772,17 @@ fn consume_expr(
                             if env.unknown_places.contains(actual) {
                                 child.unknown_places.insert(parameter.clone());
                             }
+                        }
+                    }
+                    if env.ownership.is_some()
+                        && ownership::verify_call_binding(
+                            definition, &parameter, argument, env, &mut child, &call_site, result,
+                        )
+                    {
+                        if let Some(targets) =
+                            expr_name(argument).and_then(|name| env.places.get(name))
+                        {
+                            owned_entry_objects.extend(targets.iter().cloned());
                         }
                     }
                     check_borrowed_precondition(
@@ -3552,15 +3808,8 @@ fn consume_expr(
                     .ambiguous_borrowed_owned_aliases
                     .extend(ambiguous_borrowed_owned_aliases.iter().cloned());
                 let diagnostic_start = result.diagnostics.len();
-                let returned = execute(
-                    &definition.statements,
-                    &mut child,
-                    &definition.file,
-                    &definition.contracts,
-                    functions,
-                    result,
-                    0,
-                );
+                let returned =
+                    recursion::execute_function(definition, &mut child, functions, result);
                 let mut forbidden_borrowed_closes = child
                     .forbidden_borrowed_closes
                     .iter()
@@ -3600,7 +3849,9 @@ fn consume_expr(
                     );
                 }
                 let mut owned_return_targets = BTreeSet::new();
+                let mut unresolved_owned_return = false;
                 if definition.return_access.as_deref() == Some("owned") {
+                    unresolved_owned_return = child.alive;
                     for exit in &returned.returns {
                         let CompletionKind::Return(_) = &exit.kind else {
                             continue;
@@ -3610,16 +3861,26 @@ fn consume_expr(
                             .pending_return_targets
                             .clone()
                             .or_else(|| match &exit.kind {
-                                CompletionKind::Return(Some(value)) => expr_name(value)
-                                    .filter(|name| !exit.state.unknown_places.contains(*name))
-                                    .and_then(|name| exit.state.places.get(name).cloned()),
+                                CompletionKind::Return(Some(value))
+                                    if exit.state.ownership.is_none() =>
+                                {
+                                    expr_name(value)
+                                        .filter(|name| !exit.state.unknown_places.contains(*name))
+                                        .and_then(|name| exit.state.places.get(name).cloned())
+                                }
                                 _ => None,
                             })
                             .unwrap_or_default();
-                        owned_return_targets.extend(targets.into_iter().filter(|object| {
-                            exit.state.objects.get(object).copied().unwrap_or(UNKNOWN) == OPEN
-                                && !exit.state.borrowed.contains(object)
-                        }));
+                        let valid = targets
+                            .iter()
+                            .filter(|object| {
+                                exit.state.objects.get(*object).copied().unwrap_or(UNKNOWN) == OPEN
+                                    && !exit.state.borrowed.contains(*object)
+                            })
+                            .cloned()
+                            .collect::<BTreeSet<_>>();
+                        unresolved_owned_return |= valid.is_empty() || valid.len() != targets.len();
+                        owned_return_targets.extend(valid);
                     }
                 }
                 let propagated_raises = returned
@@ -3627,8 +3888,10 @@ fn consume_expr(
                     .iter()
                     .map(|exit| project_call_exit(env, exit, expr.range))
                     .map(|mut exit| {
-                        for object in &owned_entry_objects {
-                            exit.state.duty_origins.remove(object);
+                        if env.ownership.is_none() {
+                            for object in &owned_entry_objects {
+                                exit.state.duty_origins.remove(object);
+                            }
                         }
                         exit
                     })
@@ -3643,10 +3906,21 @@ fn consume_expr(
                         .collect(),
                 );
                 let mut child = child;
+                if env.ownership.is_some() && unresolved_owned_return {
+                    weaken(&mut child, owned_return_targets.iter().cloned());
+                    boundary(
+                        result,
+                        file,
+                        expr.range,
+                        "a normal exit does not establish the declared Owned result",
+                    );
+                }
                 child.pending_return_targets =
                     (!owned_return_targets.is_empty()).then(|| owned_return_targets.clone());
                 for object in &owned_entry_objects {
-                    env.duty_origins.remove(object);
+                    if env.ownership.is_none() {
+                        env.duty_origins.remove(object);
+                    }
                     if !owned_return_targets.contains(object) {
                         child.duty_origins.remove(object);
                     }
@@ -3690,6 +3964,20 @@ fn consume_expr(
                         }
                     }
                 }
+                if env.ownership.is_some() {
+                    affected.extend(ownership::argument_escapes(
+                        arguments, keywords, env, file, expr.range, result,
+                    ));
+                    if let Some(ownership) = env.ownership.as_ref() {
+                        affected.extend(
+                            ownership
+                                .closure_captures(callee)
+                                .filter_map(|name| env.places.get(name))
+                                .flatten()
+                                .cloned(),
+                        );
+                    }
+                }
                 weaken(env, affected.iter().cloned());
                 env.escaped.extend(affected);
                 boundary(
@@ -3731,13 +4019,76 @@ fn consume_expr(
                 "resource value escapes through an unsupported expression",
             );
         }
+        AstExprKind::Collection(items) | AstExprKind::Tuple(items) if env.ownership.is_some() => {
+            for item in items {
+                let names = ownership::stored_names(item);
+                if expr_name(item).is_none() {
+                    consume_expr(item, env, file, contracts, functions, result, depth + 1);
+                }
+                if !env.alive {
+                    return;
+                }
+                ownership::borrow_escape(
+                    env,
+                    names,
+                    file,
+                    item.range,
+                    result,
+                    "borrowed view escapes into a container",
+                );
+                ownership::escape_pending_value(env, file, item.range, result);
+            }
+        }
+        AstExprKind::Starred(value) if env.ownership.is_some() => {
+            consume_expr(value, env, file, contracts, functions, result, depth + 1);
+            ownership::escape_pending_value(env, file, expr.range, result);
+            boundary(
+                result,
+                file,
+                expr.range,
+                "expanded arguments or values have unresolved ownership effects",
+            );
+        }
+        AstExprKind::OtherCalls(..) | AstExprKind::Attribute(..) | AstExprKind::Subscript(..)
+            if env.ownership.is_some() =>
+        {
+            let names = ownership::expression_names(expr);
+            let mut affected = env.escaped.clone();
+            let mut only_moved = !names.is_empty();
+            for name in names {
+                only_moved &= ownership::check_moved(&name, env, file, expr.range, result);
+                affected.extend(env.places.get(&name).into_iter().flatten().cloned());
+            }
+            weaken(env, affected.into_iter());
+            if !only_moved {
+                boundary(
+                    result,
+                    file,
+                    expr.range,
+                    "unsupported expression may affect or use a tracked resource",
+                );
+            }
+        }
+        AstExprKind::Closure(captures) if env.ownership.is_some() => {
+            ownership::borrow_escape(
+                env,
+                captures.iter().cloned(),
+                file,
+                expr.range,
+                result,
+                "borrowed view escapes through a closure",
+            );
+        }
         AstExprKind::Tuple(items) => {
             for item in items {
                 consume_expr(item, env, file, contracts, functions, result, depth + 1);
             }
         }
         AstExprKind::Other
-        | AstExprKind::OtherCalls(_)
+        | AstExprKind::Collection(_)
+        | AstExprKind::Starred(_)
+        | AstExprKind::Closure(_)
+        | AstExprKind::OtherCalls(..)
         | AstExprKind::Attribute(_, _)
         | AstExprKind::Subscript(_, _)
         | AstExprKind::DepthLimit => {
@@ -3849,6 +4200,7 @@ fn execute(
             };
             joined.control_depth = before.control_depth;
             *env = joined;
+            ownership::cap_handles(env, file, *range, result);
             if reachable {
                 for place in effects.possibly_unbound {
                     boundary(
@@ -3944,6 +4296,16 @@ fn execute(
                     if env.alive && !env.module_scope {
                         if let FlowStatement::EscapingAssign { name, range, .. } = statement {
                             let targets = env.places.get(name).cloned().unwrap_or_default();
+                            if env.ownership.is_some() {
+                                ownership::borrow_escape(
+                                    env,
+                                    [name.clone()],
+                                    file,
+                                    *range,
+                                    result,
+                                    "borrowed view escapes through a global or enclosing binding",
+                                );
+                            }
                             if !targets.is_empty() || env.unknown_places.contains(name) {
                                 env.escaped.extend(targets.iter().cloned());
                                 weaken(env, targets.into_iter());
@@ -4233,6 +4595,9 @@ fn exception_handler_match(
 }
 
 fn clear_exception_target(state: &mut State, name: &str) {
+    if let Some(ownership) = state.ownership.as_mut() {
+        ownership.rebind(name);
+    }
     state.places.remove(name);
     state.unknown_places.remove(name);
     state.coroutine_aliases.remove(name);
@@ -4370,6 +4735,9 @@ fn execute_try(
             let mut handler_state = dispatch_state.clone();
             handler_state.control_depth = handler_state.control_depth.saturating_add(1);
             if let Some(name) = &handler.name {
+                if let Some(ownership) = handler_state.ownership.as_mut() {
+                    ownership.rebind(name);
+                }
                 handler_state.places.remove(name);
                 handler_state.unknown_places.insert(name.clone());
                 handler_state.shadowed_functions.insert(name.clone());
@@ -4563,6 +4931,9 @@ fn execute_loop(
             outcomes.raises.extend(take_pending_raises(&mut iteration));
         }
         if let Some(target) = target {
+            if let Some(ownership) = iteration.ownership.as_mut() {
+                ownership.rebind(target);
+            }
             iteration.places.remove(target);
             iteration.unknown_places.insert(target.to_owned());
         }
@@ -4767,6 +5138,18 @@ fn execute_static_for_loop(
             iteration.coroutine_aliases.remove(target);
             iteration.unknown_coroutine_aliases.remove(target);
         }
+        if let Some(ownership) = iteration.ownership.as_mut() {
+            ownership.rebind(target);
+        }
+        ownership::assign_handle(
+            target,
+            None,
+            false,
+            &mut iteration,
+            file,
+            item.range,
+            result,
+        );
         iteration.shadowed_functions.insert(target.to_owned());
         iteration.shadowed_classes.insert(target.to_owned());
         iteration.control_depth = iteration.control_depth.saturating_add(1);
@@ -4976,8 +5359,13 @@ fn execute_with(
                 ContextCleanupFrame::Modeled(cleanup) => {
                     path.state.alive = true;
                     path.state.pending_raises.clear();
+                    let aborting = matches!(
+                        path.completion.as_ref().map(|(kind, _)| kind),
+                        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled)
+                    );
                     run_context_cleanup(
                         &cleanup,
+                        aborting,
                         &mut path.state,
                         file,
                         contracts,
@@ -5107,6 +5495,17 @@ fn execute_with(
             );
             break;
         }
+        if asynchronous && env.ownership.is_some() && tasks::is_group_context(&item.context, env) {
+            if let Some(id) = tasks::enter_group(item, env, file, result) {
+                cleanups.push(ContextCleanupFrame::Modeled(ContextCleanup {
+                    receiver: id,
+                    method: ":task-group-exit",
+                    asynchronous: false,
+                    range: item.range,
+                }));
+                continue;
+            }
+        }
         let Some(method) = contextlib_cleanup_method(&item.context, env).filter(|method| {
             (asynchronous && *method == "aclose") || (!asynchronous && *method == "close")
         }) else {
@@ -5118,6 +5517,9 @@ fn execute_with(
             );
             uncertain.extend(env.places.values().flatten().cloned());
             if let Some(target) = &item.target {
+                if let Some(ownership) = env.ownership.as_mut() {
+                    ownership.rebind(target);
+                }
                 env.places.remove(target);
                 env.unknown_places.insert(target.clone());
                 env.shadowed_functions.insert(target.clone());
@@ -5255,6 +5657,7 @@ fn execute_with(
             if let Some(target) = &item.target {
                 if let Some(targets) = env.places.get(&receiver).cloned() {
                     env.places.insert(target.clone(), targets);
+                    ownership::assign_handle(target, None, false, env, file, item.range, result);
                     env.unknown_places.remove(target);
                     env.shadowed_functions.insert(target.clone());
                     env.shadowed_classes.insert(target.clone());
@@ -5393,12 +5796,26 @@ fn contextlib_cleanup_method(expression: &AstExpr, env: &State) -> Option<&'stat
 
 fn run_context_cleanup(
     cleanup: &ContextCleanup,
+    aborting: bool,
     env: &mut State,
     file: &SourceFile,
     contracts: &[Contract],
     functions: &FunctionMap,
     result: &mut Inspection,
 ) {
+    if cleanup.method == ":task-group-exit" {
+        tasks::join_group(
+            &cleanup.receiver,
+            cleanup.range,
+            aborting,
+            env,
+            file,
+            contracts,
+            functions,
+            result,
+        );
+        return;
+    }
     let receiver = &cleanup.receiver;
     let method = cleanup.method;
     let asynchronous = cleanup.asynchronous;
@@ -5452,11 +5869,19 @@ fn execute_non_if_statement(
             name, value, range, ..
         } => {
             env.pending_return_targets = None;
+            if let Some(ownership) = env.ownership.as_mut() {
+                ownership.pending_task = None;
+                ownership.pending_move = false;
+            }
             let source_coroutine = expr_name(value)
                 .and_then(|source| env.coroutine_aliases.get(source))
                 .cloned();
             env.coroutine_aliases.remove(name);
             env.unknown_coroutine_aliases.remove(name);
+            let source_function_binding = env
+                .ownership
+                .as_ref()
+                .and_then(|_| ownership::external_identity(value, env));
             let source_class_binding = expr_name(value)
                 .filter(|source| {
                     !env.places.contains_key(*source) && !env.unknown_places.contains(*source)
@@ -5481,10 +5906,23 @@ fn execute_non_if_statement(
                         }
                     };
                     if resource_contract.is_some() && !env.shadowed_classes.contains(class) {
-                        evaluate_call_arguments(value, env, file, contracts, functions, result, 0);
+                        let prepared = if env.ownership.is_some() {
+                            Some(ownership::prepare_call(
+                                value, env, file, contracts, functions, result, 0,
+                            ))
+                        } else {
+                            evaluate_call_arguments(
+                                value, env, file, contracts, functions, result, 0,
+                            );
+                            None
+                        };
                         if !env.alive {
+                            if let Some(prepared) = prepared {
+                                prepared.release(env);
+                            }
                             return None;
                         }
+                        let value = prepared.as_ref().map_or(value, |call| &call.expression);
                         let new_definition = resource_contract
                             .as_ref()
                             .and_then(|resource| resource_method(resource, "__new__", functions));
@@ -5509,6 +5947,10 @@ fn execute_non_if_statement(
                                 *range,
                                 "custom __new__ allocation effects are not modeled",
                             );
+                            if let Some(prepared) = prepared {
+                                prepared.release(env);
+                            }
+                            ownership::assign_handle(name, None, false, env, file, *range, result);
                             return None;
                         }
                         let context = env.allocation_context.join("/");
@@ -5530,6 +5972,10 @@ fn execute_non_if_statement(
                                     *range,
                                     "tracked resource object budget exceeded; lifecycle state is unknown",
                                 );
+                            if let Some(prepared) = prepared {
+                                prepared.release(env);
+                            }
+                            ownership::assign_handle(name, None, false, env, file, *range, result);
                             return None;
                         }
                         env.objects.insert(
@@ -5662,6 +6108,12 @@ fn execute_non_if_statement(
                                 binding_failure(failure, env, file, *range, result);
                             }
                         }
+                        if let Some(prepared) = prepared {
+                            prepared.release(env);
+                        }
+                        if !env.alive && env.ownership.is_some() {
+                            return None;
+                        }
                         if repeated_allocation {
                             let current = env.objects.get(&object).copied().unwrap_or(UNKNOWN);
                             env.objects.insert(
@@ -5677,6 +6129,7 @@ fn execute_non_if_statement(
                         }
                         env.places
                             .insert(name.clone(), BTreeSet::from([object.clone()]));
+                        ownership::assign_handle(name, None, true, env, file, *range, result);
                         env.unknown_places.remove(name);
                         env.shadowed_classes.insert(name.clone());
                         env.class_bindings.remove(name);
@@ -5689,6 +6142,9 @@ fn execute_non_if_statement(
                 && call_may_return_resource(value, env, file, functions)
             {
                 consume_expr(value, env, file, contracts, functions, result, 0);
+                if !env.alive && env.ownership.is_some() {
+                    return None;
+                }
                 if let Some(coroutine) = env.pending_coroutine_result.take() {
                     if env.coroutines.contains_key(&coroutine) {
                         env.coroutine_aliases.insert(name.clone(), coroutine);
@@ -5702,10 +6158,12 @@ fn execute_non_if_statement(
                     env.shadowed_functions.insert(name.clone());
                     env.shadowed_classes.insert(name.clone());
                     env.class_bindings.remove(name);
+                    ownership::assign_handle(name, None, false, env, file, *range, result);
                     return None;
                 }
                 if let Some(targets) = env.pending_return_targets.take() {
                     env.places.insert(name.clone(), targets);
+                    ownership::assign_handle(name, None, true, env, file, *range, result);
                     env.unknown_places.remove(name);
                     env.shadowed_functions.insert(name.clone());
                     env.shadowed_classes.insert(name.clone());
@@ -5723,9 +6181,11 @@ fn execute_non_if_statement(
                     *range,
                     "resource-valued call result is not tracked",
                 );
+                ownership::assign_handle(name, None, false, env, file, *range, result);
                 return None;
             }
             if let Some(source) = expr_name(value) {
+                ownership::check_moved(source, env, file, value.range, result);
                 if let Some(coroutine) = source_coroutine {
                     env.coroutine_aliases.insert(name.clone(), coroutine);
                     env.places.remove(name);
@@ -5750,8 +6210,11 @@ fn execute_non_if_statement(
                     env.unknown_places.remove(name);
                 }
             } else {
-                if !defines_resource_view {
+                if !defines_resource_view || env.ownership.is_some() {
                     consume_expr(value, env, file, contracts, functions, result, 0);
+                }
+                if !env.alive && env.ownership.is_some() {
+                    return None;
                 }
                 if let Some(coroutine) = env.pending_coroutine_result.take() {
                     if env.coroutines.contains_key(&coroutine) {
@@ -5770,6 +6233,7 @@ fn execute_non_if_statement(
                 }
                 if let Some(targets) = env.pending_return_targets.take() {
                     env.places.insert(name.clone(), targets);
+                    ownership::assign_handle(name, None, true, env, file, *range, result);
                     env.unknown_places.remove(name);
                     env.shadowed_classes.insert(name.clone());
                     env.class_bindings.remove(name);
@@ -5779,7 +6243,13 @@ fn execute_non_if_statement(
                 env.places.remove(name);
                 env.unknown_places.remove(name);
             }
-            env.shadowed_functions.insert(name.clone());
+            ownership::assign_handle(name, expr_name(value), false, env, file, *range, result);
+            if let Some(binding) = source_function_binding {
+                env.function_bindings.insert(name.clone(), binding);
+                env.shadowed_functions.remove(name);
+            } else {
+                env.shadowed_functions.insert(name.clone());
+            }
             if defines_resource_view {
                 env.shadowed_classes.remove(name);
                 if let Some(contract) = resource_view {
@@ -5827,12 +6297,25 @@ fn execute_non_if_statement(
                         result,
                     );
                     env.pending_return_targets = env.places.get(&temporary).cloned();
+                } else if env.ownership.is_some() && expr_name(value).is_some() {
+                    ownership::return_value(value, env, file, result);
                 } else if let Some(name) = expr_name(value).filter(|name| {
                     env.places.contains_key(*name) && !env.unknown_places.contains(*name)
                 }) {
                     env.pending_return_targets = env.places.get(name).cloned();
                 } else {
                     consume_expr(value, env, file, contracts, functions, result, 0);
+                }
+            }
+            if let Some(ownership) = env.ownership.as_ref() {
+                if ownership.return_owned && env.pending_return_targets.is_none() && value.is_some()
+                {
+                    boundary(
+                        result,
+                        file,
+                        statement_range(statement),
+                        "Owned return does not establish an open ownership handoff",
+                    );
                 }
             }
             env.pending_coroutine_result = None;
@@ -5867,8 +6350,23 @@ fn execute_non_if_statement(
             name,
             binding,
             class_decorators,
-            range: _,
+            range,
         } => {
+            if let Some(ownership) = env.ownership.as_mut() {
+                ownership.rebind(name);
+                env.places.remove(name);
+                env.unknown_places.remove(name);
+                env.coroutine_aliases.remove(name);
+                if let Some(external) = ownership
+                    .imported_callables
+                    .get(&(range.start, name.clone()))
+                {
+                    env.shadowed_functions.remove(name);
+                    env.function_bindings.insert(name.clone(), external.clone());
+                    env.class_bindings.remove(name);
+                    return None;
+                }
+            }
             if name == "*" {
                 env.class_bindings
                     .insert(UNKNOWN_EXCEPTION_BINDINGS.to_owned(), None);
@@ -5897,7 +6395,96 @@ fn execute_non_if_statement(
                 env.class_bindings.remove(name);
             }
         }
-        FlowStatement::Unsupported { range } => {
+        FlowStatement::Store {
+            value,
+            target,
+            range,
+        } if env.ownership.is_some() => {
+            let names = ownership::stored_names(value);
+            if expr_name(value).is_none() {
+                consume_expr(value, env, file, contracts, functions, result, 0);
+            }
+            if !env.alive {
+                return None;
+            }
+            ownership::borrow_escape(
+                env,
+                names,
+                file,
+                *range,
+                result,
+                "borrowed view escapes through field or container storage",
+            );
+            ownership::escape_pending_value(env, file, *range, result);
+            if let Some(target) = target {
+                if let AstExprKind::Attribute(receiver, _) = &target.kind {
+                    if let Some(binding) = expr_name(receiver)
+                        .and_then(|name| env.function_bindings.get(name))
+                        .cloned()
+                    {
+                        env.ownership
+                            .as_mut()
+                            .expect("ownership store")
+                            .invalidate_module(binding);
+                    }
+                }
+                consume_expr(target, env, file, contracts, functions, result, 0);
+            }
+            boundary(
+                result,
+                file,
+                *range,
+                "field or container storage has unresolved ownership effects",
+            );
+        }
+        FlowStatement::ClosureDefinition {
+            name,
+            captures,
+            range,
+        } if env.ownership.is_some() => {
+            for capture in captures {
+                ownership::check_moved(capture, env, file, *range, result);
+            }
+            if captures
+                .iter()
+                .filter_map(|name| env.places.get(name))
+                .flatten()
+                .next()
+                .is_some()
+            {
+                boundary(
+                    result,
+                    file,
+                    *range,
+                    "closure capture retains resource aliases with unresolved invocation effects",
+                );
+            }
+            env.ownership
+                .as_mut()
+                .expect("closure definition")
+                .define_closure(name, captures);
+            env.function_bindings.remove(name);
+            env.places.remove(name);
+            env.unknown_places.remove(name);
+            env.shadowed_functions.insert(name.clone());
+        }
+        FlowStatement::DeleteLocal { names, .. } if env.ownership.is_some() => {
+            for name in names {
+                env.places.remove(name);
+                env.unknown_places.remove(name);
+                env.coroutine_aliases.remove(name);
+                env.unknown_coroutine_aliases.remove(name);
+                env.function_bindings.remove(name);
+                env.class_bindings.remove(name);
+                env.ownership.as_mut().expect("local deletion").rebind(name);
+                env.shadowed_functions.insert(name.clone());
+                env.shadowed_classes.insert(name.clone());
+            }
+        }
+        FlowStatement::Unsupported { range }
+        | FlowStatement::Store { range, .. }
+        | FlowStatement::ClosureDefinition { range, .. }
+        | FlowStatement::DeleteLocal { range, .. } => {
             env.unknown_places.extend(env.places.keys().cloned());
             if env.function_bindings_complete {
                 env.function_bindings.clear();
@@ -5947,19 +6534,33 @@ fn statement_range(statement: &FlowStatement) -> SourceRange {
         | FlowStatement::Break { range }
         | FlowStatement::Continue { range }
         | FlowStatement::BindFunction { range, .. }
+        | FlowStatement::Store { range, .. }
+        | FlowStatement::ClosureDefinition { range, .. }
+        | FlowStatement::DeleteLocal { range, .. }
         | FlowStatement::Unsupported { range } => *range,
     }
 }
 
-fn check_bodies_impl(
+pub(crate) struct FlowOptions<'a> {
+    pub(crate) python_version: &'a str,
+    pub(crate) models: &'a FlowModelCatalog,
+    pub(crate) cyclic_modules: &'a BTreeSet<String>,
+    pub(crate) ownership: crate::Ownership,
+}
+
+pub(crate) fn check_file_bodies(
+    target_path: &str,
     files: &[SourceFile],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &mut Inspection,
-    only_file: Option<&str>,
-    python_version: &str,
-    models: &FlowModelCatalog,
-    cyclic_modules: &BTreeSet<String>,
+    options: FlowOptions<'_>,
 ) {
+    let FlowOptions {
+        python_version,
+        models,
+        cyclic_modules,
+        ownership,
+    } = options;
     let classes_with_unresolved_bases = files
         .iter()
         .flat_map(|file| {
@@ -6255,14 +6856,24 @@ fn check_bodies_impl(
     for _ in 0..=files.len() {
         let mut changed = false;
         for provider in files {
+            if ownership.is_enabled() && cyclic_modules.contains(&provider.module) {
+                continue;
+            }
             let Some(declarations) = summaries
                 .get(&provider.path)
                 .and_then(|summary| summary.declarations.as_ref())
             else {
                 continue;
             };
-            let bindings =
+            let mut bindings =
                 external_module_bindings(declarations, &external_exports, &supplied_modules);
+            if ownership.is_enabled() {
+                bindings.retain(|_, binding| {
+                    !binding
+                        .strip_prefix("module:")
+                        .is_some_and(|module| cyclic_modules.contains(module))
+                });
+            }
             if external_exports.get(&provider.module) != Some(&bindings) {
                 external_exports.insert(provider.module.clone(), bindings);
                 changed = true;
@@ -6289,6 +6900,13 @@ fn check_bodies_impl(
         if let Some(external) = external_exports.get(&file.module) {
             function_bindings.extend(external.clone());
         }
+        if ownership.is_enabled() {
+            function_bindings.retain(|_, binding| {
+                !binding
+                    .strip_prefix("module:")
+                    .is_some_and(|module| cyclic_modules.contains(module))
+            });
+        }
         module_bindings.insert(
             file.path.clone(),
             Arc::new(ModuleBindings {
@@ -6303,7 +6921,7 @@ fn check_bodies_impl(
         }
     }
     for file in files {
-        if only_file.is_some_and(|path| file.path != path) {
+        if file.path != target_path {
             continue;
         }
         let Some(declarations) = summaries
@@ -6320,6 +6938,13 @@ fn check_bodies_impl(
         if let Some(external) = external_exports.get(&file.module) {
             final_functions.extend(external.clone());
         }
+        if ownership.is_enabled() {
+            final_functions.retain(|_, binding| {
+                !binding
+                    .strip_prefix("module:")
+                    .is_some_and(|module| cyclic_modules.contains(module))
+            });
+        }
         for declaration in declarations {
             let Declaration::Function {
                 name,
@@ -6332,6 +6957,14 @@ fn check_bodies_impl(
                 continue;
             };
             let mut env = State {
+                ownership: OwnershipState::new(
+                    ownership,
+                    contracts.iter().any(|contract| {
+                        contract.display_name == format!("{name}.return")
+                            && contract.lifecycle.is_some()
+                            && contract.access == "owned"
+                    }),
+                ),
                 alive: true,
                 scope_module: file.module.clone(),
                 target_python_version: python_version.to_owned(),
@@ -6384,6 +7017,9 @@ fn check_bodies_impl(
                 } else if parameter_contract.access == "owned" {
                     env.duty_origins
                         .insert(object.clone(), parameter_contract.source.clone());
+                    if let Some(ownership) = env.ownership.as_mut() {
+                        ownership.own(&parameter.name, &BTreeSet::from([object]));
+                    }
                 }
             }
             let return_access = contracts
@@ -6458,6 +7094,7 @@ fn check_bodies_impl(
                     continue;
                 }
                 let mut env = State {
+                    ownership: OwnershipState::new(ownership, false),
                     alive: true,
                     scope_module: file.module.clone(),
                     target_python_version: python_version.to_owned(),
@@ -6547,6 +7184,7 @@ fn check_bodies_impl(
             }
         }
         let mut module = State {
+            ownership: OwnershipState::new(ownership, false),
             alive: true,
             scope_module: file.module.clone(),
             target_python_version: python_version.to_owned(),
@@ -6557,6 +7195,27 @@ fn check_bodies_impl(
             ..State::default()
         };
         for declaration in declarations {
+            if let (Some(ownership), Declaration::Import { names, range }) =
+                (module.ownership.as_mut(), declaration)
+            {
+                for import in names {
+                    let local = import
+                        .alias
+                        .as_deref()
+                        .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default());
+                    if supplied_modules.contains(&import.name) {
+                        let prefix = if cyclic_modules.contains(&import.name) {
+                            "unresolved-module"
+                        } else {
+                            "module"
+                        };
+                        ownership.imported_callables.insert(
+                            (range.start, local.to_owned()),
+                            format!("{prefix}:{}", import.name),
+                        );
+                    }
+                }
+            }
             let Declaration::ImportFrom {
                 module: source_module,
                 level,
@@ -6569,6 +7228,22 @@ fn check_bodies_impl(
             for import in names {
                 let local = import.alias.as_deref().unwrap_or(&import.name);
                 let binding_key = format!("import:{}:{}:{}", file.module, range.start, local);
+                if let Some(ownership) = module.ownership.as_mut().filter(|_| *level == 0) {
+                    let external = ownership::external_member(source_module, &import.name)
+                        .filter(|_| !supplied_modules.contains(source_module))
+                        .map(str::to_owned)
+                        .or_else(|| {
+                            external_exports
+                                .get(source_module)
+                                .and_then(|bindings| bindings.get(&import.name))
+                                .cloned()
+                        });
+                    if let Some(external) = external {
+                        ownership
+                            .imported_callables
+                            .insert((range.start, local.to_owned()), external);
+                    }
+                }
                 let imported = if *level == 0 {
                     resolve_imported_contracts(
                         source_module,
@@ -6604,26 +7279,6 @@ fn check_bodies_impl(
             report_unawaited_coroutines(&module, file, result);
         }
     }
-}
-
-pub(crate) fn check_file_bodies(
-    target_path: &str,
-    files: &[SourceFile],
-    summaries: &BTreeMap<String, crate::db::ParseSummary>,
-    result: &mut Inspection,
-    python_version: &str,
-    models: &FlowModelCatalog,
-    cyclic_modules: &BTreeSet<String>,
-) {
-    check_bodies_impl(
-        files,
-        summaries,
-        result,
-        Some(target_path),
-        python_version,
-        models,
-        cyclic_modules,
-    );
 }
 
 #[cfg(test)]
@@ -6693,9 +7348,12 @@ mod tests {
             std::slice::from_ref(&file),
             &summaries,
             &mut result,
-            "3.11",
-            &FlowModelCatalog::default(),
-            &BTreeSet::new(),
+            FlowOptions {
+                python_version: "3.11",
+                models: &FlowModelCatalog::default(),
+                cyclic_modules: &BTreeSet::new(),
+                ownership: crate::Ownership::Disabled,
+            },
         );
         result
     }

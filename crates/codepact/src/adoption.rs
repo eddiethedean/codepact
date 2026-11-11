@@ -15,6 +15,7 @@ pub const BASELINE_SCHEMA_VERSION: u8 = 1;
 pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 5;
 pub const RULE_SEMANTIC_VERSION: u8 = 1;
 pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"];
+pub const OWNERSHIP_RULES: &[&str] = &["TP2002", "TP2003", "TP2004", "TP2005", "TP2006"];
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
 fn read_configuration(reader: impl Read) -> Result<String, String> {
@@ -44,6 +45,10 @@ pub struct ProjectConfig {
     #[serde(rename = "enabled-rules")]
     pub enabled_rules: Option<Vec<String>>,
     pub mode: Option<String>,
+    #[serde(rename = "experimental-ownership")]
+    pub experimental_ownership: Option<bool>,
+    #[serde(rename = "assume-default-task-factory")]
+    pub assume_default_task_factory: Option<bool>,
     #[serde(rename = "fail-on")]
     pub fail_on: Option<String>,
     pub baseline: Option<PathBuf>,
@@ -64,6 +69,7 @@ pub struct EffectiveConfig {
     pub exclude: Vec<String>,
     pub enabled_rules: BTreeSet<String>,
     pub mode: String,
+    pub ownership: crate::Ownership,
     pub fail_on: String,
     pub baseline: Option<PathBuf>,
     pub severity: BTreeMap<String, String>,
@@ -75,6 +81,7 @@ pub struct Overrides {
     pub root: Option<PathBuf>,
     pub python_version: Option<String>,
     pub mode: Option<String>,
+    pub experimental_ownership: Option<bool>,
     pub fail_on: Option<String>,
     pub rules: Option<Vec<String>>,
     pub baseline: Option<PathBuf>,
@@ -233,10 +240,23 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
             }
         });
     let c = config;
+    let experimental_ownership = overrides
+        .experimental_ownership
+        .or_else(|| c.as_ref().and_then(|c| c.experimental_ownership))
+        .unwrap_or(false);
+    let assume_default_task_factory = c
+        .as_ref()
+        .and_then(|c| c.assume_default_task_factory)
+        .unwrap_or(false);
+    let ownership = match (experimental_ownership, assume_default_task_factory) {
+        (true, true) => crate::Ownership::AssumeDefaultTaskFactory,
+        (true, false) => crate::Ownership::Enabled,
+        (false, _) => crate::Ownership::Disabled,
+    };
     let mut rules: BTreeSet<String> = c
         .as_ref()
         .and_then(|c| c.enabled_rules.clone())
-        .unwrap_or_else(|| DEFAULT_RULES.iter().map(|r| r.to_string()).collect())
+        .unwrap_or_else(|| scoped_rules(ownership).map(str::to_owned).collect())
         .into_iter()
         .collect();
     if let Some(override_rules) = &overrides.rules {
@@ -250,6 +270,9 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
     }
     for r in &rules {
         validate_rule(r)?;
+        if !ownership.is_enabled() && OWNERSHIP_RULES.contains(&r.as_str()) {
+            return Err(format!("rule {r} requires experimental-ownership"));
+        }
     }
     let mut severity = c.as_ref().map(|c| c.severity.clone()).unwrap_or_default();
     if let Some(overrides) = &overrides.severity {
@@ -347,6 +370,28 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         )
         .into(),
     );
+    if overrides.experimental_ownership.is_some()
+        || c.as_ref()
+            .is_some_and(|c| c.experimental_ownership.is_some())
+    {
+        settings_origins.insert(
+            "experimental-ownership".into(),
+            origin(
+                overrides.experimental_ownership.is_some(),
+                c.as_ref()
+                    .is_some_and(|c| c.experimental_ownership.is_some()),
+            )
+            .into(),
+        );
+    }
+    if c.as_ref()
+        .is_some_and(|c| c.assume_default_task_factory.is_some())
+    {
+        settings_origins.insert(
+            "assume-default-task-factory".into(),
+            "pyproject.toml".into(),
+        );
+    }
     settings_origins.insert(
         "fail-on".into(),
         origin(
@@ -410,6 +455,7 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         exclude,
         enabled_rules: rules,
         mode,
+        ownership,
         fail_on,
         baseline,
         severity,
@@ -465,25 +511,23 @@ fn validate_config(c: &ProjectConfig) -> Result<(), String> {
     Ok(())
 }
 fn severity_overridable(rule: &str) -> bool {
-    matches!(rule, "TP1001" | "TP1002" | "TP1003" | "TP2001" | "TP3001")
+    eligible_code(rule)
 }
 fn validate_rule(r: &str) -> Result<(), String> {
-    if matches!(
-        r,
-        "TP1001"
-            | "TP1002"
-            | "TP1003"
-            | "TP2001"
-            | "TP3001"
-            | "TP4001"
-            | "TP4002"
-            | "TP9001"
-            | "TP9002"
-    ) {
+    if eligible_code(r) || matches!(r, "TP4001" | "TP4002" | "TP9001" | "TP9002") {
         Ok(())
     } else {
         Err(format!("unknown rule identifier {r}"))
     }
+}
+
+fn scoped_rules(ownership: crate::Ownership) -> impl Iterator<Item = &'static str> {
+    DEFAULT_RULES.iter().copied().chain(
+        OWNERSHIP_RULES
+            .iter()
+            .copied()
+            .filter(move |_| ownership.is_enabled()),
+    )
 }
 fn validate_pattern(p: &str) -> Result<(), String> {
     if p.is_empty()
@@ -664,6 +708,10 @@ struct Baseline {
     rule_semantic_version: u8,
     target_python_version: String,
     model_catalog_version: u8,
+    #[serde(default, skip_serializing_if = "ownership_disabled")]
+    ownership: crate::Ownership,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ownership_model_revision: Option<String>,
     snapshot_id: String,
     source_manifest: Vec<SnapshotFile>,
     logical_root: String,
@@ -674,6 +722,10 @@ struct Baseline {
     coverage_reasons: Vec<String>,
     update_reason: String,
     entries: Vec<BaselineEntry>,
+}
+
+fn ownership_disabled(ownership: &crate::Ownership) -> bool {
+    !ownership.is_enabled()
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(deny_unknown_fields)]
@@ -1072,10 +1124,7 @@ fn fingerprint(
     hash(encoding.as_bytes())
 }
 fn eligible(d: &CheckDiagnostic) -> bool {
-    matches!(
-        d.code.as_str(),
-        "TP1001" | "TP1002" | "TP1003" | "TP2001" | "TP3001"
-    )
+    eligible_code(&d.code)
 }
 
 fn bound_diagnostic_text(text: &mut String, maximum_bytes: usize) -> usize {
@@ -1198,7 +1247,16 @@ fn parse_suppression(line: &str) -> Result<Option<(Vec<String>, String)>, String
     Ok(Some((codes, reason.to_string())))
 }
 fn eligible_code(code: &str) -> bool {
-    matches!(code, "TP1001" | "TP1002" | "TP1003" | "TP2001" | "TP3001")
+    DEFAULT_RULES.contains(&code) || OWNERSHIP_RULES.contains(&code)
+}
+
+fn ownership_model_revision(result: &CheckResult) -> Option<&str> {
+    result
+        .available_models
+        .iter()
+        .find(|model| model.id == "TPM-TASK-001")
+        .and_then(|model| model.source_revisions.first())
+        .map(String::as_str)
 }
 
 fn suppression_at(source: &str, target_line: usize, code: &str) -> Result<Option<String>, String> {
@@ -1224,12 +1282,20 @@ fn validate_analysis_scope(result: &CheckResult, config: &EffectiveConfig) -> Re
     }
     if !matches!(
         result.assurance.as_str(),
-        crate::ADOPTION_ASSURANCE | crate::LIFECYCLE_ASSURANCE
+        crate::ADOPTION_ASSURANCE | crate::LIFECYCLE_ASSURANCE | crate::OWNERSHIP_ASSURANCE
     ) {
         return Err("lifecycle analysis was not executed; declaration inspection alone cannot produce a check report".into());
     }
-    if config.enabled_rules.contains("TP3001") && result.assurance != crate::ADOPTION_ASSURANCE {
+    if config.enabled_rules.contains("TP3001") && result.assurance == crate::LIFECYCLE_ASSURANCE {
         return Err("must-use rules were requested but not analyzed; use check_with_must_use before building an adoption report or baseline".into());
+    }
+    if (result.assurance == crate::OWNERSHIP_ASSURANCE) != config.ownership.is_enabled()
+        || ownership_model_revision(result)
+            != (config.ownership == crate::Ownership::AssumeDefaultTaskFactory)
+                .then(|| crate::model::task_group_revision(&config.python_version))
+                .flatten()
+    {
+        return Err("report ownership scope differs from the analyzed scope".into());
     }
     Ok(())
 }
@@ -1254,6 +1320,8 @@ pub fn build_report(
         let compatible = loaded.target_python_version == result.target_python_version
             && loaded.model_catalog_version == result.model_catalog_version
             && loaded.rule_semantic_version == RULE_SEMANTIC_VERSION
+            && loaded.ownership == config.ownership
+            && loaded.ownership_model_revision.as_deref() == ownership_model_revision(&result)
             && loaded.engine_version == env!("CARGO_PKG_VERSION");
         Some((unique, compatible, loaded.update_reason))
     } else {
@@ -1571,8 +1639,7 @@ pub fn build_report(
                 || diagnostic.message_omitted_bytes > 0
                 || diagnostic.repair_omitted_bytes > 0
         });
-    let disabled_rules = ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"]
-        .into_iter()
+    let disabled_rules = scoped_rules(config.ownership)
         .filter(|rule| !config.enabled_rules.contains(*rule))
         .map(str::to_owned)
         .collect();
@@ -1733,6 +1800,8 @@ pub fn write_baseline(
             env!("CARGO_PKG_VERSION"),
             result.target_python_version.as_str(),
             result.model_catalog_version,
+            config.ownership,
+            ownership_model_revision(result),
             &source_manifest,
             &config.enabled_rules,
             &config.severity,
@@ -1749,6 +1818,8 @@ pub fn write_baseline(
         rule_semantic_version: RULE_SEMANTIC_VERSION,
         target_python_version: result.target_python_version.clone(),
         model_catalog_version: result.model_catalog_version,
+        ownership: config.ownership,
+        ownership_model_revision: ownership_model_revision(result).map(str::to_owned),
         snapshot_id: snapshot_id.clone(),
         source_manifest: source_manifest.clone(),
         logical_root: ".".into(),

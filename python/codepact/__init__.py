@@ -60,4 +60,9 @@ def discard(value: object) -> None:
     del value
 
 
-__all__ = ["resource", "Resource", "must_use", "discard", "MustUseResult"]
+def move(value: T) -> T:
+    """Mark an explicit ownership transfer and return the original object."""
+    return value
+
+
+__all__ = ["resource", "Resource", "must_use", "discard", "move", "MustUseResult"]

@@ -7,7 +7,7 @@
   "properties": {
     "explanation_schema_version": {"const": 1},
     "explanation_id": {"type": "string", "pattern": "^TP[0-9]{4}\\.R[0-9]{3}$"},
-    "code": {"enum": ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001", "TP4001", "TP4002", "TP9001", "TP9002"]},
+    "code": {"enum": ["TP1001", "TP1002", "TP1003", "TP2001", "TP2002", "TP2003", "TP2004", "TP2005", "TP2006", "TP3001", "TP4001", "TP4002", "TP9001", "TP9002"]},
     "title": {"type": "string", "minLength": 1, "maxLength": 8192},
     "summary": {"type": "string", "minLength": 1, "maxLength": 8192},
     "preconditions": {"type": "array", "items": {"type": "string", "maxLength": 8192}},

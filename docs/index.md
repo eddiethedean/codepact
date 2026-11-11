@@ -33,6 +33,7 @@ a use after close, understand the related close location, and repair it.
 | --- | --- |
 | Install the helpers, standalone CLI, or Rust library | [Installation](install.md) |
 | Declare owned or borrowed access | [Contract declarations](contracts.md) |
+| Try the 0.5 candidate ownership checker | [Experimental ownership](ownership.md) |
 | Check imports across modules | [Multi-file tutorial](project-guide.md) |
 | See semantic mistakes caught before runtime | [Bugs CodePact catches](bugs-caught.md) |
 | Adopt 0.4 in a project | [Adoption workflow](adopting.md) |
@@ -59,6 +60,7 @@ install
 quickstart
 lifecycle
 contracts
+ownership
 project-guide
 examples
 bugs-caught

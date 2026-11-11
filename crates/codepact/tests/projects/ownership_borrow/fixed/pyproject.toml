@@ -1,0 +1,5 @@
+[tool.codepact]
+config-version = 1
+include = ["src/*.py"]
+experimental-ownership = true
+assume-default-task-factory = true

@@ -34,9 +34,12 @@ pub(crate) enum AstExprKind {
     },
     Await(Box<AstExpr>),
     Tuple(Vec<AstExpr>),
+    Collection(Vec<AstExpr>),
+    Starred(Box<AstExpr>),
+    Closure(BTreeSet<String>),
     /// An expression outside the directly modeled subset, with its nested
     /// call targets retained for rules that need to report an honest boundary.
-    OtherCalls(Vec<String>),
+    OtherCalls(Vec<String>, BTreeSet<String>),
     Boolean(bool),
     String(String),
     Primitive,
@@ -185,6 +188,20 @@ pub(crate) enum FlowStatement {
         name: String,
         binding: Option<String>,
         class_decorators: Vec<SourceRange>,
+        range: SourceRange,
+    },
+    Store {
+        value: AstExpr,
+        target: Option<AstExpr>,
+        range: SourceRange,
+    },
+    ClosureDefinition {
+        name: String,
+        captures: BTreeSet<String>,
+        range: SourceRange,
+    },
+    DeleteLocal {
+        names: Vec<String>,
         range: SourceRange,
     },
     Unsupported {
@@ -864,6 +881,40 @@ fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usize) -> AstEx
                 .map(|item| expression(item, budget, depth + 1))
                 .collect(),
         ),
+        Expr::List(list) => AstExprKind::Collection(
+            list.elts
+                .iter()
+                .map(|item| expression(item, budget, depth + 1))
+                .collect(),
+        ),
+        Expr::Set(set) => AstExprKind::Collection(
+            set.elts
+                .iter()
+                .map(|item| expression(item, budget, depth + 1))
+                .collect(),
+        ),
+        Expr::Dict(dict) => AstExprKind::Collection(
+            dict.items
+                .iter()
+                .flat_map(|item| item.key.iter().chain(std::iter::once(&item.value)))
+                .map(|item| expression(item, budget, depth + 1))
+                .collect(),
+        ),
+        Expr::Starred(starred) => {
+            AstExprKind::Starred(Box::new(expression(&starred.value, budget, depth + 1)))
+        }
+        Expr::Lambda(lambda) => {
+            let mut references = ReferencedNames::default();
+            references.visit_expr(&lambda.body);
+            for parameter in lambda
+                .parameters
+                .iter()
+                .flat_map(|parameters| parameters.iter())
+            {
+                references.names.remove(parameter.name().as_str());
+            }
+            AstExprKind::Closure(references.names)
+        }
         Expr::StringLiteral(string) => AstExprKind::String(string.value.to_str().to_owned()),
         Expr::BooleanLiteral(boolean) => AstExprKind::Boolean(boolean.value),
         Expr::NumberLiteral(_) => AstExprKind::Primitive,
@@ -883,7 +934,9 @@ fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usize) -> AstEx
             }
             collector.calls.sort();
             collector.calls.dedup();
-            AstExprKind::OtherCalls(collector.calls)
+            let mut references = ReferencedNames::default();
+            references.visit_expr(node);
+            AstExprKind::OtherCalls(collector.calls, references.names)
         }
     };
     if budget.exceeded {
@@ -993,6 +1046,76 @@ fn update_must_use_names(names: &mut std::collections::BTreeSet<String>, stateme
     }
 }
 
+#[derive(Default)]
+struct ReferencedNames {
+    names: BTreeSet<String>,
+    locals: BTreeSet<String>,
+    globals: BTreeSet<String>,
+    nonlocals: BTreeSet<String>,
+    depth: usize,
+}
+
+impl<'a> Visitor<'a> for ReferencedNames {
+    fn visit_expr(&mut self, node: &'a Expr) {
+        if self.depth >= 128 {
+            return;
+        }
+        if let Expr::Name(name) = node {
+            if name.ctx == ruff_python_ast::ExprContext::Load {
+                self.names.insert(name.id.to_string());
+            } else {
+                self.locals.insert(name.id.to_string());
+            }
+            return;
+        }
+        self.depth += 1;
+        walk_expr(self, node);
+        self.depth -= 1;
+    }
+
+    fn visit_stmt(&mut self, statement: &'a Stmt) {
+        if self.depth >= 128 {
+            return;
+        }
+        match statement {
+            Stmt::Global(declaration) => self
+                .globals
+                .extend(declaration.names.iter().map(ToString::to_string)),
+            Stmt::Nonlocal(declaration) => self
+                .nonlocals
+                .extend(declaration.names.iter().map(ToString::to_string)),
+            Stmt::FunctionDef(definition) => {
+                self.locals.insert(definition.name.to_string());
+                // Nested definitions may reference surrounding bindings.
+                // Do not count their own stores as bindings of this scope.
+                let mut nested = Self::default();
+                for statement in &definition.body {
+                    if self.depth + 1 < 128 {
+                        nested.depth = self.depth + 1;
+                        nested.visit_stmt(statement);
+                    }
+                }
+                nested.finish();
+                self.names.extend(nested.names);
+                return;
+            }
+            _ => {}
+        }
+        self.depth += 1;
+        walk_stmt(self, statement);
+        self.depth -= 1;
+    }
+}
+
+impl ReferencedNames {
+    fn finish(&mut self) {
+        self.names.retain(|name| {
+            !self.globals.contains(name)
+                && (!self.locals.contains(name) || self.nonlocals.contains(name))
+        });
+    }
+}
+
 fn flow_statements(statements: &[Stmt], budget: &mut ExpressionBudget) -> Vec<FlowStatement> {
     let mut visitor = ScopeEscapeVisitor::default();
     for statement in statements {
@@ -1042,9 +1165,19 @@ fn flow_statements_at(
                             }
                         }
                     }
-                    _ => FlowStatement::Unsupported {
+                    _ => FlowStatement::Store {
+                        value: expression(&assign.value, budget, 0),
+                        target: assign
+                            .targets
+                            .first()
+                            .map(|target| expression(target, budget, 0)),
                         range: source_range(statement),
                     },
+                },
+                Stmt::Assign(assign) => FlowStatement::Store {
+                    value: expression(&assign.value, budget, 0),
+                    target: None,
+                    range: source_range(statement),
                 },
                 Stmt::AnnAssign(assign) => match assign.target.as_ref() {
                     Expr::Name(target_name) => {
@@ -1077,10 +1210,52 @@ fn flow_statements_at(
                             },
                         }
                     }
-                    _ => FlowStatement::Unsupported {
+                    _ => FlowStatement::Store {
+                        value: assign
+                            .value
+                            .as_ref()
+                            .map(|value| expression(value, budget, 0))
+                            .unwrap_or(AstExpr {
+                                range: source_range(statement),
+                                kind: AstExprKind::NoneLiteral,
+                            }),
+                        target: Some(expression(&assign.target, budget, 0)),
                         range: source_range(statement),
                     },
                 },
+                Stmt::FunctionDef(function) => {
+                    let mut references = ReferencedNames::default();
+                    for statement in &function.body {
+                        references.visit_stmt(statement);
+                    }
+                    for parameter in function.parameters.iter() {
+                        references.locals.insert(parameter.name().to_string());
+                    }
+                    references.finish();
+                    FlowStatement::ClosureDefinition {
+                        name: function.name.to_string(),
+                        captures: references.names,
+                        range: source_range(statement),
+                    }
+                }
+                Stmt::Delete(delete)
+                    if delete
+                        .targets
+                        .iter()
+                        .all(|target| matches!(target, Expr::Name(_))) =>
+                {
+                    FlowStatement::DeleteLocal {
+                        names: delete
+                            .targets
+                            .iter()
+                            .filter_map(|target| match target {
+                                Expr::Name(name) => Some(name.id.to_string()),
+                                _ => None,
+                            })
+                            .collect(),
+                        range: source_range(statement),
+                    }
+                }
                 Stmt::Expr(expr) => FlowStatement::Expression {
                     value: expression(&expr.value, budget, 0),
                     range: source_range(statement),

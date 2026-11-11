@@ -72,6 +72,13 @@ unknown. Their advisory reports are not proof of a fully clean project. The
 boundary controls verify that strict mode refuses a clean status when coverage
 is incomplete.
 
+## Catalog-inspired extension
+
+The [code smells corpus](code_smells/README.md) adds a separate oracle for
+0.5 candidate ownership checks and catalog-inspired lifecycle and must-use
+examples. Run it with
+`cargo test -p codepact --locked --test synthetic_projects code_smell_corpus`.
+
 ## Scope
 
 These small programs exercise known contracts and controlled source repairs.

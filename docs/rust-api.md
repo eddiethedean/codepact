@@ -205,3 +205,15 @@ clean analysis. Check `inspection.coverage.status` and inspect diagnostics.
 represents cancellation as an incomplete report containing `TP9002`; use the
 cancellable method when the host must distinguish cancellation from a completed
 analysis.
+
+
+## Experimental ownership in the 0.5 candidate
+
+`codepact::check_with_ownership` and
+`AnalysisSession::check_with_ownership_cancellable` return structured check
+results for lifecycle, must-use, and the selected ownership scope. Pass
+`Ownership::Enabled` for local and resolved interprocedural ownership checks,
+or `Ownership::AssumeDefaultTaskFactory` for the pinned TaskGroup model with
+its explicit runtime assumption. `Ownership::Disabled` selects the 0.4
+adoption scope. Scope changes advance the reusable session revision and are
+part of the flow-query inputs. [Experimental ownership guide](ownership.md)

@@ -37,6 +37,8 @@ Release acceptance is sequential by default. Independent prototypes may run earl
 
 The [0.4 adoption plan](docs/planning/phases/0.4-adoption.md), [specification](docs/planning/phases/0.4/specification.md) and [V04 matrix](docs/planning/phases/0.4/validation.md) define the adoption release. Maintainer-approved [AD01-A2](docs/planning/phases/0.4/synthetic-preview-protocol.md) makes 0.4 a synthetic preview: independent bug/repair and unsupported-boundary controls replace the original field-pilot exit criterion. Real-world usefulness remains unqualified; original field observations are retained as history. The maintainer approved the release and the final artifact matrix passed. CS02 preserves 0.3's modeled async evidence without pulling task ownership forward from 0.5.
 
+The [0.5 ownership plan](docs/planning/phases/0.5-ownership.md) builds on that published release. The candidate [ownership specification](docs/planning/phases/0.5/specification.md) and [V05 matrix](docs/planning/phases/0.5/validation.md) describe the opt-in transfer, lexical borrow and TaskGroup subset implemented in the development candidate. O01–O07 and CS03 await release review. [Local candidate evidence](docs/releases/0.5.0-evidence.md)
+
 The 0.4.0 release includes CLI reporting foundations. The [linting and IDE diagnostics plan](docs/planning/linting-and-editors.md) keeps a shared language server plus VS Code, PyCharm/IntelliJ, Neovim and Emacs integration targets in 0.8. Acceptance requires CLI/editor parity, correct source highlighting, current-revision hints and verified setup for each claimed editor; those integrations remain planned.
 
 The 0.4.0 release includes structured analysis schemas, repair explanations and an opt-in check–edit–recheck workflow. The [AI-agent integration plan](docs/planning/ai-agent-integration.md) keeps local read-only MCP tools and qualified agent clients in 0.8. Acceptance requires preserved certainty/coverage, current-source evidence, CLI/tool parity and verified repairs without weakening project policy; those integrations remain planned.
@@ -46,6 +48,15 @@ The planned [TypePact combined product](docs/planning/typepact.md) reuses the Ty
 After the composition alpha, TypePact's selected TC01–TC03 stages add inferred resource-model selection, branch-aware contracts and ownership obligations through typed outcomes. The versioned fact bridge and TC-V01–TC-V06 require qualified evidence and observable value beyond separate checking. TC03 depends on the applicable core ownership and typed-outcome gates; these stages do not expand the alpha or reorder CodePact's release sequence.
 
 The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded async cleanup and cancellation foundations in 0.3 (CS01), reporting and synthetic async controls in 0.4 under AD01-A2 (CS02), opt-in structured task ownership/borrow checking in 0.5 (CS03), suspension-aware exclusivity and protocol states in 0.6 (CS04), cancellation-preserving outcomes in 0.7 (CS05), qualified models and integration parity in 0.8 (CS06), and a stable-scope audit in 0.9 (CS07). Start task-lifetime modeling with `asyncio.TaskGroup` in 0.5; 0.3 qualifies intratask cleanup only. Multiprocessing and thread handoffs remain conservative escape boundaries until separately qualified; no race, deadlock, Send/Sync or general process-ownership guarantee is added. The published synchronous 0.2 scope is unchanged.
+
+## Follow-on contract phases
+
+The [contract extensions plan](docs/planning/phases/contract-extensions.md)
+proposes validated values, relationships between values, typestate field
+guarantees, and declared dependency boundaries. Scalar validation precedes
+relationship checking. Field guarantees build on 0.6 typestate. Dependency
+boundaries can be prototyped independently. Consider release assignments at
+or after the 0.9 readiness decision.
 
 ## Version policy
 
