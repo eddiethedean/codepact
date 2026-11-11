@@ -71,8 +71,8 @@ The quick-start and CI shell snippets are replayed by
 `scripts/check_docs_examples.py` in a disposable project. Run it with
 `uv run --no-project python scripts/check_docs_examples.py` to install the
 pinned packages from the configured index. To test unpublished local wheels,
-set `UV_NO_INDEX=1` and `UV_FIND_LINKS` to the wheel directory. The GitHub
-docs job builds and tests checkout wheels so release candidates can be checked
+set `UV_NO_INDEX=1` and `UV_FIND_LINKS` to the wheel directory and pass
+`--checkout` to the script. The GitHub docs job builds and tests checkout wheels so release candidates can be checked
 before publication.
 
 The multi-file and declaration-only examples are under `docs/_examples`.

@@ -3,7 +3,7 @@ Python API reference
 
 .. note::
 
-   This reference is generated from the 0.5.0 source. ``move`` was added in
+   This reference is generated from the current source. ``move`` was added in
    0.5.0. The must-use helpers are available from 0.4.0.
 
 The ``codepact`` package contains lightweight runtime helpers and static typing metadata. It does not load the analyzer executable when imported.

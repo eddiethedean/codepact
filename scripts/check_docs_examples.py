@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import cast
 
@@ -49,11 +51,16 @@ def report(path: Path) -> dict[str, object]:
     return json_object(path.read_text(encoding="utf-8"))
 
 
-def replay(workspace: Path) -> None:
+def replay(workspace: Path, checkout_version: str | None) -> None:
     setup = snippet("quickstart.md", "setup")
     version = re.search(r"uv add codepact==([^\s]+)", setup)
     assert version is not None, "Quick start should pin a helper and CLI version"
-    assert f"codepact {version[1]}" in shell(workspace, setup)
+    published_version = version[1]
+    selected_version = checkout_version or published_version
+    setup = setup.replace(
+        f"codepact=={published_version}", f"codepact=={selected_version}"
+    )
+    assert f"codepact {selected_version}" in shell(workspace, setup)
 
     source = workspace / "src"
     connection = source / "connection.py"
@@ -137,6 +144,10 @@ def replay(workspace: Path) -> None:
     )
     assert run_step is not None, "GitHub Actions example needs a runnable check step"
     check_step = " ".join(line.strip() for line in run_step[1].splitlines())
+    assert f"codepact-cli=={published_version}" in check_step
+    check_step = check_step.replace(
+        f"codepact-cli=={published_version}", f"codepact-cli=={selected_version}"
+    )
     _ = shell(workspace, check_step, 1)
 
     app = source / "app.py"
@@ -159,8 +170,19 @@ def replay(workspace: Path) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    _ = parser.add_argument(
+        "--checkout",
+        action="store_true",
+        help="test checkout wheels while keeping the published versions in the docs",
+    )
+    checkout_version = None
+    if cast(bool, parser.parse_args().checkout):
+        manifest = (DOCS.parent / "pyproject.toml").read_text(encoding="utf-8")
+        checkout_version = cast(str, tomllib.loads(manifest)["project"]["version"])
+
     with tempfile.TemporaryDirectory(prefix="codepact-docs-") as temp:
-        replay(Path(temp))
+        replay(Path(temp), checkout_version)
     print("Replayed the first check, project tutorial, inspection, and CI report cases")
 
 

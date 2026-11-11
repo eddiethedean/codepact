@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.5.1 (unreleased)
+
+- Remove obsolete version numbers from TP9001 coverage messages for
+  unsupported declarations and annotations. Diagnostic codes, analysis
+  coverage, and exit policy keep their existing behavior.
+  [Issue #2](https://github.com/eddiethedean/codepact/issues/2)
+- Baseline matching includes the exact engine version. Review and regenerate
+  a 0.5.0 baseline when upgrading to 0.5.1.
+  [Baseline workflow](adopting.md#record-the-initial-findings)
+
 ## 0.5.0 — experimental ownership
 
 Published on November 10, 2026, CodePact 0.5.0 adds opt-in explicit transfers,

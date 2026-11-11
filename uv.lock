@@ -259,7 +259,7 @@ wheels = [
 
 [[package]]
 name = "codepact"
-version = "0.5.0"
+version = "0.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "codepact-cli" },
@@ -298,7 +298,7 @@ dev = [
 
 [[package]]
 name = "codepact-cli"
-version = "0.5.0"
+version = "0.5.1"
 source = { editable = "cli" }
 
 [[package]]
