@@ -1,25 +1,31 @@
-# Quick start
+# Run your first check
 
-Run a check with the published CodePact 0.5.0 CLI, read a definite
-use-after-close finding, and repair the example.
+Use CodePact 0.5.0 to find a connection used after close, then fix the source
+and confirm the repair. The analyzer reads the file as text.
 
-## Install in your project
+## Set up an empty directory
 
-In an existing uv project, install the helper package and its matching CLI.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use
+Python 3.11 or later. Open an empty directory and create the demo project.
 
+<!-- smoke: setup -->
 ```sh
+uv init --bare --name codepact-demo
 uv add codepact==0.5.0
 uv run --locked codepact --version
-mkdir -p demo
+mkdir src
 ```
 
-The version command prints `codepact 0.5.0`.
-[Standalone CLI, pip, and Rust installs](install.md)
+Expect `codepact 0.5.0`. In an existing uv project, skip `uv init` and create
+`src` only if it is absent. For a disposable trial inside an existing project,
+use the [standalone command](install.md#standalone-command) and an empty
+directory. The [installation guide](install.md) also covers pip and PowerShell.
 
-## Declare a resource
+## Save the example
 
-Save the [complete example](https://github.com/eddiethedean/codepact/blob/main/examples/lifecycle.py)
-as `demo/connection.py`.
+Save this file as `src/connection.py`. You can
+{download}`download the complete file <../examples/lifecycle.py>` from this
+documentation build.
 
 ```{literalinclude} ../examples/lifecycle.py
 :language: python
@@ -27,17 +33,19 @@ as `demo/connection.py`.
 :emphasize-lines: 22,23
 ```
 
-`@resource` declares the close operation. `Borrowed[Connection]` gives
-`inspect_connection` shared access to an open connection. The underlying
-Python type remains `Connection` for mypy and Pyright.
-[Contract declarations](contracts.md)
+`@resource` names the closing method. `Borrowed[Connection]` gives
+`inspect_connection` shared access to an open connection and preserves
+the underlying type for mypy and Pyright. The close method is a stub for this
+exercise. [Contract declarations](contracts.md)
 
-## Run your first check
+## Find and fix the bug
 
+<!-- smoke: finding -->
 ```sh
-uv run --locked codepact check --root demo
+uv run --locked codepact check --root src
 ```
 
+<!-- smoke: finding-output -->
 ```text
 connection.py:23:1: error TP1001: Borrowed call requires an open resource
   certainty: definite
@@ -47,44 +55,23 @@ connection.py:23:1: error TP1001: Borrowed call requires an open resource
 1 diagnostics; 1 actionable; 0 suppressed; 0 rule-disabled; 1 returned
 ```
 
-The primary location is the call on line 23. The related location points to
-the close on line 22. The check exits `1`. Delete the call after the close and
-rerun the same command. The repaired example exits `0` with complete coverage
-for the supported subset.
+The check exits `1`. The primary location is the call on line 23 and the
+related location is the close on line 22. Delete line 23 and rerun in strict
+mode.
 
-The close method is a stub. CodePact checks the declared transition, while
-the implementation is responsible for runtime cleanup.
-[Lifecycle, aliases, and branches](lifecycle.md)
-
-```{tip}
-Use a narrow root for early checks. `check` discovers Python files below the
-root. Supplying a filename adds an input to discovery.
-```
-
-## Inspect the contract facts
-
+<!-- smoke: repair -->
 ```sh
-uv run --locked codepact inspect-contracts demo/connection.py
+uv run --locked codepact check --root src --mode strict
 ```
 
-The inspector emits schema 0 JSON with two contract views for this example.
+The repaired check exits `0` and prints nothing. Use `echo $?` in a POSIX
+shell or `$LASTEXITCODE` in PowerShell immediately after the command to see
+the exit status.
 
-| Declaration | Base symbol | Lifecycle | Access |
-| --- | --- | --- | --- |
-| `Connection` | `connection.Connection` | Closed by `close` | `unspecified` |
-| `inspect_connection.conn` | `connection.Connection` | Closed by `close` | `shared` |
+## Keep going
 
-The inspector returns those facts and exits `1` because the example contains
-module-level executable statements outside declaration inspection. Read
-`coverage.reasons` to see those boundaries. Use `check` for diagnostics that
-depend on control flow and lifecycle state.
-[Output reference](output.md)
-
-## Continue with a project
-
-- [Check multiple modules](project-guide.md) to include a resource provider
-  and its consumer.
-- [Set a project policy](adopting.md) to select source roots and decide how
-  findings affect the exit status.
-- [Capture reports in CI](ci-reporting.md) to preserve evidence on both
-  passing and failing runs.
+- [Check multiple modules](project-guide.md) in the same `src/` directory.
+- [Inspect declaration facts](inspector.md#try-declaration-inspection) with a
+  separate declaration-only file and a passing result.
+- [Evaluate an existing project](adopting.md#evaluate-one-package) before
+  choosing a CI policy.

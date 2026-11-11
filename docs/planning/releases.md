@@ -9,6 +9,8 @@ See also the
 [historical 0.1.0 evidence](../releases/0.1.0-evidence.md) and
 [historical 0.2.0 evidence](../releases/0.2.0-evidence.md).
 
+CodePact 0.5.0 is the current published release. Use its [evidence and publication record](../releases/0.5.0-evidence.md) as the worked example.
+
 ## Release authority
 
 The accountable maintainer can validate and approve a release alone, including their own implementation, semantic decisions, models and evidence. No independent reviewer, second-person approval or review waiver is required. Additional review is optional. Follow the [maintainer authority policy](release-gates.md#maintainer-authority); required tests, artifact checks and explicit maintainer release authorization still apply.
@@ -44,6 +46,14 @@ Document deprecation warnings, replacement paths and removal releases. A 1.0 rel
 
 Publishing is a separate authorized release action. Creating these planning documents does not publish packages or reserve registry names.
 
+Before tagging, verify the helper, CLI, crate, and docs agree on the version.
+Replay first-run and CI commands using the candidate wheels. Check that release
+notes describe defaults, opt-ins, and any report or baseline migration.
+After publication, download and verify registry artifacts, smoke-test a clean
+install, and verify the hosted revision, source-example downloads, and install
+paths using the [docs publishing checklist](../documentation.md#deploy-a-documentation-revision).
+Record the public URLs and exact revisions in the evidence record.
+
 ## Planned TypePact combined product
 
 The [TypePact plan](typepact.md) supersedes the `codepact-pyrefly-cli` proposal. TypePact combines pinned embedded Pyrefly with the CodePact Rust engine, using proposed `typepact` and `typepact-cli` distributions and the `typepact` command. Its main package supplies the compatible CodePact helpers through an exact dependency; Python source continues to import `codepact`. D015's helper/standalone CLI dependency remains in force, including its additional binary download.
@@ -73,7 +83,7 @@ Before tagging a subsequent release:
 - Set the root Python project, `cli/pyproject.toml`, and Rust crate version to the tag version without the leading `v`; pin `codepact-cli` to that exact version in the helper dependency and refresh `uv.lock`.
 - Confirm the `PYPI_API_TOKEN` GitHub Actions secret and the `CARGO_REGISTRY_TOKEN` secret are configured. `PYPI_API_TOKEN` must be able to upload both `codepact-cli` and `codepact`; never put credential values in evidence or logs.
 - Use the pinned build tools and committed `uv.lock`/`Cargo.lock`. Require the eight CLI platform wheels, one pure helper wheel and both source archives; validate version metadata and dependency pins.
-- Complete exact-candidate release evidence, maintainer approval, local checks, and CI review. The [0.2.0 release checklist](release-0.2.0-checklist.md) records the last release process and can guide later checklists.
+- Complete exact-candidate release evidence, maintainer approval, local checks, and CI review. The [0.5.0 release evidence](../releases/0.5.0-evidence.md) records the latest completed release.
 
 Push the version tag to trigger publication. Both PyPI publish jobs use `PYPI_API_TOKEN` with username `__token__`; the release action's attestations are disabled because PyPI attestations require Trusted Publishing. Keep the `pypi` environment on both jobs, with no protection rule requiring another person's approval. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; codepact publication also depends on successful codepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
 

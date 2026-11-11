@@ -23,10 +23,10 @@ possible exit, or that ownership is generally safe.
 
 ## Why does the command exit successfully when I see a warning?
 
-The published 0.3 `check` can return `0` with possible findings or incomplete
-coverage. In 0.4, advisory mode can also return `0` for
-below-threshold findings and boundaries; strict mode additionally fails on
-possible violations and incomplete coverage. Read `execution_status`,
+Warnings below the configured threshold can accompany a passing check.
+Strict mode additionally fails on unsuppressed possible findings and
+incomplete coverage. Use `--fail-on warning` if active definite warnings
+should fail too. [Exit-policy matrix](cli.md#policy-and-exits) Read `execution_status`,
 `diagnostics`, `coverage.status`, and `exit_code` in the report. See
 [report handling](ci-reporting.md).
 
@@ -55,7 +55,7 @@ Building from source requires Rust 1.96 or newer and a linker. See
 
 ## What does TP3001 mean?
 
-The 0.4 CLI emits TP3001 when a resolved synchronous function or method
+The 0.5.0 CLI emits TP3001 when a resolved synchronous function or method
 declared with `@must_use`, `MustUse[T]`, or `Annotated[..., MustUseResult()]`
 has its result discarded as a bare expression. Assignment and passing the
 result count as immediate handling, not proof of eventual use. Async/dynamic

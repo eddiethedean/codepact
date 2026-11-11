@@ -1,9 +1,11 @@
-# ![CodePact](https://raw.githubusercontent.com/eddiethedean/codepact/main/docs/_static/codepact-banner.png)
+# CodePact
 
-**Find Python resource bugs before runtime.** Declare which method closes a
-resource and which APIs own or borrow it. CodePact reads Python source and
-reports supported use-after-close, missed cleanup, and discarded must-use
-results. It checks your code without importing or running it.
+![CodePact banner](https://raw.githubusercontent.com/eddiethedean/codepact/v0.5.0/docs/_static/codepact-banner.png)
+
+CodePact finds Python resource bugs before runtime. Declare how an object
+closes and which functions own or borrow it. CodePact reads source and can flag
+a connection used after close, cleanup skipped on a supported exit, or a
+discarded must-use result. Run it alongside your type checker and tests.
 
 [![Quality](https://github.com/eddiethedean/codepact/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/eddiethedean/codepact/actions/workflows/quality.yml)
 [![Docs](https://app.readthedocs.org/projects/codepact/badge/?version=latest)](https://codepact.readthedocs.io/en/latest/index.html)
@@ -23,58 +25,33 @@ must-use checks. [Ownership guide](https://codepact.readthedocs.io/en/latest/own
 
 ## Quick start
 
-In an existing uv project, install the helper package and its matching CLI.
+In an empty directory with [uv](https://docs.astral.sh/uv/getting-started/installation/)
+and Python 3.11 or later, start a project.
 
 ```sh
+uv init --bare --name codepact-demo
 uv add codepact==0.5.0
-mkdir -p demo
+uv run --locked codepact --version
+mkdir src
 ```
 
-Save this as `demo/connection.py`.
-
-```python
-"""Small lifecycle example for `codepact check --root examples`."""
-
-from codepact import resource
-from codepact.rust import Borrowed
-
-
-@resource(closed_by="close")
-class Connection:
-    def status(self) -> str:
-        return "ready"
-
-    def close(self) -> None:
-        pass
-
-
-def inspect_connection(conn: Borrowed[Connection]) -> str:
-    return conn.status()
-
-
-conn = Connection()
-inspect_connection(conn)
-conn.close()
-inspect_connection(conn)  # TP1001 at this call; close is the related location.
-```
+Save the complete [connection example](https://github.com/eddiethedean/codepact/blob/v0.5.0/examples/lifecycle.py)
+as `src/connection.py` and run the check.
 
 ```sh
-uv run --locked codepact check --root demo
+uv run --locked codepact check --root src
 ```
+
+Expect exit `1` with a related location pointing to the close.
 
 ```text
 connection.py:23:1: error TP1001: Borrowed call requires an open resource
-  certainty: definite
-  trust: declared-unverified
-  repair: Keep the use before close, or guard it with a lifecycle check.
   related: connection.py:22:1
-1 diagnostics; 1 actionable; 0 suppressed; 0 rule-disabled; 1 returned
 ```
 
-The check exits `1`. Remove the call after `conn.close()` and rerun the same
-command to get exit `0`. The example uses a stub close method. CodePact checks
-the declared state transition, while your implementation supplies the actual
-cleanup. [Quick start and report walkthrough](https://codepact.readthedocs.io/en/latest/quickstart.html)
+Delete the final line and rerun with `--mode strict` to confirm exit `0`.
+[Full walkthrough](https://codepact.readthedocs.io/en/latest/quickstart.html) ·
+[Install with pip or run the standalone command](https://codepact.readthedocs.io/en/latest/install.html)
 
 ## What you can check
 
@@ -125,7 +102,7 @@ Advisory mode can pass with incomplete coverage. The coverage field describes
 which parts of the program the checker could analyze. Teams can configure rule
 severity, review a baseline, and record line-level exceptions with a reason.
 [Adoption guide](https://codepact.readthedocs.io/en/latest/adopting.html) ·
-[CI examples](https://codepact.readthedocs.io/en/latest/ci-reporting.html)
+[CI workflow](https://codepact.readthedocs.io/en/latest/automation.html)
 
 ## Compatibility
 

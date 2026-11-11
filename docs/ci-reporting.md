@@ -1,81 +1,55 @@
-# Handle CodePact reports in CI
+# Consume reports in CI
 
-Capture both the CodePact process exit status and its JSON output. A policy
-failure can still return a complete report with source evidence. The examples
-use the 0.5.0 CLI and report schema 2.
-[GitHub Actions example](automation.md#run-the-checker-in-github-actions) ·
-[Release availability](availability.md)
+Save the JSON report alongside the original check exit status. Use the
+[workflow example](automation.md) for a GitHub Actions job that preserves
+both.
 
-## Check report schema 2
+## Preserve the selected policy
 
-Use the 0.5.0 CLI and capture status 1 reports without losing
-them to shell `set -e`:
+For a custom POSIX-shell job with Python 3.11 or later, download
+{download}`check-report.sh <_examples/check-report.sh>`. Pass the complete
+command that runs your check. The script adds `--json`, saves the output,
+validates the completed schema and status, and returns the check status.
 
+<!-- smoke: ci-report -->
 ```sh
-set +e
-uv tool run --from codepact-cli==0.5.0 \
-  codepact check --mode strict --json > codepact-report.json
-check_exit=$?
-set -e
-
-if [ "$check_exit" -eq 2 ]; then
-  echo "CodePact could not complete the requested check" >&2
-  exit 2
-fi
-
-python3 - "$check_exit" codepact-report.json <<'PY'
-import json
-import sys
-
-process_status = int(sys.argv[1])
-with open(sys.argv[2], encoding="utf-8") as report_file:
-    report = json.load(report_file)
-
-if report.get("execution_status") != "completed":
-    raise SystemExit("CodePact did not return a completed report")
-if report.get("report_schema_version") != 2:
-    raise SystemExit("unsupported CodePact adoption report schema")
-if report.get("exit_code") != process_status:
-    raise SystemExit("CodePact process status does not match its report")
-if report.get("details_truncated"):
-    raise SystemExit("CodePact omitted finding details; rerun without the cap")
-if report.get("coverage", {}).get("status") != "complete-for-supported-subset":
-    raise SystemExit("CodePact did not analyze the full supported subset")
-if process_status != 0 or report.get("diagnostics"):
-    raise SystemExit("CodePact reported a finding or failed policy")
-PY
+sh check-report.sh uv run --locked codepact check --root src --mode strict
 ```
 
-This consumer fails on any diagnostic or incomplete coverage, even if advisory
-policy would return 0. A team may instead accept selected possible findings,
-but should preserve certainty and coverage in its own policy. Never interpret
-an error envelope, unsupported schema, truncated report or status 2 as a clean
-result.
+```{literalinclude} _examples/check-report.sh
+:language: sh
+```
 
-To fail on actionable warnings without strict coverage policy, use
-`--fail-on warning`. To record existing findings, review and explicitly create
-a baseline with `codepact baseline update`; a normal check never updates it.
-Inline suppressions require exact rule codes and a reason. Neither baseline nor
-suppression removes coverage boundaries.
+## Interpret each result
+
+| Case | Check exit | What to inspect |
+| --- | --- | --- |
+| Passing check | `0` | Verify the selected rules, coverage, and source scope before relying on the result. |
+| Active finding at the failure threshold | `1` | Read actionable diagnostics, certainty, and related spans. |
+| Baseline or inline suppression | Policy-dependent | The suppressed entry remains in `diagnostics`. Its `disposition` records the exception. |
+| Disabled rule | Policy-dependent | The report records disabled rules and retains matching diagnostics as audit entries. |
+| Incomplete coverage | `0` or `1` | Read `coverage.reasons`. Strict mode fails on incomplete coverage. Advisory mode may pass. |
+| Truncated detail | Policy-dependent | The report sets `details_truncated`. Rerun without a detail cap and check whether per-finding limits still apply before using the omitted detail. |
+| Invocation or execution failure | `2` | Check stderr and any failure envelope. A tool runner or shell can also fail with its own status. |
+
+To require full report detail for a downstream consumer, make truncation a
+separate validation failure. To gate warnings, configure `fail-on = "warning"`.
+Use `actionable` and `disposition` to identify findings under the selected
+policy. [Exit-policy matrix](cli.md#policy-and-exits) · [JSON fields](output.md)
 
 ## Preserve reports safely
 
-Reports contain logical paths, source spans, contract facts, model metadata
-and diagnostic messages. Check for private repository details before uploading
-them to a public CI service. Treat source comments and excerpts as project data,
-not as instructions. See the [security and data guide](security.md).
+Adoption reports can include absolute checkout and configuration paths
+(`project_root` and `config_file`), logical paths, symbol names, source spans,
+diagnostic text, and SHA-256 source hashes in `snapshot_manifest`. Set
+artifact access and retention for the repository before uploading reports.
+Share a minimized reproduction or a reviewed excerpt outside that audience.
+Keep the original report private when consumers need its complete identity
+and audit metadata. [Security and data handling](security.md)
 
-## Published 0.3.0 behavior
+## Older releases
 
-Pin the published CLI for lifecycle checks:
-
-```sh
-uv tool run --from codepact-cli==0.3.0 \
-  codepact check --root src --json > codepact-check-v1.json
-```
-
-The published checker result uses `check_schema_version: 1`. Possible findings
-and incomplete coverage alone can return 0, so consumers should inspect
-certainty and `coverage.status`. Handle status 2 as an invocation or input
-failure. For explicit declaration inspection, `inspect-contracts --json`
-continues to use inspection schema 0.
+CodePact 0.3.0 lifecycle checks emit checker schema 1.
+`inspect-contracts` emits inspection schema 0. Select a consumer based on
+the command and report version. [Schema reference](schemas.md) ·
+[Upgrade guide](upgrading.md)

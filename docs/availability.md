@@ -20,7 +20,7 @@ and 0.2.0 used the former TypePact name.
 [0.1.0 evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.1.0-evidence.md)
 
 Read the guides in the [hosted documentation](https://codepact.readthedocs.io/en/latest/index.html)
-or [build a local HTML preview](documentation.md).
+or open the [stable documentation](https://codepact.readthedocs.io/en/stable/index.html) for the current release tag. [Build a local HTML preview](documentation.md)
 
 ## Current releases
 
@@ -40,7 +40,7 @@ tracks the qualification and publication gates.
 
 Install the helper and matching CLI with `uv add codepact==0.5.0`, or install
 the command alone with `uv tool install codepact-cli==0.5.0`. Rust applications
-can use `cargo add codepact@0.5.0`.
+can use `cargo add codepact@=0.5.0`.
 [PyPI helper](https://pypi.org/project/codepact/0.5.0/) · [PyPI CLI](https://pypi.org/project/codepact-cli/0.5.0/) · [Crates.io](https://crates.io/crates/codepact/0.5.0)
 
 ## Build from source
@@ -55,7 +55,8 @@ uv run --locked codepact --version
 uv run --locked codepact check --root examples
 ```
 
-Record the full Git revision when sharing reports from a source build.
+The example check intentionally exits `1` with TP1001. Record the full Git
+revision when sharing reports from a source build.
 
 ## Platform and runtime evidence
 

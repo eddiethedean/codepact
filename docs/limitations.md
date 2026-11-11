@@ -2,7 +2,7 @@
 
 CodePact checks supported flow under declared resource models. Read the
 report’s certainty and coverage alongside any finding, especially when you
-use advisory mode in CI. The 0.4 release is qualified against synthetic
+use advisory mode in CI. The 0.5.0 release was qualified against synthetic
 bug, repair, and coverage controls.
 [Release evidence](availability.md) · [Report fields](output.md)
 
@@ -36,11 +36,11 @@ the [lifecycle tutorial](lifecycle.md).
 
 ## Static analysis boundaries
 
-The published 0.1.0 declaration inspector reports incomplete coverage for relevant constructs including:
+The declaration inspector reports incomplete coverage for relevant constructs including:
 
 - String and forward-reference annotations, including `from __future__ import annotations`.
 - Relative imports, star imports, import re-export chains, ambiguous supplied modules, and module import cycles.
-- Class inheritance, metaclass behavior, non-TypePact class decorators, and decorated functions.
+- Class inheritance, metaclass behavior, class decorators outside the supported CodePact declarations, and decorated functions.
 - Computed contract expressions, dynamic decorator arguments, and unresolved resource bases.
 - Module-level control flow, nested classes, nested or generic function declarations, and other unsupported declaration shapes.
 - Eager named expressions and class-body `global` declarations that could rebind module names.
@@ -50,11 +50,11 @@ The published 0.1.0 declaration inspector reports incomplete coverage for releva
 The [supported syntax guide](supported-syntax.md) describes both modes. The
 checker handles some module statements that the inspector intentionally leaves
 outside its declaration-only scope. Incomplete inspection causes exit `1`.
-Incomplete checking and possible findings alone can accompany exit `0`; definite
-violations and declaration errors cause exit `1`. Always read coverage reasons
-and diagnostic certainty. An unsupported construct does not imply invalid Python.
+Advisory checking can exit `0` with incomplete coverage or below-threshold
+findings. Strict mode also gates incomplete coverage and active possible
+findings. [Exit-policy matrix](cli.md#policy-and-exits) An unsupported construct does not imply invalid Python.
 
-The 0.4 CLI uses advisory and strict policy. Its TP3001 rule recognizes only synchronous
+The current CLI supports advisory and strict policy. Its TP3001 rule recognizes only synchronous
 must-use callables with supported identities and return declarations. Async
 consumption, dynamic targets, unsupported nested expressions, eventual use
 after assignment and must-use ownership/cleanup effects remain unqualified.

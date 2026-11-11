@@ -1,6 +1,23 @@
 # How contract inspection works
 
-The CLI and Rust library share a bounded pipeline for turning Python declarations into contract facts. This page explains how the inspector reaches its result; use the [quick start](quickstart.md) for a runnable introduction.
+The CLI and Rust library share a bounded pipeline for turning Python declarations into contract facts. This page explains how the inspector reaches its result; use the [first check](quickstart.md) to learn lifecycle checking.
+
+## Try declaration inspection
+
+Download {download}`the declaration-only sample <_examples/connection.py>`
+as `connection.py` in the [quick-start project](quickstart.md). Run:
+
+<!-- smoke: inspection -->
+```sh
+uv run --locked codepact inspect-contracts connection.py
+```
+
+Expect exit `0` and inspection schema 0 JSON. The result shows
+`connection.Connection` closed by `close` and shared access on
+`inspect_connection.conn`. Compare the
+{download}`complete report <_examples/inspection.json>`. With module-level
+executable calls, the inspector can still return facts and exit `1` for
+incomplete coverage. Use `check` for lifecycle findings in executable code.
 
 ## Input and parsing
 
@@ -36,6 +53,6 @@ Sessions retain at most 1,000,000 bytes of active source and periodically rebuil
 
 Unsupported declarations are visible in diagnostics and coverage rather than silently treated as resolved. Some boundaries can invalidate bindings conservatively, so later declarations in the same file can also become unresolved. Useful facts may still be emitted alongside incomplete coverage; the result is not a complete analysis of the whole source in that case.
 
-All contracts carry `declared-unverified` trust. The inspector records metadata without proving that the implementation honors it. Function body flow, cleanup obligations, use-after-close, ownership transfer, and exclusive access enforcement remain outside 0.1. See the [JSON reference](output.md), [limitations](limitations.md), and [roadmap](roadmap.md).
+All contracts carry `declared-unverified` trust. The inspector records metadata without proving that the implementation honors it. Function body flow, cleanup obligations, use-after-close, ownership transfer, and exclusive access enforcement are outside declaration inspection. See the [JSON reference](output.md), [limitations](limitations.md), and [roadmap](roadmap.md).
 
 Implementation and qualification plans are maintained in the [repository planning directory](https://github.com/eddiethedean/codepact/tree/main/docs/planning).

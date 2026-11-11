@@ -1,60 +1,74 @@
-# Inspect a project with multiple files
+# Check a project with multiple files
 
-CodePact can carry resource metadata from a class in one supplied module to an annotation in another. This tutorial uses absolute imports and explicit inputs, supported by the published declaration inspector.
+Continue in the [quick-start project](quickstart.md), with the repaired
+`src/connection.py`. Add the three files below to the same `src/` directory.
 
-For a project-level evaluation path and lifecycle-checking limits, see
-[Adopting CodePact](adopting.md).
+| File | Role |
+| --- | --- |
+| {download}`src/models.py <_examples/project/models.py>` | Declares a connection and its closing method. |
+| {download}`src/client.py <_examples/project/client.py>` | Declares a read that borrows the connection. |
+| {download}`src/app.py <_examples/project/app.py>` | Calls the borrowed read after closing the connection. |
 
-## Create the source files
-
-Start with this directory layout:
-
-```text
-my-project/
-├── pyproject.toml
-└── src/
-    ├── models.py
-    └── client.py
-```
-
-Save the resource declaration as `src/models.py`:
-
-```{literalinclude} _examples/project/models.py
+```{literalinclude} _examples/project/app.py
 :language: python
+:linenos:
 ```
 
-Save its consumer as `src/client.py`:
+## Check the project and repair the call
 
-```{literalinclude} _examples/project/client.py
-:language: python
-```
+Run the checker from the project directory.
 
-## Supply both modules
-
-From `my-project`, install CodePact and inspect the two files:
-
+<!-- smoke: project-finding -->
 ```sh
-uv add codepact==0.5.0
-uv run codepact inspect-contracts --root src src/models.py src/client.py
+uv run --locked codepact check --root src --mode strict
 ```
 
-The root makes the files' module names `models` and `client`. CodePact resolves `from models import Connection` using the supplied `models.py`, then associates `read.conn` with `models.Connection` and its `close` lifecycle.
+Expect `TP1001` at `app.py:8:5`, a related close at `app.py:7:5`, and
+exit `1`. The checker resolves `Connection` from `models.py` and the
+borrowed parameter from `client.py`. Move `read(conn)` before
+`conn.close()` and rerun the same command. Expect exit `0`.
 
-| Declaration | Base symbol | Lifecycle | Access |
-| --- | --- | --- | --- |
-| `Connection` | `models.Connection` | `close` | `unspecified` |
-| `read.conn` | `models.Connection` | `close` | `shared` |
+## Save the project policy
 
-The result has no diagnostics and complete coverage for this supported subset. Input order does not change import resolution.
+Add the following table to the project's `pyproject.toml`.
+
+```{literalinclude} _examples/project/codepact.toml
+:language: toml
+```
+
+Show the resolved policy from the project directory.
+
+<!-- smoke: project-settings -->
+```sh
+uv run --locked codepact check --show-settings --json
+```
+
+The resolved settings show `src` as the effective root, Python 3.11 as the
+source target, and strict mode. [Run the same check in CI](automation.md).
 
 ## Map package paths to imports
 
-If the files instead live at `src/my_app/models.py` and `src/my_app/client.py`, keep `--root src` and use `from my_app.models import Connection`. Pass the relocated paths explicitly. The normalized resource symbol becomes `my_app.models.Connection`.
+For `src/my_app/models.py`, use an absolute import such as
+`from my_app.models import Connection` and keep `src` as the root.
+CodePact gives that file the module name `my_app.models`. Check that the
+provider is under the root and matches the include/exclude policy.
 
-Choose the directory above your top-level package as the root. File arguments are resolved from the current working directory, so `--root src` still requires arguments such as `src/my_app/models.py`.
+Start with modules that use direct absolute imports and recognized
+annotations. Relative imports, postponed or string annotations, and dynamic
+dispatch can leave coverage incomplete. Read `coverage.reasons` when a
+provider or call fails to resolve. [Supported syntax](supported-syntax.md) ·
+[Configuration lookup](cli.md#project-configuration-and-scope)
 
-## Interpret missing inputs
+## Inspect just the declarations
 
-Supplying only `client.py` leaves the imported class unresolved. The inspector reports incomplete coverage instead of importing your application or searching installed packages. Add the provider file to the invocation when its declaration belongs to the supported subset.
+Run declaration inspection from the project directory.
 
-Relative imports, re-export chains, and import cycles remain outside declaration inspection’s supported subset; the lifecycle checker has its own import-resolution scope. See [limitations](limitations.md) before expanding the input list to an entire application, and [automation](automation.md) to use a chosen source set in CI.
+<!-- smoke: project-inspection -->
+```sh
+uv run --locked codepact inspect-contracts --root src src/models.py src/client.py
+```
+
+The command emits schema 0 JSON and exits `0`. It shows the closing method
+on `models.Connection` and shared access on `read.conn`. Supplying only
+`src/client.py` leaves its resource unresolved. File arguments are relative
+to the working directory and inspection reads only the named files.

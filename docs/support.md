@@ -22,10 +22,10 @@ Do not post vulnerability details in a public issue; follow the
 
 The repository does not publish a response-time SLA, a long-term-support
 window, guaranteed backports, or named module owners. Compatibility evidence
-and release scope are recorded per version. The 0.1.0 support matrix and checks
-are in its [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.1.0-evidence.md).
-The 0.2.0 scope, support matrix, and qualification are in the
-[0.2.0 release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md).
+and release scope are recorded per version. Use the
+[0.5.0 platform and qualification summary](availability.md) and the
+[publication and digest record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md#publication-record).
+[Evaluate a representative package](evaluation.md) before making checks required.
 
 Because the APIs, diagnostics, and JSON schema are provisional during 0.x,
 consumers should pin versions and review the release notes before upgrading.

@@ -4,7 +4,7 @@ The published `codepact` crate exposes the same inspector and lifecycle checker 
 
 ## Install
 
-Add the released crate to a Cargo project with `cargo add codepact@0.5.0`. To
+Add the released crate to a Cargo project with `cargo add codepact@=0.5.0`. To
 build the workspace crate from source, run this from the repository root:
 
 ```sh
@@ -65,7 +65,7 @@ The crate also exposes `check_report(files, target)` and
 `check_schema_version: 1`. Its checker diagnostics add completion kind, trust,
 coverage reason and repair guidance while declaration inspection remains schema
 version 0. The result includes the selected Python target and versioned built-in
-model catalog. The [`codepact` 0.3.0 rustdoc](https://docs.rs/codepact/0.3.0/codepact/)
+model catalog. The [`codepact` 0.5.0 rustdoc](https://docs.rs/codepact/0.5.0/codepact/)
 documents the published API. `AnalysisSession::check_report_cancellable` returns a
 revision-tagged `SessionCheckResult`. `check` continues returning `Inspection`
 for source compatibility. The 0.x API remains provisional and may change in a
@@ -80,12 +80,35 @@ existing `check` and `check_report` APIs retain their released rule set.
 results with the public `codepact::adoption` resolver and report builder. This
 preview API is covered by synthetic controls; real-world usefulness is unqualified.
 
-The default adoption policy includes TP3001, so its canonical input must come
-from `check_with_must_use` using the same source files and target version.
-`build_report` and `write_baseline` reject a lifecycle-only result when must-use
-is selected, and reject cancelled or inspection-only results. A legacy lifecycle
-result remains usable when TP3001 is explicitly disabled. The report's
-`assurance` identifies the analyzed scope; it is part of snapshot identity.
+For the 0.5.0 adoption report, use `check_with_ownership` with the ownership
+scope from the effective policy. `Ownership::Disabled` still checks lifecycle
+and TP3001. `build_report` and `write_baseline` reject cancelled and
+inspection-only results. They also reject a lifecycle-only `check_report`
+result when TP3001 is selected. The report's `assurance` identifies the
+analyzed scope and contributes to snapshot identity.
+
+## Build an adoption report
+
+Use the adoption resolver and report builder when your host needs CLI policy
+and schema 2. In a Rust project with `codepact = "=0.5.0"`, save the
+{download}`complete example <../crates/codepact/examples/adoption_report.rs>`
+as `src/main.rs`, then run `cargo run --locked` after generating a lockfile.
+
+```{literalinclude} ../crates/codepact/examples/adoption_report.rs
+:language: rust
+```
+
+Expect a completed report with `report_schema_version = 2`, a definite
+TP3001 warning, and exit `0` under the default error-only threshold.
+The example disables project configuration so its policy is reproducible.
+For a host that loads policy, pass the same logical file paths, source
+snapshot, target, and ownership scope to analysis and report construction.
+
+Handle errors from config resolution, report construction, and serialization
+as execution failures. Use the report's `exit_code` for the completed policy
+result and read coverage before acting on the findings. A long-running host
+can retain the session and pass the next full snapshot to it.
+[Report fields](output.md) · [Policy and exits](cli.md#policy-and-exits)
 
 ## Incremental analysis session
 

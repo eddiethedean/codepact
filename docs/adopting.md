@@ -5,6 +5,26 @@ checker covered before choosing which results should fail CI. The examples
 use the 0.5.0 default scope.
 [Release scope and qualification](availability.md)
 
+## Evaluate one package
+
+1. Choose a small package with a real cleanup boundary, such as a connection
+   wrapper or exporter. Include the provider and consumer modules under the
+   same source root. Prefer direct absolute imports and supported annotations
+   for the first trial. [Supported syntax](supported-syntax.md)
+2. Annotate the resource and one owning or borrowed API. Keep ordinary type
+   checking and runtime tests in the project. Verify that the declared close
+   method matches the real cleanup operation. [Contract declarations](contracts.md)
+3. Preview settings, run an advisory JSON check, and save the report with
+   the tool version and target. Record selected files, annotation changes,
+   recurring coverage reasons, and confirmed actionable findings.
+4. Repair a supported finding and rerun with the same scope and policy.
+   Review the related locations and compare coverage. If this package has
+   no finding, run a [known bug and repair](rules.md#run-a-bug-and-its-repair)
+   separately to verify the installation.
+5. Try strict mode locally. Promote it to a required gate when the package
+   has meaningful coverage, findings are understood, and owners agree on
+   the warning threshold and exception review. Expand one package at a time.
+
 ## Install 0.5.0
 
 In your uv project, install the helper and matching CLI:
@@ -40,8 +60,8 @@ TP3001 = "warning"
 This initial policy does not require a baseline. A baseline file is created explicitly after reviewing the first report, as described below.
 Use `--show-settings --json` to see the effective values and their origins
 without analyzing source. CLI scalar options override file settings; arrays
-replace file values. The closest `pyproject.toml` wins and unrelated tool
-tables are ignored.
+replace file values. See [configuration lookup and precedence](cli.md#project-configuration-and-scope)
+for nested projects and explicit config files.
 
 Patterns are root-relative: `*` and `?` match within a path component, `**`
 crosses components, and excludes win. Discovery scans the root in sorted order

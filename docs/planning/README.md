@@ -42,11 +42,11 @@ In planning documents, “must” describes an acceptance requirement and is not
 
 ## Repository baseline
 
-A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The predecessor TypePact's 0.1.0 and 0.2.0 releases are published and qualified under the `typepact` names; see their historical phase plans, validation matrices, and release evidence. CodePact 0.3.0 was the first release using the renamed packages and crate. CodePact 0.4.0 is the published synthetic preview. [0.4.0 release evidence](../releases/0.4.0-evidence.md)
+A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The predecessor TypePact's 0.1.0 and 0.2.0 releases are published and qualified under the `typepact` names; see their historical phase plans, validation matrices, and release evidence. CodePact 0.3.0 was the first release using the renamed packages and crate. CodePact 0.4.0 published the adoption preview. CodePact 0.5.0 is the current release and includes opt-in ownership. [0.5.0 release evidence](../releases/0.5.0-evidence.md)
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 and 0.4.0 passed their phase-specific and common release gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0, 0.4.0, and 0.5.0 passed their phase-specific and common release gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 

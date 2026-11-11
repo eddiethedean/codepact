@@ -30,7 +30,7 @@ missed cleanup, and discarded results directly in source.
   <span>connection.py</span>
 </div>
 <div class="cp-terminal-body">
-  <p class="cp-terminal-command"><span aria-hidden="true">$ </span>codepact check --root demo</p>
+  <p class="cp-terminal-command"><span aria-hidden="true">$ </span>codepact check --root src</p>
   <div class="cp-terminal-diagnostic">
     <p class="cp-terminal-location">connection.py:23:1</p>
     <p><strong>TP1001</strong> Borrowed call requires an open resource</p>
@@ -52,7 +52,7 @@ missed cleanup, and discarded results directly in source.
 :::{container} cp-release cp-release-published
 **0.5.0 · Release**
 
-[Install from PyPI or crates.io](availability.md)
+[Install from PyPI or crates.io](install.md)
 :::
 
 :::{container} cp-release cp-release-ownership
@@ -114,32 +114,42 @@ check can pass with incomplete coverage. [Report fields and certainty](output.md
 [Supported syntax](supported-syntax.md)
 
 The Python helpers run on Python 3.11 and later. The checker accepts Python
-3.11–3.13 source targets. [Platform and release evidence](availability.md)
+3.11–3.13 source targets. [Evaluate CodePact for your team](evaluation.md) · [Platform and release evidence](availability.md)
 
 ```{toctree}
 :hidden:
 :maxdepth: 2
-:caption: Get started
+:caption: Start here
 
 quickstart
 install
-lifecycle
-contracts
-project-guide
-examples
-bugs-caught
 ```
 
 ```{toctree}
 :hidden:
 :maxdepth: 2
-:caption: Adopt and automate
+:caption: Learn with examples
+
+contracts
+project-guide
+lifecycle
+examples
+bugs-caught
+ownership
+inspector
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 2
+:caption: Adopt and operate
 
 adopting
 automation
 ci-reporting
+troubleshooting
 upgrading
-ownership
+faq
 ```
 
 ```{toctree}
@@ -149,31 +159,29 @@ ownership
 
 cli
 rules
+supported-syntax
+limitations
 output
 schemas
 python-api
 rust-api
-supported-syntax
-inspector
-limitations
-performance
-troubleshooting
-faq
 ```
 
 ```{toctree}
 :hidden:
 :maxdepth: 2
-:caption: Project
+:caption: Evaluate and contribute
 
+evaluation
 availability
-architecture
-roadmap
-release-notes
 security
 support
+performance
+architecture
 development
 documentation
+release-notes
+roadmap
 synthetic-projects
 ```
 

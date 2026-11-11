@@ -1,49 +1,57 @@
 # Architecture
 
-CodePact separates Python declarations, source parsing, declaration inspection,
-and lifecycle checking:
+CodePact has two Python distributions and one Rust analyzer. The `codepact`
+distribution provides typed helpers and metadata. Its matching
+`codepact-cli` dependency supplies the native executable. The Rust crate
+exposes the shared engine for applications that provide source snapshots
+directly.
 
-1. The `codepact` Python package offers `resource` and `Annotated` metadata. Importing it does not load or launch the analyzer.
-2. The `codepact-cli` package distributes the native Rust `codepact` command.
-3. The Rust library parses supplied source text, resolves supported declaration relationships, and emits contracts, diagnostics, and coverage.
-4. CodePact 0.3.0 runs a bounded flow pass over module statements and supported synchronous and async bodies to produce lifecycle and cleanup findings.
+## From source to report
 
-## Source is not executed
+```text
+check: config + source discovery      inspect-contracts: explicit files
+                 |                                  |
+                 +-------- UTF-8 source files ------+
+                                      |
+                              Ruff parser and AST
+                                      |
+                    declaration and import resolution
+                             |                  |
+                      bounded flow pass         +---- inspection JSON
+                             |
+               rule policy, audit, and reporting ---- check report + exit
+```
 
-The analyzer reads UTF-8 source files as text. It does not import the analyzed project, evaluate annotations, invoke decorators, or run build hooks. A declaration therefore contributes only the static facts that CodePact can resolve from its syntax and the other files supplied in the request.
+The CLI resolves the project policy and file selection before checking.
+Logical module names come from paths under the selected root. Declaration
+inspection receives only the named files. Both modes parse source locally.
+Helper imports and resource declarations are interpreted from source syntax.
 
-## Parser and semantic queries
+Pinned Ruff components parse the selected source grammar and preserve
+diagnostic spans. Semantic queries resolve supported class and alias
+identities, imported helpers, lifecycle metadata, and access markers.
+Inspection returns contract facts, declaration diagnostics, and coverage.
 
-The frontend uses pinned Ruff Python parser and AST components to convert each file into typed module declarations and source ranges. The semantic layer resolves CodePact names, class/alias identities, direct supplied-module imports, lifecycle metadata, and access metadata. Constructs outside the supported set produce incomplete coverage.
+The checker's bounded flow pass tracks open, closed, and unknown resource
+states, aliases, and cleanup obligations. Resolved calls can transfer effects
+across supplied modules. Scope and effect limits leave a visible coverage
+reason. CodePact 0.5.0's opt-in ownership scope adds tracked moves and lexical
+borrows. Its separate TaskGroup assumption enables a bounded model of child
+task lifetimes. [Analysis boundaries](limitations.md) ·
+[Experimental ownership](ownership.md)
 
-The library uses Salsa to track parsing, module inspection, and export summaries. An `AnalysisSession` can reuse unaffected work when files change. Consumers depend on semantic export summaries, so a provider body edit that does not change a relevant export need not invalidate dependent module results. Session cancellation prevents a stale or partial result from being published.
+After analysis, the CLI applies rule selection, severity, suppressions, and
+baseline matching. Its report retains coverage and audit entries and records
+the status used by the selected policy. Rust callers can use canonical
+analysis results or opt into the adoption report builder.
+[Report reference](output.md) · [Rust integration](rust-api.md)
 
-## Lifecycle flow
+## Incremental sessions
 
-The checking path starts from declaration inspection and parsed body statements.
-Its flow state separates local names from modeled resource objects, tracks open,
-closed, and unknown state, and carries cleanup duties across supported
-fallthrough, return, raise, loop, context-manager, and cancellation outcomes.
-Resolved calls apply effects to passed objects; repeated factory invocations
-retain separate allocation identities within the bounded caller context.
-Coroutine creation retains captures without running the body; only the
-specifically awaited resolved call executes. Other nested coroutine calls stay
-pending. Exception target names are cleared after their handlers, and failures
-while evaluating `raise ... from ...` causes follow the exception route from
-that statement. Recursive calls recover to unknown summaries.
-
-The current implementation uses a project checking query. Phase 0.2 qualified
-its invalidation and reuse behavior; the inspection query cache alone does not
-provide that guarantee. Phase 0.3 extends tracked inputs to cleanup models,
-budgets, and flow results. See the
-[phase 0.3 plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.3-cleanup.md).
-
-## Shared engine
-
-The one-shot Rust entry points, `AnalysisSession`, and CLI share the analyzer.
-The CLI adds file loading, logical module naming, project-root scanning for
-`check`, text or JSON rendering, and process exit status. Rust callers provide
-their own explicit source snapshot. Inspection and checking carry different
-assurance strings so consumers can identify which analysis produced a result.
-
-See the [Rust API](rust-api.md) for use of the one-shot and incremental interfaces, and the [inspector guide](inspector.md) for implementation details.
+Salsa tracks parsing, declaration summaries, and flow queries with their input
+dependencies. `AnalysisSession` synchronizes each full source snapshot and
+can reuse work for unchanged files. A change to a relevant provider summary
+can invalidate dependent checks. Cancellable session methods return an error
+when they cannot publish a complete current result. The CLI starts a new
+process for each invocation. [Sessions and cancellation](rust-api.md#incremental-analysis-session) ·
+[Performance](performance.md)

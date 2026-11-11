@@ -4,6 +4,44 @@ Use the code from your report to find the contract involved and the first
 repair to consider. Run `codepact explain RULE --json` for the explanation
 shipped with your CLI.
 
+## Run a bug and its repair
+
+The tagged synthetic corpus contains complete projects with identical checker
+settings for each bug and repair. Install [uv](install.md#standalone-command),
+then clone the examples and check both versions of the project.
+
+```sh
+git clone --branch v0.5.0 --depth 1 https://github.com/eddiethedean/codepact.git
+cd codepact
+cases=crates/codepact/tests/projects/code_smells
+uv tool run --from codepact-cli==0.5.0 codepact check \
+  --config "$cases/batch_teardown/buggy/pyproject.toml" --mode strict
+uv tool run --from codepact-cli==0.5.0 codepact check \
+  --config "$cases/batch_teardown/fixed/pyproject.toml" --mode strict
+```
+
+Expect exit `1` with TP1001, TP1002, and TP1003 on the buggy project. The
+repaired project exits `0`. Replace `batch_teardown` with another pair below.
+
+| Pair directory | Finding to look for | Repair to compare |
+| --- | --- | --- |
+| `batch_teardown` | TP1001, TP1002, TP1003 | Use before close, close on exits, and preserve an open owned return. |
+| `preview_side_effects` | TP1001, TP2001 | Keep cleanup with the owner. |
+| `delivery_status` | TP3001 | Handle the status result. |
+| `aliased_upload` | TP2002, TP2003 | Use the live handle and remove conflicting aliases before transfer. |
+| `global_receipt` or `exposed_cursor` | TP2004 | Keep the borrowed value inside its access scope. |
+| `forwarded_buffer` | TP2005 | Transfer the handle explicitly to the owning call. |
+| `async_index` | TP2006 | Join the task group before cleanup. |
+
+The ownership cases include the opt-in in their project files. To see a
+coverage boundary, run the same command with
+`--config "$cases/opaque_factory/boundary/pyproject.toml" --mode strict`.
+Expect exit `1` with TP9001 and incomplete coverage for opaque effects.
+For a comparison, use
+`--config "$cases/unmarked_status/control/pyproject.toml" --mode strict`.
+The unmarked status has no must-use obligation and the check exits `0`.
+[Corpus source and expected findings](https://github.com/eddiethedean/codepact/tree/v0.5.0/crates/codepact/tests/projects/code_smells)
+
 ## Published rules
 
 | Code | Available since | Meaning | First repair to consider |

@@ -1,0 +1,5 @@
+[tool.codepact]
+config-version = 1
+root = "src"
+python-version = "3.11"
+mode = "strict"

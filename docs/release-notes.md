@@ -19,7 +19,10 @@ Published on November 10, 2026, CodePact 0.4.0 adds adoption tooling to the
 lifecycle checker as a synthetic preview. Real-world usefulness remains
 unqualified. The tag-triggered workflow passed all 25 jobs, and the 11 PyPI
 files and crates.io archive passed registry verification.
-[Release ledger](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md) · [Installation](install.md)
+[Release ledger](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md) ·
+[PyPI helper](https://pypi.org/project/codepact/0.4.0/) ·
+[PyPI CLI](https://pypi.org/project/codepact-cli/0.4.0/) ·
+[Rust crate](https://crates.io/crates/codepact/0.4.0)
 
 - Validated project settings, rule selection, severity overrides, effective
   setting origins, and advisory/strict check policy.

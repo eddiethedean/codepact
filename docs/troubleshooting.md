@@ -7,22 +7,33 @@ usually includes an explanation on standard error. In a JSON report, read both
 
 ## The command is unavailable after installation
 
-For a project installation, run `uv run codepact --version` from the project directory. For a standalone installation, use `uv tool install codepact-cli==0.5.0` and check that the uv tool directory is on your shell's PATH.
+- **uv project:** Run `uv run --locked codepact --version` from the project
+  directory and confirm that the lockfile pins the intended release.
+- **uv tool:** Run `uv tool update-shell`, reopen the shell, or use
+  `uv tool run --from codepact-cli==0.5.0 codepact --version`.
+- **pip:** Check `python -m pip show codepact-cli` with the same Python you
+  used to install it. Activate the virtual environment or run its executable
+  directly. [POSIX and PowerShell commands](install.md#pip-environment)
 
 Both distributions require Python 3.11+. A CLI source build requires Rust 1.96+ and a linker; a compatible platform wheel includes the executable. If installation reports that no compatible wheel exists, confirm the operating system, architecture, and libc against the [platform matrix](availability.md#platform-and-runtime-evidence). See [installation](install.md) for source-build requirements.
 
 ## The command does not recognize `check`
 
-The 0.1.0 executable provides `inspect-contracts` only. Install the current
-0.2.0 package to use lifecycle checking:
+Check `codepact --version` and compare it with the intended release.
+Use `command -v codepact` in a POSIX shell or `Get-Command codepact` in
+PowerShell to find the resolved executable. For a uv project, compare with
+`uv run --locked codepact --version`. An old executable on PATH can shadow a
+newer installation. Install or invoke the matching CLI using your
+[installation route](install.md).
 
-```sh
-uv add codepact==0.5.0
-uv run codepact check --root DIR
-```
+## pip is building the CLI from source
 
-An older command earlier on your `PATH` may shadow the project installation;
-check `uv run codepact --version` and the resolved executable path.
+Check the interpreter version, OS, architecture, and libc against the
+[wheel matrix](availability.md#platform-and-runtime-evidence). Use
+`python -m pip install --only-binary=:all: "codepact==0.5.0"` to require
+compatible wheels. If your package index or platform has no compatible
+wheel, use a supported environment or install Rust 1.96 or later and a
+linker for the [source build](install.md#build-from-source).
 
 ## Coverage is incomplete even though there are no errors
 
@@ -42,8 +53,8 @@ slice. See [discovery behavior](cli.md).
 
 ## A lifecycle finding says “possible”
 
-A branch or alias can leave more than one lifecycle state. Possible findings are
-warnings and do not alone cause a failing exit. Read the operation and related
+A branch or alias can leave more than one lifecycle state. A possible finding can fail strict mode, or fail advisory mode if its
+effective severity reaches the threshold. Read the operation and related
 close location, then inspect the paths that reach it. Unknown effects produce
 coverage boundaries rather than a proof of safety. The
 [lifecycle tutorial](lifecycle.md) shows a definite violation and its valid counterpart.
@@ -68,7 +79,9 @@ invocation. Set `--root` so logical names agree with the absolute imports. The
 checker discovers files under its root; ensure the provider is inside
 that root. Neither mode searches installed packages or executes Python imports.
 
-Use the [multi-file tutorial](project-guide.md) as a reference. Relative imports, import re-export chains, and supplied-module cycles are unsupported in 0.1 even when all files are supplied.
+Use the [multi-file tutorial](project-guide.md) as a reference. Relative imports and supplied-module cycles are outside the supported scope.
+Declaration inspection also leaves re-export chains unresolved. The checker
+supports selected named re-exports. [Import resolution](supported-syntax.md#import-resolution)
 
 ## Multiple files map to the same module
 

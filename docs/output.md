@@ -57,8 +57,10 @@ old locations to current source.
 `snapshot_id` includes source, relevant policy, baseline, suppression and model
 identities, but not output format, detail limit or wall-clock time. The separate
 fingerprints identify semantic inputs, policy inputs and the model catalog.
-`project_root` can vary between checkouts; logical paths and finding
-fingerprints are relative to the project root.
+`project_root` and `config_file` can contain absolute paths.
+Logical paths and finding fingerprints are relative to the project root.
+The snapshot manifest includes per-file source hashes.
+[Share reports safely](ci-reporting.md#preserve-reports-safely)
 
 ## Experimental ownership scope
 

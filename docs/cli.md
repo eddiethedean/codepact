@@ -16,16 +16,18 @@ The analyzer reads Python source without importing or executing the project.
 
 ```text
 codepact --version
-codepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] --json FILE...
+codepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] [--json] FILE...
 codepact check [--root DIR] [--config PYPROJECT|--no-config]
-               [--python-version 3.11|3.12|3.13] [--mode advisory|strict]
+               [--python-version 3.11|3.12|3.13]
+               [--experimental-ownership|--no-experimental-ownership]
+               [--mode advisory|strict]
                [--fail-on error|warning] [--rules CODE[,CODE...]]
                [--severity CODE=LEVEL] [--baseline FILE]
-               [--output-format text|json|concise] [--max-diagnostics N]
+               [--json|--output-format text|json|concise] [--max-diagnostics N]
                [FILE...]
 codepact check [project/policy options] --show-settings --json
 codepact baseline update [project/policy options]
-                        --output FILE --reason TEXT [--replace] [FILE...]
+                        --output FILE --reason TEXT [--replace] [--json] [FILE...]
 codepact capabilities --json
 codepact explain RULE --json
 ```
@@ -38,11 +40,17 @@ report, schema 2. The Rust `check` API returns `Inspection` (schema 0), and
 
 ## Project configuration and scope
 
-`check` discovers sorted Python files below its effective root. File operands
-are added to discovery; they do not narrow discovery. The default root is the
-current directory. A `[tool.codepact]` table in the nearest `pyproject.toml`
-can configure the root and policy. Use `--config FILE` to select one file, or
-`--no-config` to ignore configuration discovery.
+`check` discovers Python files under the effective root. File operands add
+inputs to discovery. To check a smaller source tree, select a narrower root
+or include/exclude patterns.
+
+| Setting | Resolution |
+| --- | --- |
+| Configuration file | `--config FILE` selects a file relative to the working directory. `--no-config` skips lookup. The options conflict. |
+| Automatic lookup | Search upward from the command-line `--root` or, when absent, the working directory. Stop at the nearest `pyproject.toml`, even when it has no `[tool.codepact]` table. Parent tables are never merged. |
+| Effective source root | Use command-line `--root` relative to the working directory, then the configured `root` relative to its config file. Without either, use the config directory if a CodePact table was loaded or the working directory otherwise. |
+| File operands and baseline | File operands and `--baseline` paths are relative to the working directory. A `baseline` in TOML is relative to its config file. |
+| Policy and rules | CLI scalars override the config, and `--rules` replaces the configured rule list. CLI severity settings override matching configured entries. |
 
 ```toml
 [tool.codepact]
@@ -60,12 +68,25 @@ baseline = "codepact-baseline.json"
 TP3001 = "warning"
 ```
 
-The baseline path is relative to the configuration directory, not `src`; it
-must be explicitly created with `baseline update`. Unknown keys, unsupported
-targets, invalid patterns or rule codes, and severity changes to mandatory
-rules are configuration errors. `--show-settings --json` resolves policy and
-reports each setting's origin without reading source files. It accepts no file
-operands or detail limit.
+Create the baseline with `baseline update` before adding its path.
+Unknown keys, invalid patterns or rule codes, unsupported targets, and
+severity overrides for mandatory or disabled rules fail configuration.
+`--show-settings --json` reports each setting's origin without reading
+source. It accepts no file operands or detail limit.
+
+For a nested project, select the intended policy explicitly. For example,
+from the repository root, if `services/billing/pyproject.toml` contains the
+table above and `services/billing/src` exists, resolve the project policy.
+
+<!-- smoke: nested-settings -->
+```sh
+uv run --locked codepact check --config services/billing/pyproject.toml --show-settings --json
+```
+
+Expect `root` to end in `services/billing/src` and
+`settings_origins.root` to be `pyproject.toml`. Use the same `--config` when you run
+the actual check. With a command-line `--root`, the reported origin changes
+to `command-line`.
 
 Include/exclude patterns match root-relative paths using `/`; `*` and `?` match
 within one path component and `**` crosses components. Excludes win. Discovery
@@ -94,17 +115,26 @@ compare `snapshot_id` before using the full details.
 
 ## Policy and exits
 
-| Status | Meaning |
+| Exit | Meaning |
 | --- | --- |
-| `0` | Analysis completed and no finding or policy condition failed the selected policy. Advisory mode can return 0 with incomplete coverage. |
-| `1` | A mandatory source error, an actionable finding, or a strict-mode possible finding/incomplete-coverage condition failed the policy. The completed report is preserved. |
-| `2` | Invocation, configuration, baseline, input, serialization, or other execution failed; do not treat the result as a completed check. |
+| `0` | Completed and passed the selected policy. |
+| `1` | Completed and failed the selected policy. Read the report for the failing conditions. |
+| `2` | Invocation, configuration, input, baseline, serialization, or other execution failure. |
 
-Advisory mode fails on findings at or above `--fail-on` (`error` by default).
-Strict mode also fails on unsuppressed possible violations and incomplete
-coverage. `TP3001` defaults to warning, so it does not fail the default
-error-only threshold. Mandatory syntax/declaration errors cannot be disabled
-or demoted. Severity and thresholds never change certainty.
+| Condition in a completed report | Advisory | Strict |
+| --- | --- | --- |
+| Mandatory source error | Fails | Fails |
+| Active definite finding at or above `fail-on` | Fails | Fails |
+| Active definite finding below `fail-on` | Passes by itself | Passes by itself |
+| Active possible finding | Fails if it meets `fail-on` | Fails |
+| Incomplete coverage | Passes by itself | Fails |
+| Eligible suppressed or disabled finding | Audit entry | Audit entry |
+
+The default policy is advisory with `fail-on = "error"`. A definite
+TP3001 has warning severity by default, so `--mode strict` can still exit
+`0` for that finding. Add `--fail-on warning` to gate active warnings.
+Severity overrides preserve certainty. Baselines and rule selection preserve
+coverage boundaries. [CI report handling](ci-reporting.md)
 
 ## Baselines and inline suppressions
 

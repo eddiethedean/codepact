@@ -14,10 +14,11 @@ bounded TaskGroup model under the documented CPython assumptions.
 - **Report consumers.** Schema 2 adds ownership rules TP2002–TP2006 and the
   assurance value `experimental-ownership-checking-for-supported-exit-flow`.
   Accept that value and the new rule metadata before enabling the opt-in.
-- **Baselines.** Ownership scope and the selected TaskGroup model revision
-  are part of matching. Review findings and regenerate the baseline under
-  the new scope when you opt in. An earlier baseline cannot suppress
-  experimental findings.
+- **Baselines.** Matching includes the exact engine version, target,
+  ownership scope, and TaskGroup model revision. Review and regenerate a
+  0.4 baseline with 0.5.0 even if you keep the default scope. Generate another
+  baseline if you opt into ownership or change the TaskGroup assumption.
+  Keep the previous file until the new entries and diff are reviewed.
 - **Rust integrations.** Use `check_with_ownership` or the matching
   `AnalysisSession` methods to select the experimental scope. Existing
   default entry points retain their result types.
@@ -30,7 +31,9 @@ bounded TaskGroup model under the documented CPython assumptions.
 CodePact 0.4.0 is published as a synthetic preview. Update the project
 dependency with `uv add codepact==0.4.0` and commit the updated lockfile.
 For standalone CLI or Rust installs, pin the 0.4.0 distribution.
-[Installation](install.md)
+[PyPI helper](https://pypi.org/project/codepact/0.4.0/) ·
+[PyPI CLI](https://pypi.org/project/codepact-cli/0.4.0/) ·
+[Rust crate](https://crates.io/crates/codepact/0.4.0)
 
 | Surface | Published 0.3 | Published 0.4 |
 | --- | --- | --- |

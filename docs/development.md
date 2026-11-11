@@ -2,10 +2,17 @@
 
 CodePact development spans a typed Python helper package and a Rust analyzer. Use `uv` for the Python workspace and Rust 1.96 or newer for the analyzer.
 
+## Start with a docs change
+
+For a first prose or navigation edit, use the
+[lightweight contribution walkthrough](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md#make-a-first-change).
+It needs Python and uv. The full workspace setup below builds the Rust CLI
+and supports analyzer and packaging work.
+
 ## Set up a checkout
 
 ```sh
-git clone git@github.com:eddiethedean/codepact.git
+git clone https://github.com/eddiethedean/codepact.git
 cd codepact
 uv sync --locked
 ```
@@ -57,20 +64,22 @@ Open `http://localhost:8000` in a browser and check navigation, narrow layouts, 
 
 ## Maintain the documentation
 
-Public documentation starts at `docs/index.md`; repository planning notes remain under `docs/planning` and are linked from the public roadmap. The public site is grouped into getting-started guides, analyzer references, and API/project information. Write guides in MyST Markdown and generated API reference entries in reStructuredText. `make check-docs` checks local relative file links and runs the strict Sphinx build; Sphinx checks public page references and headings.
+Public documentation starts at `docs/index.md`; repository planning notes remain under `docs/planning` and are linked from the public roadmap. The public site groups first steps, examples, adoption, reference, and project evaluation. Write guides in MyST Markdown and generated API reference entries in reStructuredText. `make check-docs` checks local relative file links and runs the strict Sphinx build; Sphinx checks public page references and headings.
 
-The quick start and lifecycle tutorial include `examples/lifecycle.py`. The
-root README uses the same source and expected text output. After edits, check
-the primary and related lines in those guides and on the landing page. Confirm
-that removing the final use clears the finding and passes strict policy.
+The first check and lifecycle tutorial include `examples/lifecycle.py`.
+The quick-start and CI shell snippets are replayed by
+`scripts/check_docs_examples.py` in a disposable project. Run it with
+`uv run --no-project python scripts/check_docs_examples.py` to install the
+pinned packages from the configured index. To test unpublished local wheels,
+set `UV_NO_INDEX=1` and `UV_FIND_LINKS` to the wheel directory. The GitHub
+docs job builds and tests checkout wheels so release candidates can be checked
+before publication.
 
-The multi-file tutorial and declaration-only inspection snapshot use files
-under `docs/_examples`. Regenerate the inspection snapshot after changing its
-source. Keep the logical name `connection.py` for consistent paths and symbols. Keep published installation
-instructions distinct from source-build instructions. Qualification records are
-under `docs/releases/`, including the CodePact 0.4.0 evidence record.
-Documentation of implemented patterns does not by itself mark phase validation
-rows or release gates as passed.
+The multi-file and declaration-only examples are under `docs/_examples`.
+Regenerate the inspection snapshot after a source change. Use the logical name
+`connection.py` to preserve module identity. See the
+[0.5.0 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md)
+for current release qualification.
 
 Read the Docs uses `.readthedocs.yaml` at the repository root. The repository
 guide index lives in `docs/README.md`. See [documentation deployment](documentation.md)
@@ -80,21 +89,18 @@ runs the same pinned local gate on pushes and pull requests.
 ## Contribution notes
 
 - Add analyzer fixtures for supported behavior and explicit incomplete-coverage boundaries.
-- Use the [project-shaped synthetic controls](synthetic-projects.md) to check planted findings, source repairs and unknown boundaries without executing fixture code. They qualify the 0.4 synthetic preview under AD01-A2; real-world usefulness remains unqualified.
+- Use the [project-shaped synthetic controls](synthetic-projects.md) to check planted findings, source repairs and unknown boundaries without executing fixture code. The release record describes the qualified synthetic scope and the evidence needed for field use.
 - Keep unsupported source visible; do not silently treat unknown declarations as resolved.
 - Preserve Python 3.11 compatibility for the helpers and type strictness in `python/codepact`.
 - Update documentation when changing the contract API, CLI, schema, supported Python targets, or limits.
 - Do not execute inspected Python files as part of analysis.
 
-See [CONTRIBUTING.md](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) for repository guidance. The historical TypePact 0.2.0 release procedure is in [the release checklist](https://github.com/eddiethedean/codepact/blob/main/docs/planning/release-0.2.0-checklist.md); the [CodePact 0.4.0 release record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md) documents its completed qualification and publication workflow.
+See [CONTRIBUTING.md](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) for repository guidance. Use the [current release checklist](https://github.com/eddiethedean/codepact/blob/main/docs/planning/releases.md#release-checklist) for publishing work.
 
-## Measure the release baseline
+## Measure performance
 
-On macOS or Linux, build an optimized CLI and run the versioned synthetic corpus:
-
-```sh
-cargo build --release --locked
-uv run --locked python scripts/benchmark_inspector.py
-```
-
-The report records median/range for fresh CLI processes and helper imports, corpus size, host information, and maximum child RSS. Process startup and OS cache effects are included. Query-reuse correctness is established separately by the Salsa execution-counter tests. Candidate results and gate decisions are tracked in the [0.1.0 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.1.0-evidence.md).
+Use the [current workloads and methodology](performance.md) to compare CLI
+and session behavior. Record the host, compiler, source target, analysis scope,
+and exact revision. Report cold runs separately from unchanged or edited
+session snapshots. The benchmark reports and query-reuse tests answer
+different performance questions.

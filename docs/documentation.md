@@ -72,36 +72,33 @@ uses the `codepact` project on Read the Docs. The
 [GitHub documentation index](https://github.com/eddiethedean/codepact/blob/main/docs/README.md)
 links to the guide sources.
 
-In its Read the Docs dashboard:
-
-1. Verify the repository is `https://github.com/eddiethedean/codepact` and the
-   configuration path is `.readthedocs.yaml`.
-2. Confirm the repository integration/webhook is active so pushes trigger builds.
-3. Enable `main` for the `latest` documentation and verify that the landing
-   page shows the current 0.5.0 documentation.
-4. Enable `v0.5.0` for the documentation snapshot from the tagged commit.
-   Publish post-release documentation updates from `main`.
-5. Optionally enable pull request previews for reviewing documentation changes.
-
-These dashboard settings are service state, not settings applied by this
-repository. The local checks do not verify repository access, project ownership,
-webhooks, or enabled versions.
+In the Read the Docs dashboard, verify the repository integration, webhook,
+and `.readthedocs.yaml` configuration. Build `main` for
+[latest](https://codepact.readthedocs.io/en/latest/index.html) and a release
+tag for [stable](https://codepact.readthedocs.io/en/stable/index.html).
+Stable served the `v0.5.0` commit when verified. If you enable a permanent
+version slug, copy its public URL from the dashboard and verify it before
+linking it from release notes. Use a Git tag URL for a permanent source link.
 
 ## Deploy a documentation revision
 
-1. Run `make check-docs` and review the local HTML.
-2. Commit and push the documentation and build configuration to the branch the
-   service builds. Confirm GitHub’s `docs` job passes for that same commit.
-3. Trigger or inspect the Read the Docs build for that revision. Confirm its
-   log uses the pinned requirements and both pre-build checks pass.
-4. Verify the build reports success before checking the public version URL.
-5. Check the landing page’s release status, search, source links, API reference,
-   stylesheet, and schema downloads on the hosted site.
+1. Run `make check-docs`, replay the tutorial with
+   `uv run --no-project python scripts/check_docs_examples.py`, and preview
+   the local HTML.
+2. Check version pins in the README, install guide, examples, API docs, and
+   release notes against the intended distributions. Check downloads in the
+   generated site. Sphinx bundles the sample files with each build.
+3. Push the docs revision to the branch or tag the service builds. Verify the
+   GitHub docs job and Read the Docs build for that revision.
+4. Open the public landing page and quick start. Confirm the intended version
+   and revision using **Edit on GitHub**. Test the sample downloads, schema
+   downloads, search, and install commands from that build.
+5. For a package release, record the hosted URL and verified revision with the
+   [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/planning/releases.md#release-checklist).
+   Record separately whether a permanent release slug is enabled.
 
-A successful local build establishes that the site can be generated. Deployment
-is complete only when the service build and hosted revision have been verified.
-If a new build fails, inspect its first failing command before changing versions
-or dependencies. Historical tags retain their own build configuration.
+Hosted aliases and webhooks are service settings. A local build establishes
+that the source generates HTML. Verify the deployed revision after each push.
 
 ## Maintain the site
 

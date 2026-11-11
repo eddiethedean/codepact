@@ -15,7 +15,7 @@ and repair a resource lifecycle bug. [Installation](install.md) covers the
 | Try explicit moves or TaskGroup checks | [Experimental ownership](ownership.md) |
 | Integrate the analyzer | [CLI](cli.md), [Rust API](rust-api.md), and [JSON schemas](schemas.md) |
 | Review analysis boundaries | [Supported syntax](supported-syntax.md), [limitations](limitations.md), and [troubleshooting](troubleshooting.md) |
-| Check release and platform support | [Availability](availability.md), [release notes](release-notes.md), and [roadmap](roadmap.md) |
+| Evaluate for a team | [Evaluation guide](evaluation.md), [platform support](availability.md), and [release notes](release-notes.md) |
 
 The formatted site uses Sphinx. From a checkout, run `make check-docs` and
 open `target/docs/html/index.html`. [Build and preview instructions](documentation.md)

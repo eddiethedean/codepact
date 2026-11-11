@@ -88,3 +88,49 @@ Python typing compatibility
 ---------------------------
 
 The distribution includes ``py.typed``. Each alias preserves the underlying type for ordinary type checkers: a value annotated ``Borrowed[Connection]`` retains the ``Connection`` interface. CodePact metadata does not make incompatible Python types assignable or add runtime ownership checks.
+
+Public imports and examples
+---------------------------
+
+.. py:data:: codepact.Resource
+
+   Re-export of :py:class:`codepact.contracts.Resource`.
+
+.. py:data:: codepact.MustUseResult
+
+   Re-export of :py:class:`codepact.contracts.MustUseResult`.
+
+``codepact.rust`` also exports ``Borrowed``, ``Owned``, ``BorrowedMut``, and
+``MustUse``. Use those aliases for short annotations or import the equivalent
+``codepact.contracts`` aliases beside their metadata classes.
+
+.. code-block:: python
+
+   from codepact import discard, move, must_use, resource
+   from codepact.rust import Borrowed, MustUse
+
+   @resource(closed_by="close")
+   class Connection:
+       def close(self) -> None:
+           pass
+
+   def inspect_connection(connection: Borrowed[Connection]) -> str:
+       return type(connection).__name__
+
+   @must_use
+   def load_settings() -> int:
+       return 1
+
+   def load_port() -> MustUse[int]:
+       return 8080
+
+   connection = Connection()
+   print(inspect_connection(connection))
+   receiving_handle = move(connection)
+   receiving_handle.close()
+   settings = load_settings()
+   discard(load_port())
+
+The Python calls demonstrate the runtime interface. Use :doc:`quickstart`
+for a checked lifecycle example and :doc:`ownership` for the conditions under
+which the checker tracks a move.

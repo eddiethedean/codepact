@@ -5,7 +5,27 @@ CodePact sets explicit source and work limits. See the
 CLI starts a new process per invocation; the Rust `AnalysisSession` can reuse
 work when a host updates a project repeatedly.
 
-## Published 0.1.0 baseline
+## CodePact 0.5 measurements
+
+These synthetic release-qualification measurements used an optimized build
+on macOS 26.5.2 ARM64 with Rust 1.96.0 and Python 3.11 as the source target.
+Timings are medians of seven samples. The warm column measures an unchanged
+snapshot in the same session.
+
+| Workload | Scope | Cold | Warm | After one edit | Report |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 250 borrowed lifecycle calls | Default | 57.494 ms | 0.011 ms | 57.213 ms | 0.534 ms |
+| 250 borrowed lifecycle calls | Ownership | 76.095 ms | 0.011 ms | 76.592 ms | 0.480 ms |
+| 128 children across nested task groups | Ownership and TaskGroup | 16.239 ms | 0.009 ms | 16.105 ms | 0.221 ms |
+
+Ownership increased median cold time by 32% on the paired workload. Its
+default and ownership runs had a combined peak RSS measurement of 33.53 MiB.
+These figures describe a single host and controlled workloads. Warm session
+timings apply to Rust embeddings that reuse a session. For CI, measure fresh
+CLI invocations over your selected source tree.
+[Method, additional workloads, and reproduction commands](https://github.com/eddiethedean/codepact/blob/v0.5.0/docs/planning/phases/0.5/performance.md)
+
+## Historical 0.1.0 baseline
 
 The recorded 0.1.0 cold-process measurements were taken on an Apple M4 Pro with
 macOS 26.5.2 ARM64, CPython 3.11.15, and rustc 1.96.0:

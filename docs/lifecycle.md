@@ -15,8 +15,8 @@ The analyzer reads Python source as text; it does not import the example.
 
 ## Reproduce a use after close
 
-Create a `demo` directory in your project and save this example as
-`demo/connection.py`:
+Create a `src` directory if needed and save this example as
+`src/connection.py`:
 
 ```{literalinclude} ../examples/lifecycle.py
 :language: python
@@ -25,7 +25,7 @@ Create a `demo` directory in your project and save this example as
 Run the checker from your project root:
 
 ```sh
-uv run --locked codepact check --root demo
+uv run --locked codepact check --root src
 ```
 
 The first `inspect_connection(conn)` runs while the connection is open. After
@@ -83,7 +83,7 @@ coverage. [Policy and exits](cli.md#policy-and-exits)
 Readable output is the default. For the provisional structured report:
 
 ```sh
-uv run --locked codepact check --root demo --json
+uv run --locked codepact check --root src --json
 ```
 
 Read both `diagnostics` and `coverage`. A successful exit can include possible

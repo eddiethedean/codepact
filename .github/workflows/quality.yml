@@ -26,6 +26,15 @@ jobs:
           enable-cache: true
       - name: Build the documentation
         run: make check-docs
+      - name: Build wheels for the documented installation
+        run: uv build --wheel --no-sources --all-packages --out-dir "$RUNNER_TEMP/docs-wheels"
+      - name: Replay the documented commands
+        env:
+          UV_NO_INDEX: "1"
+          UV_FIND_LINKS: ${{ runner.temp }}/docs-wheels
+        run: python scripts/check_docs_examples.py
+      - name: Check the Rust integration example
+        run: cargo run --locked -p codepact --example adoption_report
 
   quality:
     if: github.event_name != 'schedule'
