@@ -1,8 +1,16 @@
 # Command-line reference
 
 This reference covers the published CodePact 0.4.0 synthetic preview.
-The analyzer reads Python as source and does not import or execute the project.
+The analyzer reads Python source without importing or executing the project.
 [Release availability](availability.md)
+
+| Task | Command |
+| --- | --- |
+| Check a source tree | `codepact check --root src` |
+| Inspect declarations in supplied files | `codepact inspect-contracts --root src src/models.py src/client.py` |
+| Preview effective project policy | `codepact check --show-settings --json` |
+| Emit a report for CI | `codepact check --root src --mode strict --json` |
+| Look up the installed rules and limits | `codepact capabilities --json` |
 
 ## Commands
 
@@ -24,9 +32,9 @@ codepact explain RULE --json
 
 `inspect-contracts` keeps the inspection interface: it requires explicit files
 and returns inspection schema 0. `check --json` uses the 0.4 CLI adoption
-report, checker schema 2. The Rust `check` and `check_report` APIs retain their
-schema 1 result. The schema transition is documented in the
-[JSON output reference](output.md).
+report, schema 2. The Rust `check` API returns `Inspection` (schema 0), and
+`check_report` returns `CheckResult` (schema 1).
+[JSON output reference](output.md)
 
 ## Project configuration and scope
 
@@ -159,3 +167,16 @@ available rules, formats, hard limits and unavailable services. `codepact
 explain RULE --json` returns a static explanation with valid/invalid/unknown
 examples and advisory repair guidance. These commands do not inspect a project
 or apply edits; no automatic fixes are advertised.
+
+## Experimental ownership options
+
+The 0.5 development candidate accepts `--experimental-ownership` and
+`--no-experimental-ownership` on `check` and `baseline update`. An explicit
+flag overrides `experimental-ownership` in the project configuration.
+The TaskGroup model additionally requires
+`assume-default-task-factory = true` and a compatible runtime. Strict mode
+controls the selected report policy independently of the ownership opt-in.
+
+Use the [ownership guide](ownership.md) for runnable examples and baseline
+migration. The installed `capabilities --json` output gives the rules and
+limits for that binary.

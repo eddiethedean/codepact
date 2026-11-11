@@ -7,8 +7,8 @@ CodePact 0.x grows from declaration inspection toward broader resource lifecycle
 | 0.1.x | Parse supported declarations and report contract facts, provenance, diagnostics, and coverage |
 | 0.2.x | Published bounded lifecycle flow checking and use-after-close analysis |
 | 0.3.x | Published: cleanup obligations and bounded async cancellation/cleanup |
-| 0.4.x | Adoption tooling and synthetic preview |
-| 0.5.x | Ownership transfer, lexical borrowing and structured task lifetimes |
+| 0.4.x | Published preview of adoption tooling and synchronous must-use checking |
+| 0.5.x | Development candidate with opt-in ownership transfer, lexical borrowing, and structured task lifetimes |
 | 0.6.x | Suspension-aware exclusive access, typestate, and effects |
 | 0.7.x | Typed outcomes and finite exhaustiveness |
 | 0.8.x | Ecosystem integrations, shared lint language server and IDE diagnostics |
@@ -22,6 +22,9 @@ The published 0.4.0 release includes structured reports, rule explanations and a
 
 An optional `codepact-pyrefly-cli` prototype is also planned, with its own `codepact-pyrefly` command combining Pyrefly's ordinary Python type checking and CodePact's resource checks. It will have independent prereleases and qualification gates alongside the main roadmap; no combined package or command is available yet.
 
-For the detailed planning documents, see the [repository roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md) and [planning index](https://github.com/eddiethedean/codepact/tree/main/docs/planning).
+Follow-on proposals cover validated values, relationships between values,
+state-dependent field guarantees, and declared dependency boundaries.
+[Follow-on phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/contract-extensions.md) ·
+[Repository roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md)
 
 Planned concurrent resource safety starts with bounded async cleanup/cancellation in 0.3, structured task ownership and borrow escapes in 0.5, and suspension-aware exclusivity and protocol states in 0.6. Reporting, outcome adapters, integrations and stabilization inherit explicit cancellation and coverage requirements. Initial task models target `asyncio.TaskGroup`; multiprocessing and thread handoffs remain unsupported escape boundaries until separately qualified. This adds no race-freedom or deadlock-freedom guarantee and does not change the synchronous behavior of the historical TypePact 0.2.0 release. See the [concurrency plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/concurrency.md) for scope and acceptance gates.

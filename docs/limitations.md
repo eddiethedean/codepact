@@ -1,12 +1,22 @@
 # Current limitations
 
-The published TypePact 0.2.0 release provided declaration inspection and a
-bounded synchronous lifecycle checker. CodePact 0.3.0 adds cleanup checks across
-supported exits. The published 0.4.0 synthetic preview adds adoption policy
-and synchronous must-use result checking. Qualification covers the supported
-subset, with real-world usefulness unqualified.
+CodePact checks supported flow under declared resource models. Read the
+report’s certainty and coverage alongside any finding, especially when you
+use advisory mode in CI. The 0.4 release is qualified against synthetic
+bug, repair, and coverage controls.
+[Release evidence](availability.md) · [Report fields](output.md)
 
-The published 0.2 checker tracks direct construction, local aliases, ordinary synchronous calls, local helpers, `if`/`else` joins, and acyclic named re-exports from local modules. CodePact 0.3 adds bounded cleanup across the supported exits described below. In CodePact 0.3.0, decorated methods, including `staticmethod` and `classmethod`, still lack modeled Python binding and produce an incomplete-coverage boundary. Method parameter annotations and function defaults are outside the modeled summary; their declarations produce incomplete-coverage boundaries. Unsupported call argument expressions weaken tracked resources and produce boundaries. A custom `__new__` allocation also produces a boundary because its effects are not modeled. Dynamic dispatch and arbitrary field/container ownership remain unsupported. Unsupported regions can produce boundaries and weaken tracked state; unmodeled alias and boundary combinations are not proven safe. Recursive calls recover to unknown summaries. Unknown methods and calls do not establish purity. A clean run does not prove leak freedom, runtime leak freedom, or correctness of declared resource models.
+## Common boundaries
+
+- **Binding and calls.** Decorated methods, method parameter annotations,
+  function defaults, and unsupported arguments can leave call effects
+  incomplete. Unknown calls do not establish purity.
+- **Resources and aliases.** Custom `__new__`, dynamic dispatch, and aliases
+  stored in arbitrary fields or containers can prevent a lifecycle proof.
+- **Recursion and concurrency.** The published checker leaves recursive
+  effects and general task lifetimes unresolved. The 0.5 candidate adds
+  bounded support for selected recursive summaries and TaskGroup patterns.
+  [Experimental ownership scope](ownership.md#scope-and-report-migration)
 
 CodePact 0.3.0 caps total nested control-flow depth at 64 (the historical
 0.2 limit was 128 nested `if` regions), possible objects for one local alias
@@ -55,7 +65,8 @@ not discharge resource cleanup or change evaluation effects.
 
 The inspector does not inspect function bodies to check whether a resource is closed, whether a value is used after closing, whether all paths clean up, or whether ownership and exclusive access are obeyed. The `resource` decorator only records metadata on the class. `Owned`, `Borrowed`, and `BorrowedMut` express intent; they do not create Rust-style ownership, borrowing, uniqueness, or runtime checks.
 
-Every fact is marked `declared-unverified`. Complete coverage means the supported declaration subset was analyzed, not that resource safety was established.
+Declared facts carry `declared-unverified` provenance. Complete coverage means
+the checker analyzed the supported subset under those models.
 
 For lifecycle checking, complete coverage refers to the supported normal-flow
 subset under those declared models. The designated `close` method supplies a
@@ -93,7 +104,11 @@ and the [0.3 validation map](https://github.com/eddiethedean/codepact/blob/main/
 
 ## Provisional interfaces
 
-The Python helper API, CLI options, diagnostic set, and JSON schema may change during the 0.x series. JSON currently reports schema version 0. Diagnostic wording can improve, and new diagnostics can affect CI workflows. Pin compatible package versions and review release notes when upgrading.
+The helper API, CLI flags, and diagnostics can change during 0.x. Inspection
+JSON uses schema 0. The published 0.4 CLI check report uses schema 2, and the
+Rust `check_report` result uses schema 1. Pin matching package versions and read the
+schema identifier before consuming a report.
+[Schema reference](schemas.md) · [Upgrade guide](upgrading.md)
 
 See the [roadmap](roadmap.md) for planned phases and release acceptance gates.
 Planned work does not imply a release date.

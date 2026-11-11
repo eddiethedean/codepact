@@ -4,8 +4,9 @@
 
 CodePact 0.4.0 is published on PyPI and crates.io as a synthetic preview.
 It includes project policy, baselines, and synchronous must-use checks.
-Real-world usefulness remains unqualified. [Install CodePact](install.md) ·
-[Release availability](availability.md)
+Build the 0.5 development candidate from source to try opt-in moves, borrows,
+and TaskGroup checks. [Install CodePact](install.md) ·
+[Experimental ownership](ownership.md)
 
 ## Does CodePact import or run my application?
 
@@ -39,11 +40,11 @@ Explicit check filenames add files to that scan and do not restrict it. See the
 
 ## Why are my imports or annotations unresolved?
 
-The analyzer supports a limited set of syntax and import forms. In 0.1.0,
-relative imports, re-export chains, cycles, future/string annotations, and
-dynamic expressions are outside the supported inspector subset. Version 0.2.0
-has additional lifecycle-flow limits. Read [supported syntax](supported-syntax.md)
-and [limitations](limitations.md), then inspect `coverage.reasons`.
+Check that the provider files are included and that their module names match
+the imports. Then read `coverage.reasons` for the specific boundary, such as a
+cycle, string annotation, or unsupported dynamic expression. The inspector
+and checker resolve different subsets of syntax.
+[Multi-file example](project-guide.md) · [Supported syntax](supported-syntax.md)
 
 ## Will I need Rust to install the CodePact command?
 

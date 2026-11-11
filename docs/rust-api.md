@@ -74,8 +74,9 @@ future release.
 CodePact 0.4.0 adds `check_with_must_use(files, target)` and
 `AnalysisSession::check_with_must_use` (plus a cancellable session method) for
 the synchronous TP3001 result-use rule. These return `Inspection` so the
-existing `check` and `check_report` APIs keep their released rule set and schema
-1 meaning. A caller that needs the CLI adoption policy can wrap canonical
+existing `check` and `check_report` APIs retain their released rule set.
+`check` returns `Inspection` (schema 0), and `check_report` returns
+`CheckResult` (schema 1). A caller that needs the CLI adoption policy can wrap canonical
 results with the public `codepact::adoption` resolver and report builder. This
 preview API is covered by synthetic controls; real-world usefulness is unqualified.
 

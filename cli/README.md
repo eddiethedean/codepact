@@ -1,49 +1,47 @@
 # CodePact CLI
 
-`codepact-cli` distributes the Rust `codepact` command through Python packaging.
-Installing `codepact` installs this matching CLI package automatically. The
-CodePact 0.4.0 synthetic preview is available on PyPI.
-[Published CLI](https://pypi.org/project/codepact-cli/0.4.0/)
+`codepact-cli` installs the native `codepact` command for static analysis of
+Python resource contracts. Use it to check supported use after close, missed
+cleanup, and discarded must-use results. The checker reads Python source
+without importing or running the project.
 
-## Install and inspect
-
-Install the command with `uv tool install codepact-cli==0.4.0`. To build from
-the repository, use `uv sync --locked` followed by `uv run codepact`.
-
-The 0.4.0 command adds project configuration, baselines, suppressions, and
-synchronous must-use checks to bounded lifecycle checking. For `check`,
-`--root` scans Python files below the root. Exit `0` means the report passed the
-selected policy, `1` means it failed policy, and `2` means the check could not
-complete. Advisory policy can pass with incomplete coverage. Inspection uses
-explicit source files and reports its own status.
-[Command reference](https://typepact.readthedocs.io/en/latest/cli.html)
-
-## Lifecycle checking
-
-Build the released command with Rust 1.96+:
+## Install the published preview
 
 ```sh
-git clone https://github.com/eddiethedean/codepact.git
-cd codepact
-git checkout v0.4.0
-cargo run --locked -- check --root examples
+uv tool install codepact-cli==0.4.0
+codepact --version
 ```
 
-The lifecycle example intentionally reports a use after close and exits `1`.
-Use `--json` to capture the schema 2 check report. Real-world usefulness of
-the synthetic preview remains unqualified. [Verified release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md)
+If your project also needs annotations such as `resource`, `Owned`, and
+`Borrowed`, install `codepact==0.4.0` in its Python environment. The helper
+package installs the matching CLI automatically.
+[Installation and platform support](https://github.com/eddiethedean/codepact/blob/main/docs/install.md)
 
-## Requirements and reference
+## Check a source tree
 
-Platform wheels include the executable; source installs require Rust 1.96+ and a linker.
-The analyzer reads Python source without importing or executing it.
+```sh
+codepact check --root src
+codepact check --root src --mode strict --json > codepact-report.json
+```
 
-The release matrix covers Linux glibc/musl, macOS and Windows on x86-64 and ARM64.
-Python 3.11+ is required for installation. The CodePact `codepact` Rust crate
-is published on crates.io; the older TypePact crate belongs to the historical
-0.1.0 and 0.2.0 releases.
+Use a root that contains the source and its local contract providers. Exit
+`0` means the report passes the selected policy, `1` means a completed report
+fails policy, and `2` means the command could not complete. Advisory mode can
+pass with incomplete coverage. Strict mode also fails on incomplete coverage
+and unsuppressed possible violations.
+[Quick start](https://github.com/eddiethedean/codepact/blob/main/docs/quickstart.md) ·
+[CLI reference](https://github.com/eddiethedean/codepact/blob/main/docs/cli.md) ·
+[CI reports](https://github.com/eddiethedean/codepact/blob/main/docs/ci-reporting.md)
 
-See the [installation guide](https://typepact.readthedocs.io/en/latest/install.html),
-[command reference](https://typepact.readthedocs.io/en/latest/cli.html), and
-[lifecycle tutorial](https://typepact.readthedocs.io/en/latest/lifecycle.html).
-The source for all guides is in the [repository docs directory](https://github.com/eddiethedean/codepact/tree/main/docs).
+## Compatibility
+
+Installation requires Python 3.11 or later. The CLI analyzes Python 3.11,
+3.12, and 3.13 source targets. Published wheels bundle the Rust executable
+for supported Linux, macOS, and Windows platforms. Building from source
+requires Rust 1.96 or later and a linker.
+[Release artifacts](https://github.com/eddiethedean/codepact/blob/main/docs/availability.md)
+
+The 0.5 development candidate adds opt-in explicit moves, lexical borrows,
+and TaskGroup checks. Build it from source with matching helper and CLI
+versions. [Experimental ownership](https://github.com/eddiethedean/codepact/blob/main/docs/ownership.md) ·
+[Source](https://github.com/eddiethedean/codepact)

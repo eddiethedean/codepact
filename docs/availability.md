@@ -12,14 +12,14 @@ and 0.2.0 used the former TypePact name.
 [0.2.0 evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.2.0-evidence.md) ·
 [0.1.0 evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.1.0-evidence.md)
 
-The documentation site still uses the existing `typepact.readthedocs.io`
-address. Its visible title and repository content use CodePact; the hosting
-project slug has not been renamed.
+Read the guides in the [repository documentation index](https://github.com/eddiethedean/codepact/blob/main/docs/README.md)
+or [build a local HTML preview](documentation.md).
 
 ## Current releases
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
+| CodePact 0.5.0 | Development candidate | [Matching helper and CLI from source](install.md#try-the-05-development-candidate) | Opt-in moves, lexical borrows, and a bounded TaskGroup model |
 | CodePact 0.4.0 | Published synthetic preview | `codepact`, `codepact-cli`, Rust crate `codepact` | Adoption configuration/policy, JSON report schema 2, baselines, suppressions, and synchronous must-use preview; see the 0.4 phase plan |
 | CodePact 0.3.0 | Published | `codepact`, `codepact-cli`, Rust crate `codepact` | Declaration inspection, lifecycle checking, cleanup obligations, and bounded intratask cancellation/cleanup; see the specification |
 | TypePact 0.2.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Declaration inspection and bounded synchronous lifecycle checking |

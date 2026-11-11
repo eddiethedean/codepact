@@ -14,8 +14,9 @@ Install uv, then run from the repository root:
 make check-docs
 ```
 
-The target validates JSON schema fixtures and eight live CLI documents, checks relative documentation links,
-and rebuilds every public page with the pinned Sphinx environment. Missing
+The target validates JSON schema fixtures and live CLI documents, checks
+relative documentation links, and rebuilds every public page with the pinned
+Sphinx environment. Missing
 references and warnings fail the build. An unrelated system `sphinx-build`
 cannot change the selected toolchain. Live CLI validation needs Rust/Cargo in
 the development environment. The Read the Docs hook uses the explicit
@@ -36,6 +37,9 @@ uv run --no-project python -m http.server 8000 --directory target/docs/html
 
 Open `http://localhost:8000`. Check the navigation, search, a narrow viewport,
 Python API signatures, and downloads from the [schema reference](schemas.md).
+The shared layout lives in `docs/_templates/layout.html`. Its CSS and brand
+images live in `docs/_static/`. Preview the landing page and a long reference
+page at both desktop and phone widths after changing the layout.
 
 ## Read the Docs build configuration
 
@@ -63,8 +67,10 @@ and [environment-variable reference](https://docs.readthedocs.com/platform/stabl
 
 ## Connect the existing project
 
-The documented hosting address is `https://typepact.readthedocs.io/`. Keep that
-existing project and URL when updating the CodePact documentation.
+The configured Read the Docs project uses the `typepact` slug. Verify a
+successful build and a public version URL in the service dashboard before
+linking readers to it. The [GitHub documentation index](https://github.com/eddiethedean/codepact/blob/main/docs/README.md)
+provides direct links to the guides in the repository.
 
 In its Read the Docs dashboard:
 

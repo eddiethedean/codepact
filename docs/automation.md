@@ -1,8 +1,9 @@
 # Automation and CI
 
-The examples use the published CodePact 0.4.0 synthetic preview.
-Real-world usefulness remains unqualified.
-[Release availability](availability.md)
+Use `check` to gate supported lifecycle behavior or `inspect-contracts` to
+review declarations in explicit files. The examples pin the published 0.4.0
+CLI. Preserve the original exit status when saving a JSON report.
+[Release availability](availability.md) · [Report handling](ci-reporting.md)
 
 ## Run in a uv project
 
@@ -16,21 +17,21 @@ uv run --locked codepact inspect-contracts \
 
 This command uses the layout in the [multi-file tutorial](project-guide.md). Include every provider module required by the annotations you want to resolve.
 
-## Run the standalone CLI in GitHub Actions
+## Run the checker in GitHub Actions
 
-This job installs only the published CLI tool and inspects the same source
-layout. To build from source instead, check out a specific revision and record
-its Git SHA:
+This job pins the standalone CLI, runs strict checks, and keeps the JSON
+report when the check fails. Set `src` to the directory that contains your
+Python modules and their local contract providers.
 
 ```yaml
-name: CodePact declarations
+name: CodePact
 on: [push, pull_request]
 
 permissions:
   contents: read
 
 jobs:
-  contracts:
+  codepact:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -39,13 +40,24 @@ jobs:
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           python-version: '3.11'
-      - name: Inspect declarations
+      - name: Check resource contracts
         run: >-
-          uv tool run --from codepact-cli==0.4.0 codepact inspect-contracts
-          --python-version 3.11 --root src src/models.py src/client.py
+          uv tool run --from codepact-cli==0.4.0 codepact check
+          --root src --python-version 3.11 --mode strict --json
+          > codepact-report.json
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: codepact-report
+          path: codepact-report.json
 ```
 
-Adapt the root and file list to your repository. Projects that need the helpers for other steps can instead install their locked uv environment and use `uv run --locked codepact`.
+Strict mode fails the check on incomplete coverage or unsuppressed possible
+violations. A failed invocation may produce a failure envelope or an empty
+file. Read the report with its exit status. Review your repository's artifact
+visibility before retaining reports with private paths or contract details.
+[Report handling](ci-reporting.md) · [Security and data](security.md)
 
 ## Save and consume inspection JSON
 

@@ -22,7 +22,14 @@ root_doc = "index"
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
 language = "en"
 nitpicky = True
-exclude_patterns = ["_build", "planning/**", "releases/**", "Thumbs.db", ".DS_Store"]
+exclude_patterns = [
+    "_build",
+    "README.md",
+    "planning/**",
+    "releases/**",
+    "Thumbs.db",
+    ".DS_Store",
+]
 
 myst_enable_extensions = ["colon_fence"]
 myst_heading_anchors = 3
@@ -39,7 +46,9 @@ nitpick_ignore = [
 ]
 
 html_theme = "sphinx_rtd_theme"
-html_title = "CodePact documentation — 0.4.0 synthetic preview"
+html_title = "CodePact documentation"
+html_favicon = "_static/codepact-mark.png"
+templates_path = ["_templates"]
 html_baseurl = os.environ.get("READTHEDOCS_CANONICAL_URL", "")
 html_context = {
     "display_github": True,
@@ -49,10 +58,11 @@ html_context = {
     "conf_py_path": "/docs/",
 }
 html_theme_options = {
-    "collapse_navigation": False,
+    "collapse_navigation": True,
     "navigation_depth": 3,
     "sticky_navigation": True,
 }
+pygments_style = "friendly"
 html_show_sphinx = False
 html_static_path = ["_static"]
 html_extra_path = ["schemas"]

@@ -1,83 +1,150 @@
-# CodePact documentation
+# CodePact
 
-**Find lifecycle mistakes in Python before running your application.**
+:::::{container} cp-hero
 
-CodePact reads source and checks declared resource contracts for supported
-use after close, outstanding cleanup duties, and invalid ownership handoffs.
-Reports connect each finding to source locations and explain its certainty
-and the parts of the program that remain outside the supported analysis.
+::::{container} cp-hero-copy
 
-```{important}
-**CodePact 0.4.0 is published as a synthetic preview.** It includes
-configuration, baselines, line suppressions, and synchronous must-use results.
-Real-world usefulness remains unqualified.
-[Release availability and verification](availability.md)
+:::{container} cp-kicker
+Static analysis for Python
+:::
+
+:::{container} cp-headline
+Catch resource bugs before runtime.
+:::
+
+CodePact checks your Python resource contracts. Find supported use-after-close,
+missed cleanup, and discarded results directly in source.
+
+:::{container} cp-actions
+[Run your first check](quickstart.md)
+[Installation options](install.md)
+:::
+
+::::
+
+::::{container} cp-terminal
+
+```{raw} html
+<div class="cp-terminal-bar">
+  <span class="cp-terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  <span>connection.py</span>
+</div>
+<div class="cp-terminal-body">
+  <p class="cp-terminal-command"><span aria-hidden="true">$ </span>codepact check --root demo</p>
+  <div class="cp-terminal-diagnostic">
+    <p class="cp-terminal-location">connection.py:23:1</p>
+    <p><strong>TP1001</strong> Borrowed call requires an open resource</p>
+  </div>
+  <dl>
+    <dt>Certainty</dt><dd>definite</dd>
+    <dt>Related close</dt><dd>connection.py:22:1</dd>
+  </dl>
+  <p class="cp-terminal-status">Exit status <b>1</b></p>
+</div>
 ```
 
-## Start with a working example
+::::
 
-Install the published release in your uv project:
+:::::
 
-```sh
-uv add codepact==0.4.0
-uv run --locked codepact --version
-```
+::::{container} cp-release-strip
 
-The [quick start](quickstart.md) provides a complete source file and a first
-successful check. Continue with [lifecycle checking](lifecycle.md) to reproduce
-a use after close, understand the related close location, and repair it.
+:::{container} cp-release cp-release-published
+**0.4.0 · Published preview**
 
-## Find your next step
+[Install from PyPI or crates.io](availability.md)
+:::
 
-| Goal | Guide |
-| --- | --- |
-| Install the helpers, standalone CLI, or Rust library | [Installation](install.md) |
-| Declare owned or borrowed access | [Contract declarations](contracts.md) |
-| Try the 0.5 candidate ownership checker | [Experimental ownership](ownership.md) |
-| Check imports across modules | [Multi-file tutorial](project-guide.md) |
-| See semantic mistakes caught before runtime | [Bugs CodePact catches](bugs-caught.md) |
-| Adopt 0.4 in a project | [Adoption workflow](adopting.md) |
-| Run checks and preserve reports in CI | [Automation](automation.md) and [report handling](ci-reporting.md) |
-| Understand a finding or incomplete coverage | [Rules](rules.md), [limitations](limitations.md), and [troubleshooting](troubleshooting.md) |
-| Integrate the analyzer with another tool | [Rust API](rust-api.md) and [report schemas](schemas.md) |
-| Run analyzer development controls | [Synthetic project controls](synthetic-projects.md) |
-| Build or publish this documentation | [Documentation deployment](documentation.md) |
+:::{container} cp-release cp-release-candidate
+**0.5.0 · Development candidate**
 
-## Know what a result establishes
+[Try opt-in ownership checking](ownership.md)
+:::
 
-The Python helpers run on Python 3.11+; the analyzer accepts source targets
-3.11–3.13. Declarations carry `declared-unverified` provenance. CodePact does
-not execute the project or verify that a close method releases a real resource.
-Read certainty and coverage alongside findings: an advisory check can pass
-with unsupported regions. The [output reference](output.md) explains how to
-interpret reports; [supported syntax](supported-syntax.md) defines the scope.
+::::
+
+## Find your guide
+
+::::{container} cp-guide-grid
+
+:::{container} cp-guide
+[Declare contracts](contracts.md)
+
+Mark a resource’s close method, owned or borrowed access, and results that require handling.
+:::
+
+:::{container} cp-guide
+[Trace a finding](lifecycle.md)
+
+Follow the source locations for a use-after-close finding, then repair it and recheck.
+:::
+
+:::{container} cp-guide
+[Adopt in a project](adopting.md)
+
+Set a project policy, review existing findings, and record intentional exceptions.
+:::
+
+:::{container} cp-guide
+[Run in CI](automation.md)
+
+Choose an exit policy and preserve structured reports for later review.
+:::
+
+:::{container} cp-guide
+[Look up a rule](rules.md)
+
+Find diagnostic codes, their meanings, and the first repair to consider.
+:::
+
+:::{container} cp-guide
+[Integrate the checker](rust-api.md)
+
+Embed checks in Rust or consume the versioned [JSON schemas](schemas.md).
+:::
+
+::::
+
+## Read coverage alongside findings
+
+CodePact reads source without executing your application. It follows supported
+calls, aliases, branches, and exits. Declarations specify lifecycle behavior,
+while application code is responsible for actual runtime cleanup. An advisory
+check can pass with incomplete coverage. [Report fields and certainty](output.md) ·
+[Supported syntax](supported-syntax.md)
+
+The Python helpers run on Python 3.11 and later. The checker accepts Python
+3.11–3.13 source targets. [Platform and release evidence](availability.md)
 
 ```{toctree}
-:maxdepth: 1
+:hidden:
+:maxdepth: 2
 :caption: Get started
 
-install
 quickstart
+install
 lifecycle
 contracts
-ownership
 project-guide
 examples
 bugs-caught
 ```
 
 ```{toctree}
-:maxdepth: 1
+:hidden:
+:maxdepth: 2
 :caption: Adopt and automate
 
 adopting
 automation
 ci-reporting
 upgrading
+ownership
 ```
 
 ```{toctree}
-:maxdepth: 1
+:hidden:
+:maxdepth: 2
 :caption: Reference
 
 cli
@@ -95,8 +162,9 @@ faq
 ```
 
 ```{toctree}
-:maxdepth: 1
-:caption: Project and maintenance
+:hidden:
+:maxdepth: 2
+:caption: Project
 
 availability
 architecture
@@ -109,13 +177,6 @@ documentation
 synthetic-projects
 ```
 
-## Project links
-
-[Source](https://github.com/eddiethedean/codepact) ·
-[Issues](https://github.com/eddiethedean/codepact/issues) ·
-[Python package](https://pypi.org/project/codepact/) ·
-[Standalone CLI](https://pypi.org/project/codepact-cli/) ·
+[Source on GitHub](https://github.com/eddiethedean/codepact) ·
+[Report an issue](https://github.com/eddiethedean/codepact/issues) ·
 [MIT license](https://github.com/eddiethedean/codepact/blob/main/LICENSE)
-
-The historical 0.1 and 0.2 releases used the TypePact name. The documentation
-continues to use `typepact.readthedocs.io`; the current project is CodePact.

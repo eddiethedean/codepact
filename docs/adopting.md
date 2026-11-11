@@ -1,8 +1,9 @@
-# Adopt the 0.4 synthetic preview
+# Adopt CodePact in a project
 
-CodePact 0.4.0 is published as a synthetic preview. Real-world usefulness
-remains unqualified. [Availability](availability.md) ·
-[Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.4.0-evidence.md)
+Start with a narrow source root and an advisory report. Review what the
+checker covered before choosing which results should fail CI. The examples
+use the published 0.4.0 preview.
+[Release scope and qualification](availability.md)
 
 ## Install the preview
 

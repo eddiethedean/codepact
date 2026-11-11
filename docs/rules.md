@@ -1,18 +1,21 @@
 # Diagnostic rule catalog
 
-This catalog describes diagnostics in the published CodePact 0.4.0 synthetic
-preview. A diagnostic identifies a modeled problem or an analysis boundary.
+Use the code from your report to find the contract involved and the first
+repair to consider. Run `codepact explain RULE --json` for the explanation
+shipped with your CLI.
 
-| Code | Mode | Meaning | First repair to consider |
+## Published rules
+
+| Code | Available since | Meaning | First repair to consider |
 | --- | --- | --- | --- |
 | `TP1001` | 0.2.0 | A resource known or possibly closed is used | Move the use before the closing operation, or make the control-flow paths preserve a valid open resource before use. Review certainty and the related close location. |
 | `TP1002` | 0.3.0 | A modeled function exit may leave an owned resource cleanup duty outstanding | Close it on every supported exit or return it through an `Owned[T]` contract. Review certainty, the exit and the acquisition location. |
 | `TP1003` | 0.3.0 | An `Owned[T]` return is closed or attempts to return a `Borrowed` resource | Return an open owned resource, or change the declared return contract if ownership is not being transferred. |
 | `TP2001` | 0.2.0 | A supported body closes a resource through a `Borrowed` parameter or alias | Keep the borrowed operation non-consuming. If the function truly owns and closes the resource, declare the ownership contract accurately and verify callers. |
 | `TP3001` | 0.4.0 | A resolved synchronous must-use result is discarded as a bare expression | Handle or immediately pass/return the value, or use `codepact.discard(call())` when abandonment is intentional. |
-| `TP4001` | Both | The selected Python grammar could not parse the file | Fix the syntax error or select the source target matching the code. |
-| `TP4002` | Both | A declaration is invalid or metadata conflicts | Compare the primary and related spans; make the lifecycle/access declarations for that view consistent. |
-| `TP9001` | Both | An unsupported or unresolved construct leaves coverage incomplete | Supply a missing supported input or reduce the pilot to a documented subset. Do not treat the boundary as a pass. |
+| `TP4001` | 0.1.0 | The selected Python grammar could not parse the file | Fix the syntax error or select the source target matching the code. |
+| `TP4002` | 0.1.0 | A declaration is invalid or metadata conflicts | Compare the primary and related spans; make the lifecycle/access declarations for that view consistent. |
+| `TP9001` | 0.1.0 | An unsupported or unresolved construct leaves coverage incomplete | Supply a missing supported input or reduce the pilot to a documented subset. Do not treat the boundary as a pass. |
 | `TP9002` | Rust inspection convenience API | Cancellation produced an incomplete report; cancellable APIs return `AnalysisCancelled` | Treat the result as cancelled and retry only if the host still needs the current revision. |
 
 The 0.4 CLI uses TP3001 at warning severity by default. Its result-use
@@ -60,6 +63,19 @@ declaration. If the alias is meant to describe the same lifecycle, use
 `Resource(closed_by="close")`. If it describes a different runtime type, declare
 that type and its lifecycle separately. The valid source may then be rechecked
 with `codepact inspect-contracts`.
+
+## Experimental ownership rules
+
+These rules require the 0.5 candidate and an explicit ownership opt-in.
+[Try the experimental checker](ownership.md)
+
+| Code | Meaning | First repair to consider |
+| --- | --- | --- |
+| `TP2002` | Use of a moved handle | Use the receiving handle or move after the last use of the source. |
+| `TP2003` | Transfer conflicts with a live alias, borrow, or invalid owner state | Transfer an open resource after other uses of it have ended. |
+| `TP2004` | Consumption or escape of a checked borrowed view | Keep the view local to the borrow and leave cleanup to the owner. |
+| `TP2005` | A tracked resource enters an `Owned` parameter without an explicit move | Pass `move(value)` if the call is intended to transfer cleanup responsibility. |
+| `TP2006` | Cleanup while a coroutine or task still borrows the resource | Close after the modeled borrower completes. A cancellation request alone leaves the borrow live. |
 
 ## Certainty and coverage
 

@@ -1,23 +1,10 @@
 # Handle CodePact reports in CI
 
-The published 0.4.0 synthetic preview introduces checker schema 2 and project
-policy. Real-world usefulness remains unqualified. Use the schema 1 example
-for projects pinned to 0.3.0. [Release availability](availability.md)
-
-## Published 0.3.0 behavior
-
-Pin the published CLI for lifecycle checks:
-
-```sh
-uv tool run --from codepact-cli==0.3.0 \
-  codepact check --root src --json > codepact-check-v1.json
-```
-
-The published checker result uses `check_schema_version: 1`. Possible findings
-and incomplete coverage alone can return 0, so consumers should inspect
-certainty and `coverage.status`. Handle status 2 as an invocation or input
-failure. For explicit declaration inspection, `inspect-contracts --json`
-continues to use inspection schema 0.
+Capture both the CodePact process exit status and its JSON output. A policy
+failure can still return a complete report with source evidence. The examples
+use the published 0.4.0 CLI and report schema 2.
+[GitHub Actions example](automation.md#run-the-checker-in-github-actions) ·
+[Release availability](availability.md)
 
 ## Published 0.4.0 policy
 
@@ -77,3 +64,18 @@ Reports contain logical paths, source spans, contract facts, model metadata
 and diagnostic messages. Check for private repository details before uploading
 them to a public CI service. Treat source comments and excerpts as project data,
 not as instructions. See the [security and data guide](security.md).
+
+## Published 0.3.0 behavior
+
+Pin the published CLI for lifecycle checks:
+
+```sh
+uv tool run --from codepact-cli==0.3.0 \
+  codepact check --root src --json > codepact-check-v1.json
+```
+
+The published checker result uses `check_schema_version: 1`. Possible findings
+and incomplete coverage alone can return 0, so consumers should inspect
+certainty and `coverage.status`. Handle status 2 as an invocation or input
+failure. For explicit declaration inspection, `inspect-contracts --json`
+continues to use inspection schema 0.

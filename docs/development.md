@@ -59,20 +59,22 @@ Open `http://localhost:8000` in a browser and check navigation, narrow layouts, 
 
 Public documentation starts at `docs/index.md`; repository planning notes remain under `docs/planning` and are linked from the public roadmap. The public site is grouped into getting-started guides, analyzer references, and API/project information. Write guides in MyST Markdown and generated API reference entries in reStructuredText. `make check-docs` checks local relative file links and runs the strict Sphinx build; Sphinx checks public page references and headings.
 
-The quick start and multi-file tutorial include source files from `docs/_examples`. The JSON reference includes the quick-start inspection result from that directory. When changing the example, regenerate its JSON with the current CLI and keep the logical input name `connection.py` so the displayed paths and symbols remain consistent.
+The quick start and lifecycle tutorial include `examples/lifecycle.py`. The
+root README uses the same source and expected text output. After edits, check
+the primary and related lines in those guides and on the landing page. Confirm
+that removing the final use clears the finding and passes strict policy.
 
-The lifecycle tutorial includes `examples/lifecycle.py` directly. Check its exact
-primary and related lines after edits, and confirm that removing the final use
-leaves no diagnostics or coverage boundaries. Keep published installation
+The multi-file tutorial and declaration-only inspection snapshot use files
+under `docs/_examples`. Regenerate the inspection snapshot after changing its
+source. Keep the logical name `connection.py` for consistent paths and symbols. Keep published installation
 instructions distinct from source-build instructions. Qualification records are
 under `docs/releases/`, including the CodePact 0.4.0 evidence record.
 Documentation of implemented patterns does not by itself mark phase validation
 rows or release gates as passed.
 
-Read the Docs uses `.readthedocs.yaml` at the repository root. The existing
-hosting project retains the `typepact.readthedocs.io` address. See
-[documentation deployment](documentation.md) for the verified configuration,
-version selection, dashboard setup, and publication checks. GitHub’s docs job
+Read the Docs uses `.readthedocs.yaml` at the repository root. The repository
+guide index lives in `docs/README.md`. See [documentation deployment](documentation.md)
+for build configuration, version selection, and hosted verification. GitHub’s docs job
 runs the same pinned local gate on pushes and pull requests.
 
 ## Contribution notes

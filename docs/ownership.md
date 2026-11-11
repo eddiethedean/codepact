@@ -1,9 +1,12 @@
 # Experimental ownership in the 0.5 candidate
 
-Use the 0.5 candidate CLI and matching Python helpers for these examples. The
-ownership rules start disabled. To enable them for a single check, use
-`codepact check --experimental-ownership`. To keep the choice in your project,
-set it in `pyproject.toml`.
+The 0.5 development candidate adds explicit moves, lexical borrows, and a
+bounded model for `asyncio.TaskGroup`. [Build matching 0.5 helpers and CLI](install.md#try-the-05-development-candidate)
+
+## Enable ownership checks
+
+The rules are opt-in. Pass `--experimental-ownership` for a single check, or
+add the following project settings.
 
 ```toml
 [tool.codepact]
@@ -17,8 +20,14 @@ incomplete coverage. Choose the experimental scope separately.
 
 ## Transfer a resource and its cleanup duty
 
-Save this example as `session.py` and run
-`codepact check --experimental-ownership --json session.py`.
+Create a `demo/` directory in the project you want to check and save this
+example as `demo/session.py`. Run the matching CLI from that project.
+
+```sh
+codepact check --root demo --experimental-ownership
+```
+
+For a uv workspace, prefix the command with `uv run --locked`.
 
 ```python
 from codepact import move, resource
@@ -64,10 +73,13 @@ A checked `Borrowed[Session]` parameter can read through a shared view. Keep the
 view inside the verified call or capture region and let the owner close the
 resource. Returning it or storing it in a container reports TP2004.
 
-To use the TaskGroup model, explicitly select the default CPython runtime
-assumption in the project configuration alongside the ownership opt-in.
+To use the TaskGroup model, set both options in the same
+`[tool.codepact]` table.
 
 ```toml
+[tool.codepact]
+config-version = 1
+experimental-ownership = true
 assume-default-task-factory = true
 ```
 

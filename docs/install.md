@@ -1,8 +1,16 @@
 # Installation
 
-Install CodePact **0.4.0**, the published synthetic preview. The helper and CLI
-are on PyPI, and the Rust crate is on crates.io.
-[Verified artifacts and platform support](availability.md)
+Install **0.4.0** for the published preview. To try explicit moves and TaskGroup
+checks, build the 0.5 development candidate from source.
+
+| I need | Choose |
+| --- | --- |
+| Python annotations and the checker in my project | [Python helpers and matching CLI](#python-helpers-and-matching-cli) |
+| A command for a source tree or CI job | [Standalone CLI](#standalone-command) |
+| An embedded checker or reusable analysis session | [Rust library](#rust-library) |
+| The 0.5 experimental ownership rules | [Candidate source build](#try-the-05-development-candidate) |
+
+[Published artifacts and platform support](availability.md)
 
 ## Python helpers and matching CLI
 
@@ -73,6 +81,24 @@ For a Rust-only build from that checkout:
 cargo build --release --locked
 ./target/release/codepact --version
 ```
+
+## Try the 0.5 development candidate
+
+From a CodePact checkout on the development branch, install the locked
+workspace with uv. This builds matching helpers and CLI. Record the Git SHA
+and check the CLI version before comparing reports.
+
+```sh
+git clone https://github.com/eddiethedean/codepact.git
+cd codepact
+git rev-parse HEAD
+uv sync --locked
+uv run --locked codepact --version
+```
+
+The candidate examples expect `codepact 0.5.0`. Follow the
+[ownership guide](ownership.md) to enable experimental checks in a sample
+project. The published 0.4 installation commands above use release artifacts.
 
 ## Compatibility
 
