@@ -4,6 +4,44 @@ use std::{
     process::{Command, Output},
 };
 
+#[test]
+fn version_flags_print_the_package_version() {
+    let expected = concat!("codepact ", env!("CARGO_PKG_VERSION"), "\n");
+    for flag in ["--version", "-V"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_codepact"))
+            .arg(flag)
+            .output()
+            .expect("CLI starts");
+
+        assert!(output.status.success(), "{flag}: {output:?}");
+        assert_eq!(output.stdout, expected.as_bytes(), "{flag}");
+        assert!(output.stderr.is_empty(), "{flag}: {output:?}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn version_flags_report_a_closed_stdout_pipe() {
+    for flag in ["--version", "-V"] {
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+
+        let output = Command::new(env!("CARGO_BIN_EXE_codepact"))
+            .arg(flag)
+            .stdout(writer)
+            .output()
+            .expect("CLI starts");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{flag}: {stderr}");
+        assert!(
+            stderr.starts_with("codepact: cannot write output: "),
+            "{stderr}"
+        );
+        assert_eq!(stderr.lines().count(), 1, "{stderr}");
+    }
+}
+
 fn fixture_root() -> PathBuf {
     std::env::temp_dir().join(format!("codepact-cli-{}", std::process::id()))
 }
