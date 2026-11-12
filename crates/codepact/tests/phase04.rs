@@ -1620,6 +1620,76 @@ fn policy_truth_table_keeps_severity_certainty_coverage_and_rule_selection_separ
 }
 
 #[test]
+fn python_newlines_preserve_suppression_locations_and_fingerprints() {
+    let root = project("suppression-python-newlines");
+    let mut expected_fingerprint = None;
+
+    // Exercise source spans below and above the 1 KiB indexing threshold.
+    for padding in [0, 1500] {
+        for newline in ["\n", "\r\n", "\r"] {
+            for (directive_line, exit_code, disposition) in
+                [(7, 1, "active"), (9, 0, "suppressed-inline")]
+            {
+                let mut lines = Vec::from(
+                    [
+                        "from codepact import resource",
+                        "@resource(closed_by=\"close\")",
+                        "class R:",
+                        "    def close(self): pass",
+                        "    def read(self): pass",
+                        "def run():",
+                        "    r = R()",
+                        "    r.close()",
+                        "    r.read()",
+                    ]
+                    .map(str::to_owned),
+                );
+                lines[directive_line - 1]
+                    .push_str("  # codepact: ignore[TP1001] -- reviewed use after close");
+                if padding > 0 {
+                    lines.push(format!("#{}", "x".repeat(padding)));
+                }
+                lines.push(String::new());
+                fs::write(root.join("main.py"), lines.join(newline)).unwrap();
+
+                let output = cli(
+                    &root,
+                    &["check", "--no-config", "--mode", "strict", "--json"],
+                );
+                let case =
+                    format!("{newline:?}, padding {padding}, directive on line {directive_line}");
+                assert_eq!(output.status.code(), Some(exit_code), "{case}");
+                let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                let finding = report["diagnostics"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|finding| finding["code"] == "TP1001")
+                    .unwrap_or_else(|| panic!("missing TP1001 for {case}: {report:#}"));
+                assert_eq!(finding["primary"]["line"], 9, "{case}");
+                assert_eq!(finding["related"][0]["line"], 8, "{case}");
+                assert_eq!(finding["disposition"], disposition, "{case}");
+                let unused = if directive_line == 7 {
+                    serde_json::json!(["main.py:7"])
+                } else {
+                    serde_json::json!([])
+                };
+                assert_eq!(report["unused_suppressions"], unused, "{case}");
+                let fingerprint = finding["fingerprint"].as_str().unwrap();
+                assert_eq!(
+                    fingerprint,
+                    expected_fingerprint
+                        .get_or_insert_with(|| fingerprint.to_owned())
+                        .as_str(),
+                    "{case}"
+                );
+            }
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn suppression_targets_only_the_primary_start_line_and_retains_raw_findings() {
     let root = project("suppression-primary-line");
     let source = "from codepact import must_use\n@must_use\ndef fetch(): return 1\ndef run():\n    fetch()  # codepact: ignore[TP3001] -- reviewed intentional discard\n    fetch()\n";
