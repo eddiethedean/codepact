@@ -983,7 +983,10 @@ fn normalized_code(source: &str) -> String {
 
 fn enclosing_declaration(source: &str, line: usize) -> String {
     let mut enclosing = Vec::<(usize, String)>::new();
-    for candidate in source.lines().take(line) {
+    let starts = crate::source::line_starts(source);
+    for (index, &start) in starts.iter().enumerate().take(line) {
+        let end = starts.get(index + 1).copied().unwrap_or(source.len());
+        let candidate = crate::source::line_content(source, start, end);
         let code = code_before_comment(candidate);
         let trimmed = code.trim_start();
         if trimmed.is_empty() {
@@ -1022,11 +1025,10 @@ fn enclosing_declaration(source: &str, line: usize) -> String {
 
 fn normalized_span(source: &str, span: &Span) -> String {
     let offset = |line: usize, column: usize| {
-        source
-            .split_inclusive('\n')
-            .take(line.saturating_sub(1))
-            .map(str::len)
-            .sum::<usize>()
+        crate::source::line_starts(source)
+            .get(line.saturating_sub(1))
+            .copied()
+            .unwrap_or(source.len())
             .saturating_add(column.saturating_sub(1))
     };
     let start = offset(span.line, span.column);
@@ -1066,20 +1068,15 @@ fn source_comments(source: &str) -> Vec<(usize, &str)> {
         source,
         ParseOptions::from(Mode::Module).with_target_version(PythonVersion::PY313),
     );
-    let mut line = 1usize;
-    let mut offset = 0usize;
+    let line_starts = crate::source::line_starts(source);
     for token in parsed.tokens() {
         if token.kind() != TokenKind::Comment {
             continue;
         }
         let start = token.start().to_usize();
         let end = token.end().to_usize();
-        line += source[offset..start]
-            .bytes()
-            .filter(|byte| *byte == b'\n')
-            .count();
+        let line = line_starts.partition_point(|line_start| *line_start <= start);
         comments.push((line, &source[start..end]));
-        offset = end;
     }
     comments
 }

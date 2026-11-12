@@ -6,6 +6,47 @@ type SourceKey = (usize, usize);
 type ActiveIndexes = Vec<HashMap<SourceKey, Vec<usize>>>;
 const MIN_INDEXED_SOURCE_BYTES: usize = 1_024;
 
+pub(crate) fn line_starts(source: &str) -> Vec<usize> {
+    let bytes = source.as_bytes();
+    let mut starts = Vec::with_capacity(
+        bytes
+            .iter()
+            .filter(|byte| **byte == b'\n' || **byte == b'\r')
+            .count()
+            + 1,
+    );
+    starts.push(0);
+    let mut offset = 0;
+    while offset < bytes.len() {
+        match bytes[offset] {
+            b'\r' if bytes.get(offset + 1) == Some(&b'\n') => {
+                offset += 2;
+                starts.push(offset);
+            }
+            b'\r' | b'\n' => {
+                offset += 1;
+                starts.push(offset);
+            }
+            _ => offset += 1,
+        }
+    }
+    starts
+}
+
+pub(crate) fn line_content(source: &str, start: usize, end: usize) -> &str {
+    let mut end = end;
+    let bytes = source.as_bytes();
+    if end > start && bytes[end - 1] == b'\n' {
+        end -= 1;
+        if end > start && bytes[end - 1] == b'\r' {
+            end -= 1;
+        }
+    } else if end > start && bytes[end - 1] == b'\r' {
+        end -= 1;
+    }
+    &source[start..end]
+}
+
 thread_local! {
     static ACTIVE_INDEXES: RefCell<ActiveIndexes> = const { RefCell::new(Vec::new()) };
 }
@@ -35,13 +76,7 @@ pub(crate) fn with_indexed_sources<'a, R>(
             continue;
         }
         let key = (source.as_ptr() as usize, source.len());
-        indexes.entry(key).or_insert_with(|| {
-            let mut starts =
-                Vec::with_capacity(source.bytes().filter(|byte| *byte == b'\n').count() + 1);
-            starts.push(0);
-            starts.extend(source.match_indices('\n').map(|(offset, _)| offset + 1));
-            starts
-        });
+        indexes.entry(key).or_insert_with(|| line_starts(source));
     }
     if indexes.is_empty() {
         return run();
@@ -76,10 +111,9 @@ pub(crate) fn span(file: &str, source: &str, range: SourceRange) -> Span {
     }
 
     fn position(source: &str, offset: usize) -> (usize, usize) {
-        let prefix = &source[..offset];
-        let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
-        let column = prefix.rsplit('\n').next().unwrap_or_default().len() + 1;
-        (line, column)
+        let starts = line_starts(source);
+        let line_index = starts.partition_point(|line_start| *line_start <= offset) - 1;
+        (line_index + 1, offset - starts[line_index] + 1)
     }
     fn indexed_positions(
         source: &str,
