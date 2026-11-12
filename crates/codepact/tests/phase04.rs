@@ -290,6 +290,76 @@ fn baseline_update_is_explicit_and_baseline_only_hides_matching_results() {
 }
 
 #[test]
+fn baseline_written_with_bare_cr_matches_after_newline_conversion() {
+    let root = project("baseline-newline-conversion");
+    let source = concat!(
+        "from codepact import resource\n",
+        "@resource(closed_by=\"close\")\n",
+        "class R:\n",
+        "    def close(self): pass\n",
+        "    def read(self): pass\n",
+        "def run():\n",
+        "    r = R()\n",
+        "    r.close()\n",
+        "    r.read()\n",
+    );
+    let path = root.join("main.py");
+    fs::write(&path, source.replace('\n', "\r")).unwrap();
+    let created = cli(
+        &root,
+        &[
+            "baseline",
+            "update",
+            "--no-config",
+            "--output",
+            "baseline.json",
+            "--reason",
+            "reviewed existing finding",
+        ],
+    );
+    assert_eq!(
+        created.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    for newline in ["\r", "\n", "\r\n"] {
+        fs::write(&path, source.replace('\n', newline)).unwrap();
+        let output = cli(
+            &root,
+            &[
+                "check",
+                "--no-config",
+                "--mode",
+                "strict",
+                "--baseline",
+                "baseline.json",
+                "--json",
+            ],
+        );
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "line ending {newline:?}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let finding = report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|finding| finding["code"] == "TP1001")
+            .unwrap_or_else(|| panic!("missing TP1001 for line ending {newline:?}: {report:#}"));
+        assert_eq!(
+            finding["disposition"], "suppressed-baseline",
+            "line ending {newline:?}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn baseline_replace_refusal_and_failed_input_preserve_the_previous_file() {
     let root = project("baseline-replace-recovery");
     let source =

@@ -149,6 +149,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn spans_preserve_byte_columns_with_mixed_newlines() {
+        let source = format!("{}\ré\r\n\rβ\n", "x".repeat(MIN_INDEXED_SOURCE_BYTES));
+        let second_line = MIN_INDEXED_SOURCE_BYTES + 1;
+        let blank_line = second_line + "é\r\n".len();
+        let fourth_line = blank_line + 1;
+        let eof = source.len();
+
+        let check = || {
+            for (start, end, expected) in [
+                (second_line, second_line + "é".len(), (2, 1, 2, 3)),
+                (second_line + "é".len(), blank_line, (2, 3, 3, 1)),
+                (blank_line, fourth_line, (3, 1, 4, 1)),
+                (fourth_line, eof, (4, 1, 5, 1)),
+                (eof, eof, (5, 1, 5, 1)),
+            ] {
+                let location = span("mixed.py", &source, SourceRange { start, end });
+                assert_eq!(
+                    (
+                        location.line,
+                        location.column,
+                        location.end_line,
+                        location.end_column
+                    ),
+                    expected,
+                    "byte range {start}..{end}"
+                );
+            }
+        };
+
+        check();
+        with_indexed_sources([source.as_str()], check);
+    }
+
+    #[test]
     fn indexed_spans_match_scanned_spans_across_nested_source_scopes() {
         let source = format!("one\ntwö\n{}", "x".repeat(MIN_INDEXED_SOURCE_BYTES));
         let nested = format!("x\ny\nz{}", "x".repeat(MIN_INDEXED_SOURCE_BYTES));
