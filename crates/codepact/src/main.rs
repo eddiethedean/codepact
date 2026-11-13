@@ -295,7 +295,25 @@ fn framed_stdout_bytes(value: &str) -> usize {
 
 fn main() -> ExitCode {
     use codepact::adoption::{self, EffectiveConfig, Overrides};
-    let mut args = env::args().skip(1);
+    let raw_args: Vec<_> = env::args_os().skip(1).collect();
+    let output_format = if raw_args.iter().any(|arg| arg == "--json") {
+        "json"
+    } else {
+        "text"
+    };
+    let args = raw_args
+        .into_iter()
+        .enumerate()
+        .map(|(index, arg)| {
+            arg.into_string()
+                .map_err(|_| format!("argument {} is not valid UTF-8", index + 1))
+        })
+        .collect::<Result<Vec<_>, _>>();
+    let args = match args {
+        Ok(args) => args,
+        Err(error) => return emit_failure(output_format, error),
+    };
+    let mut args = args.into_iter();
     let Some(command) = args.next() else {
         usage();
         return ExitCode::from(2);
