@@ -981,9 +981,11 @@ fn normalized_code(source: &str) -> String {
     serde_json::to_string(&tokens).expect("canonical tokens serialize")
 }
 
-fn enclosing_declaration(source: &str, line: usize) -> String {
+fn enclosing_declaration(source: &str, line: usize, starts: &[usize]) -> String {
     let mut enclosing = Vec::<(usize, String)>::new();
-    for candidate in source.lines().take(line) {
+    for (index, &start) in starts.iter().enumerate().take(line) {
+        let end = starts.get(index + 1).copied().unwrap_or(source.len());
+        let candidate = crate::source::line_content(source, start, end);
         let code = code_before_comment(candidate);
         let trimmed = code.trim_start();
         if trimmed.is_empty() {
@@ -1020,13 +1022,12 @@ fn enclosing_declaration(source: &str, line: usize) -> String {
     }
 }
 
-fn normalized_span(source: &str, span: &Span) -> String {
+fn normalized_span(source: &str, span: &Span, starts: &[usize]) -> String {
     let offset = |line: usize, column: usize| {
-        source
-            .split_inclusive('\n')
-            .take(line.saturating_sub(1))
-            .map(str::len)
-            .sum::<usize>()
+        starts
+            .get(line.saturating_sub(1))
+            .copied()
+            .unwrap_or(source.len())
             .saturating_add(column.saturating_sub(1))
     };
     let start = offset(span.line, span.column);
@@ -1034,9 +1035,19 @@ fn normalized_span(source: &str, span: &Span) -> String {
     normalized_code(source.get(start..end).unwrap_or(""))
 }
 
-type AnchorCache = BTreeMap<(String, usize, usize, usize, usize), String>;
+#[derive(Default)]
+struct AnchorCache {
+    anchors: BTreeMap<(String, usize, usize, usize, usize), String>,
+    line_starts: BTreeMap<String, Vec<usize>>,
+}
+
 fn semantic_anchor(source: &str, span: &Span, cache: &mut AnchorCache) -> String {
+    let starts = cache
+        .line_starts
+        .entry(span.file.clone())
+        .or_insert_with(|| crate::source::line_starts(source));
     cache
+        .anchors
         .entry((
             span.file.clone(),
             span.line,
@@ -1047,8 +1058,8 @@ fn semantic_anchor(source: &str, span: &Span, cache: &mut AnchorCache) -> String
         .or_insert_with(|| {
             hash(
                 serde_json::to_string(&(
-                    enclosing_declaration(source, span.line),
-                    normalized_span(source, span),
+                    enclosing_declaration(source, span.line, starts),
+                    normalized_span(source, span, starts),
                 ))
                 .expect("semantic anchor serializes")
                 .as_bytes(),
@@ -1066,20 +1077,15 @@ fn source_comments(source: &str) -> Vec<(usize, &str)> {
         source,
         ParseOptions::from(Mode::Module).with_target_version(PythonVersion::PY313),
     );
-    let mut line = 1usize;
-    let mut offset = 0usize;
+    let line_starts = crate::source::line_starts(source);
     for token in parsed.tokens() {
         if token.kind() != TokenKind::Comment {
             continue;
         }
         let start = token.start().to_usize();
         let end = token.end().to_usize();
-        line += source[offset..start]
-            .bytes()
-            .filter(|byte| *byte == b'\n')
-            .count();
+        let line = line_starts.partition_point(|line_start| *line_start <= start);
         comments.push((line, &source[start..end]));
-        offset = end;
     }
     comments
 }
@@ -1380,7 +1386,7 @@ pub fn build_report(
         .as_bytes(),
     );
 
-    let mut anchors = AnchorCache::new();
+    let mut anchors = AnchorCache::default();
     let mut candidates = BTreeMap::<String, usize>::new();
     for diagnostic in &result.diagnostics {
         *candidates
@@ -1739,7 +1745,7 @@ pub fn write_baseline(
         .iter()
         .map(|f| (f.path.as_str(), f.source.as_str()))
         .collect();
-    let mut anchors = AnchorCache::new();
+    let mut anchors = AnchorCache::default();
     let mut candidate_counts = BTreeMap::<String, usize>::new();
     for diagnostic in &result.diagnostics {
         if !eligible(diagnostic) || !config.enabled_rules.contains(&diagnostic.code) {
