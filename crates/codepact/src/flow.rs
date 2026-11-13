@@ -2676,13 +2676,8 @@ fn consume_expr(
     result: &mut Inspection,
     depth: usize,
 ) {
-    if let Some(name) = expr_name(expr).filter(|name| env.possibly_unbound_places.contains(*name)) {
-        boundary(
-            result,
-            file,
-            expr.range,
-            &format!("local resource alias {name} may be unbound on one branch"),
-        );
+    if let Some(name) = expr_name(expr) {
+        report_possibly_unbound_alias(name, expr.range, env, file, result);
     }
     if let Some(ownership) = env.ownership.as_mut() {
         ownership.pending_move = false;
@@ -2719,6 +2714,23 @@ fn consume_expr(
         }
     }
     consume_expr_impl(expr, env, file, contracts, functions, result, depth);
+}
+
+fn report_possibly_unbound_alias(
+    name: &str,
+    range: SourceRange,
+    env: &State,
+    file: &SourceFile,
+    result: &mut Inspection,
+) {
+    if env.possibly_unbound_places.contains(name) {
+        boundary(
+            result,
+            file,
+            range,
+            &format!("local resource alias {name} may be unbound on one branch"),
+        );
+    }
 }
 
 fn consume_expr_impl(
@@ -5926,15 +5938,8 @@ fn execute_non_if_statement(
         | FlowStatement::EscapingAssign {
             name, value, range, ..
         } => {
-            if let Some(source) =
-                expr_name(value).filter(|source| env.possibly_unbound_places.contains(*source))
-            {
-                boundary(
-                    result,
-                    file,
-                    value.range,
-                    &format!("local resource alias {source} may be unbound on one branch"),
-                );
+            if let Some(source) = expr_name(value) {
+                report_possibly_unbound_alias(source, value.range, env, file, result);
             }
             env.possibly_unbound_places.remove(name);
             env.pending_return_targets = None;
@@ -6380,6 +6385,9 @@ fn execute_non_if_statement(
                     );
                     env.pending_return_targets = env.places.get(&temporary).cloned();
                 } else if env.ownership.is_some() && expr_name(value).is_some() {
+                    if let Some(name) = expr_name(value) {
+                        report_possibly_unbound_alias(name, value.range, env, file, result);
+                    }
                     ownership::return_value(value, env, file, result);
                 } else if let Some(name) = expr_name(value).filter(|name| {
                     env.places.contains_key(*name) && !env.unknown_places.contains(*name)

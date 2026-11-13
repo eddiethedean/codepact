@@ -1,4 +1,4 @@
-use codepact::{check, Diagnostic, Inspection, SourceFile};
+use codepact::{check, check_with_ownership, Diagnostic, Inspection, Ownership, SourceFile};
 
 const RESOURCE: &str = "from codepact import resource\n@resource(closed_by='close')\nclass C:\n    def close(self): pass\n    def status(self): pass\n";
 
@@ -70,6 +70,25 @@ fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
             "{use_after_join}: {result:#?}"
         );
     }
+
+    let owned_return = check_with_ownership(
+        &[SourceFile::new(
+            "main.py",
+            "main",
+            format!(
+                "{RESOURCE}def expose():\n    if flag:\n        value = C()\n        value.close()\n    return value\n"
+            ),
+        )],
+        "3.11",
+        Ownership::Enabled,
+    );
+    assert!(
+        owned_return.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("may be unbound on one branch")
+        }),
+        "{owned_return:#?}"
+    );
 
     let loop_rebind = check_source(&format!(
         "{RESOURCE}if flag:\n    value = C()\n    value.close()\nfor value in (None,):\n    alias = value\n"
