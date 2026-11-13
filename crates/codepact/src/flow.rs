@@ -4092,7 +4092,9 @@ fn consume_expr_impl(
         AstExprKind::Collection(items) | AstExprKind::Tuple(items) if env.ownership.is_some() => {
             for item in items {
                 let names = ownership::stored_names(item);
-                if expr_name(item).is_none() {
+                if let Some(name) = expr_name(item) {
+                    report_possibly_unbound_alias(name, item.range, env, file, result);
+                } else {
                     consume_expr(item, env, file, contracts, functions, result, depth + 1);
                 }
                 if !env.alive {
