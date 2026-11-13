@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 pub const ADOPTION_SCHEMA_VERSION: u8 = 2;
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
-pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 6;
+pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 5;
 pub const RULE_SEMANTIC_VERSION: u8 = 1;
 pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"];
 pub const OWNERSHIP_RULES: &[&str] = &["TP2002", "TP2003", "TP2004", "TP2005", "TP2006"];
@@ -674,8 +674,6 @@ pub struct AdoptionReport {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SnapshotFile {
     pub logical_path: String,
-    #[serde(default)]
-    pub module: String,
     pub sha256: String,
 }
 
@@ -1334,9 +1332,12 @@ pub fn build_report(
         .iter()
         .map(|file| SnapshotFile {
             logical_path: file.path.clone(),
-            module: file.module.clone(),
             sha256: hash(file.source.as_bytes()),
         })
+        .collect::<Vec<_>>();
+    let module_manifest = files_by_path
+        .iter()
+        .map(|file| (&file.path, &file.module))
         .collect::<Vec<_>>();
     let semantic_fingerprint = hash(
         serde_json::to_vec(&(
@@ -1348,6 +1349,7 @@ pub fn build_report(
             config.python_version.as_str(),
             result.model_catalog_version,
             &snapshot_manifest,
+            &module_manifest,
         ))
         .map_err(|error| format!("cannot encode semantic fingerprint: {error}"))?
         .as_slice(),
@@ -1799,11 +1801,15 @@ pub fn write_baseline(
         .iter()
         .map(|file| SnapshotFile {
             logical_path: file.path.clone(),
-            module: file.module.clone(),
             sha256: hash(file.source.as_bytes()),
         })
         .collect::<Vec<_>>();
-    source_manifest.sort_by(|a, b| (&a.logical_path, &a.module).cmp(&(&b.logical_path, &b.module)));
+    source_manifest.sort_by(|a, b| a.logical_path.cmp(&b.logical_path));
+    let mut module_manifest = files
+        .iter()
+        .map(|file| (file.path.as_str(), file.module.as_str()))
+        .collect::<Vec<_>>();
+    module_manifest.sort();
     let snapshot_id = hash(
         serde_json::to_vec(&(
             env!("CARGO_PKG_VERSION"),
@@ -1812,6 +1818,7 @@ pub fn write_baseline(
             config.ownership,
             ownership_model_revision(result),
             &source_manifest,
+            &module_manifest,
             &config.enabled_rules,
             &config.severity,
             config.mode.as_str(),
