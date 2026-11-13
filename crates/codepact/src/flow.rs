@@ -81,6 +81,7 @@ struct State {
     ownership: Option<Box<OwnershipState>>,
     places: BTreeMap<String, BTreeSet<String>>,
     unknown_places: BTreeSet<String>,
+    possibly_unbound_places: BTreeSet<String>,
     shadowed_classes: BTreeSet<String>,
     shadowed_functions: BTreeSet<String>,
     objects: BTreeMap<String, u8>,
@@ -716,6 +717,9 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
         .unknown_places
         .extend(right.unknown_places.iter().cloned());
     joined
+        .possibly_unbound_places
+        .extend(right.possibly_unbound_places.iter().cloned());
+    joined
         .shadowed_classes
         .extend(right.shadowed_classes.iter().cloned());
     joined
@@ -734,6 +738,22 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
         targets.extend(right_targets.into_iter().flatten().cloned());
         if left_targets.is_some() != right_targets.is_some() {
             joined.unknown_places.insert(place.clone());
+            let missing_path_is_unbound = if left_targets.is_some() {
+                !right.unknown_places.contains(&place)
+                    && !right
+                        .ownership
+                        .as_ref()
+                        .is_some_and(|ownership| ownership.definitely_moved(&place))
+            } else {
+                !left.unknown_places.contains(&place)
+                    && !left
+                        .ownership
+                        .as_ref()
+                        .is_some_and(|ownership| ownership.definitely_moved(&place))
+            };
+            if missing_path_is_unbound {
+                joined.possibly_unbound_places.insert(place.clone());
+            }
         }
         if targets.len() > MAX_ALIAS_TARGETS {
             joined.places.remove(&place);
@@ -2650,6 +2670,14 @@ fn consume_expr(
     result: &mut Inspection,
     depth: usize,
 ) {
+    if let Some(name) = expr_name(expr).filter(|name| env.possibly_unbound_places.contains(*name)) {
+        boundary(
+            result,
+            file,
+            expr.range,
+            &format!("local resource alias {name} may be unbound on one branch"),
+        );
+    }
     if let Some(ownership) = env.ownership.as_mut() {
         ownership.pending_move = false;
         ownership.pending_task = None;
@@ -5888,6 +5916,7 @@ fn execute_non_if_statement(
         | FlowStatement::EscapingAssign {
             name, value, range, ..
         } => {
+            env.possibly_unbound_places.remove(name);
             env.pending_return_targets = None;
             if let Some(ownership) = env.ownership.as_mut() {
                 ownership.pending_task = None;
@@ -6218,6 +6247,14 @@ fn execute_non_if_statement(
                 return None;
             }
             if let Some(source) = expr_name(value) {
+                if env.possibly_unbound_places.contains(source) {
+                    boundary(
+                        result,
+                        file,
+                        value.range,
+                        &format!("local resource alias {source} may be unbound on one branch"),
+                    );
+                }
                 ownership::check_moved(source, env, file, value.range, result);
                 if let Some(coroutine) = source_coroutine {
                     env.coroutine_aliases.insert(name.clone(), coroutine);

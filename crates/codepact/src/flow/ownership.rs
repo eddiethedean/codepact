@@ -208,6 +208,10 @@ impl OwnershipState {
         }
     }
 
+    pub(super) fn definitely_moved(&self, name: &str) -> bool {
+        self.moved.get(name).is_some_and(|moved| !moved.possible)
+    }
+
     pub(super) fn assign(
         &mut self,
         name: &str,
