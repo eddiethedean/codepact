@@ -2451,14 +2451,20 @@ fn evaluate_call_arguments(
         if !env.alive {
             break;
         }
-        if !matches!(
-            argument.kind,
-            AstExprKind::Name(_)
-                | AstExprKind::String(_)
-                | AstExprKind::Boolean(_)
-                | AstExprKind::NoneLiteral
-                | AstExprKind::Primitive
-        ) {
+        let is_possibly_unbound_name = matches!(
+            &argument.kind,
+            AstExprKind::Name(name) if env.possibly_unbound_places.contains(name)
+        );
+        if is_possibly_unbound_name
+            || !matches!(
+                argument.kind,
+                AstExprKind::Name(_)
+                    | AstExprKind::String(_)
+                    | AstExprKind::Boolean(_)
+                    | AstExprKind::NoneLiteral
+                    | AstExprKind::Primitive
+            )
+        {
             consume_expr(argument, env, file, contracts, functions, result, depth + 1);
         }
     }
@@ -4983,6 +4989,7 @@ fn execute_loop(
             outcomes.raises.extend(take_pending_raises(&mut iteration));
         }
         if let Some(target) = target {
+            iteration.possibly_unbound_places.remove(target);
             if let Some(ownership) = iteration.ownership.as_mut() {
                 ownership.rebind(target);
             }
@@ -5152,6 +5159,7 @@ fn execute_static_for_loop(
         };
         iterations += 1;
         if matches!(&item.kind, AstExprKind::Name(_)) {
+            iteration.possibly_unbound_places.remove(target);
             if let Some(targets) = captured_places[index].clone() {
                 iteration.places.insert(target.to_owned(), targets);
                 iteration.unknown_places.remove(target);
@@ -5185,6 +5193,7 @@ fn execute_static_for_loop(
                 iteration.unknown_coroutine_aliases.remove(target);
             }
         } else {
+            iteration.possibly_unbound_places.remove(target);
             iteration.places.remove(target);
             iteration.unknown_places.remove(target);
             iteration.coroutine_aliases.remove(target);
@@ -5703,6 +5712,7 @@ fn execute_with(
                 );
             }
             if let Some(target) = &item.target {
+                env.possibly_unbound_places.remove(target);
                 if let Some(targets) = env.places.get(&receiver).cloned() {
                     env.places.insert(target.clone(), targets);
                     ownership::assign_handle(target, None, false, env, file, item.range, result);
@@ -5916,6 +5926,16 @@ fn execute_non_if_statement(
         | FlowStatement::EscapingAssign {
             name, value, range, ..
         } => {
+            if let Some(source) =
+                expr_name(value).filter(|source| env.possibly_unbound_places.contains(*source))
+            {
+                boundary(
+                    result,
+                    file,
+                    value.range,
+                    &format!("local resource alias {source} may be unbound on one branch"),
+                );
+            }
             env.possibly_unbound_places.remove(name);
             env.pending_return_targets = None;
             if let Some(ownership) = env.ownership.as_mut() {
@@ -6247,14 +6267,6 @@ fn execute_non_if_statement(
                 return None;
             }
             if let Some(source) = expr_name(value) {
-                if env.possibly_unbound_places.contains(source) {
-                    boundary(
-                        result,
-                        file,
-                        value.range,
-                        &format!("local resource alias {source} may be unbound on one branch"),
-                    );
-                }
                 ownership::check_moved(source, env, file, value.range, result);
                 if let Some(coroutine) = source_coroutine {
                     env.coroutine_aliases.insert(name.clone(), coroutine);

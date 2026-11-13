@@ -56,6 +56,31 @@ fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
             .any(|diagnostic| diagnostic.code == "TP9001"),
         "{read:#?}"
     );
+
+    for use_after_join in ["alias = value", "value = value", "ignore(value)"] {
+        let source = format!(
+            "{RESOURCE}def ignore(item): pass\nif flag:\n    value = C()\n    value.close()\n{use_after_join}\n"
+        );
+        let result = check_source(&source);
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001"
+                    && diagnostic.message.contains("may be unbound on one branch")
+            }),
+            "{use_after_join}: {result:#?}"
+        );
+    }
+
+    let loop_rebind = check_source(&format!(
+        "{RESOURCE}if flag:\n    value = C()\n    value.close()\nfor value in (None,):\n    alias = value\n"
+    ));
+    assert!(
+        loop_rebind
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "TP9001"),
+        "{loop_rebind:#?}"
+    );
 }
 
 #[test]
