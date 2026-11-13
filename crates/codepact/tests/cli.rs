@@ -54,6 +54,25 @@ fn non_utf8_path_argument_returns_a_json_input_error_without_panicking() {
 
 #[cfg(unix)]
 #[test]
+fn json_like_option_value_does_not_select_json_error_output() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_codepact"))
+        .args(["check", "--output-format", "text", "--root", "--json"])
+        .arg(std::ffi::OsString::from_vec(b"bad_\xff.py".to_vec()))
+        .output()
+        .expect("CLI starts");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr).trim(),
+        "codepact: argument 6 is not valid UTF-8"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn version_flags_report_a_closed_stdout_pipe() {
     for flag in ["--version", "-V"] {
         let (reader, writer) = std::io::pipe().unwrap();
