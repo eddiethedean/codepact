@@ -100,6 +100,53 @@ fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
         }),
         "{owned_call:#?}"
     );
+    assert!(
+        owned_call
+            .diagnostics
+            .iter()
+            .all(|diagnostic| !diagnostic.message.contains("unsupported expression")),
+        "{owned_call:#?}"
+    );
+
+    let deleted_on_branch = check_with_ownership(
+        &[SourceFile::new(
+            "main.py",
+            "main",
+            format!(
+                "{RESOURCE}def expose(flag):\n    value = None\n    if flag:\n        value = C()\n        value.close()\n    else:\n        del value\n    alias = value\n"
+            ),
+        )],
+        "3.11",
+        Ownership::Enabled,
+    );
+    assert!(
+        deleted_on_branch.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("may be unbound on one branch")
+        }),
+        "{deleted_on_branch:#?}"
+    );
+
+    for ownership in [Ownership::Disabled, Ownership::Enabled] {
+        let parameter_binding = check_with_ownership(
+            &[SourceFile::new(
+                "main.py",
+                "main",
+                format!(
+                    "{RESOURCE}def expose(value, flag):\n    if flag:\n        value = C()\n        value.close()\n    alias = value\n"
+                ),
+            )],
+            "3.11",
+            ownership,
+        );
+        assert!(
+            parameter_binding.diagnostics.iter().all(|diagnostic| {
+                diagnostic.code != "TP9001"
+                    || !diagnostic.message.contains("may be unbound on one branch")
+            }),
+            "{parameter_binding:#?}"
+        );
+    }
 
     let exception_target = check_source(&format!(
         "{RESOURCE}if flag:\n    value = C()\n    value.close()\ntry:\n    raise ValueError()\nexcept Exception as value:\n    alias = value\n"

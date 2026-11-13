@@ -2464,16 +2464,18 @@ fn evaluate_call_arguments(
             &argument.kind,
             AstExprKind::Name(name) if env.possibly_unbound_places.contains(name)
         );
-        if is_possibly_unbound_name
-            || !matches!(
-                argument.kind,
-                AstExprKind::Name(_)
-                    | AstExprKind::String(_)
-                    | AstExprKind::Boolean(_)
-                    | AstExprKind::NoneLiteral
-                    | AstExprKind::Primitive
-            )
-        {
+        if is_possibly_unbound_name {
+            if let Some(name) = expr_name(argument) {
+                report_possibly_unbound_alias(name, argument.range, env, file, result);
+            }
+        } else if !matches!(
+            argument.kind,
+            AstExprKind::Name(_)
+                | AstExprKind::String(_)
+                | AstExprKind::Boolean(_)
+                | AstExprKind::NoneLiteral
+                | AstExprKind::Primitive
+        ) {
             consume_expr(argument, env, file, contracts, functions, result, depth + 1);
         }
     }
@@ -6597,6 +6599,8 @@ fn execute_non_if_statement(
         }
         FlowStatement::DeleteLocal { names, .. } if env.ownership.is_some() => {
             for name in names {
+                env.possibly_unbound_places.remove(name);
+                env.definitely_bound_names.remove(name);
                 env.places.remove(name);
                 env.unknown_places.remove(name);
                 env.coroutine_aliases.remove(name);
@@ -7106,6 +7110,8 @@ pub(crate) fn check_file_bodies(
             };
             env.shadowed_functions
                 .extend(parameters.iter().map(|parameter| parameter.name.clone()));
+            env.definitely_bound_names
+                .extend(parameters.iter().map(|parameter| parameter.name.clone()));
             env.shadowed_functions.extend(assigned_names(body));
             env.shadowed_classes
                 .extend(parameters.iter().map(|parameter| parameter.name.clone()));
@@ -7235,6 +7241,8 @@ pub(crate) fn check_file_bodies(
                     ..State::default()
                 };
                 env.shadowed_functions
+                    .extend(method.parameters.iter().cloned());
+                env.definitely_bound_names
                     .extend(method.parameters.iter().cloned());
                 env.shadowed_functions.extend(assigned_names(&method.body));
                 env.shadowed_classes
