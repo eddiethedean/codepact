@@ -296,7 +296,14 @@ fn framed_stdout_bytes(value: &str) -> usize {
 fn main() -> ExitCode {
     use codepact::adoption::{self, EffectiveConfig, Overrides};
     let raw_args: Vec<_> = env::args_os().skip(1).collect();
-    let output_format = if raw_args.iter().any(|arg| arg == "--json") {
+    let output_format = if raw_args
+        .first()
+        .is_some_and(|arg| arg == "inspect-contracts")
+        || raw_args.iter().any(|arg| arg == "--json")
+        || raw_args
+            .windows(2)
+            .any(|args| args[0] == "--output-format" && args[1] == "json")
+    {
         "json"
     } else {
         "text"
