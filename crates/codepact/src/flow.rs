@@ -247,7 +247,6 @@ fn parameter_contracts(
 #[derive(Default)]
 struct JoinEffects {
     aliases_over_budget: Vec<String>,
-    possibly_unbound: Vec<String>,
 }
 
 fn expr_name(expr: &AstExpr) -> Option<&str> {
@@ -735,22 +734,6 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
         targets.extend(right_targets.into_iter().flatten().cloned());
         if left_targets.is_some() != right_targets.is_some() {
             joined.unknown_places.insert(place.clone());
-            let missing_path_is_unbound = if left_targets.is_some() {
-                !right.unknown_places.contains(&place)
-                    && !right
-                        .ownership
-                        .as_ref()
-                        .is_some_and(|o| o.definitely_moved(&place))
-            } else {
-                !left.unknown_places.contains(&place)
-                    && !left
-                        .ownership
-                        .as_ref()
-                        .is_some_and(|o| o.definitely_moved(&place))
-            };
-            if missing_path_is_unbound {
-                effects.possibly_unbound.push(place.clone());
-            }
         }
         if targets.len() > MAX_ALIAS_TARGETS {
             joined.places.remove(&place);
@@ -4246,14 +4229,6 @@ fn execute(
             *env = joined;
             ownership::cap_handles(env, file, *range, result);
             if reachable {
-                for place in effects.possibly_unbound {
-                    boundary(
-                        result,
-                        file,
-                        *range,
-                        &format!("local resource alias {place} may be unbound on one branch"),
-                    );
-                }
                 for place in effects.aliases_over_budget {
                     boundary(
                         result,

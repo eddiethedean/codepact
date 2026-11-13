@@ -15,6 +15,50 @@ fn findings(result: &Inspection) -> Vec<&Diagnostic> {
 }
 
 #[test]
+fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
+    let unused = check_source(&format!(
+        "{RESOURCE}if flag:\n    value = C()\n    value.close()\n"
+    ));
+    assert_eq!(
+        unused.coverage.status, "complete-for-supported-subset",
+        "{unused:#?}"
+    );
+    assert!(
+        unused
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "TP9001"),
+        "{unused:#?}"
+    );
+
+    let rebound = check_source(&format!(
+        "{RESOURCE}if flag:\n    value = C()\n    value.close()\nvalue = C()\nvalue.close()\n"
+    ));
+    assert_eq!(
+        rebound.coverage.status, "complete-for-supported-subset",
+        "{rebound:#?}"
+    );
+    assert!(
+        rebound
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "TP9001"),
+        "{rebound:#?}"
+    );
+
+    let read = check_source(&format!(
+        "{RESOURCE}if flag:\n    value = C()\n    value.close()\nvalue.status()\n"
+    ));
+    assert_eq!(read.coverage.status, "incomplete", "{read:#?}");
+    assert!(
+        read.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP9001"),
+        "{read:#?}"
+    );
+}
+
+#[test]
 fn invalid_function_bindings_do_not_execute_the_body_or_normal_successor() {
     for (parameters, call) in [
         ("value: C, required", "finish(c)"),
