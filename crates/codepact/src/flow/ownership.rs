@@ -777,6 +777,7 @@ pub(super) fn prepare_call(
     };
     if let AstExprKind::Attribute(receiver, method) = &mut function.kind {
         if let Some(name) = expr_name(receiver).map(str::to_owned) {
+            report_possibly_unbound_alias(&name, receiver.range, env, file, result);
             prepared.invalid_receiver = check_moved(&name, env, file, receiver.range, result);
             let qualified = qualified_function_key(&name, method, env)
                 .filter(|key| functions.contains_key(key));
@@ -820,6 +821,7 @@ pub(super) fn prepare_call(
             break;
         }
         if let Some(name) = expr_name(argument).map(str::to_owned) {
+            report_possibly_unbound_alias(&name, argument.range, env, file, result);
             check_moved(&name, env, file, argument.range, result);
             snapshot_name(argument, &name, env, file, &mut prepared.temporaries);
         } else if !matches!(

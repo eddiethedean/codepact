@@ -71,6 +71,49 @@ fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
         );
     }
 
+    let nested_assignment = check_source(&format!(
+        "{RESOURCE}def ignore(item): return None\nif flag:\n    value = C()\n    value.close()\nvalue = ignore(value)\n"
+    ));
+    assert!(
+        nested_assignment.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("may be unbound on one branch")
+        }),
+        "{nested_assignment:#?}"
+    );
+
+    let owned_call = check_with_ownership(
+        &[SourceFile::new(
+            "main.py",
+            "main",
+            format!(
+                "{RESOURCE}def ignore(item): pass\ndef expose():\n    if flag:\n        value = C()\n        value.close()\n    ignore(value)\n"
+            ),
+        )],
+        "3.11",
+        Ownership::Enabled,
+    );
+    assert!(
+        owned_call.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("may be unbound on one branch")
+        }),
+        "{owned_call:#?}"
+    );
+
+    let exception_target = check_source(&format!(
+        "{RESOURCE}if flag:\n    value = C()\n    value.close()\ntry:\n    pass\nexcept Exception as value:\n    alias = value\n"
+    ));
+    assert!(
+        exception_target.diagnostics.iter().all(|diagnostic| {
+            diagnostic.code != "TP9001"
+                || !diagnostic
+                    .message
+                    .contains("value may be unbound on one branch")
+        }),
+        "{exception_target:#?}"
+    );
+
     let owned_return = check_with_ownership(
         &[SourceFile::new(
             "main.py",

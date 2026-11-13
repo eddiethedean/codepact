@@ -4665,6 +4665,7 @@ fn exception_handler_match(
 }
 
 fn clear_exception_target(state: &mut State, name: &str) {
+    state.possibly_unbound_places.remove(name);
     if let Some(ownership) = state.ownership.as_mut() {
         ownership.rebind(name);
     }
@@ -4805,6 +4806,7 @@ fn execute_try(
             let mut handler_state = dispatch_state.clone();
             handler_state.control_depth = handler_state.control_depth.saturating_add(1);
             if let Some(name) = &handler.name {
+                handler_state.possibly_unbound_places.remove(name);
                 if let Some(ownership) = handler_state.ownership.as_mut() {
                     ownership.rebind(name);
                 }
@@ -5941,7 +5943,6 @@ fn execute_non_if_statement(
             if let Some(source) = expr_name(value) {
                 report_possibly_unbound_alias(source, value.range, env, file, result);
             }
-            env.possibly_unbound_places.remove(name);
             env.pending_return_targets = None;
             if let Some(ownership) = env.ownership.as_mut() {
                 ownership.pending_task = None;
@@ -5955,6 +5956,7 @@ fn execute_non_if_statement(
             if let (Some(ownership), AstExprKind::Closure(captures)) =
                 (env.ownership.as_mut(), &value.kind)
             {
+                env.possibly_unbound_places.remove(name);
                 ownership.define_closure(name, captures);
                 env.places.remove(name);
                 env.unknown_places.remove(name);
@@ -6013,6 +6015,7 @@ fn execute_non_if_statement(
                             .as_ref()
                             .and_then(|resource| resource_method(resource, "__new__", functions));
                         if new_definition.is_some() {
+                            env.possibly_unbound_places.remove(name);
                             weaken(
                                 env,
                                 env.places
@@ -6048,6 +6051,7 @@ fn execute_non_if_statement(
                         if !env.objects.contains_key(&object)
                             && env.objects.len() >= MAX_FLOW_OBJECTS
                         {
+                            env.possibly_unbound_places.remove(name);
                             env.places.remove(name);
                             env.unknown_places.insert(name.clone());
                             env.shadowed_classes.insert(name.clone());
@@ -6216,6 +6220,7 @@ fn execute_non_if_statement(
                         }
                         env.places
                             .insert(name.clone(), BTreeSet::from([object.clone()]));
+                        env.possibly_unbound_places.remove(name);
                         ownership::assign_handle(name, None, true, env, file, *range, result);
                         env.unknown_places.remove(name);
                         env.shadowed_classes.insert(name.clone());
@@ -6232,6 +6237,7 @@ fn execute_non_if_statement(
                 if !env.alive && env.ownership.is_some() {
                     return None;
                 }
+                env.possibly_unbound_places.remove(name);
                 if let Some(coroutine) = env.pending_coroutine_result.take() {
                     if env.coroutines.contains_key(&coroutine) {
                         env.coroutine_aliases.insert(name.clone(), coroutine);
@@ -6273,6 +6279,7 @@ fn execute_non_if_statement(
             }
             if let Some(source) = expr_name(value) {
                 ownership::check_moved(source, env, file, value.range, result);
+                env.possibly_unbound_places.remove(name);
                 if let Some(coroutine) = source_coroutine {
                     env.coroutine_aliases.insert(name.clone(), coroutine);
                     env.places.remove(name);
@@ -6303,6 +6310,7 @@ fn execute_non_if_statement(
                 if !env.alive && env.ownership.is_some() {
                     return None;
                 }
+                env.possibly_unbound_places.remove(name);
                 if let Some(coroutine) = env.pending_coroutine_result.take() {
                     if env.coroutines.contains_key(&coroutine) {
                         env.coroutine_aliases.insert(name.clone(), coroutine);
