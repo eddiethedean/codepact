@@ -102,7 +102,7 @@ fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
     );
 
     let exception_target = check_source(&format!(
-        "{RESOURCE}if flag:\n    value = C()\n    value.close()\ntry:\n    pass\nexcept Exception as value:\n    alias = value\n"
+        "{RESOURCE}if flag:\n    value = C()\n    value.close()\ntry:\n    raise ValueError()\nexcept Exception as value:\n    alias = value\n"
     ));
     assert!(
         exception_target.diagnostics.iter().all(|diagnostic| {
@@ -113,6 +113,38 @@ fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
         }),
         "{exception_target:#?}"
     );
+
+    let non_resource_binding = check_source(&format!(
+        "{RESOURCE}if flag:\n    value = C()\n    value.close()\nelse:\n    value = None\nalias = value\n"
+    ));
+    assert!(
+        non_resource_binding
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "TP9001"),
+        "{non_resource_binding:#?}"
+    );
+
+    for ownership in [Ownership::Disabled, Ownership::Enabled] {
+        let function_rebind = check_with_ownership(
+            &[SourceFile::new(
+                "main.py",
+                "main",
+                format!(
+                    "{RESOURCE}if flag:\n    value = C()\n    value.close()\ndef value(): pass\nalias = value\n"
+                ),
+            )],
+            "3.11",
+            ownership,
+        );
+        assert!(
+            function_rebind
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code != "TP9001"),
+            "{function_rebind:#?}"
+        );
+    }
 
     let owned_return = check_with_ownership(
         &[SourceFile::new(

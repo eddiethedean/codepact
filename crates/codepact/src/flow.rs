@@ -82,6 +82,7 @@ struct State {
     places: BTreeMap<String, BTreeSet<String>>,
     unknown_places: BTreeSet<String>,
     possibly_unbound_places: BTreeSet<String>,
+    definitely_bound_names: BTreeSet<String>,
     shadowed_classes: BTreeSet<String>,
     shadowed_functions: BTreeSet<String>,
     objects: BTreeMap<String, u8>,
@@ -720,6 +721,9 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
         .possibly_unbound_places
         .extend(right.possibly_unbound_places.iter().cloned());
     joined
+        .definitely_bound_names
+        .retain(|name| right.definitely_bound_names.contains(name));
+    joined
         .shadowed_classes
         .extend(right.shadowed_classes.iter().cloned());
     joined
@@ -739,13 +743,15 @@ fn merge(left: &State, right: &State) -> (State, JoinEffects) {
         if left_targets.is_some() != right_targets.is_some() {
             joined.unknown_places.insert(place.clone());
             let missing_path_is_unbound = if left_targets.is_some() {
-                !right.unknown_places.contains(&place)
+                !right.definitely_bound_names.contains(&place)
+                    && !right.unknown_places.contains(&place)
                     && !right
                         .ownership
                         .as_ref()
                         .is_some_and(|ownership| ownership.definitely_moved(&place))
             } else {
-                !left.unknown_places.contains(&place)
+                !left.definitely_bound_names.contains(&place)
+                    && !left.unknown_places.contains(&place)
                     && !left
                         .ownership
                         .as_ref()
@@ -1612,6 +1618,9 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
     );
     child
         .shadowed_functions
+        .extend(definition.parameters.iter().cloned());
+    child
+        .definitely_bound_names
         .extend(definition.parameters.iter().cloned());
     child
         .shadowed_functions
@@ -3789,6 +3798,9 @@ fn consume_expr_impl(
                     .shadowed_functions
                     .extend(definition.parameters.iter().cloned());
                 child
+                    .definitely_bound_names
+                    .extend(definition.parameters.iter().cloned());
+                child
                     .shadowed_functions
                     .extend(assigned_names(&definition.statements));
                 child
@@ -4666,6 +4678,7 @@ fn exception_handler_match(
 
 fn clear_exception_target(state: &mut State, name: &str) {
     state.possibly_unbound_places.remove(name);
+    state.definitely_bound_names.remove(name);
     if let Some(ownership) = state.ownership.as_mut() {
         ownership.rebind(name);
     }
@@ -4807,6 +4820,7 @@ fn execute_try(
             handler_state.control_depth = handler_state.control_depth.saturating_add(1);
             if let Some(name) = &handler.name {
                 handler_state.possibly_unbound_places.remove(name);
+                handler_state.definitely_bound_names.insert(name.clone());
                 if let Some(ownership) = handler_state.ownership.as_mut() {
                     ownership.rebind(name);
                 }
@@ -5004,6 +5018,7 @@ fn execute_loop(
         }
         if let Some(target) = target {
             iteration.possibly_unbound_places.remove(target);
+            iteration.definitely_bound_names.insert(target.to_owned());
             if let Some(ownership) = iteration.ownership.as_mut() {
                 ownership.rebind(target);
             }
@@ -5174,6 +5189,7 @@ fn execute_static_for_loop(
         iterations += 1;
         if matches!(&item.kind, AstExprKind::Name(_)) {
             iteration.possibly_unbound_places.remove(target);
+            iteration.definitely_bound_names.insert(target.to_owned());
             if let Some(targets) = captured_places[index].clone() {
                 iteration.places.insert(target.to_owned(), targets);
                 iteration.unknown_places.remove(target);
@@ -5208,6 +5224,7 @@ fn execute_static_for_loop(
             }
         } else {
             iteration.possibly_unbound_places.remove(target);
+            iteration.definitely_bound_names.insert(target.to_owned());
             iteration.places.remove(target);
             iteration.unknown_places.remove(target);
             iteration.coroutine_aliases.remove(target);
@@ -5727,6 +5744,7 @@ fn execute_with(
             }
             if let Some(target) = &item.target {
                 env.possibly_unbound_places.remove(target);
+                env.definitely_bound_names.insert(target.to_owned());
                 if let Some(targets) = env.places.get(&receiver).cloned() {
                     env.places.insert(target.clone(), targets);
                     ownership::assign_handle(target, None, false, env, file, item.range, result);
@@ -5957,6 +5975,7 @@ fn execute_non_if_statement(
                 (env.ownership.as_mut(), &value.kind)
             {
                 env.possibly_unbound_places.remove(name);
+                env.definitely_bound_names.insert(name.clone());
                 ownership.define_closure(name, captures);
                 env.places.remove(name);
                 env.unknown_places.remove(name);
@@ -6016,6 +6035,7 @@ fn execute_non_if_statement(
                             .and_then(|resource| resource_method(resource, "__new__", functions));
                         if new_definition.is_some() {
                             env.possibly_unbound_places.remove(name);
+                            env.definitely_bound_names.insert(name.clone());
                             weaken(
                                 env,
                                 env.places
@@ -6052,6 +6072,7 @@ fn execute_non_if_statement(
                             && env.objects.len() >= MAX_FLOW_OBJECTS
                         {
                             env.possibly_unbound_places.remove(name);
+                            env.definitely_bound_names.insert(name.clone());
                             env.places.remove(name);
                             env.unknown_places.insert(name.clone());
                             env.shadowed_classes.insert(name.clone());
@@ -6221,6 +6242,7 @@ fn execute_non_if_statement(
                         env.places
                             .insert(name.clone(), BTreeSet::from([object.clone()]));
                         env.possibly_unbound_places.remove(name);
+                        env.definitely_bound_names.insert(name.clone());
                         ownership::assign_handle(name, None, true, env, file, *range, result);
                         env.unknown_places.remove(name);
                         env.shadowed_classes.insert(name.clone());
@@ -6238,6 +6260,7 @@ fn execute_non_if_statement(
                     return None;
                 }
                 env.possibly_unbound_places.remove(name);
+                env.definitely_bound_names.insert(name.clone());
                 if let Some(coroutine) = env.pending_coroutine_result.take() {
                     if env.coroutines.contains_key(&coroutine) {
                         env.coroutine_aliases.insert(name.clone(), coroutine);
@@ -6280,6 +6303,7 @@ fn execute_non_if_statement(
             if let Some(source) = expr_name(value) {
                 ownership::check_moved(source, env, file, value.range, result);
                 env.possibly_unbound_places.remove(name);
+                env.definitely_bound_names.insert(name.clone());
                 if let Some(coroutine) = source_coroutine {
                     env.coroutine_aliases.insert(name.clone(), coroutine);
                     env.places.remove(name);
@@ -6311,6 +6335,7 @@ fn execute_non_if_statement(
                     return None;
                 }
                 env.possibly_unbound_places.remove(name);
+                env.definitely_bound_names.insert(name.clone());
                 if let Some(coroutine) = env.pending_coroutine_result.take() {
                     if env.coroutines.contains_key(&coroutine) {
                         env.coroutine_aliases.insert(name.clone(), coroutine);
@@ -6450,6 +6475,8 @@ fn execute_non_if_statement(
             class_decorators,
             range,
         } => {
+            env.definitely_bound_names.insert(name.clone());
+            env.possibly_unbound_places.remove(name);
             if let Some(ownership) = env.ownership.as_mut() {
                 ownership.rebind(name);
                 env.places.remove(name);
@@ -6540,6 +6567,8 @@ fn execute_non_if_statement(
             captures,
             range,
         } if env.ownership.is_some() => {
+            env.definitely_bound_names.insert(name.clone());
+            env.possibly_unbound_places.remove(name);
             for capture in captures {
                 ownership::check_moved(capture, env, file, *range, result);
             }
