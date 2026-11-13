@@ -104,6 +104,51 @@ fn non_utf8_argument_errors_take_precedence_over_conflicts_and_help() {
 
 #[cfg(unix)]
 #[test]
+fn non_utf8_option_values_are_reported_as_json_when_requested() {
+    use std::os::unix::ffi::OsStringExt;
+
+    for option in ["--rules", "--severity", "--max-diagnostics"] {
+        for json_first in [false, true] {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_codepact"));
+            command.arg("check");
+            if json_first {
+                command.arg("--json");
+            }
+            command
+                .arg(option)
+                .arg(std::ffi::OsString::from_vec(b"bad_\xff".to_vec()));
+            if !json_first {
+                command.arg("--json");
+            }
+            let output = command.output().expect("CLI starts");
+            let case = format!("{option}, json_first={json_first}");
+            assert_eq!(output.status.code(), Some(2), "{case}");
+            assert!(output.stderr.is_empty(), "{case}: {output:?}");
+            let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(report["execution_status"], "failed", "{case}");
+            let index = if json_first { 4 } else { 3 };
+            assert_eq!(
+                report["error"]["message"],
+                format!("argument {index} is not valid UTF-8"),
+                "{case}"
+            );
+        }
+    }
+}
+
+#[test]
+fn empty_output_format_is_an_execution_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_codepact"))
+        .args(["check", "--no-config", "--output-format", ""])
+        .output()
+        .expect("CLI starts");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown output format"));
+}
+
+#[cfg(unix)]
+#[test]
 fn version_flags_report_a_closed_stdout_pipe() {
     for flag in ["--version", "-V"] {
         let (reader, writer) = std::io::pipe().unwrap();

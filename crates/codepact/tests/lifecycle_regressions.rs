@@ -285,6 +285,51 @@ fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
 }
 
 #[test]
+fn ownership_container_reads_report_possibly_unbound_aliases() {
+    for container in ["(alias,)", "[alias]"] {
+        let source = format!(
+            "{RESOURCE}def run(flag, conn: C):\n    if flag:\n        alias = conn\n    values = {container}\n"
+        );
+        let result = check_with_ownership(
+            &[SourceFile::new("main.py", "main", source)],
+            "3.11",
+            Ownership::Enabled,
+        );
+        assert_eq!(
+            result.coverage.status, "incomplete",
+            "{container}: {result:#?}"
+        );
+        assert!(
+            result.diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "TP9001"
+                    && diagnostic
+                        .message
+                        .contains("alias may be unbound on one branch")
+            }),
+            "{container}: {result:#?}"
+        );
+    }
+}
+
+#[test]
+fn ownership_container_creation_does_not_read_lambda_captures() {
+    for container in ["(lambda: alias,)", "[lambda: alias]"] {
+        let source = format!(
+            "{RESOURCE}def run(flag, conn: C):\n    if flag:\n        alias = conn\n    callbacks = {container}\n    alias = conn\n    return callbacks\n"
+        );
+        let result = check_with_ownership(
+            &[SourceFile::new("main.py", "main", source)],
+            "3.11",
+            Ownership::Enabled,
+        );
+        assert_eq!(
+            result.coverage.status, "complete-for-supported-subset",
+            "{container}: {result:#?}"
+        );
+    }
+}
+
+#[test]
 fn invalid_function_bindings_do_not_execute_the_body_or_normal_successor() {
     for (parameters, call) in [
         ("value: C, required", "finish(c)"),

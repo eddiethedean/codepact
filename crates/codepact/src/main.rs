@@ -1,6 +1,7 @@
 use codepact::{inspect, is_python_identifier, SourceFile, DEFAULT_MAX_SOURCE_BYTES};
 use std::{
     env,
+    ffi::OsString,
     fs::{self, File},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
@@ -293,47 +294,78 @@ fn framed_stdout_bytes(value: &str) -> usize {
         .saturating_add(usize::from(!value.is_empty() && !value.ends_with('\n')))
 }
 
+fn option_takes_value(option: &str, baseline_update: bool) -> bool {
+    matches!(
+        option,
+        "--python-version"
+            | "--root"
+            | "--config"
+            | "--mode"
+            | "--fail-on"
+            | "--rules"
+            | "--severity"
+            | "--baseline"
+            | "--output-format"
+            | "--max-diagnostics"
+    ) || (baseline_update && matches!(option, "--output" | "--reason"))
+}
+
+fn invalid_argument_format(args: &[OsString]) -> &'static str {
+    let mut args = args.iter().map(|arg| arg.to_str());
+    let (baseline_update, mut format) = match args.next().flatten() {
+        Some("capabilities" | "explain") => return "json",
+        Some("inspect-contracts") => (false, "json"),
+        Some("check") => (false, "text"),
+        Some("baseline") if args.next().flatten() == Some("update") => (true, "text"),
+        _ => return "text",
+    };
+    while let Some(option) = args.next() {
+        let Some(option) = option else { continue };
+        if option == "--json" {
+            return "json";
+        }
+        if option_takes_value(option, baseline_update) {
+            let value = args.next().flatten();
+            if option == "--output-format" {
+                match value {
+                    Some("json") => return "json",
+                    Some("text" | "concise") => format = "text",
+                    _ => {}
+                }
+            }
+        }
+    }
+    format
+}
+
 fn main() -> ExitCode {
     use codepact::adoption::{self, EffectiveConfig, Overrides};
     let raw_args: Vec<_> = env::args_os().skip(1).collect();
-    let mut invalid_argument = None;
-    let args = raw_args
-        .into_iter()
-        .enumerate()
-        .map(|(index, arg)| match arg.into_string() {
-            Ok(arg) => arg,
-            Err(_) => {
-                invalid_argument
-                    .get_or_insert_with(|| format!("argument {} is not valid UTF-8", index + 1));
-                String::new()
-            }
-        })
-        .collect::<Vec<_>>();
-    let mut args = args.into_iter();
+    if let Some(index) = raw_args.iter().position(|arg| arg.to_str().is_none()) {
+        return emit_failure(
+            invalid_argument_format(&raw_args),
+            format!("argument {} is not valid UTF-8", index + 1),
+        );
+    }
+    let mut args = raw_args.into_iter().map(|arg| {
+        arg.into_string()
+            .expect("argument encoding was validated before parsing")
+    });
     let Some(command) = args.next() else {
         usage();
         return ExitCode::from(2);
     };
     if command == "--version" || command == "-V" {
-        if let Some(error) = invalid_argument {
-            return emit_failure("text", error);
-        }
         if let Err(error) = write_stdout(concat!("codepact ", env!("CARGO_PKG_VERSION"))) {
             return emit_failure("text", error);
         }
         return ExitCode::SUCCESS;
     }
     if command == "--help" || command == "-h" {
-        if let Some(error) = invalid_argument {
-            return emit_failure("text", error);
-        }
         usage();
         return ExitCode::SUCCESS;
     }
     if command == "capabilities" {
-        if let Some(error) = invalid_argument {
-            return emit_failure("json", error);
-        }
         if args.next().as_deref() != Some("--json") || args.next().is_some() {
             return emit_failure("json", "capabilities requires exactly --json".into());
         }
@@ -385,9 +417,6 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     if command == "explain" {
-        if let Some(error) = invalid_argument {
-            return emit_failure("json", error);
-        }
         let Some(rule) = args.next() else {
             return emit_failure("json", "explain requires a rule code".into());
         };
@@ -431,10 +460,7 @@ fn main() -> ExitCode {
     let checking = command == "check" || baseline_update;
     if !inspecting && !checking {
         usage();
-        return emit_failure(
-            "text",
-            invalid_argument.unwrap_or_else(|| format!("unknown command: {command}")),
-        );
+        return emit_failure("text", format!("unknown command: {command}"));
     }
     if baseline_update && args.next().as_deref() != Some("update") {
         return emit_failure("text", "baseline supports only the update operation".into());
@@ -456,13 +482,16 @@ fn main() -> ExitCode {
     let mut replace_baseline = false;
     let mut it = args;
     while let Some(arg) = it.next() {
-        let mut take = |label: &str| it.next().ok_or_else(|| format!("{label} requires a value"));
+        let value = option_takes_value(&arg, baseline_update)
+            .then(|| it.next())
+            .flatten();
+        let take = || value.ok_or_else(|| format!("{arg} requires a value"));
         match arg.as_str() {
-            "--python-version" => match take("--python-version") {
+            "--python-version" => match take() {
                 Ok(v) => overrides.python_version = Some(v),
                 Err(e) => return emit_failure(&output_format, e),
             },
-            "--root" => match take("--root") {
+            "--root" => match take() {
                 Ok(v) => {
                     let p = PathBuf::from(v);
                     explicit_root = Some(p.clone());
@@ -470,7 +499,7 @@ fn main() -> ExitCode {
                 }
                 Err(e) => return emit_failure(&output_format, e),
             },
-            "--config" => match take("--config") {
+            "--config" => match take() {
                 Ok(v) => overrides.config = Some(PathBuf::from(v)),
                 Err(e) => return emit_failure(&output_format, e),
             },
@@ -484,15 +513,15 @@ fn main() -> ExitCode {
                 }
                 overrides.experimental_ownership = Some(arg == "--experimental-ownership");
             }
-            "--mode" => match take("--mode") {
+            "--mode" => match take() {
                 Ok(v) => overrides.mode = Some(v),
                 Err(e) => return emit_failure(&output_format, e),
             },
-            "--fail-on" => match take("--fail-on") {
+            "--fail-on" => match take() {
                 Ok(v) => overrides.fail_on = Some(v),
                 Err(e) => return emit_failure(&output_format, e),
             },
-            "--rules" => match take("--rules") {
+            "--rules" => match take() {
                 Ok(value) => {
                     let rules = value
                         .split(',')
@@ -509,7 +538,7 @@ fn main() -> ExitCode {
                 }
                 Err(error) => return emit_failure(&output_format, error),
             },
-            "--severity" => match take("--severity") {
+            "--severity" => match take() {
                 Ok(value) => {
                     let Some((rule, severity)) = value.split_once('=') else {
                         return emit_failure(
@@ -531,26 +560,23 @@ fn main() -> ExitCode {
                 }
                 Err(error) => return emit_failure(&output_format, error),
             },
-            "--baseline" => match take("--baseline") {
+            "--baseline" => match take() {
                 Ok(v) => overrides.baseline = Some(PathBuf::from(v)),
                 Err(e) => return emit_failure(&output_format, e),
             },
-            "--output-format" => match take("--output-format") {
+            "--output-format" => match take() {
                 Ok(v) => {
-                    if invalid_argument.is_none()
-                        && requested_output_format
-                            .as_ref()
-                            .is_some_and(|previous| previous != &v)
+                    if requested_output_format
+                        .as_ref()
+                        .is_some_and(|previous| previous != &v)
                     {
                         return emit_failure(
                             "text",
                             "--json conflicts with --output-format".into(),
                         );
                     }
-                    if !v.is_empty() {
-                        requested_output_format = Some(v.clone());
-                        output_format = v;
-                    }
+                    requested_output_format = Some(v.clone());
+                    output_format = v;
                 }
                 Err(e) => return emit_failure(&output_format, e),
             },
@@ -565,7 +591,7 @@ fn main() -> ExitCode {
                 output_format = "json".into();
             }
             "--show-settings" => show_settings = true,
-            "--max-diagnostics" => match take("--max-diagnostics").and_then(|v| {
+            "--max-diagnostics" => match take().and_then(|v| {
                 v.parse::<usize>()
                     .map_err(|_| "--max-diagnostics must be a positive integer".into())
             }) {
@@ -578,29 +604,24 @@ fn main() -> ExitCode {
                 Ok(v) => max_diagnostics = Some(v),
                 Err(e) => return emit_failure(&output_format, e),
             },
-            "--output" if baseline_update => match take("--output") {
+            "--output" if baseline_update => match take() {
                 Ok(v) => output_baseline = Some(PathBuf::from(v)),
                 Err(e) => return emit_failure(&output_format, e),
             },
-            "--reason" if baseline_update => match take("--reason") {
+            "--reason" if baseline_update => match take() {
                 Ok(v) => update_reason = Some(v),
                 Err(e) => return emit_failure(&output_format, e),
             },
             "--replace" if baseline_update => replace_baseline = true,
             "--help" | "-h" => {
-                if invalid_argument.is_none() {
-                    usage();
-                    return ExitCode::SUCCESS;
-                }
+                usage();
+                return ExitCode::SUCCESS;
             }
             _ if arg.starts_with('-') => {
                 return emit_failure(&output_format, format!("unknown option: {arg}"))
             }
             _ => paths.push(PathBuf::from(arg)),
         }
-    }
-    if let Some(error) = invalid_argument {
-        return emit_failure(&output_format, error);
     }
     if !matches!(output_format.as_str(), "text" | "json" | "concise") {
         return emit_failure("text", format!("unknown output format {output_format}"));

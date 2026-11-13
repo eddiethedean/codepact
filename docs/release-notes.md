@@ -21,6 +21,16 @@
 - Baseline matching includes the exact engine version. Review and regenerate
   a 0.5.0 baseline when upgrading to 0.5.1.
   [Baseline workflow](adopting.md#record-the-initial-findings)
+- Lifecycle source locations now handle bare carriage returns consistently.
+  Adoption report identities include module identity, and inline suppression
+  indexing no longer depends on source-file order.
+- Malformed non-UTF-8 command-line arguments now return a structured CLI
+  error instead of panicking. Empty output-format values are rejected.
+- Ownership analysis delays uncertain container-alias boundaries until an
+  alias is read, while still reporting possibly unbound aliases and avoiding
+  false reports for lambda captures.
+- The CLI reports source and declaration boundaries without stale version
+  wording. Existing diagnostic codes and exit policy are unchanged.
 
 ## 0.5.0 — experimental ownership
 
