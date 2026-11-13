@@ -537,17 +537,20 @@ fn main() -> ExitCode {
             },
             "--output-format" => match take("--output-format") {
                 Ok(v) => {
-                    if requested_output_format
-                        .as_ref()
-                        .is_some_and(|previous| previous != &v)
+                    if invalid_argument.is_none()
+                        && requested_output_format
+                            .as_ref()
+                            .is_some_and(|previous| previous != &v)
                     {
                         return emit_failure(
                             "text",
                             "--json conflicts with --output-format".into(),
                         );
                     }
-                    requested_output_format = Some(v.clone());
-                    output_format = v;
+                    if !v.is_empty() {
+                        requested_output_format = Some(v.clone());
+                        output_format = v;
+                    }
                 }
                 Err(e) => return emit_failure(&output_format, e),
             },
@@ -585,8 +588,10 @@ fn main() -> ExitCode {
             },
             "--replace" if baseline_update => replace_baseline = true,
             "--help" | "-h" => {
-                usage();
-                return ExitCode::SUCCESS;
+                if invalid_argument.is_none() {
+                    usage();
+                    return ExitCode::SUCCESS;
+                }
             }
             _ if arg.starts_with('-') => {
                 return emit_failure(&output_format, format!("unknown option: {arg}"))
