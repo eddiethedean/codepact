@@ -21,6 +21,89 @@ fn version_flags_print_the_package_version() {
 
 #[cfg(unix)]
 #[test]
+fn non_utf8_path_argument_returns_a_json_input_error_without_panicking() {
+    use std::os::unix::ffi::OsStringExt;
+
+    for args in [
+        vec!["check", "--json"],
+        vec!["check", "--output-format", "json"],
+        vec!["inspect-contracts"],
+    ] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_codepact"));
+        command.args(&args);
+        command.arg(std::ffi::OsString::from_vec(b"bad_\xff.py".to_vec()));
+        let output = command.output().expect("CLI starts");
+
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stderr.is_empty(), "{args:?}");
+        let report: serde_json::Value =
+            serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+                panic!(
+                    "{args:?}: {error}: {}",
+                    String::from_utf8_lossy(&output.stdout)
+                )
+            });
+        assert_eq!(report["execution_status"], "failed", "{args:?}");
+        assert_eq!(
+            report["error"]["message"],
+            format!("argument {} is not valid UTF-8", args.len() + 1),
+            "{args:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn json_like_option_value_does_not_select_json_error_output() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_codepact"))
+        .args(["check", "--output-format", "text", "--root", "--json"])
+        .arg(std::ffi::OsString::from_vec(b"bad_\xff.py".to_vec()))
+        .output()
+        .expect("CLI starts");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr).trim(),
+        "codepact: argument 6 is not valid UTF-8"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_argument_errors_take_precedence_over_conflicts_and_help() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let invalid = || std::ffi::OsString::from_vec(b"bad_\xff.py".to_vec());
+
+    let output = Command::new(env!("CARGO_BIN_EXE_codepact"))
+        .args(["check", "--json", "--output-format"])
+        .arg(invalid())
+        .output()
+        .expect("CLI starts");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stderr.is_empty());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["error"]["message"], "argument 4 is not valid UTF-8");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_codepact"))
+        .arg("check")
+        .arg(invalid())
+        .arg("--help")
+        .output()
+        .expect("CLI starts");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr).trim(),
+        "codepact: argument 2 is not valid UTF-8"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn version_flags_report_a_closed_stdout_pipe() {
     for flag in ["--version", "-V"] {
         let (reader, writer) = std::io::pipe().unwrap();

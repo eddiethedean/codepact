@@ -295,22 +295,45 @@ fn framed_stdout_bytes(value: &str) -> usize {
 
 fn main() -> ExitCode {
     use codepact::adoption::{self, EffectiveConfig, Overrides};
-    let mut args = env::args().skip(1);
+    let raw_args: Vec<_> = env::args_os().skip(1).collect();
+    let mut invalid_argument = None;
+    let args = raw_args
+        .into_iter()
+        .enumerate()
+        .map(|(index, arg)| match arg.into_string() {
+            Ok(arg) => arg,
+            Err(_) => {
+                invalid_argument
+                    .get_or_insert_with(|| format!("argument {} is not valid UTF-8", index + 1));
+                String::new()
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut args = args.into_iter();
     let Some(command) = args.next() else {
         usage();
         return ExitCode::from(2);
     };
     if command == "--version" || command == "-V" {
+        if let Some(error) = invalid_argument {
+            return emit_failure("text", error);
+        }
         if let Err(error) = write_stdout(concat!("codepact ", env!("CARGO_PKG_VERSION"))) {
             return emit_failure("text", error);
         }
         return ExitCode::SUCCESS;
     }
     if command == "--help" || command == "-h" {
+        if let Some(error) = invalid_argument {
+            return emit_failure("text", error);
+        }
         usage();
         return ExitCode::SUCCESS;
     }
     if command == "capabilities" {
+        if let Some(error) = invalid_argument {
+            return emit_failure("json", error);
+        }
         if args.next().as_deref() != Some("--json") || args.next().is_some() {
             return emit_failure("json", "capabilities requires exactly --json".into());
         }
@@ -362,6 +385,9 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     if command == "explain" {
+        if let Some(error) = invalid_argument {
+            return emit_failure("json", error);
+        }
         let Some(rule) = args.next() else {
             return emit_failure("json", "explain requires a rule code".into());
         };
@@ -405,7 +431,10 @@ fn main() -> ExitCode {
     let checking = command == "check" || baseline_update;
     if !inspecting && !checking {
         usage();
-        return emit_failure("text", format!("unknown command: {command}"));
+        return emit_failure(
+            "text",
+            invalid_argument.unwrap_or_else(|| format!("unknown command: {command}")),
+        );
     }
     if baseline_update && args.next().as_deref() != Some("update") {
         return emit_failure("text", "baseline supports only the update operation".into());
@@ -508,17 +537,20 @@ fn main() -> ExitCode {
             },
             "--output-format" => match take("--output-format") {
                 Ok(v) => {
-                    if requested_output_format
-                        .as_ref()
-                        .is_some_and(|previous| previous != &v)
+                    if invalid_argument.is_none()
+                        && requested_output_format
+                            .as_ref()
+                            .is_some_and(|previous| previous != &v)
                     {
                         return emit_failure(
                             "text",
                             "--json conflicts with --output-format".into(),
                         );
                     }
-                    requested_output_format = Some(v.clone());
-                    output_format = v;
+                    if !v.is_empty() {
+                        requested_output_format = Some(v.clone());
+                        output_format = v;
+                    }
                 }
                 Err(e) => return emit_failure(&output_format, e),
             },
@@ -556,14 +588,19 @@ fn main() -> ExitCode {
             },
             "--replace" if baseline_update => replace_baseline = true,
             "--help" | "-h" => {
-                usage();
-                return ExitCode::SUCCESS;
+                if invalid_argument.is_none() {
+                    usage();
+                    return ExitCode::SUCCESS;
+                }
             }
             _ if arg.starts_with('-') => {
                 return emit_failure(&output_format, format!("unknown option: {arg}"))
             }
             _ => paths.push(PathBuf::from(arg)),
         }
+    }
+    if let Some(error) = invalid_argument {
+        return emit_failure(&output_format, error);
     }
     if !matches!(output_format.as_str(), "text" | "json" | "concise") {
         return emit_failure("text", format!("unknown output format {output_format}"));
