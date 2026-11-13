@@ -127,6 +127,25 @@ fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
         "{deleted_on_branch:#?}"
     );
 
+    let delete_after_join = check_with_ownership(
+        &[SourceFile::new(
+            "main.py",
+            "main",
+            format!(
+                "{RESOURCE}def expose(flag):\n    if flag:\n        value = C()\n        value.close()\n    del value\n"
+            ),
+        )],
+        "3.11",
+        Ownership::Enabled,
+    );
+    assert!(
+        delete_after_join.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("may be unbound on one branch")
+        }),
+        "{delete_after_join:#?}"
+    );
+
     for ownership in [Ownership::Disabled, Ownership::Enabled] {
         let parameter_binding = check_with_ownership(
             &[SourceFile::new(
@@ -159,6 +178,47 @@ fn branch_local_closed_resources_only_report_unbound_aliases_when_read() {
                     .contains("value may be unbound on one branch")
         }),
         "{exception_target:#?}"
+    );
+
+    let exception_target_after_cleanup = check_with_ownership(
+        &[SourceFile::new(
+            "main.py",
+            "main",
+            format!(
+                "{RESOURCE}def expose(flag):\n    if flag:\n        value = C()\n        value.close()\n    try:\n        raise ValueError()\n    except ValueError as value:\n        pass\n    alias = value\n"
+            ),
+        )],
+        "3.11",
+        Ownership::Enabled,
+    );
+    assert!(
+        exception_target_after_cleanup
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.code == "TP9001"
+                    && diagnostic.message.contains("may be unbound on one branch")
+            }),
+        "{exception_target_after_cleanup:#?}"
+    );
+
+    let unknown_with_target = check_with_ownership(
+        &[SourceFile::new(
+            "main.py",
+            "main",
+            format!(
+                "{RESOURCE}def expose(flag):\n    if flag:\n        value = C()\n        value.close()\n    with manager() as value:\n        pass\n    alias = value\n"
+            ),
+        )],
+        "3.11",
+        Ownership::Enabled,
+    );
+    assert!(
+        unknown_with_target.diagnostics.iter().all(|diagnostic| {
+            diagnostic.code != "TP9001"
+                || !diagnostic.message.contains("may be unbound on one branch")
+        }),
+        "{unknown_with_target:#?}"
     );
 
     let non_resource_binding = check_source(&format!(

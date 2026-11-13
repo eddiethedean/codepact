@@ -4820,6 +4820,10 @@ fn execute_try(
             }
             let mut handler_state = dispatch_state.clone();
             handler_state.control_depth = handler_state.control_depth.saturating_add(1);
+            let exception_target_was_possibly_unbound = handler
+                .name
+                .as_ref()
+                .is_some_and(|name| dispatch_state.possibly_unbound_places.contains(name));
             if let Some(name) = &handler.name {
                 handler_state.possibly_unbound_places.remove(name);
                 handler_state.definitely_bound_names.insert(name.clone());
@@ -4843,6 +4847,18 @@ fn execute_try(
             if let Some(name) = &handler.name {
                 clear_exception_target(&mut handler_state, name);
                 clear_exception_target_from_outcomes(&mut handler_outcomes, name);
+                if exception_target_was_possibly_unbound {
+                    handler_state.possibly_unbound_places.insert(name.clone());
+                    for exit in handler_outcomes
+                        .returns
+                        .iter_mut()
+                        .chain(&mut handler_outcomes.raises)
+                        .chain(&mut handler_outcomes.breaks)
+                        .chain(&mut handler_outcomes.continues)
+                    {
+                        exit.state.possibly_unbound_places.insert(name.clone());
+                    }
+                }
             }
             pending.append(handler_outcomes);
             if handler_state.alive {
@@ -5610,6 +5626,8 @@ fn execute_with(
                 if let Some(ownership) = env.ownership.as_mut() {
                     ownership.rebind(target);
                 }
+                env.possibly_unbound_places.remove(target);
+                env.definitely_bound_names.insert(target.clone());
                 env.places.remove(target);
                 env.unknown_places.insert(target.clone());
                 env.shadowed_functions.insert(target.clone());
@@ -6597,8 +6615,9 @@ fn execute_non_if_statement(
             env.unknown_places.remove(name);
             env.shadowed_functions.insert(name.clone());
         }
-        FlowStatement::DeleteLocal { names, .. } if env.ownership.is_some() => {
+        FlowStatement::DeleteLocal { names, range } if env.ownership.is_some() => {
             for name in names {
+                report_possibly_unbound_alias(name, *range, env, file, result);
                 env.possibly_unbound_places.remove(name);
                 env.definitely_bound_names.remove(name);
                 env.places.remove(name);
