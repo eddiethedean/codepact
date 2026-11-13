@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 pub const ADOPTION_SCHEMA_VERSION: u8 = 2;
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
-pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 5;
+pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 6;
 pub const RULE_SEMANTIC_VERSION: u8 = 1;
 pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"];
 pub const OWNERSHIP_RULES: &[&str] = &["TP2002", "TP2003", "TP2004", "TP2005", "TP2006"];
@@ -674,6 +674,8 @@ pub struct AdoptionReport {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SnapshotFile {
     pub logical_path: String,
+    #[serde(default)]
+    pub module: String,
     pub sha256: String,
 }
 
@@ -1266,6 +1268,9 @@ fn ownership_model_revision(result: &CheckResult) -> Option<&str> {
 }
 
 fn validate_analysis_scope(result: &CheckResult, config: &EffectiveConfig) -> Result<(), String> {
+    if result.target_python_version != config.python_version {
+        return Err("report Python target differs from the analyzed target".into());
+    }
     if result.diagnostics.iter().any(|d| d.code == "TP9002") {
         return Err(
             "analysis was cancelled; no completed report or baseline can be published".into(),
@@ -1324,11 +1329,12 @@ pub fn build_report(
         contents.insert(file.path.as_str(), file.source.as_str());
     }
     let mut files_by_path = files.iter().collect::<Vec<_>>();
-    files_by_path.sort_by(|a, b| a.path.cmp(&b.path));
+    files_by_path.sort_by(|a, b| (&a.path, &a.module).cmp(&(&b.path, &b.module)));
     let snapshot_manifest = files_by_path
         .iter()
         .map(|file| SnapshotFile {
             logical_path: file.path.clone(),
+            module: file.module.clone(),
             sha256: hash(file.source.as_bytes()),
         })
         .collect::<Vec<_>>();
@@ -1793,10 +1799,11 @@ pub fn write_baseline(
         .iter()
         .map(|file| SnapshotFile {
             logical_path: file.path.clone(),
+            module: file.module.clone(),
             sha256: hash(file.source.as_bytes()),
         })
         .collect::<Vec<_>>();
-    source_manifest.sort_by(|a, b| a.logical_path.cmp(&b.logical_path));
+    source_manifest.sort_by(|a, b| (&a.logical_path, &a.module).cmp(&(&b.logical_path, &b.module)));
     let snapshot_id = hash(
         serde_json::to_vec(&(
             env!("CARGO_PKG_VERSION"),
@@ -1944,7 +1951,43 @@ pub fn suppression_diagnostic(
 
 #[cfg(test)]
 mod tests {
-    use super::{glob_match, read_configuration, serialize_pretty_limited, MAX_CONFIG_BYTES};
+    use super::{
+        build_report, glob_match, read_configuration, resolve_config, serialize_pretty_limited,
+        Overrides, MAX_CONFIG_BYTES,
+    };
+
+    #[test]
+    fn semantic_snapshot_includes_module_identity_and_rejects_target_mismatch() {
+        use crate::{check_with_ownership, AnalysisSession, SourceFile};
+
+        let config = resolve_config(
+            &std::env::current_dir().unwrap(),
+            &Overrides {
+                no_config: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let files = [SourceFile::new(
+            "provider.py",
+            "provider",
+            "def f(): pass\n",
+        )];
+        let result = check_with_ownership(&files, &config.python_version, config.ownership);
+        let report = build_report(result, &files, &config, None, None).unwrap();
+
+        let renamed = [SourceFile::new("provider.py", "renamed", "def f(): pass\n")];
+        let result = check_with_ownership(&renamed, &config.python_version, config.ownership);
+        let renamed_report = build_report(result, &renamed, &config, None, None).unwrap();
+        assert_ne!(report.snapshot_id, renamed_report.snapshot_id);
+
+        let result =
+            AnalysisSession::default().check_with_ownership(&files, "3.12", config.ownership);
+        assert_eq!(
+            build_report(result, &files, &config, None, None).unwrap_err(),
+            "report Python target differs from the analyzed target"
+        );
+    }
 
     #[test]
     fn limited_json_serialization_accepts_exact_limit_and_rejects_overflow() {
