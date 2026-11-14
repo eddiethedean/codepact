@@ -22,6 +22,8 @@ pub const SCHEMA_VERSION: u8 = 0;
 pub const LIFECYCLE_ASSURANCE: &str = "lifecycle-checking-for-supported-exit-flow";
 pub const ADOPTION_ASSURANCE: &str = "lifecycle-and-must-use-checking-for-supported-exit-flow";
 pub const OWNERSHIP_ASSURANCE: &str = "experimental-ownership-checking-for-supported-exit-flow";
+pub const ADVANCED_ASSURANCE: &str =
+    "experimental-advanced-contract-checking-for-supported-exit-flow";
 
 /// Select the experimental transfer and borrowing analysis.
 #[derive(
@@ -34,11 +36,27 @@ pub enum Ownership {
     Enabled,
     /// The analyzed program uses CPython's default, non-eager task factory.
     AssumeDefaultTaskFactory,
+    Advanced,
+    AdvancedAssumeDefaultTaskFactory,
 }
 
 impl Ownership {
     pub fn is_enabled(self) -> bool {
         self != Self::Disabled
+    }
+
+    pub fn includes_advanced_contracts(self) -> bool {
+        matches!(
+            self,
+            Self::Advanced | Self::AdvancedAssumeDefaultTaskFactory
+        )
+    }
+
+    pub fn assumes_default_task_factory(self) -> bool {
+        matches!(
+            self,
+            Self::AssumeDefaultTaskFactory | Self::AdvancedAssumeDefaultTaskFactory
+        )
     }
 }
 pub const DEFAULT_MAX_SOURCE_BYTES: usize = 1_000_000;

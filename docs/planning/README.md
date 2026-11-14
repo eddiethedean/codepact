@@ -15,6 +15,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [0.3 cleanup plan](phases/0.3-cleanup.md) | Published cleanup and bounded async behavior with verified artifacts |
 | [0.4 adoption plan](phases/0.4-adoption.md) | Published synthetic preview with completed A01–A08, CS02, and G1–G8 |
 | [0.5 ownership plan](phases/0.5-ownership.md) | Published opt-in transfer, lexical borrowing, and TaskGroup checks with verified release evidence |
+| [0.6 advanced contracts plan](phases/0.6-advanced-contracts.md) | Preview implementation of exclusive access, finite typestate and protocol models; V06 validation and release gates remain pending |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
@@ -37,6 +38,10 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 **Direction** is established by the project discussion: CodePact branding and `codepact` Python package name; one semantic engine; two interoperable interfaces; gradual adoption; compatibility with ordinary Python typing.
 
 **Proposal** is an implementable starting point awaiting prototype evidence. Public API spellings, package layout, support versions and milestone targets are proposals. **Research** covers capabilities whose feasibility is unresolved. A feature becomes **implemented** only when code, tests, documentation and release notes establish its supported scope.
+
+**Preview implementation** means code and user documentation exist, while the
+acceptance matrix, candidate evidence, or release qualification is incomplete.
+Do not present preview behavior as a qualified support claim.
 
 In planning documents, “must” describes an acceptance requirement and is not by itself a claim of present functionality. Release evidence records automated coverage, maintainer qualification, and publication status. Cross-interface semantic parity is a release gate.
 

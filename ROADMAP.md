@@ -39,6 +39,8 @@ The [0.4 adoption plan](docs/planning/phases/0.4-adoption.md), [specification](d
 
 CodePact 0.5.0 was published and verified on November 10, 2026. The [0.5 ownership plan](docs/planning/phases/0.5-ownership.md), [specification](docs/planning/phases/0.5/specification.md), and [V05 matrix](docs/planning/phases/0.5/validation.md) define the opt-in transfer, lexical borrow, and TaskGroup subset. O01–O07, CS03, and G1–G8 are complete. [0.5.0 release evidence](docs/releases/0.5.0-evidence.md)
 
+The [0.6 advanced contracts plan](docs/planning/phases/0.6-advanced-contracts.md) builds on the published 0.5 scope. A preview implementation is documented in the [specification](docs/planning/phases/0.6/specification.md); the [V06 matrix](docs/planning/phases/0.6/validation.md) remains pending for release qualification. T01–T07 and CS04 remain pending.
+
 The 0.4.0 release includes CLI reporting foundations. The [linting and IDE diagnostics plan](docs/planning/linting-and-editors.md) keeps a shared language server plus VS Code, PyCharm/IntelliJ, Neovim and Emacs integration targets in 0.8. Acceptance requires CLI/editor parity, correct source highlighting, current-revision hints and verified setup for each claimed editor; those integrations remain planned.
 
 The 0.4.0 release includes structured analysis schemas, repair explanations and an opt-in check–edit–recheck workflow. The [AI-agent integration plan](docs/planning/ai-agent-integration.md) keeps local read-only MCP tools and qualified agent clients in 0.8. Acceptance requires preserved certainty/coverage, current-source evidence, CLI/tool parity and verified repairs without weakening project policy; those integrations remain planned.

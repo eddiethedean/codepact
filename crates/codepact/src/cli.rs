@@ -16,7 +16,7 @@ fn write_stderr(value: &str) -> Result<(), String> {
 }
 
 fn usage() {
-    stderr_line!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--config PYPROJECT|--no-config] [--python-version VERSION] [--experimental-ownership|--no-experimental-ownership] [--mode advisory|strict] [--fail-on error|warning] [--rules CODE[,CODE...]] [--severity CODE=LEVEL] [--json|--output-format text|json|concise] [--baseline FILE] [--max-diagnostics N] [FILE...]\n       codepact baseline update --output FILE --reason TEXT [--replace] [--json] [check options]\n       codepact capabilities --json\n       codepact explain RULE --json\n       codepact --version");
+    stderr_line!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--config PYPROJECT|--no-config] [--python-version VERSION] [--experimental-ownership|--no-experimental-ownership] [--experimental-advanced-contracts|--no-experimental-advanced-contracts] [--mode advisory|strict] [--fail-on error|warning] [--rules CODE[,CODE...]] [--severity CODE=LEVEL] [--json|--output-format text|json|concise] [--baseline FILE] [--max-diagnostics N] [FILE...]\n       codepact baseline update --output FILE --reason TEXT [--replace] [--json] [check options]\n       codepact capabilities --json\n       codepact explain RULE --json\n       codepact --version");
 }
 
 fn emit_failure(format: &str, message: String) -> ExitCode {
@@ -187,7 +187,8 @@ pub(super) fn run() -> ExitCode {
             "enabled_rules": c.enabled_rules,
             "mode": c.mode,
             "experimental_ownership": c.ownership.is_enabled(),
-            "assume_default_task_factory": c.ownership == codepact::Ownership::AssumeDefaultTaskFactory,
+            "experimental_advanced_contracts": c.ownership.includes_advanced_contracts(),
+            "assume_default_task_factory": c.ownership.assumes_default_task_factory(),
             "fail_on": c.fail_on,
             "baseline": c.baseline,
             "severity": c.severity,

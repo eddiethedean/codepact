@@ -449,14 +449,20 @@ impl AnalysisSession {
             &self.model_catalog,
         );
         if let Some(model) = crate::model::task_group_metadata(python_version)
-            .filter(|_| ownership == crate::Ownership::AssumeDefaultTaskFactory)
+            .filter(|_| ownership.assumes_default_task_factory())
         {
             result.model_catalog_version = crate::model::TASK_GROUP_CATALOG_VERSION;
             result.available_models.push(model);
-            result
-                .available_models
-                .sort_by(|left, right| left.id.cmp(&right.id));
         }
+        if ownership.includes_advanced_contracts() {
+            result.model_catalog_version = crate::model::ADVANCED_MODEL_CATALOG_VERSION;
+            if let Some(model) = crate::model::thread_pool_executor_metadata(python_version) {
+                result.available_models.push(model);
+            }
+        }
+        result
+            .available_models
+            .sort_by(|left, right| left.id.cmp(&right.id));
         Ok(SessionCheckResult {
             revision: checked.revision,
             result,
@@ -471,7 +477,9 @@ impl AnalysisSession {
         ownership: crate::Ownership,
     ) -> Result<SessionInspection, AnalysisCancelled> {
         if let Some(mut inspection) = rejected_check_input(files) {
-            inspection.assurance = if ownership.is_enabled() {
+            inspection.assurance = if ownership.includes_advanced_contracts() {
+                crate::ADVANCED_ASSURANCE
+            } else if ownership.is_enabled() {
                 crate::OWNERSHIP_ASSURANCE
             } else if run_must_use {
                 crate::ADOPTION_ASSURANCE
@@ -522,7 +530,9 @@ impl AnalysisSession {
                     &right.code,
                 ))
         });
-        result.assurance = if ownership.is_enabled() {
+        result.assurance = if ownership.includes_advanced_contracts() {
+            crate::ADVANCED_ASSURANCE
+        } else if ownership.is_enabled() {
             crate::OWNERSHIP_ASSURANCE
         } else if run_must_use {
             crate::ADOPTION_ASSURANCE
@@ -710,6 +720,80 @@ mod tests {
         events.lock().unwrap().clear();
         assert_eq!(session.check_with_ownership(&changed, "3.11", mode), reused);
         assert_eq!(flow_executions(), 0);
+    }
+
+    #[test]
+    fn phase06_protocol_transition_edits_refresh_dependents_and_reuse_unrelated_files() {
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured = Arc::clone(&events);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                captured.lock().unwrap().push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            ..AnalysisSession::default()
+        };
+        let provider = |target: &str| {
+            format!(
+                "from typing import Literal\nfrom codepact import state_machine, transition\nfrom codepact.rust import State\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='{target}')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\n"
+            )
+        };
+        let main = SourceFile::new(
+            "main.py",
+            "main",
+            "from provider import Channel\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n",
+        );
+        let unrelated = SourceFile::new(
+            "independent.py",
+            "independent",
+            "def independent():\n    return 1\n",
+        );
+        let project = |source: String| {
+            [
+                main.clone(),
+                SourceFile::new("provider.py", "provider", source),
+                unrelated.clone(),
+            ]
+        };
+        let flow_executions = || {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let original = project(provider("closed"));
+        let mode = crate::Ownership::Advanced;
+        let first = session.check_with_ownership(&original, "3.13", mode);
+        let first_violation = first
+            .diagnostics
+            .iter()
+            .find(|finding| finding.code == "TP2102")
+            .expect("the close transition invalidates the receiver precondition");
+        assert_eq!(first_violation.primary.file, "main.py");
+        assert_eq!(flow_executions().len(), 3);
+
+        events.lock().unwrap().clear();
+        let changed = project(provider("ready"));
+        let reused = session.check_with_ownership(&changed, "3.13", mode);
+        assert!(!reused
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP2102"));
+        assert_eq!(
+            reused,
+            crate::check_with_ownership(&changed, "3.13", mode),
+            "updated protocol effects and source locations match a fresh advanced check"
+        );
+        assert_eq!(
+            flow_executions().len(),
+            2,
+            "the changed provider and its dependent caller refresh, while the unrelated file reuses its query"
+        );
     }
 
     #[test]

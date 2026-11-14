@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 pub const CHECK_SCHEMA_VERSION: u8 = 1;
 pub const CHECK_MODEL_CATALOG_VERSION: u8 = 2;
 pub(crate) const TASK_GROUP_CATALOG_VERSION: u8 = 3;
+pub(crate) const ADVANCED_MODEL_CATALOG_VERSION: u8 = 4;
 
 /// Lifecycle postconditions used by CodePact-owned effect summaries. These
 /// records are internal model inputs; they do not add user annotation syntax.
@@ -416,6 +417,25 @@ pub(crate) fn task_group_metadata(target: &str) -> Option<CheckModelMetadata> {
     })
 }
 
+pub(crate) fn thread_pool_executor_revision(target: &str) -> Option<&'static str> {
+    (target == "3.13").then_some("v3.13.16")
+}
+
+pub(crate) fn thread_pool_executor_metadata(target: &str) -> Option<CheckModelMetadata> {
+    let revision = thread_pool_executor_revision(target)?;
+    Some(CheckModelMetadata {
+        id: "TPM-EXECUTOR-001".into(),
+        qualified_symbol: "concurrent.futures.ThreadPoolExecutor".into(),
+        source_revisions: vec![revision.into()],
+        source_urls: vec![format!(
+            "https://github.com/python/cpython/blob/{revision}/Lib/concurrent/futures/thread.py"
+        )],
+        selection_rule: "Exact ThreadPoolExecutor import identity, a local no-argument constructor, and CPython 3.13 source pin.".into(),
+        modeled_behavior: "Local Accepting/Shutdown protocol for submit and shutdown. Submission work, worker completion, future behavior, and worker-side cleanup are not modeled.".into(),
+        qualification: "Experimental 0.6 source model. Controlled runtime conformance and optimized performance evidence are pending.".into(),
+    })
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CheckDiagnostic {
     /// Internal canonical contract evidence used for baseline identity.
@@ -491,6 +511,30 @@ impl CheckResult {
                     "TP1001" | "TP1002" | "TP1003" | "TP2001" => "declared-unverified",
                     "TP9001" | "TP9002" => "unknown-boundary",
                     "TP2006" if diagnostic.semantic_identity.iter().any(|id| id.starts_with("TPM-TASK-001@")) => "reviewed-model",
+                    "TP2101" | "TP2102"
+                        if diagnostic
+                            .semantic_identity
+                            .iter()
+                            .any(|id| id.starts_with("TPM-EXECUTOR-001@")) =>
+                    {
+                        "experimental-model"
+                    }
+                    "TP2102"
+                        if diagnostic
+                            .semantic_identity
+                            .iter()
+                            .any(|id| id.starts_with("TPM-TASK-001@")) =>
+                    {
+                        "reviewed-model"
+                    }
+                    "TP2101" | "TP2102"
+                        if diagnostic
+                            .semantic_identity
+                            .iter()
+                            .any(|id| id.contains("declared-unverified")) =>
+                    {
+                        "declared-unverified"
+                    }
                     _ => "static-source",
                 };
                 let repair = match diagnostic.code.as_str() {

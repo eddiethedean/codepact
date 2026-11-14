@@ -13,8 +13,27 @@ pub(super) struct FunctionBody {
     pub(super) statements: Vec<FlowStatement>,
     pub(super) supported_binding: bool,
     pub(super) is_async: bool,
+    pub(super) protocol_transition: Option<ProtocolTransition>,
+    pub(super) protocol_precondition: Option<BTreeSet<String>>,
+    pub(super) protocol_precondition_origin: Option<Span>,
     pub(super) binding_key: Option<String>,
     pub(super) module_bindings: Arc<ModuleBindings>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ProtocolMachine {
+    pub(super) states: BTreeSet<String>,
+    pub(super) initial: String,
+    pub(super) origin: Span,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ProtocolTransition {
+    pub(super) from_states: BTreeSet<String>,
+    pub(super) normal_state: String,
+    pub(super) exceptional_state: Option<String>,
+    pub(super) cancelled_state: Option<String>,
+    pub(super) origin: Span,
 }
 
 #[derive(Clone, Default)]
@@ -55,6 +74,12 @@ pub(super) struct State {
     pub(super) resources: BTreeMap<String, Contract>,
     pub(super) borrowed: BTreeSet<String>,
     pub(super) borrowed_origins: BTreeMap<String, Span>,
+    pub(super) exclusive: BTreeSet<String>,
+    pub(super) exclusive_origins: BTreeMap<String, Span>,
+    pub(super) exclusive_views: BTreeMap<String, BTreeSet<String>>,
+    pub(super) protocol_machines: BTreeMap<String, ProtocolMachine>,
+    pub(super) protocol_states: BTreeMap<String, BTreeSet<String>>,
+    pub(super) protocol_unknown: BTreeSet<String>,
     pub(super) forbidden_borrowed_closes: BTreeSet<String>,
     pub(super) ambiguous_borrowed_owned_aliases: BTreeSet<String>,
     pub(super) escaped: BTreeSet<String>,
@@ -392,6 +417,41 @@ pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     }
     joined.resources.extend(right.resources.clone());
     joined.borrowed.extend(right.borrowed.iter().cloned());
+    joined.exclusive.extend(right.exclusive.iter().cloned());
+    for (object, origin) in &right.exclusive_origins {
+        joined
+            .exclusive_origins
+            .entry(object.clone())
+            .or_insert_with(|| origin.clone());
+    }
+    for (object, names) in &right.exclusive_views {
+        joined
+            .exclusive_views
+            .entry(object.clone())
+            .or_default()
+            .extend(names.iter().cloned());
+    }
+    joined
+        .protocol_machines
+        .extend(right.protocol_machines.clone());
+    for object in left.protocol_states.keys() {
+        if !right.protocol_states.contains_key(object) {
+            joined.protocol_unknown.insert(object.clone());
+        }
+    }
+    for (object, states) in &right.protocol_states {
+        if !left.protocol_states.contains_key(object) {
+            joined.protocol_unknown.insert(object.clone());
+        }
+        joined
+            .protocol_states
+            .entry(object.clone())
+            .or_default()
+            .extend(states.iter().cloned());
+    }
+    joined
+        .protocol_unknown
+        .extend(right.protocol_unknown.iter().cloned());
     joined
         .forbidden_borrowed_closes
         .extend(right.forbidden_borrowed_closes.iter().cloned());
@@ -509,6 +569,14 @@ pub(super) fn project_call_exit(
         }
         if let Some(resource) = child.state.resources.get(object) {
             state.resources.insert(object.clone(), resource.clone());
+        }
+        if let Some(states) = child.state.protocol_states.get(object) {
+            state.protocol_states.insert(object.clone(), states.clone());
+        }
+        if child.state.protocol_unknown.contains(object) {
+            state.protocol_unknown.insert(object.clone());
+        } else {
+            state.protocol_unknown.remove(object);
         }
         if let Some(origin) = child.state.close_origins.get(object) {
             state.close_origins.insert(object.clone(), origin.clone());

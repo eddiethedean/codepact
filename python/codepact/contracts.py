@@ -1,9 +1,11 @@
 """Typing metadata understood by the CodePact source inspector."""
 
 from dataclasses import dataclass
-from typing import Annotated, TypeAlias, TypeVar
+from typing import Annotated, Generic, TypeAlias, TypeVar
+from typing_extensions import TypeAliasType
 
 T = TypeVar("T")
+S = TypeVar("S")
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +31,11 @@ class ExclusiveBorrow:
 
 
 @dataclass(frozen=True, slots=True)
+class StateAccess(Generic[S]):
+    """The finite protocol states required or produced by an operation."""
+
+
+@dataclass(frozen=True, slots=True)
 class MustUseResult:
     """The declared result should be handled by its immediate caller."""
 
@@ -39,15 +46,18 @@ MustUse: TypeAlias = Annotated[T, MustUseResult()]
 Owned: TypeAlias = Annotated[T, OwnedAccess()]
 Borrowed: TypeAlias = Annotated[T, SharedBorrow()]
 BorrowedMut: TypeAlias = Annotated[T, ExclusiveBorrow()]
+State = TypeAliasType("State", Annotated[T, StateAccess[S]], type_params=(T, S))
 
 __all__ = [
     "Resource",
     "SharedBorrow",
     "OwnedAccess",
     "ExclusiveBorrow",
+    "StateAccess",
     "MustUseResult",
     "MustUse",
     "Owned",
     "Borrowed",
     "BorrowedMut",
+    "State",
 ]

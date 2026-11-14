@@ -56,6 +56,17 @@ pub(super) fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usiz
         Expr::Await(await_) => {
             AstExprKind::Await(Box::new(expression(&await_.value, budget, depth + 1)))
         }
+        Expr::Yield(yield_) => AstExprKind::Yield(
+            yield_
+                .value
+                .as_ref()
+                .map(|value| Box::new(expression(value, budget, depth + 1))),
+        ),
+        Expr::YieldFrom(yield_from) => AstExprKind::Yield(Some(Box::new(expression(
+            &yield_from.value,
+            budget,
+            depth + 1,
+        )))),
         Expr::Tuple(tuple) => AstExprKind::Tuple(
             tuple
                 .elts

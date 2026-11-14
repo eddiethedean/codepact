@@ -580,10 +580,12 @@ pub(super) fn contains_codepact_contract(expression: &AstExpr, state: &FileState
             "codepact::Borrowed"
                 | "codepact::Owned"
                 | "codepact::BorrowedMut"
+                | "codepact::State"
                 | "codepact::contracts::Resource"
                 | "codepact::contracts::SharedBorrow"
                 | "codepact::contracts::OwnedAccess"
                 | "codepact::contracts::ExclusiveBorrow"
+                | "codepact::contracts::StateAccess"
         )
     }) {
         return true;

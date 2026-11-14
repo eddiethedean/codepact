@@ -16,14 +16,14 @@ use config::{eligible_code, scoped_rules, validate_pattern, validate_rule};
 use config::{glob_match, read_configuration, MAX_CONFIG_BYTES};
 pub use config::{
     included, reject_symlink_components, resolve_config, EffectiveConfig, Overrides, ProjectConfig,
-    DEFAULT_RULES, OWNERSHIP_RULES,
+    ADVANCED_RULES, DEFAULT_RULES, OWNERSHIP_RULES,
 };
 use fingerprint::{code_before_comment, fingerprint, hash, source_comments, AnchorCache};
 
 pub const ADOPTION_SCHEMA_VERSION: u8 = 2;
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
 pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 5;
-pub const RULE_SEMANTIC_VERSION: u8 = 1;
+pub const RULE_SEMANTIC_VERSION: u8 = 2;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AdoptionDiagnostic {
     #[serde(flatten)]
@@ -235,13 +235,59 @@ fn parse_suppression(line: &str) -> Result<Option<(Vec<String>, String)>, String
     }
     Ok(Some((codes, reason.to_string())))
 }
-fn ownership_model_revision(result: &CheckResult) -> Option<&str> {
-    result
+fn ownership_model_revision(result: &CheckResult) -> Option<String> {
+    let mut selected = result
         .available_models
         .iter()
-        .find(|model| model.id == "TPM-TASK-001")
-        .and_then(|model| model.source_revisions.first())
-        .map(String::as_str)
+        .filter(|model| matches!(model.id.as_str(), "TPM-TASK-001" | "TPM-EXECUTOR-001"))
+        .filter_map(|model| {
+            model
+                .source_revisions
+                .first()
+                .map(|revision| (model.id.as_str(), revision.as_str()))
+        })
+        .collect::<Vec<_>>();
+    selected.sort_by_key(|(id, _)| *id);
+    match selected.as_slice() {
+        [] => None,
+        [("TPM-TASK-001", revision)] => Some((*revision).to_owned()),
+        [(id, revision)] => Some(format!("{id}={revision}")),
+        selected => Some(
+            selected
+                .iter()
+                .map(|(id, revision)| format!("{id}={revision}"))
+                .collect::<Vec<_>>()
+                .join(";"),
+        ),
+    }
+}
+
+fn expected_ownership_model_revision(config: &EffectiveConfig) -> Option<String> {
+    let mut selected = Vec::new();
+    if config.ownership.assumes_default_task_factory() {
+        if let Some(revision) = crate::model::task_group_revision(&config.python_version) {
+            selected.push(("TPM-TASK-001", revision));
+        }
+    }
+    if config.ownership.includes_advanced_contracts() {
+        if let Some(revision) = crate::model::thread_pool_executor_revision(&config.python_version)
+        {
+            selected.push(("TPM-EXECUTOR-001", revision));
+        }
+    }
+    selected.sort_by_key(|(id, _)| *id);
+    match selected.as_slice() {
+        [] => None,
+        [("TPM-TASK-001", revision)] => Some((*revision).to_owned()),
+        [(id, revision)] => Some(format!("{id}={revision}")),
+        selected => Some(
+            selected
+                .iter()
+                .map(|(id, revision)| format!("{id}={revision}"))
+                .collect::<Vec<_>>()
+                .join(";"),
+        ),
+    }
 }
 
 fn validate_analysis_scope(result: &CheckResult, config: &EffectiveConfig) -> Result<(), String> {
@@ -255,18 +301,24 @@ fn validate_analysis_scope(result: &CheckResult, config: &EffectiveConfig) -> Re
     }
     if !matches!(
         result.assurance.as_str(),
-        crate::ADOPTION_ASSURANCE | crate::LIFECYCLE_ASSURANCE | crate::OWNERSHIP_ASSURANCE
+        crate::ADOPTION_ASSURANCE
+            | crate::LIFECYCLE_ASSURANCE
+            | crate::OWNERSHIP_ASSURANCE
+            | crate::ADVANCED_ASSURANCE
     ) {
         return Err("lifecycle analysis was not executed; declaration inspection alone cannot produce a check report".into());
     }
     if config.enabled_rules.contains("TP3001") && result.assurance == crate::LIFECYCLE_ASSURANCE {
         return Err("must-use rules were requested but not analyzed; use check_with_must_use before building an adoption report or baseline".into());
     }
-    if (result.assurance == crate::OWNERSHIP_ASSURANCE) != config.ownership.is_enabled()
-        || ownership_model_revision(result)
-            != (config.ownership == crate::Ownership::AssumeDefaultTaskFactory)
-                .then(|| crate::model::task_group_revision(&config.python_version))
-                .flatten()
+    let ownership_enabled = matches!(
+        result.assurance.as_str(),
+        crate::OWNERSHIP_ASSURANCE | crate::ADVANCED_ASSURANCE
+    );
+    if ownership_enabled != config.ownership.is_enabled()
+        || (result.assurance == crate::ADVANCED_ASSURANCE)
+            != config.ownership.includes_advanced_contracts()
+        || ownership_model_revision(result) != expected_ownership_model_revision(config)
     {
         return Err("report ownership scope differs from the analyzed scope".into());
     }
@@ -294,7 +346,8 @@ pub fn build_report(
             && loaded.model_catalog_version == result.model_catalog_version
             && loaded.rule_semantic_version == RULE_SEMANTIC_VERSION
             && loaded.ownership == config.ownership
-            && loaded.ownership_model_revision.as_deref() == ownership_model_revision(&result)
+            && loaded.ownership_model_revision.as_deref()
+                == ownership_model_revision(&result).as_deref()
             && loaded.engine_version == env!("CARGO_PKG_VERSION");
         Some((unique, compatible, loaded.update_reason))
     } else {

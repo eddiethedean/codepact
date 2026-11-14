@@ -139,6 +139,157 @@ fn v04_01_equivalent_invocations_keep_config_and_path_origins() {
 }
 
 #[test]
+fn v06_01_cli_advanced_mode_requires_both_opt_ins_and_enforces_selected_rules() {
+    let p = Project::new("advanced-cli");
+    p.write(
+        "main.py",
+        "from typing import Literal\nfrom codepact import state_machine, transition\nfrom codepact.rust import State\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n",
+    );
+
+    let advanced = p.check(
+        &[
+            "--python-version",
+            "3.13",
+            "--experimental-ownership",
+            "--experimental-advanced-contracts",
+            "--rules",
+            "TP2102",
+            "--fail-on",
+            "warning",
+        ],
+        1,
+    );
+    assert_eq!(
+        advanced["assurance"],
+        "experimental-advanced-contract-checking-for-supported-exit-flow"
+    );
+    assert_eq!(findings(&advanced, "TP2102").len(), 1);
+    assert!(advanced["available_models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|model| model["id"] == "TPM-EXECUTOR-001"));
+
+    for args in [
+        vec!["--experimental-ownership", "--rules", "TP2102"],
+        vec!["--experimental-advanced-contracts", "--rules", "TP2102"],
+    ] {
+        let report = p.check(&args, 2);
+        assert_eq!(report["execution_status"], "failed");
+    }
+
+    let settings = p.run(&[
+        "check",
+        "--no-config",
+        "--mode",
+        "strict",
+        "--show-settings",
+        "--json",
+    ]);
+    assert!(settings.status.success());
+    let settings: Value = serde_json::from_slice(&settings.stdout).unwrap();
+    assert_eq!(settings["mode"], "strict");
+    assert_eq!(settings["experimental_ownership"], false);
+    assert_eq!(settings["experimental_advanced_contracts"], false);
+}
+
+#[test]
+fn v06_14_advanced_cli_policy_filtering_suppression_and_detail_caps_preserve_coverage() {
+    let p = Project::new("advanced-report-policy");
+    let source = "from typing import Literal\nfrom codepact import state_machine, transition\nfrom codepact.rust import State\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state=('ready', 'closed'), to_state='closed')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run(flag):\n    first = Channel()\n    if flag:\n        first.close()\n    first.send()\n    second = Channel()\n    if flag:\n        second.close()\n    second.send()\n    unknown_effect(first)\n";
+    p.write("main.py", source);
+    let advanced = [
+        "--experimental-ownership",
+        "--experimental-advanced-contracts",
+        "--python-version",
+        "3.13",
+        "--rules",
+        "TP2102",
+        "--fail-on",
+        "error",
+    ];
+
+    let mut advisory = advanced.to_vec();
+    advisory.extend(["--mode", "advisory"]);
+    let report = p.check(&advisory, 0);
+    let advisory_findings = findings(&report, "TP2102");
+    assert_eq!(advisory_findings.len(), 2, "{report}");
+    assert!(advisory_findings
+        .iter()
+        .all(|finding| finding["certainty"] == "possible"));
+    assert_eq!(report["coverage"]["status"], "incomplete");
+
+    let mut limited = advanced.to_vec();
+    limited.extend(["--mode", "advisory", "--max-diagnostics", "1"]);
+    let capped = p.check(&limited, 0);
+    assert_eq!(capped["diagnostics"].as_array().unwrap().len(), 1);
+    assert_eq!(capped["details_truncated"], true);
+    assert_eq!(capped["coverage"]["status"], "incomplete");
+
+    let mut strict = advanced.to_vec();
+    strict.extend(["--mode", "strict"]);
+    let strict_report = p.check(&strict, 1);
+    assert_eq!(strict_report["coverage"]["status"], "incomplete");
+    assert!(strict_report["policy_failures"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("analysis coverage is incomplete")));
+
+    let command = [
+        "check",
+        "--no-config",
+        "--experimental-ownership",
+        "--experimental-advanced-contracts",
+        "--python-version",
+        "3.13",
+        "--rules",
+        "TP2102",
+        "--fail-on",
+        "error",
+    ];
+    let text = p.run(&command);
+    assert_eq!(text.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&text.stdout).contains("TP2102"));
+    let mut concise_args = command[..command.len() - 1].to_vec();
+    concise_args.extend(["warning", "--output-format", "concise"]);
+    let concise = p.run(&concise_args);
+    assert_eq!(concise.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&concise.stdout)
+            .lines()
+            .any(|line| line.split('\t').nth(4) == Some("TP2102")),
+        "{}",
+        String::from_utf8_lossy(&concise.stdout)
+    );
+
+    p.write(
+        "main.py",
+        &source
+            .replace(
+                "first.send()",
+                "first.send() # codepact: ignore[TP2102] -- reviewed first branch",
+            )
+            .replace(
+                "second.send()",
+                "second.send() # codepact: ignore[TP2102] -- reviewed second branch",
+            ),
+    );
+    let mut suppressed_args = advanced.to_vec();
+    suppressed_args.extend(["--mode", "strict"]);
+    let suppressed = p.check(&suppressed_args, 1);
+    let suppressed_findings = findings(&suppressed, "TP2102");
+    assert_eq!(suppressed_findings.len(), 2, "{suppressed}");
+    assert!(suppressed_findings
+        .iter()
+        .all(|finding| finding["disposition"] == "suppressed-inline"));
+    assert_eq!(suppressed["coverage"]["status"], "incomplete");
+    assert!(suppressed["policy_failures"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("analysis coverage is incomplete")));
+}
+
+#[test]
 fn v04_03_04_scope_deduplicates_and_rejects_empty_collision_and_escapes() {
     let p = Project::new("scope");
     p.write("pkg/__init__.py", "");

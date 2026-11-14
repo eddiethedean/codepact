@@ -1127,6 +1127,8 @@ fn register_import(original: &str, local: &str, module: &str, state: &mut FileSt
         "codepact.contracts" => "codepact::contracts",
         "codepact.resource" => "codepact::resource",
         "codepact.must_use" => "codepact::must_use",
+        "codepact.state_machine" => "codepact::state_machine",
+        "codepact.transition" => "codepact::transition",
         "codepact.discard" => "codepact::discard",
         "codepact.move" => "codepact::move",
         "builtins.staticmethod" => "builtins::staticmethod",
@@ -1135,10 +1137,13 @@ fn register_import(original: &str, local: &str, module: &str, state: &mut FileSt
         "codepact.contracts.SharedBorrow" => "codepact::contracts::SharedBorrow",
         "codepact.contracts.OwnedAccess" => "codepact::contracts::OwnedAccess",
         "codepact.contracts.ExclusiveBorrow" => "codepact::contracts::ExclusiveBorrow",
+        "codepact.contracts.StateAccess" => "codepact::contracts::StateAccess",
         "codepact.contracts.MustUseResult" => "codepact::contracts::MustUseResult",
         "codepact.contracts.Borrowed" | "codepact.rust.Borrowed" => "codepact::Borrowed",
         "codepact.contracts.Owned" | "codepact.rust.Owned" => "codepact::Owned",
         "codepact.contracts.BorrowedMut" | "codepact.rust.BorrowedMut" => "codepact::BorrowedMut",
+        "codepact.contracts.State" | "codepact.rust.State" => "codepact::State",
+        "codepact.State" => "codepact::State",
         "codepact.rust.MustUse" | "codepact.contracts.MustUse" => "codepact::MustUse",
         _ => "",
     };
@@ -1302,7 +1307,11 @@ fn lower_class(
                 continue;
             }
         };
-        if canonical(function, &state.imports).as_deref() != Some("codepact::resource") {
+        let decorator_identity = canonical(function, &state.imports);
+        if decorator_identity.as_deref() == Some("codepact::state_machine") {
+            continue;
+        }
+        if decorator_identity.as_deref() != Some("codepact::resource") {
             unsupported_decorator.get_or_insert(decorator.range);
             continue;
         }

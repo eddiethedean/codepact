@@ -1,6 +1,6 @@
 # Command-line reference
 
-This reference covers CodePact 0.5.0.
+This reference covers the 0.5 analyzer and the experimental 0.6 advanced-contract preview.
 The analyzer reads Python source without importing or executing the project.
 [Release availability](availability.md)
 
@@ -20,6 +20,7 @@ codepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] [--jso
 codepact check [--root DIR] [--config PYPROJECT|--no-config]
                [--python-version 3.11|3.12|3.13]
                [--experimental-ownership|--no-experimental-ownership]
+               [--experimental-advanced-contracts|--no-experimental-advanced-contracts]
                [--mode advisory|strict]
                [--fail-on error|warning] [--rules CODE[,CODE...]]
                [--severity CODE=LEVEL] [--baseline FILE]
@@ -200,12 +201,24 @@ or apply edits; no automatic fixes are advertised.
 
 ## Experimental ownership options
 
-CodePact 0.5.0 accepts `--experimental-ownership` and
-`--no-experimental-ownership` on `check` and `baseline update`. An explicit
-flag overrides `experimental-ownership` in the project configuration.
-The TaskGroup model additionally requires
-`assume-default-task-factory = true` and a compatible runtime. Strict mode
-controls the selected report policy independently of the ownership opt-in.
+CodePact accepts `--experimental-ownership` and
+`--no-experimental-ownership` on `check` and `baseline update`. The 0.6
+advanced-contract preview adds `--experimental-advanced-contracts` and
+`--no-experimental-advanced-contracts`; it requires ownership to be enabled.
+The explicit flag overrides `experimental-advanced-contracts` in the project
+configuration. Advanced mode adds TP2101 and TP2102 by default and is included
+in report assurance and baseline scope.
+
+```toml
+[tool.codepact]
+experimental-ownership = true
+experimental-advanced-contracts = true
+```
+
+The TaskGroup model still requires `assume-default-task-factory = true` and a
+compatible target. The experimental ThreadPoolExecutor model is listed only
+for Python target 3.13 and uses the CPython 3.13.16 source pin. Strict mode
+controls coverage policy independently of either opt-in.
 
 Use the [ownership guide](ownership.md) for runnable examples and baseline
 migration. The installed `capabilities --json` output gives the rules and

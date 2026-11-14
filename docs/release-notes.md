@@ -1,5 +1,29 @@
 # Release notes
 
+## 0.6.0 — unreleased experimental contracts candidate
+
+The 0.6.0 candidate adds opt-in advanced contracts on top of experimental
+ownership. It is not yet release-qualified. Keep the default and ownership-only
+scopes unchanged while reviewing the [phase 0.6 specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.6/specification.md),
+[validation matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.6/validation.md), and [candidate gates](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.6-advanced-contracts.md).
+
+- Add finite protocol declarations with `@state_machine` and `@transition`,
+  receiver preconditions through `State[T, Literal[...]]` or
+  `Annotated[T, StateAccess[Literal[...]]]`, and experimental findings TP2101
+  and TP2102.
+- Add bounded checking for overlapping exclusive access, protocol-state joins,
+  modeled TaskGroup entry/exit and a local `ThreadPoolExecutor` subset. The
+  executor model is pinned to CPython 3.13.16; TaskGroup behavior retains the
+  qualified CPython 3.11–3.13 pins and default-task-factory assumption.
+- Enable with both `experimental-ownership` and
+  `experimental-advanced-contracts`. This preview treats declared transitions
+  as unverified assertions and reports unresolved effects, suspension and
+  unsupported aliases as incomplete coverage. It does not establish race or
+  deadlock freedom, general thread/process safety, or state-dependent field
+  guarantees.
+- Review and regenerate baselines when changing engine version or selected
+  scope. Advanced checks are experimental and are not enabled by default.
+
 ## 0.5.1 — corrective release
 
 Published on November 13, 2026, CodePact 0.5.1 corrects CLI error handling,

@@ -104,7 +104,7 @@ with `codepact inspect-contracts`.
 
 ## Experimental ownership rules
 
-These rules require CodePact 0.5.0 and an explicit ownership opt-in.
+These rules require an explicit ownership opt-in.
 [Try the experimental checker](ownership.md)
 
 | Code | Meaning | First repair to consider |
@@ -114,6 +114,26 @@ These rules require CodePact 0.5.0 and an explicit ownership opt-in.
 | `TP2004` | Consumption or escape of a checked borrowed view | Keep the view local to the borrow and leave cleanup to the owner. |
 | `TP2005` | A tracked resource enters an `Owned` parameter without an explicit move | Pass `move(value)` if the call is intended to transfer cleanup responsibility. |
 | `TP2006` | Cleanup while a coroutine or task still borrows the resource | Close after the modeled borrower completes. A cancellation request alone leaves the borrow live. |
+
+## Experimental advanced-contract rules
+
+TP2101 and TP2102 require both `experimental-ownership = true` and
+`experimental-advanced-contracts = true` (or their command-line equivalents).
+They are enabled by default in that scope and remain subject to normal rule
+selection, severity, baseline, and advisory/strict policy.
+
+| Code | Meaning | First repair to consider |
+| --- | --- | --- |
+| `TP2101` | A known competing shared or exclusive access overlaps an active exclusive region. | Keep other aliases out of the region and pass exclusive views consistently. |
+| `TP2102` | A modeled operation may or definitely does violate a finite protocol precondition, or a modeled TaskGroup operation is inactive. | Establish the required state or keep the operation inside its active protocol scope. |
+
+The preview trusts resolved `@transition` declarations and does not verify
+their implementation bodies. Unknown exits, dynamic effects, and unsupported
+suspension appear in coverage rather than being treated as successful state
+preservation. The experimental ThreadPoolExecutor model is limited to its
+listed source pin and operations. See the
+[advanced ownership guide](ownership.md#advanced-contract-preview-06) for the
+exact supported declarations and boundaries.
 
 ## Certainty and coverage
 

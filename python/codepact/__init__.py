@@ -3,10 +3,11 @@
 Importing this module never loads the Rust inspector or executes analysis.
 """
 
-from collections.abc import Callable
+import keyword
+from collections.abc import Callable, Iterable
 from typing import ParamSpec, TypeVar, overload
 
-from .contracts import MustUseResult, Resource
+from .contracts import MustUseResult, Resource, State
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -18,6 +19,10 @@ def _is_identifier(value: str) -> bool:
         return value.isidentifier()
     except AttributeError:
         return False
+
+
+def _is_state_name(value: str) -> bool:
+    return _is_identifier(value) and not keyword.iskeyword(value)
 
 
 @overload
@@ -60,9 +65,73 @@ def discard(value: object) -> None:
     del value
 
 
+def state_machine(
+    *, states: Iterable[str], initial: str
+) -> Callable[[type[T]], type[T]]:
+    """Declare a finite protocol state set and its initial state."""
+    state_names = tuple(states)
+    if not state_names or any(not _is_state_name(name) for name in state_names):
+        raise ValueError("states must contain valid, nonempty state names")
+    if len(set(state_names)) != len(state_names):
+        raise ValueError("states must be unique")
+    if initial not in state_names:
+        raise ValueError("initial must name one of the declared states")
+
+    def decorate(target: type[T]) -> type[T]:
+        existing = target.__dict__.get("__codepact_state_machine__")
+        declaration = (state_names, initial)
+        if existing is not None and existing != declaration:
+            raise ValueError("conflicting CodePact state-machine declarations")
+        setattr(target, "__codepact_state_machine__", declaration)
+        return target
+
+    return decorate
+
+
+def transition(
+    *,
+    from_state: str | tuple[str, ...],
+    to_state: str,
+    on_raise: str | None = None,
+    on_cancel: str | None = None,
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Declare protocol preconditions and completion states for a method."""
+    from_states = (from_state,) if isinstance(from_state, str) else tuple(from_state)
+    if not from_states or any(not _is_state_name(name) for name in from_states):
+        raise ValueError("from_state must contain valid state names")
+    if len(set(from_states)) != len(from_states):
+        raise ValueError("from_state values must be unique")
+    if not _is_state_name(to_state):
+        raise ValueError("to_state must be a valid state name")
+    if on_raise is not None and not _is_state_name(on_raise):
+        raise ValueError("on_raise must be a valid state name")
+    if on_cancel is not None and not _is_state_name(on_cancel):
+        raise ValueError("on_cancel must be a valid state name")
+
+    def decorate(function: Callable[P, R]) -> Callable[P, R]:
+        existing = getattr(function, "__codepact_transition__", None)
+        declaration = (from_states, to_state, on_raise, on_cancel)
+        if existing is not None and existing != declaration:
+            raise ValueError("conflicting CodePact transition declarations")
+        setattr(function, "__codepact_transition__", declaration)
+        return function
+
+    return decorate
+
+
 def move(value: T) -> T:
     """Mark an explicit ownership transfer and return the original object."""
     return value
 
 
-__all__ = ["resource", "Resource", "must_use", "discard", "move", "MustUseResult"]
+__all__ = [
+    "resource",
+    "Resource",
+    "state_machine",
+    "transition",
+    "State",
+    "must_use",
+    "discard",
+    "move",
+    "MustUseResult",
+]

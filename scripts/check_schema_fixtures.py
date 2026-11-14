@@ -147,13 +147,33 @@ def main() -> int:
         "explanation-v1.schema.json",
         cli_output(["explain", "TP2002", "--json"]),
     )
+    for code in ("TP2101", "TP2102"):
+        validate_emitted(
+            f"{code} explanation",
+            "explanation-v1.schema.json",
+            cli_output(["explain", code, "--json"]),
+        )
 
     with tempfile.TemporaryDirectory(prefix="codepact-schema-output-") as temp:
         root = Path(temp)
         project = root / "project"
         project.mkdir()
         source = project / "main.py"
-        source.write_text("def main():\n    return 1\n", encoding="utf-8")
+        source.write_text(
+            "from typing import Literal\n"
+            "from codepact import state_machine, transition\n"
+            "from codepact.rust import State\n"
+            "@state_machine(states=('ready', 'closed'), initial='ready')\n"
+            "class Channel:\n"
+            "    @transition(from_state='ready', to_state='closed')\n"
+            "    def close(self): pass\n"
+            "    def send(self: State['Channel', Literal['ready']]): pass\n"
+            "def main():\n"
+            "    channel = Channel()\n"
+            "    channel.close()\n"
+            "    channel.send()\n",
+            encoding="utf-8",
+        )
         check_args = [
             "check",
             "--root",
@@ -224,6 +244,25 @@ def main() -> int:
             "settings-v1.schema.json",
             cli_output([*check_args, "--experimental-ownership", "--show-settings"]),
         )
+        advanced_args = [
+            *check_args,
+            "--experimental-ownership",
+            "--experimental-advanced-contracts",
+            "--rules",
+            "TP2102",
+            "--fail-on",
+            "warning",
+        ]
+        validate_emitted(
+            "advanced check",
+            "check-report-v2.schema.json",
+            cli_output(advanced_args, expected_exit=1),
+        )
+        validate_emitted(
+            "advanced settings",
+            "settings-v1.schema.json",
+            cli_output([*advanced_args, "--show-settings"]),
+        )
         _ = cli_output(
             [
                 "baseline",
@@ -242,6 +281,35 @@ def main() -> int:
         )
         validate_emitted(
             "ownership baseline",
+            "baseline-v1.schema.json",
+            baseline_path.read_text(encoding="utf-8"),
+        )
+        advanced_baseline_update = cli_output(
+            [
+                "baseline",
+                "update",
+                "--output",
+                str(baseline_path),
+                "--replace",
+                "--reason",
+                "advanced schema output validation",
+                "--root",
+                str(project),
+                "--no-config",
+                "--experimental-ownership",
+                "--experimental-advanced-contracts",
+                "--rules",
+                "TP2102",
+                "--json",
+            ]
+        )
+        validate_emitted(
+            "advanced baseline update",
+            "baseline-update-v1.schema.json",
+            advanced_baseline_update,
+        )
+        validate_emitted(
+            "advanced baseline",
             "baseline-v1.schema.json",
             baseline_path.read_text(encoding="utf-8"),
         )

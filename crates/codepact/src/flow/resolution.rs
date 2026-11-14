@@ -503,6 +503,11 @@ pub(super) fn external_module_bindings(
                             .filter(|_| !supplied_modules.contains(module))
                     {
                         Some(external.into())
+                    } else if matches!(module.as_str(), "typing" | "typing_extensions")
+                        && matches!(import.name.as_str(), "Literal" | "Annotated")
+                        && !supplied_modules.contains(module)
+                    {
+                        Some(format!("external:{module}.{}", import.name))
                     } else if module == "codepact" && import.name == "discard" {
                         Some("external:codepact.discard".into())
                     } else if module == "contextlib"
@@ -529,10 +534,25 @@ pub(super) fn external_module_bindings(
                         .alias
                         .as_deref()
                         .unwrap_or_else(|| import.name.split('.').next().unwrap_or_default());
-                    if matches!(import.name.as_str(), "contextlib" | "codepact" | "asyncio")
+                    if (matches!(
+                        import.name.as_str(),
+                        "contextlib"
+                            | "codepact"
+                            | "asyncio"
+                            | "typing"
+                            | "typing_extensions"
+                            | "concurrent"
+                    ) || import.name.starts_with("codepact.")
+                        || import.name.starts_with("concurrent."))
                         && !supplied_modules.contains(&import.name)
                     {
-                        bindings.insert(local.to_owned(), format!("external:{}", import.name));
+                        let external_module = if import.alias.is_some() && import.name.contains('.')
+                        {
+                            import.name.clone()
+                        } else {
+                            import.name.split('.').next().unwrap_or_default().to_owned()
+                        };
+                        bindings.insert(local.to_owned(), format!("external:{external_module}"));
                     } else if supplied_modules.contains(&import.name) {
                         bindings.insert(local.to_owned(), format!("module:{}", import.name));
                     } else {
