@@ -2,7 +2,7 @@
 
 Start with a narrow source root and an advisory report. Review what the
 checker covered before choosing which results should fail CI. The examples
-use the 0.5.0 default scope.
+use the 0.5.1 default scope.
 [Release scope and qualification](availability.md)
 
 ## Evaluate one package
@@ -25,12 +25,12 @@ use the 0.5.0 default scope.
    has meaningful coverage, findings are understood, and owners agree on
    the warning threshold and exception review. Expand one package at a time.
 
-## Install 0.5.0
+## Install 0.5.1
 
 In your uv project, install the helper and matching CLI:
 
 ```sh
-uv add codepact==0.5.0
+uv add codepact==0.5.1
 uv run --locked codepact --version
 uv run --locked codepact capabilities --json
 ```

@@ -1,6 +1,6 @@
 # Support and maintenance
 
-CodePact 0.5.0 includes an opt-in ownership preview.
+CodePact 0.5.1 includes the opt-in ownership preview introduced in 0.5.0.
 APIs, diagnostics, and schemas remain provisional during the 0.x series.
 [Release availability](availability.md)
 
@@ -23,8 +23,8 @@ Do not post vulnerability details in a public issue; follow the
 The repository does not publish a response-time SLA, a long-term-support
 window, guaranteed backports, or named module owners. Compatibility evidence
 and release scope are recorded per version. Use the
-[0.5.0 platform and qualification summary](availability.md) and the
-[publication and digest record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md#publication-record).
+[0.5.1 platform and qualification summary](availability.md) and the
+[publication and digest record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.1-evidence.md#publication-record).
 [Evaluate a representative package](evaluation.md) before making checks required.
 
 Because the APIs, diagnostics, and JSON schema are provisional during 0.x,

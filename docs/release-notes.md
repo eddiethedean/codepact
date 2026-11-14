@@ -1,6 +1,11 @@
 # Release notes
 
-## 0.5.1 (unreleased)
+## 0.5.1 — corrective release
+
+Published on November 13, 2026, CodePact 0.5.1 corrects CLI error handling,
+source-location and adoption identity edge cases, and ownership alias
+boundaries. Existing defaults and the opt-in ownership scope are unchanged.
+[Installation](install.md) · [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.1-evidence.md)
 
 - Remove obsolete version numbers from TP9001 coverage messages for
   unsupported declarations and annotations. Diagnostic codes, analysis

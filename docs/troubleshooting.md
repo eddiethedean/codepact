@@ -10,7 +10,7 @@ usually includes an explanation on standard error. In a JSON report, read both
 - **uv project:** Run `uv run --locked codepact --version` from the project
   directory and confirm that the lockfile pins the intended release.
 - **uv tool:** Run `uv tool update-shell`, reopen the shell, or use
-  `uv tool run --from codepact-cli==0.5.0 codepact --version`.
+  `uv tool run --from codepact-cli==0.5.1 codepact --version`.
 - **pip:** Check `python -m pip show codepact-cli` with the same Python you
   used to install it. Activate the virtual environment or run its executable
   directly. [POSIX and PowerShell commands](install.md#pip-environment)
@@ -30,7 +30,7 @@ newer installation. Install or invoke the matching CLI using your
 
 Check the interpreter version, OS, architecture, and libc against the
 [wheel matrix](availability.md#platform-and-runtime-evidence). Use
-`python -m pip install --only-binary=:all: "codepact==0.5.0"` to require
+`python -m pip install --only-binary=:all: "codepact==0.5.1"` to require
 compatible wheels. If your package index or platform has no compatible
 wheel, use a supported environment or install Rust 1.96 or later and a
 linker for the [source build](install.md#build-from-source).

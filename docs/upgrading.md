@@ -2,9 +2,9 @@
 
 ## Upgrade from 0.4 to 0.5
 
-Update the helper and its matching CLI with `uv add codepact==0.5.0`, then
+Update the helper and its matching CLI with `uv add codepact==0.5.1`, then
 commit the updated lockfile. Standalone CLI and Rust users can install their
-matching 0.5.0 distributions directly. [Installation](install.md)
+matching 0.5.1 distributions directly. [Installation](install.md)
 
 Existing projects use the same default lifecycle and must-use scope.
 Enable `experimental-ownership = true` to check explicit moves and lexical

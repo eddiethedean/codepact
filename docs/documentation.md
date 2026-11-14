@@ -76,7 +76,7 @@ In the Read the Docs dashboard, verify the repository integration, webhook,
 and `.readthedocs.yaml` configuration. Build `main` for
 [latest](https://codepact.readthedocs.io/en/latest/index.html) and a release
 tag for [stable](https://codepact.readthedocs.io/en/stable/index.html).
-Stable served the `v0.5.0` commit when verified. If you enable a permanent
+Stable serves the `v0.5.1` commit. If you enable a permanent
 version slug, copy its public URL from the dashboard and verify it before
 linking it from release notes. Use a Git tag URL for a permanent source link.
 

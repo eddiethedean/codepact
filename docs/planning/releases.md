@@ -9,7 +9,7 @@ See also the
 [historical 0.1.0 evidence](../releases/0.1.0-evidence.md) and
 [historical 0.2.0 evidence](../releases/0.2.0-evidence.md).
 
-CodePact 0.5.0 is the current published release. Use its [evidence and publication record](../releases/0.5.0-evidence.md) as the worked example.
+CodePact 0.5.1 is the current published release. Use its [evidence and publication record](../releases/0.5.1-evidence.md) as the worked example.
 
 ## Release authority
 
@@ -83,7 +83,7 @@ Before tagging a subsequent release:
 - Set the root Python project, `cli/pyproject.toml`, and Rust crate version to the tag version without the leading `v`; pin `codepact-cli` to that exact version in the helper dependency and refresh `uv.lock`.
 - Confirm the `PYPI_API_TOKEN` GitHub Actions secret and the `CARGO_REGISTRY_TOKEN` secret are configured. `PYPI_API_TOKEN` must be able to upload both `codepact-cli` and `codepact`; never put credential values in evidence or logs.
 - Use the pinned build tools and committed `uv.lock`/`Cargo.lock`. Require the eight CLI platform wheels, one pure helper wheel and both source archives; validate version metadata and dependency pins.
-- Complete exact-candidate release evidence, maintainer approval, local checks, and CI review. The [0.5.0 release evidence](../releases/0.5.0-evidence.md) records the latest completed release.
+- Complete exact-candidate release evidence, maintainer approval, local checks, and CI review. The [0.5.1 release evidence](../releases/0.5.1-evidence.md) records the latest completed release.
 
 Push the version tag to trigger publication. Both PyPI publish jobs use `PYPI_API_TOKEN` with username `__token__`; the release action's attestations are disabled because PyPI attestations require Trusted Publishing. Keep the `pypi` environment on both jobs, with no protection rule requiring another person's approval. The Cargo token is exposed only to the crates.io publishing step. All publishers depend on validation; codepact publication also depends on successful codepact-cli publication. Publication across projects/registries is not atomic. If one succeeds and the other fails, rerun only the failed job after resolving the cause; published versions cannot be overwritten.
 

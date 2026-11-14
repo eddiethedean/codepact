@@ -34,7 +34,7 @@ CodePact reports a definite TP1001 and relates the read to the close. A real
 file, socket, cursor, or client object may reject that operation or return an
 invalid result after release. The repaired variant reads first and then closes
 the resource in
-[`csv_importer/fixed`](https://github.com/eddiethedean/codepact/tree/v0.5.0/crates/codepact/tests/projects/csv_importer/fixed).
+[`csv_importer/fixed`](https://github.com/eddiethedean/codepact/tree/v0.5.1/crates/codepact/tests/projects/csv_importer/fixed).
 
 ## Missing cleanup on an exit: TP1002
 
@@ -52,7 +52,7 @@ wraps a file, transaction, lock, or remote job, skipping its cleanup can leak
 capacity or leave partial work behind. A normal type check verifies the call
 and exception types; it does not ordinarily require cleanup on every path. The
 repaired fixture puts cleanup in `finally` and is linked from
-[`report_exporter/fixed`](https://github.com/eddiethedean/codepact/tree/v0.5.0/crates/codepact/tests/projects/report_exporter/fixed).
+[`report_exporter/fixed`](https://github.com/eddiethedean/codepact/tree/v0.5.1/crates/codepact/tests/projects/report_exporter/fixed).
 
 The same rule covers supported async function bodies before their first
 suspension. This worker acknowledges a link but exits without closing it:
@@ -83,7 +83,7 @@ The function promises to return an owned token while returning a caller-owned
 borrow. A caller could then release an object it does not own or keep using an
 object whose owner has released it. CodePact reports TP1003 at the handoff.
 The repaired fixture consumes the borrow without claiming ownership in
-[`plugin_runner/fixed`](https://github.com/eddiethedean/codepact/tree/v0.5.0/crates/codepact/tests/projects/plugin_runner/fixed).
+[`plugin_runner/fixed`](https://github.com/eddiethedean/codepact/tree/v0.5.1/crates/codepact/tests/projects/plugin_runner/fixed).
 
 ## Closing a borrowed resource: TP2001
 
@@ -100,7 +100,7 @@ CodePact reports TP2001 even though `session.release()` is a valid method call
 and the declared Python type is compatible. In a real request path, the caller
 may try to use the session after the handler has released it. The repaired
 handler queries the session and leaves cleanup to its owner; see
-[`web_handler/fixed`](https://github.com/eddiethedean/codepact/tree/v0.5.0/crates/codepact/tests/projects/web_handler/fixed).
+[`web_handler/fixed`](https://github.com/eddiethedean/codepact/tree/v0.5.1/crates/codepact/tests/projects/web_handler/fixed).
 
 ## Discarding a required result: TP3001
 

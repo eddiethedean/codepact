@@ -11,12 +11,12 @@ settings for each bug and repair. Install [uv](install.md#standalone-command),
 then clone the examples and check both versions of the project.
 
 ```sh
-git clone --branch v0.5.0 --depth 1 https://github.com/eddiethedean/codepact.git
+git clone --branch v0.5.1 --depth 1 https://github.com/eddiethedean/codepact.git
 cd codepact
 cases=crates/codepact/tests/projects/code_smells
-uv tool run --from codepact-cli==0.5.0 codepact check \
+uv tool run --from codepact-cli==0.5.1 codepact check \
   --config "$cases/batch_teardown/buggy/pyproject.toml" --mode strict
-uv tool run --from codepact-cli==0.5.0 codepact check \
+uv tool run --from codepact-cli==0.5.1 codepact check \
   --config "$cases/batch_teardown/fixed/pyproject.toml" --mode strict
 ```
 
@@ -40,7 +40,7 @@ Expect exit `1` with TP9001 and incomplete coverage for opaque effects.
 For a comparison, use
 `--config "$cases/unmarked_status/control/pyproject.toml" --mode strict`.
 The unmarked status has no must-use obligation and the check exits `0`.
-[Corpus source and expected findings](https://github.com/eddiethedean/codepact/tree/v0.5.0/crates/codepact/tests/projects/code_smells)
+[Corpus source and expected findings](https://github.com/eddiethedean/codepact/tree/v0.5.1/crates/codepact/tests/projects/code_smells)
 
 ## Published rules
 
