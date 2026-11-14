@@ -1,6 +1,6 @@
 # Run your first check
 
-Use CodePact 0.5.0 to find a connection used after close, then fix the source
+Use CodePact 0.5.1 to find a connection used after close, then fix the source
 and confirm the repair. The analyzer reads the file as text.
 
 ## Set up an empty directory
@@ -11,12 +11,12 @@ Python 3.11 or later. Open an empty directory and create the demo project.
 <!-- smoke: setup -->
 ```sh
 uv init --bare --name codepact-demo
-uv add codepact==0.5.0
+uv add codepact==0.5.1
 uv run --locked codepact --version
 mkdir src
 ```
 
-Expect `codepact 0.5.0`. In an existing uv project, skip `uv init` and create
+Expect `codepact 0.5.1`. In an existing uv project, skip `uv init` and create
 `src` only if it is absent. For a disposable trial inside an existing project,
 use the [standalone command](install.md#standalone-command) and an empty
 directory. The [installation guide](install.md) also covers pip and PowerShell.

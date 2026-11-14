@@ -5,15 +5,15 @@ Python resource contracts. Use it to check supported use after close, missed
 cleanup, and discarded must-use results. The checker reads Python source
 without importing or running the project.
 
-## Install 0.5.0
+## Install 0.5.1
 
 ```sh
-uv tool install codepact-cli==0.5.0
+uv tool install codepact-cli==0.5.1
 codepact --version
 ```
 
 If your project also needs annotations such as `resource`, `Owned`, and
-`Borrowed`, install `codepact==0.5.0` in its Python environment. The helper
+`Borrowed`, install `codepact==0.5.1` in its Python environment. The helper
 package installs the matching CLI automatically.
 [Installation and platform support](https://codepact.readthedocs.io/en/latest/install.html)
 

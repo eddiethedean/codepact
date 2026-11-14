@@ -1,11 +1,15 @@
 # Release and capability availability
 
-CodePact 0.5.0 was published on November 10, 2026. The release adds
-experimental ownership to the lifecycle and adoption tools. All 25 tagged
-jobs passed. The 11 PyPI files and the crates.io archive match the tagged
-release. [Tag](https://github.com/eddiethedean/codepact/tree/v0.5.0) ·
-[Release workflow](https://github.com/eddiethedean/codepact/actions/runs/42953619530) ·
-[Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md)
+CodePact 0.5.1 was published on November 13, 2026. The corrective release
+passed all 18 tag-triggered jobs. All 11 PyPI files and the crates.io archive
+were downloaded and verified, and clean install smoke checks passed.
+[Tag](https://github.com/eddiethedean/codepact/tree/v0.5.1) ·
+[Release workflow](https://github.com/eddiethedean/codepact/actions/runs/43529732348) ·
+[Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.1-evidence.md)
+
+CodePact 0.5.0 was published on November 10, 2026 and introduced experimental
+ownership. Its [release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md)
+records the original qualification.
 
 CodePact 0.4.0 was published on November 10, 2026 as a synthetic preview.
 Tag `v0.4.0` points to `817dc2c0a85857ad7af0745e3933f875c403ab67`.
@@ -26,6 +30,7 @@ or open the [stable documentation](https://codepact.readthedocs.io/en/stable/ind
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
+| CodePact 0.5.1 | Published corrective release | `codepact`, `codepact-cli`, Rust crate `codepact` | CLI, source-location, adoption-identity, and ownership-boundary fixes; 0.5.0 behavior retained |
 | CodePact 0.5.0 | Published ownership preview | `codepact`, `codepact-cli`, Rust crate `codepact` | Opt-in moves, lexical borrows, and a bounded TaskGroup model |
 | CodePact 0.4.0 | Published synthetic preview | `codepact`, `codepact-cli`, Rust crate `codepact` | Adoption configuration/policy, JSON report schema 2, baselines, suppressions, and synchronous must-use preview; see the 0.4 phase plan |
 | CodePact 0.3.0 | Published | `codepact`, `codepact-cli`, Rust crate `codepact` | Declaration inspection, lifecycle checking, cleanup obligations, and bounded intratask cancellation/cleanup; see the specification |
@@ -33,22 +38,22 @@ or open the [stable documentation](https://codepact.readthedocs.io/en/stable/ind
 | TypePact 0.1.0 | Published | `typepact`, `typepact-cli`, Rust crate `typepact` | Contract declaration inspection |
 
 Real-world usefulness remains unqualified for the synthetic previews. The
-[0.5.0 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md)
+[0.5.1 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.1-evidence.md)
 tracks the qualification and publication gates.
 
-## Install CodePact 0.5.0
+## Install CodePact 0.5.1
 
-Install the helper and matching CLI with `uv add codepact==0.5.0`, or install
-the command alone with `uv tool install codepact-cli==0.5.0`. Rust applications
-can use `cargo add codepact@=0.5.0`.
-[PyPI helper](https://pypi.org/project/codepact/0.5.0/) · [PyPI CLI](https://pypi.org/project/codepact-cli/0.5.0/) · [Crates.io](https://crates.io/crates/codepact/0.5.0)
+Install the helper and matching CLI with `uv add codepact==0.5.1`, or install
+the command alone with `uv tool install codepact-cli==0.5.1`. Rust applications
+can use `cargo add codepact@=0.5.1`.
+[PyPI helper](https://pypi.org/project/codepact/0.5.1/) · [PyPI CLI](https://pypi.org/project/codepact-cli/0.5.1/) · [Crates.io](https://crates.io/crates/codepact/0.5.1)
 
 ## Build from source
 
 Build the selected repository checkout with Python 3.11+ and Rust 1.96+:
 
 ```sh
-git clone --branch v0.5.0 https://github.com/eddiethedean/codepact.git
+git clone --branch v0.5.1 https://github.com/eddiethedean/codepact.git
 cd codepact
 uv sync --locked
 uv run --locked codepact --version
@@ -60,7 +65,7 @@ revision when sharing reports from a source build.
 
 ## Platform and runtime evidence
 
-The 0.5.0 distribution matrix includes a pure Python helper wheel, both
+The 0.5.1 distribution matrix includes a pure Python helper wheel, both
 source archives, and eight native CLI wheel targets.
 
 | Platform | x86-64 | ARM64 |
@@ -71,7 +76,7 @@ source archives, and eight native CLI wheel targets.
 | Windows | Supported | Supported |
 
 The tag-triggered artifact build, registry digest checks, and clean-install
-results are recorded in the [release evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md).
+results are recorded in the [release evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.1-evidence.md).
 The Python helpers target Python 3.11 and later; the analyzer source grammar
 targets Python 3.11–3.13. Building the CLI from source requires Rust 1.96+ and a
 linker.

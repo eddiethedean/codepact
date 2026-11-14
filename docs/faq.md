@@ -2,7 +2,7 @@
 
 ## Which version can I install now?
 
-Install CodePact 0.5.0 from PyPI or crates.io. Its default scope includes
+Install CodePact 0.5.1 from PyPI or crates.io. Its default scope includes
 project policy, baselines, and synchronous must-use checks. Enable experimental
 ownership to try moves, lexical borrows, and TaskGroup checks. [Install CodePact](install.md) ·
 [Experimental ownership](ownership.md)

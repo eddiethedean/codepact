@@ -30,7 +30,7 @@ cargo run --locked -- check \
 
 The corresponding repaired project is under `fixed/`. Project definitions,
 expected findings, and repair notes are in the
-[fixture corpus](https://github.com/eddiethedean/codepact/tree/v0.5.0/crates/codepact/tests/projects).
+[fixture corpus](https://github.com/eddiethedean/codepact/tree/v0.5.1/crates/codepact/tests/projects).
 
 The public guide [Bugs CodePact catches before runtime](bugs-caught.md) shows
 source-grounded examples for each diagnostic family, cross-module flow, and
@@ -42,7 +42,7 @@ The 0.5 suite includes an additional suite of eight bug/repair pairs and
 four boundary and comparison projects. The 21 expected findings span cleanup,
 borrow and ownership violations, and dropped must-use results. Every repair
 passes strict mode with the same project settings and provider source.
-[Corpus and run instructions](https://github.com/eddiethedean/codepact/tree/v0.5.0/crates/codepact/tests/projects/code_smells)
+[Corpus and run instructions](https://github.com/eddiethedean/codepact/tree/v0.5.1/crates/codepact/tests/projects/code_smells)
 
 ```sh
 cargo test -p codepact --locked --test synthetic_projects code_smell_corpus

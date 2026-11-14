@@ -50,7 +50,7 @@ missed cleanup, and discarded results directly in source.
 ::::{container} cp-release-strip
 
 :::{container} cp-release cp-release-published
-**0.5.0 · Release**
+**0.5.1 · Release**
 
 [Install from PyPI or crates.io](install.md)
 :::

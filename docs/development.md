@@ -78,7 +78,7 @@ before publication.
 The multi-file and declaration-only examples are under `docs/_examples`.
 Regenerate the inspection snapshot after a source change. Use the logical name
 `connection.py` to preserve module identity. See the
-[0.5.0 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.0-evidence.md)
+[0.5.1 evidence record](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.5.1-evidence.md)
 for current release qualification.
 
 Read the Docs uses `.readthedocs.yaml` at the repository root. The repository
