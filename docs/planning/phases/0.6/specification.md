@@ -1,6 +1,6 @@
 # 0.6 advanced contracts specification
 
-Status **Preview implementation in progress; release qualification pending**. This file remains the release acceptance specification. The current preview records the implementation choices below; all V06 evidence rows remain pending. [Phase plan](../0.6-advanced-contracts.md) · [V06 matrix](validation.md)
+Status **Candidate implementation frozen; release qualification pending**. This file remains the release acceptance specification. Candidate `1da46b68d8e0d9ebc226441abb3eea3c1c28f13f` implements the preview choices below and passes the recorded local checks; all V06 evidence rows remain pending as release-gate statuses. See the [candidate release record](../../../releases/0.6.0-evidence.md), [phase plan](../0.6-advanced-contracts.md) and [V06 matrix](validation.md).
 
 ### Preview implementation choices
 
@@ -19,15 +19,17 @@ Status **Preview implementation in progress; release qualification pending**. Th
   transitions. Omitted exceptional or cancelled outcomes become unknown.
 - The first executor catalog entry is the source-pinned
   `ThreadPoolExecutor` model for CPython 3.13.16. Controlled runtime
-  conformance probes and imported source hashes are recorded as preliminary
-  host evidence. The existing TaskGroup source pins and explicit
-  default-task-factory assumption remain in force. Exact-candidate reruns and
-  maintainer review remain pending. [Pinned model evidence](evidence/models-2026-11-14.md)
+  conformance probes and imported source hashes are recorded in
+  [pinned model evidence](evidence/models-2026-11-14.md). The existing
+  TaskGroup source pins and explicit default-task-factory assumption remain in
+  force. Exact-candidate local probes passed; cross-platform qualification and
+  maintainer review remain pending.
 - The preview reuses the existing flow and Salsa query infrastructure,
   100,000 per-file flow-step budget, 256 exit partitions, 4,096 tracked object
   limit, 32 protocol states, and 32 local handles each for TaskGroups and
-  executors. V06-13 and V06-16 still need to establish incremental
-  invalidation parity and performance evidence.
+  executors. Exact-candidate invalidation and performance evidence is
+  recorded; integrated task-budget parity and the remaining V06-13/V06-16
+  acceptance controls are still pending.
 
 ## Activation and declarations
 

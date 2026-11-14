@@ -1,27 +1,31 @@
-# Phase 0.6 preliminary performance results
+# Phase 0.6 candidate performance evidence
 
-These measurements are preliminary worktree evidence, not an exact-candidate G4 pass. The source was based on `2d6bb6bcb27f501dd6c13421a77949cc9e70a33f` with the 0.6 changes uncommitted; rerun after creating the release candidate. The retained 0.5 workloads are still required for the candidate comparison.
+The exact candidate is `1da46b68d8e0d9ebc226441abb3eea3c1c28f13f`. The retained baseline is the released `v0.5.1` tag at `d0f41fa`. Both were built in optimized mode with Rust/Cargo 1.96.0 on macOS 26.5.2 arm64 (Darwin 25.5.0), using separate target directories. Each time is the median of seven samples. Phase 0.6 workloads target Python 3.13; retained workloads target Python 3.11. Source is analyzed statically and never executed. The benchmark asserts reused results match fresh analysis after edits. RSS is the whole benchmark process, including parity checks.
 
-Measurements used the optimized Rust build on macOS 26.5.2 arm64, Darwin 25.5.0, rustc/cargo 1.96.0. Each timing is the median of seven session samples. Source was analyzed without execution. The benchmark also checks cold/reused parity against a fresh analysis after each edit. Peak RSS is for the full benchmark process, including those parity checks.
+## New 0.6 workloads
 
 | Workload (250 operations) | Source bytes | Cold ms | Warm ms | Affected edit ms | Unrelated edit ms | Location edit ms | Report ms | Peak RSS MiB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Finite state transitions | 24,806 | 343.235 | 0.035 | 401.843 | 1.770 | 399.783 | 3.341 | 50.59 |
-| Exclusive access and cleanup | 16,349 | 469.626 | 0.063 | 523.396 | 1.542 | 541.512 | 2.834 | 35.50 |
-| ThreadPoolExecutor protocol | 6,136 | 10.997 | 0.023 | 10.873 | 0.528 | 10.242 | 1.203 | 16.67 |
+| Finite state transitions | 24,806 | 58.472 | 0.011 | 68.367 | 0.336 | 68.940 | 0.628 | 50.77 |
+| Exclusive access and cleanup | 16,349 | 77.252 | 0.012 | 88.247 | 0.292 | 88.033 | 0.515 | 35.44 |
+| ThreadPoolExecutor protocol | 6,136 | 1.697 | 0.004 | 1.672 | 0.085 | 1.710 | 0.228 | 16.80 |
 
-The affected edit changes a modeled method body in `main.py`; the unrelated edit changes `independent.py`; the location edit inserts a comment at the start of the affected file. All results remained complete for the supported subset with no diagnostics. Unrelated edits were much cheaper than rechecking the advanced file. Location-only edits to the state and exclusive workloads cost about as much as full checks, so the candidate rerun should retain query-event evidence and review that invalidation cost.
+The unrelated-file edit reuses the advanced file's analysis; the phase 0.6 Salsa regression test separately asserts three initial file-flow executions and two after changing a protocol provider (the provider and its dependent caller), leaving the unrelated file cached. Location-only edits cost about as much as an affected edit for state and exclusive access. That invalidation cost is visible and should be monitored; this run has no separate location-edit latency budget.
 
-The retained 0.5 workloads were also rerun in the optimized 0.6.0 worktree. The table compares seven-sample medians with the published 0.5.1 baseline measurements (which use the retained 0.5.0 comparison values). These are local observations, not release gate passes.
+## Retained 0.5 workloads
 
-| Retained workload | 0.5 cold / edit / report ms | 0.6 cold / edit / report ms | Change, cold / edit / report | 0.5 / 0.6 peak RSS MiB |
+Times compare seven-sample medians from the exact candidate with a fresh optimized build of released `v0.5.1`, run on this host using the same commands and workload sizes. Percent changes are candidate versus baseline; negative values are faster.
+
+| Retained workload | v0.5.1 cold / edit / report ms | Candidate cold / edit / report ms | Change, cold / edit / report | Peak RSS MiB, v0.5.1 / candidate |
 | --- | ---: | ---: | ---: | ---: |
-| 250 lifecycle calls, default scope | 57.494 / 57.213 / 0.534 | 53.452 / 52.803 / 0.509 | −7.0% / −7.7% / −4.7% | 33.53 / 33.21 combined |
-| 250 lifecycle calls, ownership scope | 76.095 / 76.592 / 0.480 | 72.099 / 72.451 / 0.493 | −5.3% / −5.4% / +2.7% | combined process only |
-| 4,095 live aliases | 17.615 / 17.536 / 2.692 | 16.685 / 16.601 / 2.688 | −5.3% / −5.3% / −0.1% | 48.77 / 33.39 |
-| 96 recursive transfers | 81.294 / 78.317 / 0.314 | 84.049 / 83.395 / 0.286 | +3.4% / +6.5% / −9.0% | 13.19 / 13.33 |
-| 127 TaskGroup children | 16.239 / 16.105 / 0.221 | 17.618 / 17.194 / 0.219 | +8.5% / +6.8% / −0.8% | 9.23 / 9.61 |
+| 250 lifecycle calls, default scope | 56.613 / 55.867 / 0.505 | 56.211 / 56.037 / 0.496 | −0.7% / +0.3% / −1.8% | 33.56 / 33.84 combined |
+| 250 lifecycle calls, ownership scope | 80.255 / 79.513 / 0.522 | 77.301 / 77.847 / 0.507 | −3.7% / −2.1% / −2.9% | combined process only |
+| 4,095 live aliases | 18.057 / 17.642 / 2.899 | 18.003 / 18.082 / 2.900 | −0.3% / +2.5% / +0.0% | 51.14 / 53.00 |
+| 96 recursive transfers | 87.942 / 87.003 / 0.283 | 87.288 / 87.248 / 0.280 | −0.7% / +0.3% / −0.8% | 13.00 / 13.50 |
+| 128 TaskGroup children | 18.016 / 17.711 / 0.269 | 18.400 / 18.071 / 0.225 | +2.1% / +2.0% / −16.5% | 9.55 / 9.81 |
 
-The retained TaskGroup workload is the largest relative cold/edit increase in this comparison; the 0.6.0 result is about 1.4–1.5 ms slower. Recursive transfer is about 2.1–5.1 ms slower. Alias and paired lifecycle checks are similar or faster. The 0.6.0 alias benchmark process peak is substantially lower, but process RSS is workload-specific and should be checked again on the exact candidate. The raw 0.6.0 samples and process RSS are in [the retained-workload record](evidence/phase05-retained-2026-11-14.json).
+The retained comparison shows no large time regression: the largest cold/edit change is +2.5%, and peak RSS changes by at most 3.6%. These are single-host observations, not cross-platform performance claims.
 
-Reproduce by building `cargo build --release --locked -p codepact --examples`, then running `/usr/bin/time -l target/release/examples/benchmark_phase05 {legacy,alias,recursive,tasks} SIZE` and `/usr/bin/time -l target/release/examples/benchmark_phase06 {state,exclusive,executor} 250`. The complete per-sample timings and RSS outputs are in the [advanced workload record](evidence/phase06-benchmark-2026-11-14.json) and the [retained workload record](evidence/phase05-retained-2026-11-14.json). The benchmark generators are [benchmark_phase05.rs](../../../../crates/codepact/examples/benchmark_phase05.rs) and [benchmark_phase06.rs](../../../../crates/codepact/examples/benchmark_phase06.rs). The [0.5 performance baseline](../0.5/performance.md) lists earlier comparison values.
+## Reproduction and provenance
+
+Build each revision separately with `cargo build --release --locked -p codepact --examples`. Run `/usr/bin/time -l target/release/examples/benchmark_phase05 {legacy,alias,recursive,tasks} SIZE` and `/usr/bin/time -l target/release/examples/benchmark_phase06 {state,exclusive,executor} 250`. The complete raw samples, commits, commands and memory readings are in the [exact candidate performance record](evidence/candidate-performance-2026-11-14.json). The earlier [preliminary advanced record](evidence/phase06-benchmark-2026-11-14.json) and [preliminary retained record](evidence/phase05-retained-2026-11-14.json) were measured on mutable, unhashed worktree source and do not reproduce these exact-candidate values; they are retained for audit and excluded from comparison. The [0.5 performance baseline](../0.5/performance.md) documents the prior measurements.
