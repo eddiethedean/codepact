@@ -1027,6 +1027,9 @@ pub(crate) fn parse_frontend(
 /// Lexer token ranges keep `#` inside strings untouched. Newlines and code
 /// columns are preserved; absolute parser offsets are private to this view.
 pub(crate) fn semantic_source(source: &str) -> String {
+    if !source.contains("codepact:") {
+        return source.to_owned();
+    }
     let parsed = ruff_python_parser::parse_unchecked(
         source,
         ParseOptions::from(Mode::Module).with_target_version(PythonVersion::PY313),
@@ -1067,6 +1070,13 @@ pub(crate) fn semantic_source(source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn semantic_source_preserves_source_without_policy_markers() {
+        let source = "value = 'ordinary source'\r\n# unrelated comment\n";
+
+        assert_eq!(semantic_source(source), source);
+    }
 
     #[test]
     fn semantic_source_removes_only_lexer_identified_codepact_comments() {

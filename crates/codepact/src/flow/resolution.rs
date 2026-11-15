@@ -97,7 +97,7 @@ pub(super) fn await_call_captures(
 pub(super) fn resolve_imported_contracts(
     module: &str,
     name: &str,
-    files: &[SourceFile],
+    files: &[Arc<SourceFile>],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &Inspection,
     visited: &mut BTreeSet<(String, String)>,
@@ -199,7 +199,7 @@ pub(super) fn resolve_imported_contracts(
 
 pub(super) fn contracts_for_module(
     file: &SourceFile,
-    files: &[SourceFile],
+    files: &[Arc<SourceFile>],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &Inspection,
 ) -> Vec<Contract> {
@@ -257,7 +257,7 @@ pub(super) fn contracts_for_module(
 pub(super) fn final_class_bindings(
     file: &SourceFile,
     declarations: &[Declaration],
-    files: &[SourceFile],
+    files: &[Arc<SourceFile>],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &Inspection,
 ) -> BTreeMap<String, Option<Contract>> {
@@ -605,7 +605,7 @@ pub(super) fn external_module_bindings(
 pub(super) fn resolve_imported_function(
     module: &str,
     name: &str,
-    files: &[SourceFile],
+    files: &[Arc<SourceFile>],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     functions: &ProjectFunctionMap,
     cyclic_modules: &BTreeSet<String>,

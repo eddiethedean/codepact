@@ -8,7 +8,7 @@ pub(crate) const ADVANCED_MODEL_CATALOG_VERSION: u8 = 4;
 
 /// Lifecycle postconditions used by CodePact-owned effect summaries. These
 /// records are internal model inputs; they do not add user annotation syntax.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) enum LifecyclePostcondition {
     Preserve,
     Open,
@@ -16,7 +16,7 @@ pub(crate) enum LifecyclePostcondition {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) enum RepeatClosePolicy {
     Unspecified,
     Idempotent,
@@ -28,7 +28,7 @@ pub(crate) enum RepeatClosePolicy {
 /// `None` for an outcome means that the model establishes no such exit. A
 /// concrete postcondition is applied only to that outcome, so an exceptional
 /// or cancelled state cannot inherit the normal-close transition by accident.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) struct ResourceEffectModel {
     pub id: String,
     pub qualified_symbol: String,
@@ -54,13 +54,13 @@ pub(crate) struct ResourceEffectModel {
     pub unknown_cases: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) struct ModelAlias {
     pub source: String,
     pub target: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) struct FlowModelCatalog {
     resources: Vec<ResourceEffectModel>,
 }
@@ -305,7 +305,7 @@ mod flow_model_tests {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Span {
     pub file: String,
     pub line: usize,
@@ -314,13 +314,13 @@ pub struct Span {
     pub end_column: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Provenance {
     pub origin: String,
     pub trust: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Contract {
     pub schema_version: u8,
     pub base_symbol: String,
@@ -331,12 +331,12 @@ pub struct Contract {
     pub provenance: Vec<Provenance>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Lifecycle {
     pub closed_by: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Diagnostic {
     /// Internal canonical contract evidence; excluded from public JSON.
     #[serde(skip)]
@@ -349,7 +349,7 @@ pub struct Diagnostic {
     pub certainty: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Coverage {
     pub status: String,
     pub reasons: Vec<String>,
@@ -357,7 +357,7 @@ pub struct Coverage {
     pub declarations: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Inspection {
     pub schema_version: u8,
     pub assurance: String,
@@ -707,7 +707,7 @@ impl CheckResult {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) enum Access {
     Unspecified,
     Shared,

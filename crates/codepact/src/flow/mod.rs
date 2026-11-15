@@ -1540,7 +1540,7 @@ pub(crate) struct FlowOptions<'a> {
 
 pub(crate) fn check_file_bodies(
     target_path: &str,
-    files: &[SourceFile],
+    files: &[Arc<SourceFile>],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &mut Inspection,
     options: FlowOptions<'_>,
@@ -1608,7 +1608,7 @@ pub(crate) fn check_file_bodies(
                     }
                     let binding_key = format!("{}::{}:{}", file.module, name, range.start);
                     let function = FunctionBody {
-                        file: file.clone(),
+                        file: Arc::clone(file),
                         parameters: parameters
                             .iter()
                             .map(|parameter| parameter.name.clone())
@@ -1628,7 +1628,7 @@ pub(crate) fn check_file_bodies(
                                     && contract.lifecycle.is_some()
                             })
                             .map(|contract| contract.access.clone()),
-                        statements: body.clone(),
+                        statements: Arc::from(body.clone()),
                         supported_binding: true,
                         is_async: *is_async,
                         protocol_transition: None,
@@ -1678,13 +1678,13 @@ pub(crate) fn check_file_bodies(
                         }
                         let method_key = format!("@{class_identity}.{}", method.name);
                         let definition = FunctionBody {
-                            file: file.clone(),
+                            file: Arc::clone(file),
                             parameters: method.parameters.clone(),
                             signature: method.signature.clone(),
                             contracts: Arc::clone(&module_contracts),
                             parameter_contracts: BTreeMap::new(),
                             return_access: None,
-                            statements: method.body.clone(),
+                            statements: Arc::from(method.body.clone()),
                             supported_binding: (!method.decorated || method.must_use_decorator)
                                 && !method.is_generator,
                             is_async: method.is_async,
@@ -2188,6 +2188,7 @@ pub(crate) fn check_file_bodies(
             function.module_bindings = Arc::clone(bindings);
         }
     }
+    let functions = &qualified_functions;
     for file in files {
         if file.path != target_path {
             continue;
@@ -2203,9 +2204,8 @@ pub(crate) fn check_file_bodies(
             .get(&file.path)
             .map(|bindings| bindings.classes.clone())
             .unwrap_or_else(|| final_class_bindings(file, declarations, files, summaries, result));
-        let functions = qualified_functions.clone();
         let mut final_functions =
-            final_function_bindings(&file.module, &functions, declarations, &supplied_modules);
+            final_function_bindings(&file.module, functions, declarations, &supplied_modules);
         if let Some(external) = external_exports.get(&file.module) {
             final_functions.extend(external.clone());
         }
@@ -2316,7 +2316,7 @@ pub(crate) fn check_file_bodies(
                         && contract.lifecycle.is_some()
                 })
                 .map(|contract| contract.access.as_str());
-            let flow_outcomes = execute(body, &mut env, file, &contracts, &functions, result, 0);
+            let flow_outcomes = execute(body, &mut env, file, &contracts, functions, result, 0);
             let exits = flow_outcomes.all_abrupt().cloned().collect::<Vec<_>>();
             for exit in grouped_exits(&exits) {
                 match &exit.kind {
@@ -2328,7 +2328,7 @@ pub(crate) fn check_file_bodies(
                             file,
                             &exit,
                             return_access,
-                            &functions,
+                            functions,
                             &classes_with_unresolved_bases,
                         );
                     }
@@ -2353,7 +2353,7 @@ pub(crate) fn check_file_bodies(
                         kind: CompletionKind::Fallthrough,
                     },
                     return_access,
-                    &functions,
+                    functions,
                     &classes_with_unresolved_bases,
                 );
             }
@@ -2435,7 +2435,7 @@ pub(crate) fn check_file_bodies(
                     &mut env,
                     file,
                     &contracts,
-                    &functions,
+                    functions,
                     result,
                     0,
                 );
@@ -2450,7 +2450,7 @@ pub(crate) fn check_file_bodies(
                                 file,
                                 &exit,
                                 None,
-                                &functions,
+                                functions,
                                 &classes_with_unresolved_bases,
                             );
                         }
@@ -2473,7 +2473,7 @@ pub(crate) fn check_file_bodies(
                             kind: CompletionKind::Fallthrough,
                         },
                         None,
-                        &functions,
+                        functions,
                         &classes_with_unresolved_bases,
                     );
                 }
@@ -2569,7 +2569,7 @@ pub(crate) fn check_file_bodies(
                 &mut module,
                 file,
                 &contracts,
-                &functions,
+                functions,
                 result,
                 0,
             );
@@ -2641,6 +2641,7 @@ mod tests {
             }],
         });
         reset_flow_budget(budget);
+        let file = Arc::new(file);
         check_file_bodies(
             &file.path,
             std::slice::from_ref(&file),

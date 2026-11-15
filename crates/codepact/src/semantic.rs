@@ -4,7 +4,6 @@ use crate::{
     Access, Contract, Coverage, Diagnostic, Inspection, Lifecycle, Provenance, SourceFile, Span,
     DEFAULT_MAX_DECLARATIONS, SCHEMA_VERSION,
 };
-use serde::{Deserialize, Serialize};
 mod annotations;
 mod must_use;
 mod project;
@@ -22,7 +21,7 @@ use project::order_project_files;
 pub(crate) use project::{context_for_module, plan_project};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ClassDecl {
     closed_by: Option<String>,
     closed_by_span: Option<Span>,
@@ -684,7 +683,7 @@ fn inspect_inner(
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ExportedView {
     symbol: String,
     access: Access,
@@ -693,7 +692,7 @@ struct ExportedView {
     closed_by_span: Option<Span>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct SemanticExports {
     classes: BTreeMap<String, ClassDecl>,
     names: BTreeMap<String, ExportedView>,
@@ -701,13 +700,13 @@ pub(crate) struct SemanticExports {
     must_use_callables: BTreeMap<String, Span>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ModuleAnalysis {
     pub inspection: Inspection,
     pub exports: SemanticExports,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct ModuleContext {
     dependency_exports: BTreeMap<String, SemanticExports>,
     supplied_modules: BTreeSet<String>,

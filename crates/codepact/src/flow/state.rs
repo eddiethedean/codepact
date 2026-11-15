@@ -4,13 +4,13 @@ pub(super) type CallKeyword = (Option<String>, AstExpr);
 pub(super) type MethodCall<'a> = (&'a AstExpr, &'a str, &'a [AstExpr], &'a [CallKeyword]);
 #[derive(Clone)]
 pub(super) struct FunctionBody {
-    pub(super) file: SourceFile,
+    pub(super) file: Arc<SourceFile>,
     pub(super) parameters: Vec<String>,
     pub(super) signature: CallSignature,
     pub(super) contracts: Arc<[Contract]>,
     pub(super) parameter_contracts: BTreeMap<String, Contract>,
     pub(super) return_access: Option<String>,
-    pub(super) statements: Vec<FlowStatement>,
+    pub(super) statements: Arc<[FlowStatement]>,
     pub(super) supported_binding: bool,
     pub(super) is_async: bool,
     pub(super) protocol_transition: Option<ProtocolTransition>,

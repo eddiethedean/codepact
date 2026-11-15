@@ -1,56 +1,11 @@
 use super::{Db, FileInput, ParseSummary};
 use crate::{Coverage, Inspection, SourceFile};
-use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
-// Query transport preserves private identity evidence without changing public schemas.
-pub(super) fn encode_inspection(value: &Inspection) -> Result<String, serde_json::Error> {
-    let identities: Vec<_> = value
-        .diagnostics
-        .iter()
-        .map(|d| &d.semantic_identity)
-        .collect();
-    serde_json::to_string(&(value, identities))
-}
-
-pub(super) fn decode_inspection(value: &str) -> Result<Inspection, serde_json::Error> {
-    let (mut inspection, identities): (Inspection, Vec<Vec<String>>) = serde_json::from_str(value)?;
-    for (diagnostic, identity) in inspection.diagnostics.iter_mut().zip(identities) {
-        diagnostic.semantic_identity = identity;
-    }
-    Ok(inspection)
-}
-
-fn encode_module_analysis(
-    value: &crate::semantic::ModuleAnalysis,
-) -> Result<String, serde_json::Error> {
-    let identities: Vec<_> = value
-        .inspection
-        .diagnostics
-        .iter()
-        .map(|d| &d.semantic_identity)
-        .collect();
-    serde_json::to_string(&(&value.inspection, identities, &value.exports))
-}
-
-fn decode_module_analysis(
-    value: &str,
-) -> Result<crate::semantic::ModuleAnalysis, serde_json::Error> {
-    let (mut inspection, identities, exports): (
-        Inspection,
-        Vec<Vec<String>>,
-        crate::semantic::SemanticExports,
-    ) = serde_json::from_str(value)?;
-    for (diagnostic, identity) in inspection.diagnostics.iter_mut().zip(identities) {
-        diagnostic.semantic_identity = identity;
-    }
-    Ok(crate::semantic::ModuleAnalysis {
-        exports,
-        inspection,
-    })
-}
-
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct FlowFileContext {
     model_catalog: crate::model::FlowModelCatalog,
     cyclic_modules: BTreeSet<String>,
@@ -92,18 +47,16 @@ pub fn parse_file(db: &dyn Db, file: FileInput, python_version: String) -> Parse
     }
 }
 
-#[salsa::tracked(returns(clone))]
+#[salsa::tracked(returns(ref))]
 fn inspect_module_query(
     db: &dyn Db,
     file: FileInput,
     python_version: String,
-    context_json: String,
+    context: crate::semantic::ModuleContext,
     run_must_use: bool,
-) -> String {
+) -> crate::semantic::ModuleAnalysis {
     let source = SourceFile::new(file.path(db), file.module(db), file.semantic_source(db));
     let summary = parse_file(db, file, python_version.clone());
-    let context: crate::semantic::ModuleContext =
-        serde_json::from_str(&context_json).expect("module context serializes");
     let analysis = crate::source::with_indexed_sources([source.source.as_str()], || {
         crate::semantic::inspect_module(
             &source,
@@ -116,34 +69,28 @@ fn inspect_module_query(
             },
         )
     });
-    encode_module_analysis(&analysis).expect("module analysis serializes")
+    analysis
 }
 
-#[salsa::tracked(returns(clone))]
+#[salsa::tracked(returns(ref))]
 fn module_exports_query(
     db: &dyn Db,
     file: FileInput,
     python_version: String,
-    context_json: String,
-) -> String {
-    let analysis: crate::semantic::ModuleAnalysis = decode_module_analysis(&inspect_module_query(
-        db,
-        file,
-        python_version,
-        context_json,
-        false,
-    ))
-    .expect("module analysis deserializes");
-    serde_json::to_string(&analysis.exports).expect("module exports serialize")
+    context: crate::semantic::ModuleContext,
+) -> crate::semantic::SemanticExports {
+    inspect_module_query(db, file, python_version, context, false)
+        .exports
+        .clone()
 }
 
-#[salsa::tracked(returns(clone))]
+#[salsa::tracked(returns(ref))]
 pub(super) fn inspect_project_query(
     db: &dyn Db,
     files: Vec<FileInput>,
     python_version: String,
     run_must_use: bool,
-) -> String {
+) -> Inspection {
     db.unwind_if_revision_cancelled();
     let sizes: Vec<_> = files
         .iter()
@@ -156,8 +103,7 @@ pub(super) fn inspect_project_query(
     });
     if exceeds_limit {
         db.unwind_if_revision_cancelled();
-        return encode_inspection(&crate::source_limit_inspection(&sizes))
-            .expect("source-limit result serializes");
+        return crate::source_limit_inspection(&sizes);
     }
 
     let mut sources = Vec::with_capacity(files.len());
@@ -173,12 +119,11 @@ pub(super) fn inspect_project_query(
             .saturating_add(summary.declarations.as_ref().map_or(0, std::vec::Vec::len));
         if total_declarations > crate::DEFAULT_MAX_TOTAL_AST_DECLARATIONS {
             db.unwind_if_revision_cancelled();
-            return encode_inspection(&crate::invalid_input_inspection(
+            return crate::invalid_input_inspection(
                 &source.path,
                 "total declaration work exceeds the 50,000 statement request limit",
                 total_source_bytes,
-            ))
-            .expect("declaration-limit result serializes");
+            );
         }
         parsed.insert(source.path.clone(), summary);
         sources.push(source);
@@ -195,47 +140,41 @@ pub(super) fn inspect_project_query(
         };
         let context =
             crate::semantic::context_for_module(source, summary, &plan, &computed_exports);
-        let context_json = serde_json::to_string(&context).expect("module context serializes");
-        let analysis: crate::semantic::ModuleAnalysis =
-            decode_module_analysis(&inspect_module_query(
-                db,
-                file,
-                python_version.clone(),
-                context_json.clone(),
-                run_must_use,
-            ))
-            .expect("module analysis deserializes");
-        let exports: crate::semantic::SemanticExports = serde_json::from_str(
-            &module_exports_query(db, file, python_version.clone(), context_json),
-        )
-        .expect("module exports deserialize");
-        computed_exports.insert(source.module.clone(), exports);
-        module_inspections.push(analysis.inspection);
+        let analysis = inspect_module_query(
+            db,
+            file,
+            python_version.clone(),
+            context.clone(),
+            run_must_use,
+        );
+        let exports = module_exports_query(db, file, python_version.clone(), context);
+        computed_exports.insert(source.module.clone(), exports.clone());
+        module_inspections.push(analysis.inspection.clone());
     }
     let inspection = crate::semantic::combine_project(plan.inspection, module_inspections);
     db.unwind_if_revision_cancelled();
-    encode_inspection(&inspection).expect("project inspection result serializes")
+    inspection
 }
 
-#[salsa::tracked(returns(clone))]
+#[salsa::tracked(returns(ref))]
 fn check_flow_file_query(
     db: &dyn Db,
     file: FileInput,
     dependencies: Vec<FileInput>,
     python_version: String,
     flow_budget: usize,
-    flow_context_json: String,
-    inspection_json: String,
-) -> String {
+    context: FlowFileContext,
+    mut inspection: Inspection,
+) -> Inspection {
     db.unwind_if_revision_cancelled();
     let sources: Vec<_> = dependencies
         .iter()
         .map(|dependency| {
-            SourceFile::new(
+            Arc::new(SourceFile::new(
                 dependency.path(db),
                 dependency.module(db),
                 dependency.semantic_source(db),
-            )
+            ))
         })
         .collect();
     let summaries: BTreeMap<_, _> = dependencies
@@ -247,10 +186,6 @@ fn check_flow_file_query(
             )
         })
         .collect();
-    let mut inspection: Inspection =
-        decode_inspection(&inspection_json).expect("flow file input deserializes");
-    let context: FlowFileContext =
-        serde_json::from_str(&flow_context_json).expect("flow file context deserializes");
     crate::flow::reset_flow_budget(flow_budget);
     crate::source::with_indexed_sources(
         sources.iter().map(|source| source.source.as_str()),
@@ -270,21 +205,19 @@ fn check_flow_file_query(
         },
     );
     db.unwind_if_revision_cancelled();
-    encode_inspection(&inspection).expect("flow file result serializes")
+    inspection
 }
 
-#[salsa::tracked(returns(clone))]
+#[salsa::tracked(returns(ref))]
 pub(super) fn check_flow_query(
     db: &dyn Db,
     files: Vec<FileInput>,
     python_version: String,
-    model_catalog_json: String,
-    inspection_json: String,
+    model_catalog: crate::model::FlowModelCatalog,
+    mut inspection: Inspection,
     ownership: crate::Ownership,
-) -> String {
+) -> Inspection {
     db.unwind_if_revision_cancelled();
-    let model_catalog: crate::model::FlowModelCatalog =
-        serde_json::from_str(&model_catalog_json).expect("flow model catalog deserializes");
     let sources: Vec<_> = files
         .iter()
         .map(|file| SourceFile::new(file.path(db), file.module(db), file.semantic_source(db)))
@@ -299,8 +232,7 @@ pub(super) fn check_flow_query(
         })
         .collect();
     let cyclic_modules = crate::semantic::cyclic_import_modules(&sources, &summaries);
-    let mut inspection: Inspection =
-        decode_inspection(&inspection_json).expect("inspection query result deserializes");
+    let sources: Vec<_> = sources.into_iter().map(Arc::new).collect();
     inspection.diagnostics.retain(|diagnostic| {
         !diagnostic
             .message
@@ -312,12 +244,19 @@ pub(super) fn check_flow_query(
     if inspection.coverage.reasons.is_empty() {
         inspection.coverage.status = "complete-for-supported-subset".into();
     }
-    let mut module_files = BTreeMap::<String, Vec<FileInput>>::new();
-    for file in files.iter().copied() {
+    let mut module_files = BTreeMap::<String, Vec<(usize, FileInput)>>::new();
+    for (index, file) in files.iter().copied().enumerate() {
         module_files
             .entry(file.module(db).to_string())
             .or_default()
-            .push(file);
+            .push((index, file));
+    }
+    let mut contracts_by_path = BTreeMap::<String, Vec<usize>>::new();
+    for (index, contract) in inspection.contracts.iter().enumerate() {
+        contracts_by_path
+            .entry(contract.source.file.clone())
+            .or_default()
+            .push(index);
     }
     // Fixed shares keep an edit in one file from changing another file's query key.
     // Since the input file cap is lower than the total flow-step limit, every file
@@ -328,7 +267,7 @@ pub(super) fn check_flow_query(
         let mut dependency_modules = BTreeSet::from([source.module.clone()]);
         let mut pending = vec![source.module.clone()];
         while let Some(module) = pending.pop() {
-            for dependency in module_files.get(&module).into_iter().flatten() {
+            for (_, dependency) in module_files.get(&module).into_iter().flatten() {
                 let Some(summary) = summaries.get(dependency.path(db)) else {
                     continue;
                 };
@@ -341,23 +280,30 @@ pub(super) fn check_flow_query(
                 }
             }
         }
-        let dependencies: Vec<_> = files
+        let mut dependencies: Vec<_> = dependency_modules
             .iter()
+            .filter_map(|module| module_files.get(module))
+            .flatten()
             .copied()
-            .filter(|dependency| dependency_modules.contains(dependency.module(db)))
             .collect();
-        let dependency_paths: BTreeSet<_> = dependencies
+        dependencies.sort_by_key(|(index, _)| *index);
+        let dependencies: Vec<_> = dependencies
             .iter()
-            .map(|dependency| dependency.path(db).to_string())
+            .map(|(_, dependency)| *dependency)
             .collect();
+        let mut contract_indices: Vec<_> = dependencies
+            .iter()
+            .filter_map(|dependency| contracts_by_path.get(dependency.path(db)))
+            .flatten()
+            .copied()
+            .collect();
+        contract_indices.sort_unstable();
         let flow_input = Inspection {
             schema_version: inspection.schema_version,
             assurance: inspection.assurance.clone(),
-            contracts: inspection
-                .contracts
+            contracts: contract_indices
                 .iter()
-                .filter(|contract| dependency_paths.contains(&contract.source.file))
-                .cloned()
+                .map(|index| inspection.contracts[*index].clone())
                 .collect(),
             diagnostics: Vec::new(),
             coverage: Coverage {
@@ -372,27 +318,26 @@ pub(super) fn check_flow_query(
             .iter()
             .map(|contract| contract.base_symbol.clone())
             .collect::<BTreeSet<_>>();
-        let flow_context_json = serde_json::to_string(&FlowFileContext {
+        let flow_context = FlowFileContext {
             model_catalog: model_catalog.for_resource_symbols(&resource_symbols),
             cyclic_modules: cyclic_modules.clone(),
             ownership,
-        })
-        .expect("flow file context serializes");
-        let flow_json = check_flow_file_query(
+        };
+        let flow = check_flow_file_query(
             db,
             target,
             dependencies,
             python_version.clone(),
             flow_budget,
-            flow_context_json,
-            encode_inspection(&flow_input).expect("flow file input serializes"),
+            flow_context,
+            flow_input,
         );
-        let flow: Inspection =
-            decode_inspection(&flow_json).expect("flow file result deserializes");
-        inspection.diagnostics.extend(flow.diagnostics);
-        for reason in flow.coverage.reasons {
-            if !inspection.coverage.reasons.contains(&reason) {
-                inspection.coverage.reasons.push(reason);
+        inspection
+            .diagnostics
+            .extend(flow.diagnostics.iter().cloned());
+        for reason in &flow.coverage.reasons {
+            if !inspection.coverage.reasons.contains(reason) {
+                inspection.coverage.reasons.push(reason.clone());
             }
         }
         if flow.coverage.status == "incomplete" {
@@ -400,5 +345,5 @@ pub(super) fn check_flow_query(
         }
     }
     db.unwind_if_revision_cancelled();
-    encode_inspection(&inspection).expect("check result serializes")
+    inspection
 }

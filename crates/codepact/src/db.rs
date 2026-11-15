@@ -2,13 +2,14 @@ use crate::{
     frontend::{Declaration, FlowStatement},
     Inspection, SourceFile,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
 mod queries;
 pub use queries::parse_file;
-use queries::{check_flow_query, decode_inspection, encode_inspection, inspect_project_query};
+use queries::{check_flow_query, inspect_project_query};
 
 #[salsa::input]
 pub struct FileInput {
@@ -159,6 +160,7 @@ impl std::error::Error for SessionInputError {}
 pub struct AnalysisSession {
     db: Database,
     files: BTreeMap<String, FileInput>,
+    total_source_bytes: usize,
     revision: u64,
     target_version: Option<String>,
     ownership: crate::Ownership,
@@ -187,32 +189,54 @@ impl AnalysisSession {
         module: String,
         source: String,
     ) -> Result<(), SessionInputError> {
+        self.set_file_values(Cow::Owned(path), Cow::Owned(module), Cow::Owned(source))
+    }
+
+    fn set_file_ref(
+        &mut self,
+        path: &str,
+        module: &str,
+        source: &str,
+    ) -> Result<(), SessionInputError> {
+        self.set_file_values(
+            Cow::Borrowed(path),
+            Cow::Borrowed(module),
+            Cow::Borrowed(source),
+        )
+    }
+
+    fn set_file_values(
+        &mut self,
+        path: Cow<'_, str>,
+        module: Cow<'_, str>,
+        source: Cow<'_, str>,
+    ) -> Result<(), SessionInputError> {
         if source.len() > crate::DEFAULT_MAX_SOURCE_BYTES {
             return Err(SessionInputError::SourceLimitExceeded);
         }
         let old_size = self
             .files
-            .get(&path)
+            .get(path.as_ref())
             .map(|file| file.source(&self.db).len())
             .unwrap_or_default();
-        let total_bytes = self.files.values().fold(0usize, |total, file| {
-            total.saturating_add(file.source(&self.db).len())
-        });
-        if total_bytes
+        let updated_total = self
+            .total_source_bytes
             .saturating_sub(old_size)
-            .saturating_add(source.len())
-            > crate::DEFAULT_MAX_SOURCE_BYTES
-        {
+            .saturating_add(source.len());
+        if updated_total > crate::DEFAULT_MAX_SOURCE_BYTES {
             return Err(SessionInputError::TotalSourceLimitExceeded);
         }
-        if !self.files.contains_key(&path) && self.files.len() >= crate::DEFAULT_MAX_INPUT_FILES {
+        if !self.files.contains_key(path.as_ref())
+            && self.files.len() >= crate::DEFAULT_MAX_INPUT_FILES
+        {
             return Err(SessionInputError::FileLimitExceeded);
         }
-        if !self.file_would_change(&path, &module, &source) {
+        if !self.file_would_change(path.as_ref(), module.as_ref(), source.as_ref()) {
             return Ok(());
         }
         self.reset_storage_if_needed();
-        if self.set_file_input(path, module, source) {
+        if self.set_file_input(path.into_owned(), module.into_owned(), source.into_owned()) {
+            self.total_source_bytes = updated_total;
             self.revision = self.revision.saturating_add(1);
             self.mutations_since_reset += 1;
         }
@@ -242,9 +266,13 @@ impl AnalysisSession {
             .collect::<Vec<_>>();
         self.db = Database::default();
         self.files.clear();
+        self.total_source_bytes = 0;
         for (path, module, source) in inputs {
             let semantic_source = crate::frontend::semantic_source(&source);
             let input = FileInput::new(&self.db, path.clone(), module, source, semantic_source);
+            self.total_source_bytes = self
+                .total_source_bytes
+                .saturating_add(input.source(&self.db).len());
             self.files.insert(path, input);
         }
         self.mutations_since_reset = 0;
@@ -284,7 +312,10 @@ impl AnalysisSession {
         if self.files.contains_key(path) {
             self.reset_storage_if_needed();
         }
-        if self.files.remove(path).is_some() {
+        if let Some(file) = self.files.remove(path) {
+            self.total_source_bytes = self
+                .total_source_bytes
+                .saturating_sub(file.source(&self.db).len());
             self.revision = self.revision.saturating_add(1);
             self.mutations_since_reset += 1;
         }
@@ -294,6 +325,7 @@ impl AnalysisSession {
     pub fn reset(&mut self) {
         self.db = Database::default();
         self.files.clear();
+        self.total_source_bytes = 0;
         self.target_version = None;
         self.revision = self.revision.saturating_add(1);
         self.mutations_since_reset = 0;
@@ -500,22 +532,17 @@ impl AnalysisSession {
             self.inspect_cancellable_with_must_use(files, python_version, run_must_use)?;
         let revision = inspected.revision;
         let inspection = inspected.inspection;
-        let inspection_json = encode_inspection(&inspection).expect("inspection result serializes");
-        let model_catalog_json =
-            serde_json::to_string(&self.model_catalog).expect("flow model catalog serializes");
-        let result_json = salsa::Cancelled::catch(|| {
+        let checked = salsa::Cancelled::catch(|| {
             check_flow_query(
                 &self.db,
                 self.files.values().copied().collect(),
                 python_version.to_string(),
-                model_catalog_json,
-                inspection_json,
+                self.model_catalog.clone(),
+                inspection,
                 ownership,
             )
         });
-        let result_json = result_json.map_err(|_| AnalysisCancelled)?;
-        let mut result: Inspection =
-            decode_inspection(&result_json).expect("check query returns valid JSON");
+        let mut result = checked.map_err(|_| AnalysisCancelled)?.clone();
         result.diagnostics.sort_by(|left, right| {
             (
                 &left.primary.file,
@@ -575,8 +602,11 @@ impl AnalysisSession {
                 ),
             });
         }
-        let mut seen_paths = std::collections::BTreeSet::new();
-        if let Some(duplicate) = files.iter().find(|file| !seen_paths.insert(&file.path)) {
+        let mut incoming_paths = HashSet::with_capacity(files.len());
+        if let Some(duplicate) = files
+            .iter()
+            .find(|file| !incoming_paths.insert(file.path.as_str()))
+        {
             return Ok(SessionInspection {
                 revision: self.revision,
                 inspection: crate::invalid_input_inspection(
@@ -617,7 +647,7 @@ impl AnalysisSession {
         let stale_paths = self
             .files
             .keys()
-            .filter(|path| !files.iter().any(|file| &file.path == *path))
+            .filter(|path| !incoming_paths.contains(path.as_str()))
             .cloned()
             .collect::<Vec<_>>();
         for path in stale_paths {
@@ -633,7 +663,7 @@ impl AnalysisSession {
                 .is_some_and(|existing| existing.source(&self.db).len() >= file.source.len())
         });
         for file in non_growing.into_iter().chain(growing) {
-            self.set_file(file.path.clone(), file.module.clone(), file.source.clone())
+            self.set_file_ref(&file.path, &file.module, &file.source)
                 .expect("validated inspection inputs fit session limits");
         }
         self.target_version = Some(python_version.to_string());
@@ -649,10 +679,9 @@ impl AnalysisSession {
             )
         })
         .map_err(|_| AnalysisCancelled)?;
-        let inspection = decode_inspection(&result).expect("project query returns valid JSON");
         Ok(SessionInspection {
             revision: self.revision,
-            inspection,
+            inspection: result.clone(),
         })
     }
 }
@@ -808,6 +837,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -841,6 +871,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -913,6 +944,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -1015,6 +1047,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -1099,6 +1132,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -1670,6 +1704,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -1893,6 +1928,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2027,6 +2063,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2170,6 +2207,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2349,6 +2387,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2472,6 +2511,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2528,6 +2568,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2710,6 +2751,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2798,6 +2840,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2958,6 +3001,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3032,6 +3076,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3117,6 +3162,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3221,6 +3267,39 @@ mod tests {
     }
 
     #[test]
+    fn session_source_byte_count_tracks_mutations_resets_and_storage_rebuilds() {
+        let mut session = AnalysisSession::default();
+        session
+            .set_file("first.py".into(), "first".into(), "x = 1\n".into())
+            .unwrap();
+        assert_eq!(session.total_source_bytes, 6);
+
+        session
+            .set_file("first.py".into(), "first".into(), "x = 123\n".into())
+            .unwrap();
+        assert_eq!(session.total_source_bytes, 8);
+
+        session
+            .set_file("second.py".into(), "second".into(), "y\n".into())
+            .unwrap();
+        assert_eq!(session.total_source_bytes, 10);
+
+        session.mutations_since_reset = crate::DEFAULT_MAX_SESSION_MUTATIONS;
+        session
+            .set_file("third.py".into(), "third".into(), "z\n".into())
+            .unwrap();
+        assert_eq!(session.total_source_bytes, 12);
+        assert_eq!(session.mutations_since_reset, 1);
+
+        session.remove_file("first.py");
+        assert_eq!(session.total_source_bytes, 4);
+
+        session.reset();
+        assert_eq!(session.total_source_bytes, 0);
+        assert!(session.files.is_empty());
+    }
+
+    #[test]
     fn dependency_body_edit_does_not_recompute_consumer_semantics() {
         let executions = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&executions);
@@ -3232,6 +3311,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3335,6 +3415,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3428,6 +3509,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3656,6 +3738,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3727,6 +3810,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3907,6 +3991,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,

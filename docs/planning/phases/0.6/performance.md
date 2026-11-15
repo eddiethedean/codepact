@@ -26,6 +26,15 @@ Times compare seven-sample medians from the exact candidate with a fresh optimiz
 
 The retained comparison shows no large time regression: the largest cold/edit change is +2.5%, and peak RSS changes by at most 3.6%. These are single-host observations, not cross-platform performance claims.
 
+## Rust-level optimization follow-up
+
+Source-sharing, session reconciliation and query-indexing changes are measured
+against the immediately preceding source revision in the separate [Rust
+optimization report](evidence/rust-optimization-2026-11-14.md). It includes
+matched baseline/candidate timings for 500–4,000 independent files, provider
+edits, and function-source memory scaling. The repeatable generator is
+[benchmark_rust_optimizations.rs](../../../../crates/codepact/examples/benchmark_rust_optimizations.rs).
+
 ## Reproduction and provenance
 
 Build each revision separately with `cargo build --release --locked -p codepact --examples`. Run `/usr/bin/time -l target/release/examples/benchmark_phase05 {legacy,alias,recursive,tasks} SIZE` and `/usr/bin/time -l target/release/examples/benchmark_phase06 {state,exclusive,executor} 250`. The complete raw samples, commits, commands and memory readings are in the [exact candidate performance record](evidence/candidate-performance-2026-11-14.json). The earlier [preliminary advanced record](evidence/phase06-benchmark-2026-11-14.json) and [preliminary retained record](evidence/phase05-retained-2026-11-14.json) were measured on mutable, unhashed worktree source and do not reproduce these exact-candidate values; they are retained for audit and excluded from comparison. The [0.5 performance baseline](../0.5/performance.md) documents the prior measurements.
