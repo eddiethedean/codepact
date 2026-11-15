@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+from typing import cast
 import venv
 
 from packaging.tags import sys_tags
@@ -61,10 +62,19 @@ def run(command: list[str], *, cwd: Path, environment: dict[str, str]) -> None:
 
 
 def locked_package_version(root: Path, name: str) -> str:
-    lock = tomllib.loads((root / "uv.lock").read_text(encoding="utf-8"))
-    for package in lock.get("package", []):
-        if package.get("name") == name:
-            return package["version"]
+    lock = cast(
+        dict[str, object],
+        tomllib.loads((root / "uv.lock").read_text(encoding="utf-8")),
+    )
+    packages = lock.get("package")
+    if not isinstance(packages, list):
+        raise RuntimeError("uv.lock does not contain a package list")
+    for package in cast(list[object], packages):
+        if isinstance(package, dict):
+            entry = cast(dict[str, object], package)
+            version = entry.get("version")
+            if entry.get("name") == name and isinstance(version, str):
+                return version
     raise RuntimeError(f"uv.lock has no locked version for {name}")
 
 
