@@ -1,9 +1,65 @@
 # Follow-on phases for CodePact contracts
 
-Status **Proposed**. The phases below turn four catalog-inspired ideas into
-implementation and qualification work. All acceptance gates are pending.
-Select release versions at or after the 0.9 readiness decision. Prototypes
-may start as their prerequisites become available. [Root roadmap](../../../ROADMAP.md) · [0.9 readiness plan](0.9-stabilization.md)
+Status **Proposed**. Resource declarations and related API work are candidates
+for 0.7 and later. Select release versions for the four numbered phases at or
+after the 0.9 readiness decision. Prototypes may start as their prerequisites
+become available. All acceptance gates are pending. [Root roadmap](../../../ROADMAP.md) · [0.9 readiness plan](0.9-stabilization.md)
+
+## Resource declarations and cleanup
+
+Prototype the class opt-in and method marker first. Use `@closes` for the
+method spelling and keep `@resource(closed_by="close")` available.
+
+```python
+from codepact import closes, resource
+
+@resource
+class Session:
+    @closes
+    def close(self) -> None:
+        ...
+```
+
+Bare `@resource` selects the single marked instance method. In the absence of
+a marker, it selects an instance method named `__close__` defined by the class.
+An ordinary `close` method can be designated by `@closes` or `closed_by=`.
+Diagnose a bare declaration without a closer, multiple marked methods, or a
+marker that conflicts with `closed_by=` as `TP4002`. Resolve the marker by
+import identity, preserve the function at runtime, and lower both spellings to
+the existing lifecycle model. A parity fixture should cover use after close,
+closing through a shared borrow, and cleanup duties. Include alias, shadowing,
+and conflict cases. [Existing resource contract](../../contracts.md)
+
+Prototype `@allows_closed` on a method such as `status` next. It permits the
+operation on a closed receiver while preserving lifecycle state and cleanup
+duties. Then evaluate `@closes(repeat="idempotent")` against the existing
+repeat-close model. Check that a second close is accepted under that policy and
+that the applicable raise and cancellation effects are preserved. Keep the
+decorators metadata-only. [Existing close policies](0.3/specification.md#close-outcomes-and-policies)
+
+For context managers, prototype checking `__enter__` and `__exit__` directly.
+Start with a resolved `__enter__` that returns the receiver and a resolved
+`__exit__` that calls the declared closer. Track the entered value, exception
+suppression, and the cleanup effect on each supported exit. Exercise a
+successful close, failed entry, an exit path that skips close, and an unresolved
+exit. A failed entry or opaque exit supplies no cleanup proof. `__close__`
+remains a CodePact method-selection convention. Context-manager execution uses
+Python's existing hooks. [Existing context models](0.3/specification.md#context-models)
+
+## State predicates and typed outcomes
+
+- **State predicates.** Explore `@state_guard(when_true="Ready")` on a Boolean
+  method such as `is_ready`. Establish `Ready` on the true branch only with
+  qualified evidence. Excluding `Ready` on the false branch requires a
+  corresponding guarantee. Check a guarded call, a join, and invalidation
+  when an alias changes the protocol state. Build on qualified typestate and
+  branch analysis. [0.6 typestate](0.6/specification.md#calls-joins-and-completion) · [TypePact branch narrowing](../typepact.md#tc02--use-branch-narrowing-without-losing-resource-state)
+- **Typed outcomes.** Use the existing `@must_use` with a signature such as
+  `connect() -> Result[Owned[Session], ConnectError]`. Under TC03, the success
+  payload retains the same resource identity and cleanup duty through
+  extraction. Cover a discarded result, an exhaustive match with an outstanding
+  duty, and a branch that fulfills the duty by closing or transferring the
+  session. [0.7 typed outcomes](0.7-typed-outcomes.md) · [TypePact payload ownership](../typepact.md#tc03--combine-payload-typing-with-obligation-tracking)
 
 ## Sequence
 
@@ -40,8 +96,9 @@ as incomplete for the affected obligation.
 - [ ] **VV02 — Value identity.** A supported assignment preserves facts about the copied integer. Rebinding and arithmetic use the new value's facts. A `+ 1` that can produce 9 invalidates the old proof for a range of 1 through 8.
 - [ ] **VV03 — Validator evidence.** Compare a source-verified validator, a validator that returns an invalid value on one path, and an opaque validator. Only a verified normal postcondition supplies a caller fact. Verify callable identity through an import alias and a rebinding counterexample.
 
-Public annotation syntax follows the initial oracle. Reuse evidence from
-ordinary typing when available and keep value provenance in the core analyzer.
+After the initial oracle, evaluate a parameter-local annotation such as
+`seats: Annotated[int, IntRange(1, 8)]`. Reuse evidence from ordinary typing
+when available and keep value provenance in the core analyzer.
 General predicate verification remains research. [Type-informed branch plan](../typepact.md#tc02--use-branch-narrowing-without-losing-resource-state)
 
 ## Phase 2 — Relationships between values
@@ -68,6 +125,11 @@ parameter-object invariants, arithmetic relations, and arbitrary predicates.
 verifies that every modeled successful transition into that state establishes
 the checksum, and checks a subsequent read against the actual state and
 field evidence. [Temporary Field](https://www.codesmells.org/smells/temporary-field) · [0.6 typestate plan](0.6-advanced-contracts.md)
+
+Evaluate a field-local spelling such as
+`checksum: Annotated[str | None, NonNullIn("Finalized")]` once transition and
+read behavior is qualified. The annotation expresses a state-dependent
+guarantee about that field.
 
 **Implementation order.** Add one declared field guarantee to a finite state
 on a resolved class. Start with direct field assignments and reads on a

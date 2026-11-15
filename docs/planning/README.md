@@ -19,7 +19,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
-| [Follow-on contract phases](phases/contract-extensions.md) | Proposed value, field, and dependency checks with prerequisites and acceptance cases |
+| [Follow-on contract phases](phases/contract-extensions.md) | Proposed 0.7+ resource declarations, state predicates, typed outcome contracts, and value, field, and dependency checks |
 | [Limitations](limitations.md) | Ownership, aliasing, dynamic code and assurance boundaries |
 | [Compatibility](compatibility.md) | Python typing, versions and ecosystem integration |
 | [Linting and IDE diagnostics](linting-and-editors.md) | Lint command, shared language server, editor targets and validation gates |

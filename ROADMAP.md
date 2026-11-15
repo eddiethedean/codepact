@@ -53,12 +53,25 @@ The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded
 
 ## Follow-on contract phases
 
+### Contracts on methods and values (0.7+)
+
+Start with bare `@resource`, a method-level `@closes` marker, and recognition
+of a class-defined `__close__` as the fallback. Follow with method-level
+post-close access and repeat-close policies, then source-checked context-manager
+cleanup. These are candidates from 0.7 onward. [Resource declaration plan](docs/planning/phases/contract-extensions.md#resource-declarations-and-cleanup)
+
+Use the existing `@must_use` marker with the typed outcomes planned for 0.7.
+Ownership tracking through outcome payloads follows the TypePact TC03 gates.
+State predicates build on qualified typestate and branch analysis. Parameter
+constraints and state-dependent field annotations build on the follow-on value
+and field checks below. [Typed outcomes plan](docs/planning/phases/0.7-typed-outcomes.md) · [State predicates and typed outcomes](docs/planning/phases/contract-extensions.md#state-predicates-and-typed-outcomes)
+
 The [contract extensions plan](docs/planning/phases/contract-extensions.md)
 proposes validated values, relationships between values, typestate field
 guarantees, and declared dependency boundaries. Scalar validation precedes
 relationship checking. Field guarantees build on 0.6 typestate. Dependency
 boundaries can be prototyped independently. Consider release assignments at
-or after the 0.9 readiness decision.
+or after the 0.9 readiness decision for those four phases.
 
 ## Version policy
 
