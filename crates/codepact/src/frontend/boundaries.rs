@@ -143,7 +143,16 @@ fn expression_has_unsafe_annotation_evaluation(
     fn safe_metadata_value(
         expression: &Expr,
         safe_calls: &std::collections::BTreeSet<String>,
+        safe_subscripts: &std::collections::BTreeSet<String>,
     ) -> bool {
+        let safe_path = |name: &str| {
+            safe_subscripts.contains(name)
+                || safe_subscripts.iter().any(|prefix| {
+                    prefix
+                        .strip_suffix(".*")
+                        .is_some_and(|prefix| name.starts_with(&format!("{prefix}.")))
+                })
+        };
         let mut pending = vec![(expression, 0usize)];
         let mut nodes = 0usize;
         while let Some((expression, depth)) = pending.pop() {
@@ -171,6 +180,17 @@ fn expression_has_unsafe_annotation_evaluation(
                             .map(|keyword| (&keyword.value, depth + 1)),
                     );
                 }
+                Expr::Subscript(subscript)
+                    if dotted_name(&subscript.value).is_some_and(|name| safe_path(&name)) =>
+                {
+                    match &*subscript.slice {
+                        Expr::Tuple(tuple) => {
+                            pending.extend(tuple.elts.iter().map(|value| (value, depth + 1)));
+                        }
+                        value => pending.push((value, depth + 1)),
+                    }
+                }
+                Expr::Name(_) | Expr::Attribute(_) => {}
                 _ => return false,
             }
         }
@@ -225,10 +245,9 @@ fn expression_has_unsafe_annotation_evaluation(
                             Expr::Tuple(tuple) => tuple.elts.as_slice(),
                             expression => std::slice::from_ref(expression),
                         };
-                        arguments
-                            .iter()
-                            .skip(1)
-                            .all(|metadata| safe_metadata_value(metadata, self.safe_calls))
+                        arguments.iter().skip(1).all(|metadata| {
+                            safe_metadata_value(metadata, self.safe_calls, self.safe_subscripts)
+                        })
                     } else {
                         true
                     };

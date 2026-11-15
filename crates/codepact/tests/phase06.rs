@@ -122,6 +122,63 @@ fn v06_02_annotated_state_access_matches_state_alias() {
 }
 
 #[test]
+fn v06_02_pythonic_and_explicit_state_annotations_have_canonical_parity() {
+    let pythonic = check(
+        "@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed', on_raise='ready')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    let explicit = check(
+        "from typing import Annotated, Literal\nfrom codepact.contracts import StateAccess\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed', on_raise='ready')\n    def close(self): pass\n    def send(self: Annotated['Channel', StateAccess[Literal['ready']]]): pass\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    let canonical = |result: &CheckResult| {
+        result
+            .diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.code.clone(),
+                    diagnostic.certainty.clone(),
+                    diagnostic.trust.clone(),
+                    diagnostic.related.len(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(canonical(&pythonic), canonical(&explicit));
+    assert_eq!(pythonic.coverage.status, explicit.coverage.status);
+    assert_eq!(pythonic.coverage.reasons, explicit.coverage.reasons);
+    assert_eq!(
+        pythonic.coverage.declarations,
+        explicit.coverage.declarations
+    );
+}
+
+#[test]
+fn v06_02_mixed_interface_provider_and_consumer_resolve_each_other() {
+    let files = [
+        SourceFile::new(
+            "provider.py",
+            "provider",
+            "from typing import Literal, Annotated\nfrom codepact import state_machine, transition\nfrom codepact.contracts import StateAccess\nfrom codepact.rust import State\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed')\n    def close(self): pass\n    def send(self: Annotated['Channel', StateAccess[Literal['ready']]]): pass\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Device:\n    @transition(from_state='ready', to_state='closed')\n    def close(self): pass\n    def send(self: State['Device', Literal['ready']]): pass\n",
+        ),
+        SourceFile::new(
+            "consumer.py",
+            "consumer",
+            "from typing import Literal, Annotated\nfrom codepact.contracts import StateAccess\nfrom codepact.rust import State\nfrom provider import Channel, Device\ndef send_explicit(channel: Annotated[Channel, StateAccess[Literal['ready']]]):\n    channel.send()\ndef send_alias(device: State[Device, Literal['ready']]):\n    device.send()\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n    device = Device()\n    device.close()\n    device.send()\n",
+        ),
+    ];
+    let result = check_with_ownership(&files, "3.13", Ownership::Advanced);
+    has(&result, "TP2102");
+    assert!(result
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "TP2102"));
+}
+
+#[test]
 fn v06_03_identical_transition_declarations_normalize_and_conflicts_are_rejected() {
     let duplicate = check(
         "@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed')\n    @transition(from_state='ready', to_state='closed')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n",
@@ -300,6 +357,61 @@ fn v06_05_exclusive_region_ends_after_a_propagated_raise() {
 }
 
 #[test]
+fn v06_05_argument_binding_failure_never_enters_exclusive_region() {
+    let result = check(
+        "def edit(value: BorrowedMut[C], *, required):\n    value.write()\ndef run():\n    item = C()\n    try:\n        edit(item)\n    except TypeError:\n        item.write()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    lacks(&result, "TP2101");
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("invalid call argument binding")
+        }),
+        "binding failure must remain visible while leaving the exclusive region unentered: {result:#?}"
+    );
+}
+
+#[test]
+fn v06_05_finally_replacement_releases_exclusive_region_on_actual_exit() {
+    let result = check(
+        "def edit(value: BorrowedMut[C]):\n    try:\n        raise ValueError()\n    finally:\n        return\ndef run():\n    item = C()\n    edit(item)\n    item.write()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    lacks(&result, "TP2101");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v06_05_exclusive_escape_and_unknown_callback_remain_visible() {
+    let escaped = check(
+        "def expose(value: BorrowedMut[C]):\n    return value\ndef run():\n    item = C()\n    alias = expose(item)\n    item.write()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    assert!(
+        escaped
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP2004"),
+        "a known returned borrowed view must be rejected: {escaped:#?}"
+    );
+
+    let callback = check(
+        "def edit(value: BorrowedMut[C], callback):\n    callback(value)\n    value.write()\ndef run(callback):\n    item = C()\n    edit(item, callback)\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    assert_eq!(callback.coverage.status, "incomplete", "{callback:#?}");
+}
+
+#[test]
 fn v06_04_conflict_reports_the_access_and_region_origin_spans() {
     let result = check(
         "def edit(value: BorrowedMut[C], alias: C):\n    value.write()\n    alias.read()\ndef run():\n    item = C()\n    edit(item, item)\n",
@@ -434,6 +546,22 @@ fn v06_07_branch_join_keeps_possible_protocol_violation() {
 }
 
 #[test]
+fn v06_07_protocol_state_is_shared_by_object_aliases() {
+    let result = check(
+        "@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run():\n    channel = Channel()\n    alias = channel\n    channel.close()\n    alias.send()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    has(&result, "TP2102");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP2102" && diagnostic.certainty == "definite"
+        }),
+        "aliases must observe the transition of the same receiver: {result:#?}"
+    );
+}
+
+#[test]
 fn v06_07_unreachable_transition_does_not_pollute_join_but_unknown_effect_does() {
     let unreachable = check(
         "@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state=('ready', 'closed'), to_state='closed')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run():\n    channel = Channel()\n    if False:\n        channel.close()\n    channel.send()\n",
@@ -499,6 +627,42 @@ fn v06_08_explicit_exceptional_transition_applies_only_to_the_raise_edge() {
 }
 
 #[test]
+fn v06_08_finally_replaced_raise_uses_the_final_normal_transition() {
+    let result = check(
+        "@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed', on_raise='ready')\n    def close(self):\n        try:\n            raise ValueError()\n        finally:\n            return\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    let finding = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP2102")
+        .expect("the finally return replaces the raise, so the normal transition applies");
+    assert_eq!(finding.certainty, "definite", "{result:#?}");
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+}
+
+#[test]
+fn v06_08_failed_method_binding_does_not_apply_a_transition() {
+    let result = check(
+        "@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed')\n    def close(self, *, required): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run():\n    channel = Channel()\n    try:\n        channel.close()\n    except TypeError:\n        channel.send()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    lacks(&result, "TP2102");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic.message.contains("invalid call argument binding")
+        }),
+        "failed binding is an explicit boundary and cannot apply a state transition: {result:#?}"
+    );
+}
+
+#[test]
 fn v06_08_explicit_cancellation_transition_applies_to_cancelled_await_edge() {
     let result = check(
         "@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed', on_raise='ready', on_cancel='ready')\n    async def close(self):\n        await unknown_wait()\n    def send(self: State['Channel', Literal['ready']]): pass\nasync def run():\n    channel = Channel()\n    try:\n        await channel.close()\n    except BaseException:\n        channel.send()\n",
@@ -548,6 +712,34 @@ fn v06_09_declared_exception_postcondition_reestablishes_protocol_state() {
     );
     lacks(&result, "TP2102");
     assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+}
+
+#[test]
+fn v06_09_checked_wrapper_propagates_declared_effect_and_unknown_call_does_not_prove_purity() {
+    let checked = check(
+        "@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef close_channel(channel):\n    channel.close()\ndef run():\n    channel = Channel()\n    close_channel(channel)\n    channel.send()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    let finding = checked
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP2102")
+        .expect("checked wrapper propagates the known transition");
+    assert_eq!(finding.certainty, "definite", "{checked:#?}");
+
+    let unresolved = check(
+        "@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run(channel):\n    maybe_close(channel)\n    channel.send()\n",
+        Ownership::Advanced,
+        "3.13",
+    );
+    assert_eq!(unresolved.coverage.status, "incomplete", "{unresolved:#?}");
+    assert!(
+        unresolved.diagnostics.iter().all(|diagnostic| {
+            diagnostic.code != "TP2102" || diagnostic.certainty != "definite"
+        }),
+        "unknown calls cannot prove a protocol state unchanged: {unresolved:#?}"
+    );
 }
 
 #[test]
@@ -624,6 +816,53 @@ fn v06_11_nested_local_task_groups_keep_each_group_scope_valid() {
 }
 
 #[test]
+fn v06_11_completed_task_protocol_effect_reaches_parent_after_group_exit() {
+    let files = [SourceFile::new(
+        "main.py",
+        "main",
+        "from asyncio import TaskGroup\nfrom typing import Literal\nfrom codepact import resource, state_machine, transition\nfrom codepact.rust import Borrowed, State\n@resource(closed_by='cleanup')\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed')\n    def disable(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\n    def cleanup(self): pass\nasync def worker(channel: Borrowed[Channel]):\n    channel.disable()\nasync def run():\n    channel = Channel()\n    async with TaskGroup() as group:\n        group.create_task(worker(channel))\n    channel.send()\n",
+    )];
+    let result = check_with_ownership(&files, "3.13", Ownership::AdvancedAssumeDefaultTaskFactory);
+    has(&result, "TP2102");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP2102" && diagnostic.certainty == "definite"
+        }),
+        "joined worker transition must update the shared parent's protocol state: {result:#?}"
+    );
+}
+
+#[test]
+fn v06_11_cancelled_before_start_task_does_not_apply_protocol_transition() {
+    let files = [SourceFile::new(
+        "main.py",
+        "main",
+        "from asyncio import TaskGroup\nfrom typing import Literal\nfrom codepact import resource, state_machine, transition\nfrom codepact.rust import Borrowed, State\n@resource(closed_by='cleanup')\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed')\n    def disable(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\n    def cleanup(self): pass\nasync def worker(channel: Borrowed[Channel]):\n    channel.disable()\nasync def run():\n    channel = Channel()\n    async with TaskGroup() as group:\n        task = group.create_task(worker(channel))\n        task.cancel()\n    channel.send()\n",
+    )];
+    let result = check_with_ownership(&files, "3.13", Ownership::AdvancedAssumeDefaultTaskFactory);
+    lacks(&result, "TP2102");
+}
+
+#[test]
+fn v06_11_task_factory_mutation_and_escaped_task_handles_are_boundaries() {
+    let files = [SourceFile::new(
+        "main.py",
+        "main",
+        "from asyncio import TaskGroup\nasync def worker(): pass\nasync def run(factory):\n    async with TaskGroup() as group:\n        group.set_task_factory(factory)\n        handle = group.create_task(worker())\n    handle.cancel()\n",
+    )];
+    let result = check_with_ownership(&files, "3.13", Ownership::AdvancedAssumeDefaultTaskFactory);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("task factory")),
+        "factory mutation must invalidate the pinned model: {result:#?}"
+    );
+}
+
+#[test]
 fn v06_12_executor_submission_after_shutdown_is_invalid_and_pinned() {
     let files = [SourceFile::new(
         "main.py",
@@ -653,6 +892,61 @@ fn v06_12_executor_accepts_submit_and_repeated_shutdown() {
     assert_eq!(
         result.coverage.status, "complete-for-supported-subset",
         "{result:#?}"
+    );
+}
+
+#[test]
+fn v06_12_executor_startup_failure_widens_submit_outcome() {
+    let files = [SourceFile::new(
+        "main.py",
+        "main",
+        "from concurrent.futures import ThreadPoolExecutor\ndef worker(): return 1\ndef run():\n    pool = ThreadPoolExecutor()\n    try:\n        pool.submit(worker)\n    except RuntimeError:\n        pool.submit(worker)\n",
+    )];
+    let result = check_with_ownership(&files, "3.13", Ownership::Advanced);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("ThreadPoolExecutor")),
+        "submit failure must retain an unknown executor state: {result:#?}"
+    );
+}
+
+#[test]
+fn v06_12_shutdown_failure_keeps_the_shutdown_state() {
+    let files = [SourceFile::new(
+        "main.py",
+        "main",
+        "from concurrent.futures import ThreadPoolExecutor\ndef worker(): return 1\ndef run():\n    pool = ThreadPoolExecutor()\n    try:\n        pool.shutdown()\n    except BaseException:\n        pool.submit(worker)\n",
+    )];
+    let result = check_with_ownership(&files, "3.13", Ownership::Advanced);
+    has(&result, "TP2102");
+    assert!(
+        result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP2102" && diagnostic.certainty == "definite"
+        }),
+        "shutdown commits before waiting, including exceptional completion: {result:#?}"
+    );
+}
+
+#[test]
+fn v06_12_nonwaiting_shutdown_does_not_claim_worker_completion() {
+    let files = [SourceFile::new(
+        "main.py",
+        "main",
+        "from concurrent.futures import ThreadPoolExecutor\ndef worker(): return 1\ndef run():\n    pool = ThreadPoolExecutor()\n    pool.submit(worker)\n    pool.shutdown(wait=False)\n",
+    )];
+    let result = check_with_ownership(&files, "3.13", Ownership::Advanced);
+    assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+    assert!(
+        result
+            .coverage
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("does not establish worker completion")),
+        "nonwaiting shutdown must preserve uncertain worker completion: {result:#?}"
     );
 }
 

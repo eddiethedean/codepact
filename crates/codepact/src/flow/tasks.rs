@@ -1033,6 +1033,18 @@ pub(super) fn join_group(
                         normal.as_ref(),
                         task.cancel_requested || task.possible || group.incomplete,
                     );
+                    apply_worker_protocol_state(
+                        &mut interrupted,
+                        object,
+                        all_outcomes.as_ref(),
+                        true,
+                    );
+                    apply_worker_protocol_state(
+                        env,
+                        object,
+                        normal.as_ref(),
+                        task.cancel_requested || task.possible || group.incomplete,
+                    );
                 } else {
                     let escaped = all_outcomes.as_ref().is_none_or(|effects| {
                         effects.escaped.contains(object)
@@ -1047,7 +1059,21 @@ pub(super) fn join_group(
                         for continuation in [&mut *env, &mut interrupted] {
                             *continuation.objects.entry(object.clone()).or_default() |= UNKNOWN;
                             continuation.escaped.insert(object.clone());
+                            continuation.protocol_unknown.insert(object.clone());
                         }
+                    } else {
+                        apply_worker_protocol_state(
+                            &mut interrupted,
+                            object,
+                            all_outcomes.as_ref(),
+                            true,
+                        );
+                        apply_worker_protocol_state(
+                            env,
+                            object,
+                            normal.as_ref(),
+                            task.cancel_requested || task.possible || group.incomplete,
+                        );
                     }
                 }
             }
@@ -1182,6 +1208,39 @@ fn apply_worker_cleanup(
         if let (Some(own), Some(effects)) = (state.ownership.as_mut(), effects.ownership.as_ref()) {
             own.copy_transfers(effects, object);
         }
+    }
+}
+
+fn apply_worker_protocol_state(
+    state: &mut State,
+    object: &str,
+    effects: Option<&State>,
+    may_not_start: bool,
+) {
+    let Some(effects) = effects else {
+        return;
+    };
+    let Some(after) = effects.protocol_states.get(object) else {
+        if effects.protocol_unknown.contains(object) {
+            state.protocol_unknown.insert(object.to_owned());
+        }
+        return;
+    };
+    let mut states = if may_not_start {
+        state
+            .protocol_states
+            .get(object)
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        BTreeSet::new()
+    };
+    states.extend(after.iter().cloned());
+    state.protocol_states.insert(object.to_owned(), states);
+    if effects.protocol_unknown.contains(object) {
+        state.protocol_unknown.insert(object.to_owned());
+    } else if !may_not_start {
+        state.protocol_unknown.remove(object);
     }
 }
 
