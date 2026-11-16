@@ -1,0 +1,188 @@
+{
+  "execution_status": "completed",
+  "engine_version": "0.6.0",
+  "report_schema_version": 2,
+  "check_schema_version": 2,
+  "target_python_version": "3.13",
+  "model_catalog_version": 4,
+  "available_models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-EXECUTOR-001",
+      "qualified_symbol": "concurrent.futures.ThreadPoolExecutor",
+      "source_revisions": [
+        "v3.13.16"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.13.16/Lib/concurrent/futures/thread.py"
+      ],
+      "selection_rule": "Exact ThreadPoolExecutor import identity, a local no-argument constructor, and CPython 3.13 source pin.",
+      "modeled_behavior": "Local Accepting/Shutdown protocol for submit and shutdown. Submission work, worker completion, future behavior, and worker-side cleanup are not modeled.",
+      "qualification": "Experimental 0.6 source model. Controlled runtime conformance and optimized performance evidence are pending."
+    }
+  ],
+  "assurance": "experimental-advanced-contract-checking-for-supported-exit-flow",
+  "contracts": [],
+  "coverage": {
+    "status": "complete-for-supported-subset",
+    "reasons": [],
+    "source_bytes": 530,
+    "declarations": 0
+  },
+  "diagnostics": [
+    {
+      "code": "TP2102",
+      "severity": "error",
+      "message": "operation may be called outside its declared protocol state",
+      "primary": {
+        "file": "src/main.py",
+        "line": 22,
+        "column": 9,
+        "end_line": 22,
+        "end_column": 23
+      },
+      "related": [
+        {
+          "file": "src/main.py",
+          "line": 7,
+          "column": 1,
+          "end_line": 7,
+          "end_column": 60
+        },
+        {
+          "file": "src/main.py",
+          "line": 13,
+          "column": 20,
+          "end_line": 13,
+          "end_column": 54
+        }
+      ],
+      "certainty": "definite",
+      "completion": null,
+      "trust": "declared-unverified",
+      "coverage_reason": null,
+      "repair": null,
+      "fingerprint": "73b152045a8305524443f50eb6cae6450435881f4c3a1527914b8b0136826d35",
+      "base_severity": "error",
+      "effective_severity": "error",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP2102.R001",
+      "actionable": true,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    }
+  ],
+  "counts": {
+    "TP2102": 1
+  },
+  "counts_by_certainty": {
+    "definite": 1
+  },
+  "counts_by_disposition": {
+    "active": 1
+  },
+  "total_diagnostics": 1,
+  "actionable_diagnostics": 1,
+  "returned_diagnostics": 1,
+  "audit_diagnostics": 0,
+  "policy_failures": [
+    "TP2102 operation may be called outside its declared protocol state"
+  ],
+  "policy_warnings": [],
+  "unused_suppressions": [],
+  "details_truncated": false,
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "13d8cb2b17a6491dfaa20228609d8e23b7fea2c595f8065904fc0f1826c51ee0",
+  "semantic_fingerprint": "eccc9af37a6b8a926f017fa8e34c970a0f93d58f5d84dab52c43aa8d1752ec6d",
+  "policy_fingerprint": "e5d9b5c6b85d4217f19c9cd4d7d02cf5086e16276d8cdc8f2f81e432a142374d",
+  "model_fingerprint": "4e83201ab8d3a744bbce38770a3f45ae8a6c09b20991631e80dc3b0baa7aa332",
+  "snapshot_manifest": [
+    {
+      "logical_path": "src/main.py",
+      "sha256": "452c8ae3073bf6564d593440b482600d18a528728718d7ef70f7c77e5d79fcc5"
+    }
+  ],
+  "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-typestate-3.13",
+  "logical_root": ".",
+  "config_file": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-typestate-3.13/pyproject.toml",
+  "selected_files": [
+    "src/main.py"
+  ],
+  "include": [
+    "src/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP2002",
+    "TP2003",
+    "TP2004",
+    "TP2005",
+    "TP2006",
+    "TP2101",
+    "TP2102",
+    "TP3001"
+  ],
+  "disabled_rules": [],
+  "mode": "strict",
+  "fail_on": "error",
+  "settings_origins": {
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "experimental-advanced-contracts": "pyproject.toml",
+    "experimental-ownership": "pyproject.toml",
+    "fail-on": "default",
+    "include": "pyproject.toml",
+    "mode": "command-line",
+    "python-version": "command-line",
+    "root": "pyproject-directory"
+  },
+  "baseline": {
+    "configured": false,
+    "compatible": null,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "exit_code": 1
+}

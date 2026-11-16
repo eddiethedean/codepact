@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"];
 pub const OWNERSHIP_RULES: &[&str] = &["TP2002", "TP2003", "TP2004", "TP2005", "TP2006"];
+pub const ADVANCED_RULES: &[&str] = &["TP2101", "TP2102"];
 
 pub(super) const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
@@ -38,6 +39,8 @@ pub struct ProjectConfig {
     pub mode: Option<String>,
     #[serde(rename = "experimental-ownership")]
     pub experimental_ownership: Option<bool>,
+    #[serde(rename = "experimental-advanced-contracts")]
+    pub experimental_advanced_contracts: Option<bool>,
     #[serde(rename = "assume-default-task-factory")]
     pub assume_default_task_factory: Option<bool>,
     #[serde(rename = "fail-on")]
@@ -73,6 +76,7 @@ pub struct Overrides {
     pub python_version: Option<String>,
     pub mode: Option<String>,
     pub experimental_ownership: Option<bool>,
+    pub experimental_advanced_contracts: Option<bool>,
     pub fail_on: Option<String>,
     pub rules: Option<Vec<String>>,
     pub baseline: Option<PathBuf>,
@@ -239,10 +243,23 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         .as_ref()
         .and_then(|c| c.assume_default_task_factory)
         .unwrap_or(false);
-    let ownership = match (experimental_ownership, assume_default_task_factory) {
-        (true, true) => crate::Ownership::AssumeDefaultTaskFactory,
-        (true, false) => crate::Ownership::Enabled,
-        (false, _) => crate::Ownership::Disabled,
+    let experimental_advanced_contracts = overrides
+        .experimental_advanced_contracts
+        .or_else(|| c.as_ref().and_then(|c| c.experimental_advanced_contracts))
+        .unwrap_or(false);
+    if experimental_advanced_contracts && !experimental_ownership {
+        return Err("experimental-advanced-contracts requires experimental-ownership".into());
+    }
+    let ownership = match (
+        experimental_ownership,
+        experimental_advanced_contracts,
+        assume_default_task_factory,
+    ) {
+        (true, true, true) => crate::Ownership::AdvancedAssumeDefaultTaskFactory,
+        (true, true, false) => crate::Ownership::Advanced,
+        (true, false, true) => crate::Ownership::AssumeDefaultTaskFactory,
+        (true, false, false) => crate::Ownership::Enabled,
+        (false, _, _) => crate::Ownership::Disabled,
     };
     let mut rules: BTreeSet<String> = c
         .as_ref()
@@ -263,6 +280,9 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         validate_rule(r)?;
         if !ownership.is_enabled() && OWNERSHIP_RULES.contains(&r.as_str()) {
             return Err(format!("rule {r} requires experimental-ownership"));
+        }
+        if ADVANCED_RULES.contains(&r.as_str()) && !ownership.includes_advanced_contracts() {
+            return Err(format!("rule {r} requires experimental-advanced-contracts"));
         }
     }
     let mut severity = c.as_ref().map(|c| c.severity.clone()).unwrap_or_default();
@@ -371,6 +391,20 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
                 overrides.experimental_ownership.is_some(),
                 c.as_ref()
                     .is_some_and(|c| c.experimental_ownership.is_some()),
+            )
+            .into(),
+        );
+    }
+    if overrides.experimental_advanced_contracts.is_some()
+        || c.as_ref()
+            .is_some_and(|c| c.experimental_advanced_contracts.is_some())
+    {
+        settings_origins.insert(
+            "experimental-advanced-contracts".into(),
+            origin(
+                overrides.experimental_advanced_contracts.is_some(),
+                c.as_ref()
+                    .is_some_and(|c| c.experimental_advanced_contracts.is_some()),
             )
             .into(),
         );
@@ -506,7 +540,9 @@ fn severity_overridable(rule: &str) -> bool {
 }
 
 pub(super) fn eligible_code(code: &str) -> bool {
-    DEFAULT_RULES.contains(&code) || OWNERSHIP_RULES.contains(&code)
+    DEFAULT_RULES.contains(&code)
+        || OWNERSHIP_RULES.contains(&code)
+        || ADVANCED_RULES.contains(&code)
 }
 
 pub(super) fn validate_rule(r: &str) -> Result<(), String> {
@@ -518,12 +554,21 @@ pub(super) fn validate_rule(r: &str) -> Result<(), String> {
 }
 
 pub(super) fn scoped_rules(ownership: crate::Ownership) -> impl Iterator<Item = &'static str> {
-    DEFAULT_RULES.iter().copied().chain(
-        OWNERSHIP_RULES
-            .iter()
-            .copied()
-            .filter(move |_| ownership.is_enabled()),
-    )
+    DEFAULT_RULES
+        .iter()
+        .copied()
+        .chain(
+            OWNERSHIP_RULES
+                .iter()
+                .copied()
+                .filter(move |_| ownership.is_enabled()),
+        )
+        .chain(
+            ADVANCED_RULES
+                .iter()
+                .copied()
+                .filter(move |_| ownership.includes_advanced_contracts()),
+        )
 }
 pub(super) fn validate_pattern(p: &str) -> Result<(), String> {
     if p.is_empty()

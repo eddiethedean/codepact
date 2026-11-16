@@ -1174,6 +1174,30 @@ fn execute_with(
     result: &mut Inspection,
     depth: usize,
 ) -> FlowResult {
+    if asynchronous
+        && env
+            .ownership
+            .as_ref()
+            .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
+        && !env.exclusive.is_empty()
+    {
+        boundary(
+            result,
+            file,
+            range,
+            "exclusive borrow remains active across async context entry or exit",
+        );
+        for object in &env.exclusive {
+            *env.objects.entry(object.clone()).or_default() |= UNKNOWN;
+            if env
+                .resources
+                .get(object)
+                .is_some_and(|resource| env.protocol_machines.contains_key(&resource.base_symbol))
+            {
+                env.protocol_unknown.insert(object.clone());
+            }
+        }
+    }
     #[derive(Clone)]
     struct Path {
         state: State,
@@ -1798,6 +1822,12 @@ fn execute_non_if_statement(
         | FlowStatement::EscapingAssign {
             name, value, range, ..
         } => {
+            if tasks::initialize_executor_handle(name, value, env, file, result) {
+                return None;
+            }
+            if tasks::initialize_group_handle(name, value, env, file, result) {
+                return None;
+            }
             if let Some(source) = expr_name(value) {
                 report_possibly_unbound_alias(source, value.range, env, file, result);
             }
@@ -1809,6 +1839,25 @@ fn execute_non_if_statement(
             let source_coroutine = expr_name(value)
                 .and_then(|source| env.coroutine_aliases.get(source))
                 .cloned();
+            let source_exclusive_objects = expr_name(value)
+                .into_iter()
+                .filter(|source| {
+                    env.exclusive_views
+                        .values()
+                        .any(|views| views.contains(*source))
+                })
+                .flat_map(|source| {
+                    env.places
+                        .get(source)
+                        .into_iter()
+                        .flatten()
+                        .filter(|object| env.exclusive.contains(*object))
+                        .cloned()
+                })
+                .collect::<BTreeSet<_>>();
+            for views in env.exclusive_views.values_mut() {
+                views.remove(name);
+            }
             env.coroutine_aliases.remove(name);
             env.unknown_coroutine_aliases.remove(name);
             if let (Some(ownership), AstExprKind::Closure(captures)) =
@@ -1937,7 +1986,12 @@ fn execute_non_if_statement(
                                 OPEN
                             },
                         );
-                        env.duty_origins.insert(object.clone(), span(file, *range));
+                        if resource_contract
+                            .as_ref()
+                            .is_some_and(|resource| resource.lifecycle.is_some())
+                        {
+                            env.duty_origins.insert(object.clone(), span(file, *range));
+                        }
                         env.resources.insert(
                             object.clone(),
                             resource_contract
@@ -2042,6 +2096,8 @@ fn execute_non_if_statement(
                                     for exit in &mut propagated_raises {
                                         exit.state.objects.remove(&object);
                                         exit.state.resources.remove(&object);
+                                        exit.state.protocol_states.remove(&object);
+                                        exit.state.protocol_unknown.remove(&object);
                                         exit.state.duty_origins.remove(&object);
                                         exit.state.close_origins.remove(&object);
                                     }
@@ -2078,6 +2134,30 @@ fn execute_non_if_statement(
                                 *range,
                                 "repeated loop allocation is summarized with unknown multiplicity",
                             );
+                        }
+                        if let Some(initial) = env
+                            .alive
+                            .then(|| {
+                                env.resources
+                                    .get(&object)
+                                    .and_then(|resource| {
+                                        env.protocol_machines.get(&resource.base_symbol)
+                                    })
+                                    .map(|machine| machine.initial.clone())
+                            })
+                            .flatten()
+                        {
+                            if repeated_allocation {
+                                env.protocol_states
+                                    .entry(object.clone())
+                                    .or_default()
+                                    .insert(initial);
+                                env.protocol_unknown.insert(object.clone());
+                            } else {
+                                env.protocol_states
+                                    .insert(object.clone(), BTreeSet::from([initial]));
+                                env.protocol_unknown.remove(&object);
+                            }
                         }
                         env.places
                             .insert(name.clone(), BTreeSet::from([object.clone()]));
@@ -2166,6 +2246,12 @@ fn execute_non_if_statement(
                 } else {
                     env.places.remove(name);
                     env.unknown_places.remove(name);
+                }
+                for object in source_exclusive_objects {
+                    env.exclusive_views
+                        .entry(object)
+                        .or_default()
+                        .insert(name.clone());
                 }
             } else {
                 if !defines_resource_view || env.ownership.is_some() {
@@ -2340,7 +2426,14 @@ fn execute_non_if_statement(
             env.shadowed_classes.remove(name);
             if let Some(binding) = binding {
                 if binding == "class" {
-                    let resource = class_resource_contract(file, name, class_decorators, contracts);
+                    let resource = env
+                        .module_class_bindings
+                        .get(name)
+                        .cloned()
+                        .flatten()
+                        .or_else(|| {
+                            class_resource_contract(file, name, class_decorators, contracts)
+                        });
                     env.class_bindings.insert(name.clone(), resource);
                     env.function_bindings.remove(name);
                 } else if binding.starts_with("import:") {
@@ -2382,6 +2475,22 @@ fn execute_non_if_statement(
             );
             ownership::escape_pending_value(env, file, *range, result);
             if let Some(target) = target {
+                if env
+                    .ownership
+                    .as_ref()
+                    .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
+                {
+                    if let Some(alias) = root_place_name(target) {
+                        report_exclusive_alias_access(
+                            env,
+                            alias,
+                            file,
+                            *range,
+                            result,
+                            "resource is mutated through an alias while an exclusive borrow is active",
+                        );
+                    }
+                }
                 if let AstExprKind::Attribute(receiver, _) = &target.kind {
                     if let Some(binding) = expr_name(receiver)
                         .and_then(|name| env.function_bindings.get(name))

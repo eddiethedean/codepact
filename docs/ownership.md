@@ -1,6 +1,6 @@
 # Experimental ownership
 
-CodePact 0.5.0 adds explicit moves, lexical borrows, and a bounded model for
+CodePact 0.5 adds explicit moves, lexical borrows, and a bounded model for
 `asyncio.TaskGroup`. [Install matching helpers and CLI](install.md)
 
 ## Enable ownership checks
@@ -115,6 +115,86 @@ An owning move into a task commits during argument evaluation. A task cancelled
 before it starts cannot run the worker's cleanup code. Task completion and
 resource cleanup are reported as separate effects.
 
+## Advanced contract preview (0.6)
+
+Advanced contracts are a separate opt-in layered on experimental ownership.
+Enable both settings (or pass both command-line switches):
+
+```toml
+[tool.codepact]
+config-version = 1
+experimental-ownership = true
+experimental-advanced-contracts = true
+```
+
+```sh
+codepact check --experimental-ownership --experimental-advanced-contracts
+```
+
+The preview enables TP2101 for known exclusive-access conflicts and TP2102
+for known protocol precondition violations. The initial supported exclusive
+region is a resolved synchronous local call with a `BorrowedMut[T]` parameter.
+It checks argument alias overlap, modeled accesses through competing aliases,
+known captures, and suspension at `await`, async context entry/exit, or `yield`.
+An unsupported alias or effect weakens only the affected facts and adds a
+coverage boundary. Nested exclusive regions and general lifetime relations are
+not modeled.
+
+Finite protocol declarations use exact CodePact imports and literal state
+names. A successful local construction starts in the declared initial state.
+Transitions can declare normal, exceptional, and cancelled outcomes; a
+receiver-only `State[T, Literal[...]]` annotation (or equivalent
+`Annotated[T, StateAccess[Literal[...]]]`) supplies a precondition without a
+transition.
+
+```python
+from typing import Literal
+
+from codepact import state_machine, transition
+from codepact.rust import State
+
+
+@state_machine(states=("ready", "closed"), initial="ready")
+class Channel:
+    @transition(from_state="ready", to_state="closed", on_raise="ready")
+    def close(self) -> None:
+        pass
+
+    def send(self: State["Channel", Literal["ready"]]) -> None:
+        pass
+
+
+channel = Channel()
+channel.close()
+channel.send()  # TP2102: close established the closed state
+```
+
+These declarations are trusted assertions in this preview: CodePact checks
+their names and state sets, but does not prove a method body implements its
+declared transition. An omitted exceptional or cancelled outcome becomes
+unknown on that exit. Unknown calls, unresolved imports, and unsupported
+effects keep protocol state unknown. A protocol state named `closed` does not
+declare resource cleanup.
+
+The experimental TaskGroup extension accepts a local binding such as
+`group = asyncio.TaskGroup()` followed by `async with group`, in addition to
+the existing inline form. It reports known submissions before entry, after
+exit, and repeated entry as TP2102. Both ownership and
+`assume-default-task-factory = true` are required for its completion model.
+
+The first ThreadPoolExecutor subset is narrower: exact
+`concurrent.futures.ThreadPoolExecutor`, a local no-argument construction,
+resolved `submit` workers with no tracked resource arguments or captures, and
+`shutdown` with default or literal arguments. It tracks `Accepting` and
+`Shutdown`, and reports submit after shutdown. Its model is pinned to CPython
+3.13.16 source; other targets produce a boundary. Worker execution, futures,
+worker-side effects, and cleanup are not inferred. The report lists the
+experimental model and pin.
+
+Examples can run with `--mode strict` to fail on unsupported coverage. The
+preview is not release-qualified yet: retained conformance, incremental
+invalidation, compatibility, and performance gates remain pending.
+
 ## Scope and report migration
 
 - The checker tracks local handles and bounded, resolved source calls. Native
@@ -124,10 +204,11 @@ resource cleanup are reported as separate effects.
   3.12.13 and 3.13.16. The project assumption covers the running default
   CPython loop and its non-eager task factory. Custom factories, detached tasks,
   direct task joins, and escaping group or task handles remain boundaries.
-- The report's `assurance` identifies the ownership scope. When the TaskGroup
-  model is selected, `available_models` gives the pin and assumption.
-- Baselines record the ownership scope and selected TaskGroup model revision.
-  Generate a new baseline under the desired scope after reviewing its findings.
+- The report's `assurance` identifies the ownership scope. `available_models`
+  gives each selected TaskGroup or advanced executor model pin and assumption.
+- Baselines record the ownership scope, model catalog, and selected concurrent
+  model revisions. Generate a new baseline under the desired scope after
+  reviewing its findings.
 
 | Rule | Meaning |
 | --- | --- |

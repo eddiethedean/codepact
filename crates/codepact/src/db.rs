@@ -2,13 +2,14 @@ use crate::{
     frontend::{Declaration, FlowStatement},
     Inspection, SourceFile,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
 mod queries;
 pub use queries::parse_file;
-use queries::{check_flow_query, decode_inspection, encode_inspection, inspect_project_query};
+use queries::{check_flow_query, inspect_project_query};
 
 #[salsa::input]
 pub struct FileInput {
@@ -159,6 +160,7 @@ impl std::error::Error for SessionInputError {}
 pub struct AnalysisSession {
     db: Database,
     files: BTreeMap<String, FileInput>,
+    total_source_bytes: usize,
     revision: u64,
     target_version: Option<String>,
     ownership: crate::Ownership,
@@ -187,32 +189,54 @@ impl AnalysisSession {
         module: String,
         source: String,
     ) -> Result<(), SessionInputError> {
+        self.set_file_values(Cow::Owned(path), Cow::Owned(module), Cow::Owned(source))
+    }
+
+    fn set_file_ref(
+        &mut self,
+        path: &str,
+        module: &str,
+        source: &str,
+    ) -> Result<(), SessionInputError> {
+        self.set_file_values(
+            Cow::Borrowed(path),
+            Cow::Borrowed(module),
+            Cow::Borrowed(source),
+        )
+    }
+
+    fn set_file_values(
+        &mut self,
+        path: Cow<'_, str>,
+        module: Cow<'_, str>,
+        source: Cow<'_, str>,
+    ) -> Result<(), SessionInputError> {
         if source.len() > crate::DEFAULT_MAX_SOURCE_BYTES {
             return Err(SessionInputError::SourceLimitExceeded);
         }
         let old_size = self
             .files
-            .get(&path)
+            .get(path.as_ref())
             .map(|file| file.source(&self.db).len())
             .unwrap_or_default();
-        let total_bytes = self.files.values().fold(0usize, |total, file| {
-            total.saturating_add(file.source(&self.db).len())
-        });
-        if total_bytes
+        let updated_total = self
+            .total_source_bytes
             .saturating_sub(old_size)
-            .saturating_add(source.len())
-            > crate::DEFAULT_MAX_SOURCE_BYTES
-        {
+            .saturating_add(source.len());
+        if updated_total > crate::DEFAULT_MAX_SOURCE_BYTES {
             return Err(SessionInputError::TotalSourceLimitExceeded);
         }
-        if !self.files.contains_key(&path) && self.files.len() >= crate::DEFAULT_MAX_INPUT_FILES {
+        if !self.files.contains_key(path.as_ref())
+            && self.files.len() >= crate::DEFAULT_MAX_INPUT_FILES
+        {
             return Err(SessionInputError::FileLimitExceeded);
         }
-        if !self.file_would_change(&path, &module, &source) {
+        if !self.file_would_change(path.as_ref(), module.as_ref(), source.as_ref()) {
             return Ok(());
         }
         self.reset_storage_if_needed();
-        if self.set_file_input(path, module, source) {
+        if self.set_file_input(path.into_owned(), module.into_owned(), source.into_owned()) {
+            self.total_source_bytes = updated_total;
             self.revision = self.revision.saturating_add(1);
             self.mutations_since_reset += 1;
         }
@@ -242,9 +266,13 @@ impl AnalysisSession {
             .collect::<Vec<_>>();
         self.db = Database::default();
         self.files.clear();
+        self.total_source_bytes = 0;
         for (path, module, source) in inputs {
             let semantic_source = crate::frontend::semantic_source(&source);
             let input = FileInput::new(&self.db, path.clone(), module, source, semantic_source);
+            self.total_source_bytes = self
+                .total_source_bytes
+                .saturating_add(input.source(&self.db).len());
             self.files.insert(path, input);
         }
         self.mutations_since_reset = 0;
@@ -284,7 +312,10 @@ impl AnalysisSession {
         if self.files.contains_key(path) {
             self.reset_storage_if_needed();
         }
-        if self.files.remove(path).is_some() {
+        if let Some(file) = self.files.remove(path) {
+            self.total_source_bytes = self
+                .total_source_bytes
+                .saturating_sub(file.source(&self.db).len());
             self.revision = self.revision.saturating_add(1);
             self.mutations_since_reset += 1;
         }
@@ -294,6 +325,7 @@ impl AnalysisSession {
     pub fn reset(&mut self) {
         self.db = Database::default();
         self.files.clear();
+        self.total_source_bytes = 0;
         self.target_version = None;
         self.revision = self.revision.saturating_add(1);
         self.mutations_since_reset = 0;
@@ -449,14 +481,20 @@ impl AnalysisSession {
             &self.model_catalog,
         );
         if let Some(model) = crate::model::task_group_metadata(python_version)
-            .filter(|_| ownership == crate::Ownership::AssumeDefaultTaskFactory)
+            .filter(|_| ownership.assumes_default_task_factory())
         {
             result.model_catalog_version = crate::model::TASK_GROUP_CATALOG_VERSION;
             result.available_models.push(model);
-            result
-                .available_models
-                .sort_by(|left, right| left.id.cmp(&right.id));
         }
+        if ownership.includes_advanced_contracts() {
+            result.model_catalog_version = crate::model::ADVANCED_MODEL_CATALOG_VERSION;
+            if let Some(model) = crate::model::thread_pool_executor_metadata(python_version) {
+                result.available_models.push(model);
+            }
+        }
+        result
+            .available_models
+            .sort_by(|left, right| left.id.cmp(&right.id));
         Ok(SessionCheckResult {
             revision: checked.revision,
             result,
@@ -471,7 +509,9 @@ impl AnalysisSession {
         ownership: crate::Ownership,
     ) -> Result<SessionInspection, AnalysisCancelled> {
         if let Some(mut inspection) = rejected_check_input(files) {
-            inspection.assurance = if ownership.is_enabled() {
+            inspection.assurance = if ownership.includes_advanced_contracts() {
+                crate::ADVANCED_ASSURANCE
+            } else if ownership.is_enabled() {
                 crate::OWNERSHIP_ASSURANCE
             } else if run_must_use {
                 crate::ADOPTION_ASSURANCE
@@ -492,22 +532,17 @@ impl AnalysisSession {
             self.inspect_cancellable_with_must_use(files, python_version, run_must_use)?;
         let revision = inspected.revision;
         let inspection = inspected.inspection;
-        let inspection_json = encode_inspection(&inspection).expect("inspection result serializes");
-        let model_catalog_json =
-            serde_json::to_string(&self.model_catalog).expect("flow model catalog serializes");
-        let result_json = salsa::Cancelled::catch(|| {
+        let checked = salsa::Cancelled::catch(|| {
             check_flow_query(
                 &self.db,
                 self.files.values().copied().collect(),
                 python_version.to_string(),
-                model_catalog_json,
-                inspection_json,
+                self.model_catalog.clone(),
+                inspection,
                 ownership,
             )
         });
-        let result_json = result_json.map_err(|_| AnalysisCancelled)?;
-        let mut result: Inspection =
-            decode_inspection(&result_json).expect("check query returns valid JSON");
+        let mut result = checked.map_err(|_| AnalysisCancelled)?.clone();
         result.diagnostics.sort_by(|left, right| {
             (
                 &left.primary.file,
@@ -522,7 +557,9 @@ impl AnalysisSession {
                     &right.code,
                 ))
         });
-        result.assurance = if ownership.is_enabled() {
+        result.assurance = if ownership.includes_advanced_contracts() {
+            crate::ADVANCED_ASSURANCE
+        } else if ownership.is_enabled() {
             crate::OWNERSHIP_ASSURANCE
         } else if run_must_use {
             crate::ADOPTION_ASSURANCE
@@ -565,8 +602,11 @@ impl AnalysisSession {
                 ),
             });
         }
-        let mut seen_paths = std::collections::BTreeSet::new();
-        if let Some(duplicate) = files.iter().find(|file| !seen_paths.insert(&file.path)) {
+        let mut incoming_paths = HashSet::with_capacity(files.len());
+        if let Some(duplicate) = files
+            .iter()
+            .find(|file| !incoming_paths.insert(file.path.as_str()))
+        {
             return Ok(SessionInspection {
                 revision: self.revision,
                 inspection: crate::invalid_input_inspection(
@@ -607,7 +647,7 @@ impl AnalysisSession {
         let stale_paths = self
             .files
             .keys()
-            .filter(|path| !files.iter().any(|file| &file.path == *path))
+            .filter(|path| !incoming_paths.contains(path.as_str()))
             .cloned()
             .collect::<Vec<_>>();
         for path in stale_paths {
@@ -623,7 +663,7 @@ impl AnalysisSession {
                 .is_some_and(|existing| existing.source(&self.db).len() >= file.source.len())
         });
         for file in non_growing.into_iter().chain(growing) {
-            self.set_file(file.path.clone(), file.module.clone(), file.source.clone())
+            self.set_file_ref(&file.path, &file.module, &file.source)
                 .expect("validated inspection inputs fit session limits");
         }
         self.target_version = Some(python_version.to_string());
@@ -639,10 +679,9 @@ impl AnalysisSession {
             )
         })
         .map_err(|_| AnalysisCancelled)?;
-        let inspection = decode_inspection(&result).expect("project query returns valid JSON");
         Ok(SessionInspection {
             revision: self.revision,
-            inspection,
+            inspection: result.clone(),
         })
     }
 }
@@ -713,6 +752,337 @@ mod tests {
     }
 
     #[test]
+    fn phase06_protocol_transition_edits_refresh_dependents_and_reuse_unrelated_files() {
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured = Arc::clone(&events);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                captured.lock().unwrap().push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            ..AnalysisSession::default()
+        };
+        let provider = |target: &str| {
+            format!(
+                "from typing import Literal\nfrom codepact import state_machine, transition\nfrom codepact.rust import State\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='{target}')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\n"
+            )
+        };
+        let main = SourceFile::new(
+            "main.py",
+            "main",
+            "from provider import Channel\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n",
+        );
+        let unrelated = SourceFile::new(
+            "independent.py",
+            "independent",
+            "def independent():\n    return 1\n",
+        );
+        let project = |source: String| {
+            [
+                main.clone(),
+                SourceFile::new("provider.py", "provider", source),
+                unrelated.clone(),
+            ]
+        };
+        let flow_executions = || {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let original = project(provider("closed"));
+        let mode = crate::Ownership::Advanced;
+        let first = session.check_with_ownership(&original, "3.13", mode);
+        let first_violation = first
+            .diagnostics
+            .iter()
+            .find(|finding| finding.code == "TP2102")
+            .expect("the close transition invalidates the receiver precondition");
+        assert_eq!(first_violation.primary.file, "main.py");
+        assert_eq!(flow_executions().len(), 3);
+
+        events.lock().unwrap().clear();
+        let changed = project(provider("ready"));
+        let reused = session.check_with_ownership(&changed, "3.13", mode);
+        assert!(!reused
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP2102"));
+        assert_eq!(
+            reused,
+            crate::check_with_ownership(&changed, "3.13", mode),
+            "updated protocol effects and source locations match a fresh advanced check"
+        );
+        assert_eq!(
+            flow_executions().len(),
+            2,
+            "the changed provider and its dependent caller refresh, while the unrelated file reuses its query"
+        );
+    }
+
+    #[test]
+    fn phase06_task_coroutine_budget_and_query_event_evidence_cover_edits_and_cancellation() {
+        use serde_json::json;
+        use std::path::PathBuf;
+
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured = Arc::clone(&events);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                captured.lock().unwrap().push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            ..AnalysisSession::default()
+        };
+        let provider = |target: &str| {
+            format!(
+                "from typing import Literal\nfrom codepact import state_machine, transition\nfrom codepact.rust import State\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='{target}')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\n"
+            )
+        };
+        let main = |tasks: usize| {
+            let mut source = String::from(
+                "from asyncio import TaskGroup\nfrom provider import Channel\nasync def worker(): pass\nasync def run():\n    async with TaskGroup() as group:\n",
+            );
+            for index in 0..tasks {
+                source.push_str(&format!(
+                    "        pending_{index} = worker()\n        group.create_task(pending_{index})\n"
+                ));
+            }
+            source.push_str("    channel = Channel()\n    channel.close()\n    channel.send()\n");
+            SourceFile::new("main.py", "main", source)
+        };
+        let unrelated = SourceFile::new(
+            "independent.py",
+            "independent",
+            "def independent(): return 1\n",
+        );
+        let project = |task_count: usize, transition: &str| {
+            [
+                main(task_count),
+                SourceFile::new("provider.py", "provider", provider(transition)),
+                unrelated.clone(),
+            ]
+        };
+        let event_keys = || events.lock().unwrap().clone();
+        let query_event_names = || {
+            event_keys()
+                .into_iter()
+                .map(|key| key.split('(').next().unwrap_or(&key).to_owned())
+                .collect::<Vec<_>>()
+        };
+        let flow_query_keys = || {
+            query_event_names()
+                .into_iter()
+                .filter(|key| key == "check_flow_file_query")
+                .collect::<Vec<_>>()
+        };
+        let mut phases = Vec::new();
+        let mode = crate::Ownership::AdvancedAssumeDefaultTaskFactory;
+
+        let initial = project(128, "closed");
+        let initial_result = session.check_with_ownership(&initial, "3.13", mode);
+        assert_eq!(
+            initial_result.coverage.status,
+            "complete-for-supported-subset"
+        );
+        assert!(initial_result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP2102" && diagnostic.certainty == "definite"));
+        let initial_events = flow_query_keys();
+        assert_eq!(initial_events.len(), 3, "{initial_events:#?}");
+        phases.push(json!({
+            "phase": "initial-128-task-limit",
+            "scheduled_task_count": 128,
+            "retained_coroutine_count": 128,
+            "coverage": initial_result.coverage.status,
+            "tp2102_definite": initial_result.diagnostics.iter().any(|diagnostic| diagnostic.code == "TP2102" && diagnostic.certainty == "definite"),
+            "flow_query_count": initial_events.len(),
+            "flow_query_keys": initial_events,
+            "query_events": query_event_names()
+        }));
+
+        events.lock().unwrap().clear();
+        assert_eq!(
+            session.check_with_ownership(&initial, "3.13", mode),
+            initial_result
+        );
+        let warm_events = flow_query_keys();
+        assert_eq!(
+            warm_events.len(),
+            0,
+            "unchanged input must reuse all queries"
+        );
+        phases.push(json!({
+            "phase": "unchanged-session",
+            "flow_query_count": warm_events.len(),
+            "flow_query_keys": warm_events,
+            "query_events": query_event_names()
+        }));
+
+        events.lock().unwrap().clear();
+        let over_budget = project(129, "closed");
+        let over_budget_result = session.check_with_ownership(&over_budget, "3.13", mode);
+        assert_eq!(over_budget_result.coverage.status, "incomplete");
+        assert!(over_budget_result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic
+                    .message
+                    .contains("pending coroutine budget exceeded")
+        }));
+        assert!(!over_budget_result.diagnostics.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("structured task budget exceeded")
+        }));
+        assert!(over_budget_result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP2102" && diagnostic.certainty == "definite"));
+        assert_eq!(
+            over_budget_result,
+            crate::check_with_ownership(&over_budget, "3.13", mode)
+        );
+        let task_edit_events = flow_query_keys();
+        assert_eq!(task_edit_events.len(), 1, "{task_edit_events:#?}");
+        phases.push(json!({
+            "phase": "129th-task-coroutine-boundary",
+            "scheduled_task_attempts": 129,
+            "retained_coroutine_count": 128,
+            "coverage": over_budget_result.coverage.status,
+            "task_schedule_boundary": true,
+            "separate_task_count_boundary": false,
+            "coroutine_budget_boundary": true,
+            "known_typestate_violation_preserved": true,
+            "flow_query_count": task_edit_events.len(),
+            "flow_query_keys": task_edit_events,
+            "query_events": query_event_names()
+        }));
+
+        events.lock().unwrap().clear();
+        let provider_edit = project(129, "ready");
+        let provider_result = session.check_with_ownership(&provider_edit, "3.13", mode);
+        assert!(!provider_result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "TP2102"));
+        assert!(provider_result.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "TP9001"
+                && diagnostic
+                    .message
+                    .contains("pending coroutine budget exceeded")
+        }));
+        assert_eq!(
+            provider_result,
+            crate::check_with_ownership(&provider_edit, "3.13", mode)
+        );
+        let provider_edit_events = flow_query_keys();
+        assert_eq!(provider_edit_events.len(), 2, "{provider_edit_events:#?}");
+        phases.push(json!({
+            "phase": "provider-transition-edit",
+            "dependent_typestate_violation_removed": true,
+            "task_and_coroutine_budget_boundary_preserved": true,
+            "refreshed_files": ["provider.py", "main.py"],
+            "unrelated_file_reused": true,
+            "flow_query_count": provider_edit_events.len(),
+            "flow_query_keys": provider_edit_events,
+            "query_events": query_event_names()
+        }));
+
+        events.lock().unwrap().clear();
+        let recovered = project(128, "ready");
+        let recovered_result = session.check_with_ownership(&recovered, "3.13", mode);
+        assert_eq!(
+            recovered_result.coverage.status,
+            "complete-for-supported-subset"
+        );
+        assert!(
+            recovered_result.diagnostics.is_empty(),
+            "{recovered_result:#?}"
+        );
+        assert_eq!(
+            recovered_result,
+            crate::check_with_ownership(&recovered, "3.13", mode)
+        );
+        let recovery_events = flow_query_keys();
+        assert_eq!(recovery_events.len(), 1, "{recovery_events:#?}");
+        phases.push(json!({
+            "phase": "task-budget-recovery",
+            "scheduled_task_count": 128,
+            "coverage": recovered_result.coverage.status,
+            "matches_fresh": true,
+            "flow_query_count": recovery_events.len(),
+            "flow_query_keys": recovery_events,
+            "query_events": query_event_names()
+        }));
+
+        let cancelled_input = project(128, "closed");
+        let token = session.cancellation_token();
+        token.cancel();
+        events.lock().unwrap().clear();
+        assert!(matches!(
+            session.check_with_ownership_cancellable(&cancelled_input, "3.13", mode),
+            Err(AnalysisCancelled)
+        ));
+        let cancellation_events = flow_query_keys();
+        phases.push(json!({
+            "phase": "cancelled-provider-edit",
+            "cancelled_without_partial_result": true,
+            "flow_query_count": cancellation_events.len(),
+            "flow_query_keys": cancellation_events,
+            "query_events": query_event_names()
+        }));
+
+        events.lock().unwrap().clear();
+        let cancellation_recovery = session
+            .check_with_ownership_cancellable(&cancelled_input, "3.13", mode)
+            .expect("session recovers after cancelled provider edit");
+        let fresh_recovery = crate::check_with_ownership(&cancelled_input, "3.13", mode);
+        assert_eq!(cancellation_recovery.result, fresh_recovery);
+        assert!(cancellation_recovery
+            .result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.code == "TP2102" && diagnostic.certainty == "definite"
+            }));
+        let cancellation_recovery_events = flow_query_keys();
+        assert!(!cancellation_recovery_events.is_empty());
+        phases.push(json!({
+            "phase": "cancellation-recovery",
+            "matches_fresh": true,
+            "dependent_typestate_violation_restored": true,
+            "flow_query_count": cancellation_recovery_events.len(),
+            "flow_query_keys": cancellation_recovery_events,
+            "query_events": query_event_names()
+        }));
+
+        if let Some(path) = std::env::var_os("CODEPACT_PHASE06_QUERY_EVIDENCE") {
+            let path = PathBuf::from(path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            let record = json!({
+                "schema_version": 1,
+                "target_python": "3.13",
+                "ownership_mode": "advanced-assume-default-task-factory",
+                "task_schedule_bound": "no separate task counter; scheduled coroutine records share the 128-record limit",
+                "pending_coroutine_budget": 128,
+                "source_execution": false,
+                "phases": phases
+            });
+            std::fs::write(path, serde_json::to_vec_pretty(&record).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
     fn unchanged_session_inspection_reuses_the_project_query() {
         let executions = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&executions);
@@ -724,6 +1094,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -757,6 +1128,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -829,6 +1201,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -931,6 +1304,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -1015,6 +1389,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -1586,6 +1961,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -1809,6 +2185,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -1943,6 +2320,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2086,6 +2464,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2265,6 +2644,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2388,6 +2768,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2444,6 +2825,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2626,6 +3008,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2714,6 +3097,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2874,6 +3258,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -2948,6 +3333,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3033,6 +3419,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3137,6 +3524,39 @@ mod tests {
     }
 
     #[test]
+    fn session_source_byte_count_tracks_mutations_resets_and_storage_rebuilds() {
+        let mut session = AnalysisSession::default();
+        session
+            .set_file("first.py".into(), "first".into(), "x = 1\n".into())
+            .unwrap();
+        assert_eq!(session.total_source_bytes, 6);
+
+        session
+            .set_file("first.py".into(), "first".into(), "x = 123\n".into())
+            .unwrap();
+        assert_eq!(session.total_source_bytes, 8);
+
+        session
+            .set_file("second.py".into(), "second".into(), "y\n".into())
+            .unwrap();
+        assert_eq!(session.total_source_bytes, 10);
+
+        session.mutations_since_reset = crate::DEFAULT_MAX_SESSION_MUTATIONS;
+        session
+            .set_file("third.py".into(), "third".into(), "z\n".into())
+            .unwrap();
+        assert_eq!(session.total_source_bytes, 12);
+        assert_eq!(session.mutations_since_reset, 1);
+
+        session.remove_file("first.py");
+        assert_eq!(session.total_source_bytes, 4);
+
+        session.reset();
+        assert_eq!(session.total_source_bytes, 0);
+        assert!(session.files.is_empty());
+    }
+
+    #[test]
     fn dependency_body_edit_does_not_recompute_consumer_semantics() {
         let executions = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&executions);
@@ -3148,6 +3568,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3251,6 +3672,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3344,6 +3766,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3572,6 +3995,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3643,6 +4067,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,
@@ -3823,6 +4248,7 @@ mod tests {
         let mut session = AnalysisSession {
             db: Database { storage },
             files: BTreeMap::new(),
+            total_source_bytes: 0,
             revision: 0,
             target_version: None,
             ownership: crate::Ownership::Disabled,

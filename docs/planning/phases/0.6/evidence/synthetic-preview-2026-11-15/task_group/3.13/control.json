@@ -1,0 +1,150 @@
+{
+  "execution_status": "completed",
+  "engine_version": "0.6.0",
+  "report_schema_version": 2,
+  "check_schema_version": 2,
+  "target_python_version": "3.13",
+  "model_catalog_version": 4,
+  "available_models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-EXECUTOR-001",
+      "qualified_symbol": "concurrent.futures.ThreadPoolExecutor",
+      "source_revisions": [
+        "v3.13.16"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.13.16/Lib/concurrent/futures/thread.py"
+      ],
+      "selection_rule": "Exact ThreadPoolExecutor import identity, a local no-argument constructor, and CPython 3.13 source pin.",
+      "modeled_behavior": "Local Accepting/Shutdown protocol for submit and shutdown. Submission work, worker completion, future behavior, and worker-side cleanup are not modeled.",
+      "qualification": "Experimental 0.6 source model. Controlled runtime conformance and optimized performance evidence are pending."
+    },
+    {
+      "id": "TPM-TASK-001",
+      "qualified_symbol": "asyncio.TaskGroup",
+      "source_revisions": [
+        "v3.13.16"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.13.16/Lib/asyncio/taskgroups.py"
+      ],
+      "selection_rule": "Exact asyncio.TaskGroup with the explicit default-task-factory assumption.",
+      "modeled_behavior": "Local scheduling and completion at group exit, including exceptional exit and cancellation. Completion and resource cleanup have separate effects.",
+      "qualification": "Experimental source model under a project-declared runtime assumption."
+    }
+  ],
+  "assurance": "experimental-advanced-contract-checking-for-supported-exit-flow",
+  "contracts": [],
+  "coverage": {
+    "status": "complete-for-supported-subset",
+    "reasons": [],
+    "source_bytes": 250,
+    "declarations": 0
+  },
+  "diagnostics": [],
+  "counts": {},
+  "counts_by_certainty": {},
+  "counts_by_disposition": {},
+  "total_diagnostics": 0,
+  "actionable_diagnostics": 0,
+  "returned_diagnostics": 0,
+  "audit_diagnostics": 0,
+  "policy_failures": [],
+  "policy_warnings": [],
+  "unused_suppressions": [],
+  "details_truncated": false,
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "f9805e4462ac4c1f4063f466ab58dd6a4501acee847490b7705d3242b55ae7f9",
+  "semantic_fingerprint": "509d748219a89167fe17f0f96a7cb9434937a9ea7e4bf4b3a7787f21d8cb7a35",
+  "policy_fingerprint": "e5d9b5c6b85d4217f19c9cd4d7d02cf5086e16276d8cdc8f2f81e432a142374d",
+  "model_fingerprint": "73dbce5c43c64f007e74eafe97db9e1a2aaba330ab5adbf149cc7445951e43bb",
+  "snapshot_manifest": [
+    {
+      "logical_path": "src/main.py",
+      "sha256": "b40e9cd1e904da3d81fc0c8647dec3025bfb9f2d36543286e3e4b14dc4783102"
+    }
+  ],
+  "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-task_group-3.13",
+  "logical_root": ".",
+  "config_file": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-task_group-3.13/pyproject.toml",
+  "selected_files": [
+    "src/main.py"
+  ],
+  "include": [
+    "src/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP2002",
+    "TP2003",
+    "TP2004",
+    "TP2005",
+    "TP2006",
+    "TP2101",
+    "TP2102",
+    "TP3001"
+  ],
+  "disabled_rules": [],
+  "mode": "strict",
+  "fail_on": "error",
+  "settings_origins": {
+    "assume-default-task-factory": "pyproject.toml",
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "experimental-advanced-contracts": "pyproject.toml",
+    "experimental-ownership": "pyproject.toml",
+    "fail-on": "default",
+    "include": "pyproject.toml",
+    "mode": "command-line",
+    "python-version": "command-line",
+    "root": "pyproject-directory"
+  },
+  "baseline": {
+    "configured": false,
+    "compatible": null,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "exit_code": 0
+}

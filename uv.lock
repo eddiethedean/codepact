@@ -259,10 +259,11 @@ wheels = [
 
 [[package]]
 name = "codepact"
-version = "0.5.1"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "codepact-cli" },
+    { name = "typing-extensions" },
 ]
 
 [package.dev-dependencies]
@@ -280,7 +281,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "codepact-cli", editable = "cli" }]
+requires-dist = [
+    { name = "codepact-cli", editable = "cli" },
+    { name = "typing-extensions", specifier = ">=4.7" },
+]
 
 [package.metadata.requires-dev]
 dev = [
@@ -298,7 +302,7 @@ dev = [
 
 [[package]]
 name = "codepact-cli"
-version = "0.5.1"
+version = "0.6.0"
 source = { editable = "cli" }
 
 [[package]]

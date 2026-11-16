@@ -21,6 +21,15 @@ def project_variants(corpus: Path) -> list[Path]:
                 for variant in ("boundary", "control")
                 if (project / variant).is_dir()
             )
+    preview = corpus / "phase06_preview"
+    if preview.is_dir():
+        for feature in sorted(preview.iterdir()):
+            if feature.is_dir():
+                variants.extend(
+                    feature / variant
+                    for variant in ("buggy", "fixed", "control", "boundary")
+                    if (feature / variant).is_dir()
+                )
     return variants
 
 

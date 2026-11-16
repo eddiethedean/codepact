@@ -39,6 +39,8 @@ The [0.4 adoption plan](docs/planning/phases/0.4-adoption.md), [specification](d
 
 CodePact 0.5.0 was published and verified on November 10, 2026. The [0.5 ownership plan](docs/planning/phases/0.5-ownership.md), [specification](docs/planning/phases/0.5/specification.md), and [V05 matrix](docs/planning/phases/0.5/validation.md) define the opt-in transfer, lexical borrow, and TaskGroup subset. O01–O07, CS03, and G1–G8 are complete. [0.5.0 release evidence](docs/releases/0.5.0-evidence.md)
 
+The [0.6 advanced contracts plan](docs/planning/phases/0.6-advanced-contracts.md) builds on the published 0.5 scope. A preview implementation is documented in the [specification](docs/planning/phases/0.6/specification.md); the [V06 matrix](docs/planning/phases/0.6/validation.md) remains pending for release qualification. T01–T07 and CS04 remain pending.
+
 The 0.4.0 release includes CLI reporting foundations. The [linting and IDE diagnostics plan](docs/planning/linting-and-editors.md) keeps a shared language server plus VS Code, PyCharm/IntelliJ, Neovim and Emacs integration targets in 0.8. Acceptance requires CLI/editor parity, correct source highlighting, current-revision hints and verified setup for each claimed editor; those integrations remain planned.
 
 The 0.4.0 release includes structured analysis schemas, repair explanations and an opt-in check–edit–recheck workflow. The [AI-agent integration plan](docs/planning/ai-agent-integration.md) keeps local read-only MCP tools and qualified agent clients in 0.8. Acceptance requires preserved certainty/coverage, current-source evidence, CLI/tool parity and verified repairs without weakening project policy; those integrations remain planned.
@@ -51,12 +53,25 @@ The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded
 
 ## Follow-on contract phases
 
+### Contracts on methods and values (0.7+)
+
+Start with bare `@resource`, a method-level `@closes` marker, and recognition
+of a class-defined `__close__` as the fallback. Follow with method-level
+post-close access and repeat-close policies, then source-checked context-manager
+cleanup. These are candidates from 0.7 onward. [Resource declaration plan](docs/planning/phases/contract-extensions.md#resource-declarations-and-cleanup)
+
+Use the existing `@must_use` marker with the typed outcomes planned for 0.7.
+Ownership tracking through outcome payloads follows the TypePact TC03 gates.
+State predicates build on qualified typestate and branch analysis. Parameter
+constraints and state-dependent field annotations build on the follow-on value
+and field checks below. [Typed outcomes plan](docs/planning/phases/0.7-typed-outcomes.md) · [State predicates and typed outcomes](docs/planning/phases/contract-extensions.md#state-predicates-and-typed-outcomes)
+
 The [contract extensions plan](docs/planning/phases/contract-extensions.md)
 proposes validated values, relationships between values, typestate field
 guarantees, and declared dependency boundaries. Scalar validation precedes
 relationship checking. Field guarantees build on 0.6 typestate. Dependency
 boundaries can be prototyped independently. Consider release assignments at
-or after the 0.9 readiness decision.
+or after the 0.9 readiness decision for those four phases.
 
 ## Version policy
 

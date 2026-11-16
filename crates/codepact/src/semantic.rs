@@ -4,7 +4,6 @@ use crate::{
     Access, Contract, Coverage, Diagnostic, Inspection, Lifecycle, Provenance, SourceFile, Span,
     DEFAULT_MAX_DECLARATIONS, SCHEMA_VERSION,
 };
-use serde::{Deserialize, Serialize};
 mod annotations;
 mod must_use;
 mod project;
@@ -22,7 +21,7 @@ use project::order_project_files;
 pub(crate) use project::{context_for_module, plan_project};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ClassDecl {
     closed_by: Option<String>,
     closed_by_span: Option<Span>,
@@ -684,7 +683,7 @@ fn inspect_inner(
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ExportedView {
     symbol: String,
     access: Access,
@@ -693,7 +692,7 @@ struct ExportedView {
     closed_by_span: Option<Span>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct SemanticExports {
     classes: BTreeMap<String, ClassDecl>,
     names: BTreeMap<String, ExportedView>,
@@ -701,13 +700,13 @@ pub(crate) struct SemanticExports {
     must_use_callables: BTreeMap<String, Span>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ModuleAnalysis {
     pub inspection: Inspection,
     pub exports: SemanticExports,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct ModuleContext {
     dependency_exports: BTreeMap<String, SemanticExports>,
     supplied_modules: BTreeSet<String>,
@@ -1127,6 +1126,8 @@ fn register_import(original: &str, local: &str, module: &str, state: &mut FileSt
         "codepact.contracts" => "codepact::contracts",
         "codepact.resource" => "codepact::resource",
         "codepact.must_use" => "codepact::must_use",
+        "codepact.state_machine" => "codepact::state_machine",
+        "codepact.transition" => "codepact::transition",
         "codepact.discard" => "codepact::discard",
         "codepact.move" => "codepact::move",
         "builtins.staticmethod" => "builtins::staticmethod",
@@ -1135,10 +1136,13 @@ fn register_import(original: &str, local: &str, module: &str, state: &mut FileSt
         "codepact.contracts.SharedBorrow" => "codepact::contracts::SharedBorrow",
         "codepact.contracts.OwnedAccess" => "codepact::contracts::OwnedAccess",
         "codepact.contracts.ExclusiveBorrow" => "codepact::contracts::ExclusiveBorrow",
+        "codepact.contracts.StateAccess" => "codepact::contracts::StateAccess",
         "codepact.contracts.MustUseResult" => "codepact::contracts::MustUseResult",
         "codepact.contracts.Borrowed" | "codepact.rust.Borrowed" => "codepact::Borrowed",
         "codepact.contracts.Owned" | "codepact.rust.Owned" => "codepact::Owned",
         "codepact.contracts.BorrowedMut" | "codepact.rust.BorrowedMut" => "codepact::BorrowedMut",
+        "codepact.contracts.State" | "codepact.rust.State" => "codepact::State",
+        "codepact.State" => "codepact::State",
         "codepact.rust.MustUse" | "codepact.contracts.MustUse" => "codepact::MustUse",
         _ => "",
     };
@@ -1302,7 +1306,11 @@ fn lower_class(
                 continue;
             }
         };
-        if canonical(function, &state.imports).as_deref() != Some("codepact::resource") {
+        let decorator_identity = canonical(function, &state.imports);
+        if decorator_identity.as_deref() == Some("codepact::state_machine") {
+            continue;
+        }
+        if decorator_identity.as_deref() != Some("codepact::resource") {
             unsupported_decorator.get_or_insert(decorator.range);
             continue;
         }

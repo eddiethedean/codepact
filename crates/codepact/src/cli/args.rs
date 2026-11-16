@@ -128,6 +128,16 @@ pub(super) fn parse(
                 }
                 overrides.experimental_ownership = Some(argument == "--experimental-ownership");
             }
+            "--experimental-advanced-contracts" | "--no-experimental-advanced-contracts" => {
+                if overrides.experimental_advanced_contracts.is_some() {
+                    return Err(failure(
+                        &output_format,
+                        "specify at most one advanced-contracts override",
+                    ));
+                }
+                overrides.experimental_advanced_contracts =
+                    Some(argument == "--experimental-advanced-contracts");
+            }
             "--mode" => match take() {
                 Ok(value) => overrides.mode = Some(value),
                 Err(error) => return Err(failure(&output_format, error)),
@@ -275,6 +285,7 @@ pub(super) fn parse(
             || overrides.no_config
             || overrides.mode.is_some()
             || overrides.experimental_ownership.is_some()
+            || overrides.experimental_advanced_contracts.is_some()
             || overrides.fail_on.is_some()
             || overrides.rules.is_some()
             || overrides.baseline.is_some()

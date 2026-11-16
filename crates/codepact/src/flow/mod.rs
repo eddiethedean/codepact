@@ -48,6 +48,7 @@ const MAX_CONTROL_FLOW_DEPTH: usize = 64;
 const MAX_ALIAS_TARGETS: usize = 64;
 const MAX_FLOW_OBJECTS: usize = 4_096;
 const MAX_EXIT_PARTITIONS: usize = 256;
+const MAX_PROTOCOL_STATES: usize = 32;
 const MAX_STATIC_FOR_ITERATIONS: usize = 16;
 const MAX_PENDING_COROUTINES: usize = 128;
 pub(crate) const MAX_FLOW_STEPS: usize = 100_000;
@@ -111,6 +112,423 @@ fn expr_name(expr: &AstExpr) -> Option<&str> {
     } else {
         None
     }
+}
+
+fn external_codepact_identity(
+    expression: &AstExpr,
+    bindings: &BTreeMap<String, String>,
+) -> Option<String> {
+    match &expression.kind {
+        AstExprKind::Name(name) => bindings
+            .get(name)
+            .filter(|identity| identity.starts_with("external:codepact."))
+            .cloned(),
+        AstExprKind::Attribute(module, member) => {
+            let module = bindings
+                .get(expr_name(module)?)?
+                .strip_prefix("external:")?;
+            ownership::external_member(module, member).map(str::to_owned)
+        }
+        _ => None,
+    }
+}
+
+fn is_typing_literal(expression: &AstExpr, bindings: &BTreeMap<String, String>) -> bool {
+    match &expression.kind {
+        AstExprKind::Name(name) => bindings.get(name).is_some_and(|identity| {
+            matches!(
+                identity.as_str(),
+                "external:typing.Literal" | "external:typing_extensions.Literal"
+            )
+        }),
+        AstExprKind::Attribute(module, member) if member == "Literal" => expr_name(module)
+            .and_then(|name| bindings.get(name))
+            .is_some_and(|identity| {
+                matches!(
+                    identity.as_str(),
+                    "external:typing" | "external:typing_extensions"
+                )
+            }),
+        _ => false,
+    }
+}
+
+fn is_typing_annotated(expression: &AstExpr, bindings: &BTreeMap<String, String>) -> bool {
+    match &expression.kind {
+        AstExprKind::Name(name) => bindings.get(name).is_some_and(|identity| {
+            matches!(
+                identity.as_str(),
+                "external:typing.Annotated" | "external:typing_extensions.Annotated"
+            )
+        }),
+        AstExprKind::Attribute(module, member) if member == "Annotated" => expr_name(module)
+            .and_then(|name| bindings.get(name))
+            .is_some_and(|identity| {
+                matches!(
+                    identity.as_str(),
+                    "external:typing" | "external:typing_extensions"
+                )
+            }),
+        _ => false,
+    }
+}
+
+fn is_state_access(expression: &AstExpr, bindings: &BTreeMap<String, String>) -> bool {
+    match &expression.kind {
+        AstExprKind::Subscript(container, _) => {
+            external_codepact_identity(container, bindings).as_deref()
+                == Some("external:codepact.StateAccess")
+        }
+        AstExprKind::Call { function, .. } => {
+            external_codepact_identity(function, bindings).as_deref()
+                == Some("external:codepact.StateAccess")
+        }
+        _ => false,
+    }
+}
+
+fn state_values_from_literal(
+    expression: &AstExpr,
+    bindings: &BTreeMap<String, String>,
+) -> Option<Vec<String>> {
+    let AstExprKind::Subscript(container, values) = &expression.kind else {
+        return None;
+    };
+    if !is_typing_literal(container, bindings) {
+        return None;
+    }
+    values
+        .iter()
+        .map(literal_state_values)
+        .collect::<Option<Vec<_>>>()
+        .map(|values| values.into_iter().flatten().collect())
+}
+
+fn protocol_precondition_for_method(
+    file: &SourceFile,
+    method: &crate::frontend::MethodBody,
+    bindings: &BTreeMap<String, String>,
+    machine: Option<&ProtocolMachine>,
+    result: &mut Inspection,
+    report_errors: bool,
+) -> Option<(BTreeSet<String>, Span)> {
+    let receiver = method.parameters.first()?;
+    let annotation = method
+        .parameter_annotations
+        .iter()
+        .find(|(name, _)| name == receiver)
+        .map(|(_, annotation)| annotation)?;
+    let invalid = |result: &mut Inspection| {
+        if report_errors {
+            protocol_declaration_error(
+                result,
+                file,
+                annotation.range,
+                "State receiver annotations require State[Type, Literal[state, ...]]",
+            );
+        }
+        None
+    };
+    let AstExprKind::Subscript(container, arguments) = &annotation.kind else {
+        return None;
+    };
+    let state_values = if external_codepact_identity(container, bindings).as_deref()
+        == Some("external:codepact.State")
+    {
+        if arguments.len() != 2 {
+            return invalid(result);
+        }
+        let Some(values) = state_values_from_literal(&arguments[1], bindings) else {
+            return invalid(result);
+        };
+        values
+    } else if is_typing_annotated(container, bindings) {
+        let mut requirements = Vec::<Vec<String>>::new();
+        for metadata in arguments.iter().skip(1) {
+            if !is_state_access(metadata, bindings) {
+                continue;
+            }
+            let AstExprKind::Subscript(_, values) = &metadata.kind else {
+                return invalid(result);
+            };
+            let Some(values) = values
+                .first()
+                .and_then(|value| state_values_from_literal(value, bindings))
+            else {
+                return invalid(result);
+            };
+            requirements.push(values);
+        }
+        if requirements.is_empty() {
+            return None;
+        }
+        let first = requirements[0].iter().cloned().collect::<BTreeSet<_>>();
+        if requirements
+            .iter()
+            .any(|states| states.iter().cloned().collect::<BTreeSet<_>>() != first)
+        {
+            return invalid(result);
+        }
+        requirements.remove(0)
+    } else {
+        return None;
+    };
+    let states = state_values.iter().cloned().collect::<BTreeSet<_>>();
+    if states.is_empty()
+        || states.len() != state_values.len()
+        || states
+            .iter()
+            .any(|state| !crate::is_python_identifier(state, "3.13"))
+        || machine.is_none_or(|machine| !states.iter().all(|state| machine.states.contains(state)))
+    {
+        return invalid(result);
+    }
+    Some((states, span(file, annotation.range)))
+}
+
+type CallParts<'a> = (&'a AstExpr, &'a [AstExpr], &'a [(Option<String>, AstExpr)]);
+
+fn call_parts(expression: &AstExpr) -> Option<CallParts<'_>> {
+    let AstExprKind::Call {
+        function,
+        arguments,
+        keywords,
+    } = &expression.kind
+    else {
+        return None;
+    };
+    Some((function, arguments, keywords))
+}
+
+fn literal_state_values(expression: &AstExpr) -> Option<Vec<String>> {
+    match &expression.kind {
+        AstExprKind::String(name) => Some(vec![name.clone()]),
+        AstExprKind::Tuple(items) | AstExprKind::Collection(items) => items
+            .iter()
+            .map(|item| match &item.kind {
+                AstExprKind::String(name) => Some(name.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => None,
+    }
+}
+
+fn named_keyword<'a>(keywords: &'a [(Option<String>, AstExpr)], name: &str) -> Option<&'a AstExpr> {
+    let mut matching = keywords
+        .iter()
+        .filter(|(key, _)| key.as_deref() == Some(name));
+    let value = matching.next().map(|(_, value)| value)?;
+    matching.next().is_none().then_some(value)
+}
+
+fn protocol_declaration_error(
+    result: &mut Inspection,
+    file: &SourceFile,
+    range: SourceRange,
+    message: &str,
+) {
+    result.coverage.status = "incomplete".into();
+    result.diagnostics.push(Diagnostic {
+        semantic_identity: Vec::new(),
+        code: "TP4002".into(),
+        severity: "error".into(),
+        message: message.into(),
+        primary: span(file, range),
+        related: Vec::new(),
+        certainty: "definite".into(),
+    });
+}
+
+fn protocol_machine_for_class(
+    file: &SourceFile,
+    decorators: &[AstExpr],
+    bindings: &BTreeMap<String, String>,
+    result: &mut Inspection,
+    report_errors: bool,
+) -> Option<ProtocolMachine> {
+    let mut machine: Option<ProtocolMachine> = None;
+    for decorator in decorators {
+        let Some((function, arguments, keywords)) = call_parts(decorator) else {
+            continue;
+        };
+        if external_codepact_identity(function, bindings).as_deref()
+            != Some("external:codepact.state_machine")
+        {
+            continue;
+        }
+        let mut invalid = || {
+            report_errors.then(|| {
+                protocol_declaration_error(
+                    result,
+                    file,
+                    decorator.range,
+                    "state_machine requires literal states and one initial state",
+                )
+            });
+            None
+        };
+        if !arguments.is_empty() || keywords.len() != 2 {
+            return invalid();
+        }
+        let Some(state_values) = named_keyword(keywords, "states").and_then(literal_state_values)
+        else {
+            return invalid();
+        };
+        let states = state_values.iter().cloned().collect::<BTreeSet<_>>();
+        let Some(initial) =
+            named_keyword(keywords, "initial").and_then(|value| match &value.kind {
+                AstExprKind::String(name) => Some(name.clone()),
+                _ => None,
+            })
+        else {
+            return invalid();
+        };
+        if states.is_empty()
+            || states.len() > MAX_PROTOCOL_STATES
+            || states.len() != state_values.len()
+            || states
+                .iter()
+                .any(|state| !crate::is_python_identifier(state, "3.13"))
+            || !states.contains(&initial)
+        {
+            return invalid();
+        }
+        let next = ProtocolMachine {
+            states,
+            initial,
+            origin: span(file, decorator.range),
+        };
+        if machine.as_ref().is_some_and(|previous| {
+            previous.states != next.states || previous.initial != next.initial
+        }) {
+            if report_errors {
+                protocol_declaration_error(
+                    result,
+                    file,
+                    decorator.range,
+                    "conflicting state_machine declarations",
+                );
+            }
+            return None;
+        }
+        machine = Some(next);
+    }
+    machine
+}
+
+fn protocol_transition_for_method(
+    file: &SourceFile,
+    decorators: &[AstExpr],
+    bindings: &BTreeMap<String, String>,
+    machine: Option<&ProtocolMachine>,
+    result: &mut Inspection,
+    report_errors: bool,
+) -> Option<ProtocolTransition> {
+    let mut transition: Option<ProtocolTransition> = None;
+    for decorator in decorators {
+        let Some((function, arguments, keywords)) = call_parts(decorator) else {
+            continue;
+        };
+        if external_codepact_identity(function, bindings).as_deref()
+            != Some("external:codepact.transition")
+        {
+            continue;
+        }
+        let mut invalid = || {
+            report_errors.then(|| {
+                protocol_declaration_error(
+                    result,
+                    file,
+                    decorator.range,
+                    "transition requires literal from_state and to_state values",
+                )
+            });
+            None
+        };
+        if !arguments.is_empty()
+            || keywords.iter().any(|(name, _)| {
+                !matches!(
+                    name.as_deref(),
+                    Some("from_state" | "to_state" | "on_raise" | "on_cancel")
+                )
+            })
+        {
+            return invalid();
+        }
+        let Some(from_values) =
+            named_keyword(keywords, "from_state").and_then(literal_state_values)
+        else {
+            return invalid();
+        };
+        let from_states = from_values.iter().cloned().collect::<BTreeSet<_>>();
+        let Some(normal_state) =
+            named_keyword(keywords, "to_state").and_then(|value| match &value.kind {
+                AstExprKind::String(name) => Some(name.clone()),
+                _ => None,
+            })
+        else {
+            return invalid();
+        };
+        let state_option = |name| {
+            named_keyword(keywords, name).and_then(|value| match &value.kind {
+                AstExprKind::String(state) => Some(state.clone()),
+                _ => None,
+            })
+        };
+        let exceptional_state = state_option("on_raise");
+        let cancelled_state = state_option("on_cancel");
+        let valid = machine.is_some_and(|machine| {
+            !from_states.is_empty()
+                && from_states.len() == from_values.len()
+                && from_states
+                    .iter()
+                    .all(|state| machine.states.contains(state))
+                && machine.states.contains(&normal_state)
+                && exceptional_state
+                    .as_ref()
+                    .is_none_or(|state| machine.states.contains(state))
+                && cancelled_state
+                    .as_ref()
+                    .is_none_or(|state| machine.states.contains(state))
+        });
+        if !valid {
+            if report_errors {
+                protocol_declaration_error(
+                    result,
+                    file,
+                    decorator.range,
+                    "transition references a missing state_machine or undeclared state",
+                );
+            }
+            return None;
+        }
+        let next = ProtocolTransition {
+            from_states,
+            normal_state,
+            exceptional_state,
+            cancelled_state,
+            origin: span(file, decorator.range),
+        };
+        if transition.as_ref().is_some_and(|previous| {
+            previous.from_states != next.from_states
+                || previous.normal_state != next.normal_state
+                || previous.exceptional_state != next.exceptional_state
+                || previous.cancelled_state != next.cancelled_state
+        }) {
+            if report_errors {
+                protocol_declaration_error(
+                    result,
+                    file,
+                    decorator.range,
+                    "conflicting transition declarations",
+                );
+            }
+            return None;
+        }
+        transition = Some(next);
+    }
+    transition
 }
 
 fn is_awaited_call(expr: &AstExpr, file: &SourceFile, state: &State) -> bool {
@@ -220,6 +638,7 @@ fn bind_arguments<'a>(
                 arg.kind,
                 AstExprKind::Other
                     | AstExprKind::OtherCalls(..)
+                    | AstExprKind::Yield(_)
                     | AstExprKind::Starred(_)
                     | AstExprKind::DepthLimit
             )
@@ -328,6 +747,7 @@ fn expression_may_return_resource(expression: &AstExpr) -> bool {
         | AstExprKind::Subscript(_, _)
         | AstExprKind::Call { .. }
         | AstExprKind::Await(_)
+        | AstExprKind::Yield(_)
         | AstExprKind::Other
         | AstExprKind::OtherCalls(..)
         | AstExprKind::Collection(_)
@@ -417,10 +837,24 @@ fn call_may_return_resource(
 
 fn weaken(state: &mut State, objects: impl Iterator<Item = String>) {
     for object in objects {
-        *state.objects.entry(object).or_default() |= UNKNOWN;
+        let is_protocol = state
+            .resources
+            .get(&object)
+            .is_some_and(|resource| state.protocol_machines.contains_key(&resource.base_symbol));
+        *state.objects.entry(object.clone()).or_default() |= UNKNOWN;
+        if is_protocol {
+            state.protocol_unknown.insert(object);
+        }
     }
     for object in state.escaped.clone() {
-        *state.objects.entry(object).or_default() |= UNKNOWN;
+        let is_protocol = state
+            .resources
+            .get(&object)
+            .is_some_and(|resource| state.protocol_machines.contains_key(&resource.base_symbol));
+        *state.objects.entry(object.clone()).or_default() |= UNKNOWN;
+        if is_protocol {
+            state.protocol_unknown.insert(object);
+        }
     }
 }
 
@@ -578,6 +1012,7 @@ fn collect_assigned_names(statements: &[FlowStatement], names: &mut BTreeSet<Str
 }
 
 fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<String>) {
+    child.protocol_machines = parent.protocol_machines.clone();
     for object in objects {
         if let (Some(child), Some(parent)) = (child.ownership.as_mut(), parent.ownership.as_ref()) {
             child.copy_transfers(parent, object);
@@ -591,8 +1026,25 @@ fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<St
         if let Some(resource) = parent.resources.get(object) {
             child.resources.insert(object.clone(), resource.clone());
         }
+        if let Some(states) = parent.protocol_states.get(object) {
+            child.protocol_states.insert(object.clone(), states.clone());
+        }
+        if parent.protocol_unknown.contains(object) {
+            child.protocol_unknown.insert(object.clone());
+        }
         if parent.borrowed.contains(object) {
             child.borrowed.insert(object.clone());
+        }
+        if parent.exclusive.contains(object) {
+            child.exclusive.insert(object.clone());
+            if let Some(origin) = parent.exclusive_origins.get(object) {
+                child
+                    .exclusive_origins
+                    .insert(object.clone(), origin.clone());
+            }
+            if let Some(views) = parent.exclusive_views.get(object) {
+                child.exclusive_views.insert(object.clone(), views.clone());
+            }
         }
         if parent.forbidden_borrowed_closes.contains(object) {
             child.forbidden_borrowed_closes.insert(object.clone());
@@ -663,6 +1115,192 @@ fn check_borrowed_precondition(
     }
 }
 
+fn check_protocol_precondition(
+    definition: &FunctionBody,
+    object: &str,
+    env: &State,
+    file: &SourceFile,
+    call_range: SourceRange,
+    result: &mut Inspection,
+) -> (BTreeSet<String>, bool) {
+    let Some(required_states) = definition
+        .protocol_transition
+        .as_ref()
+        .map(|transition| &transition.from_states)
+        .or(definition.protocol_precondition.as_ref())
+    else {
+        return (BTreeSet::new(), false);
+    };
+    let states = env.protocol_states.get(object).cloned().unwrap_or_default();
+    let unknown = env.protocol_unknown.contains(object) || states.is_empty();
+    let has_satisfied = states.iter().any(|state| required_states.contains(state));
+    let has_violated = states.iter().any(|state| !required_states.contains(state));
+    if has_violated {
+        let machine_origin = env
+            .resources
+            .get(object)
+            .and_then(|resource| env.protocol_machines.get(&resource.base_symbol))
+            .map(|machine| machine.origin.clone());
+        let mut related = definition
+            .protocol_transition
+            .as_ref()
+            .map(|transition| transition.origin.clone())
+            .or_else(|| definition.protocol_precondition_origin.clone())
+            .into_iter()
+            .collect::<Vec<_>>();
+        if let Some(origin) = machine_origin {
+            if !related.contains(&origin) {
+                related.push(origin);
+            }
+        }
+        report(
+            result,
+            "TP2102",
+            "operation may be called outside its declared protocol state",
+            span(file, call_range),
+            related,
+            if has_satisfied || unknown {
+                "possible"
+            } else {
+                "definite"
+            },
+            contract_identity(env.resources.get(object)),
+        );
+    }
+    if unknown {
+        boundary(
+            result,
+            file,
+            call_range,
+            "protocol precondition cannot be established on every path",
+        );
+    }
+    (states, unknown)
+}
+
+fn root_place_name(expression: &AstExpr) -> Option<&str> {
+    match &expression.kind {
+        AstExprKind::Name(name) => Some(name),
+        AstExprKind::Attribute(base, _) | AstExprKind::Subscript(base, _) => root_place_name(base),
+        _ => None,
+    }
+}
+
+fn report_exclusive_alias_access(
+    env: &mut State,
+    alias: &str,
+    file: &SourceFile,
+    range: SourceRange,
+    result: &mut Inspection,
+    message: &str,
+) {
+    let Some(targets) = env.places.get(alias).cloned() else {
+        return;
+    };
+    for object in targets {
+        if !env.exclusive.contains(&object)
+            || env
+                .exclusive_views
+                .get(&object)
+                .is_some_and(|views| views.contains(alias))
+        {
+            continue;
+        }
+        report(
+            result,
+            "TP2101",
+            message,
+            span(file, range),
+            env.exclusive_origins
+                .get(&object)
+                .cloned()
+                .into_iter()
+                .collect(),
+            "definite",
+            contract_identity(env.resources.get(&object)),
+        );
+        *env.objects.entry(object.clone()).or_default() |= UNKNOWN;
+        if env
+            .resources
+            .get(&object)
+            .is_some_and(|resource| env.protocol_machines.contains_key(&resource.base_symbol))
+        {
+            env.protocol_unknown.insert(object.clone());
+            boundary(
+                result,
+                file,
+                range,
+                "competing alias access makes the protocol state unknown",
+            );
+        }
+    }
+}
+
+struct ProtocolCompletionUpdate<'a> {
+    object: &'a str,
+    incoming: &'a BTreeSet<String>,
+    incoming_unknown: bool,
+    transition: &'a ProtocolTransition,
+    completion: &'a CompletionKind,
+    file: &'a SourceFile,
+    call_range: SourceRange,
+}
+
+fn apply_protocol_completion(
+    state: &mut State,
+    update: ProtocolCompletionUpdate<'_>,
+    result: &mut Inspection,
+) {
+    let ProtocolCompletionUpdate {
+        object,
+        incoming,
+        incoming_unknown,
+        transition,
+        completion,
+        file,
+        call_range,
+    } = update;
+    let postcondition = match completion {
+        CompletionKind::Fallthrough | CompletionKind::Return(_) => {
+            Some(transition.normal_state.as_str())
+        }
+        CompletionKind::Raise(_) => transition.exceptional_state.as_deref(),
+        CompletionKind::Cancelled => transition.cancelled_state.as_deref(),
+        CompletionKind::Break | CompletionKind::Continue => None,
+    };
+    let mut outcomes = BTreeSet::new();
+    let mut unknown = incoming_unknown || incoming.is_empty();
+    for state_name in incoming {
+        if transition.from_states.contains(state_name) {
+            if let Some(postcondition) = postcondition {
+                outcomes.insert(postcondition.to_owned());
+            } else {
+                unknown = true;
+            }
+        } else {
+            unknown = true;
+        }
+    }
+    // A declared per-exit state is the contract for that completion edge.
+    // It may re-establish a known state after unsupported body effects, while
+    // an unknown entry state or a failed precondition still prevents proof.
+    if postcondition.is_none() || unknown {
+        unknown |= state.protocol_unknown.contains(object);
+    }
+    state.protocol_states.insert(object.to_owned(), outcomes);
+    if unknown {
+        state.protocol_unknown.insert(object.to_owned());
+        boundary(
+            result,
+            file,
+            call_range,
+            "protocol completion state is unknown for this outcome",
+        );
+    } else {
+        state.protocol_unknown.remove(object);
+    }
+}
+
 fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_>) -> State {
     let MethodInvocation {
         definition,
@@ -729,9 +1367,16 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         .unwrap_or_else(|| "self".into());
     child
         .places
-        .insert(receiver, BTreeSet::from([object.to_owned()]));
+        .insert(receiver.clone(), BTreeSet::from([object.to_owned()]));
     copy_object_metadata(&mut child, parent, &BTreeSet::from([object.to_owned()]));
     child.objects.insert(object.to_owned(), initial_mask);
+    if child.exclusive.contains(object) {
+        child
+            .exclusive_views
+            .entry(object.to_owned())
+            .or_default()
+            .insert(receiver);
+    }
     let bindings = bind_arguments(&definition.signature, arguments, keywords, true)
         .expect("method arguments were validated before execution");
     for (parameter, argument) in bindings {
@@ -799,6 +1444,16 @@ fn apply_call_object_effects(
     if let Some(resource) = child.resources.get(object) {
         parent.resources.insert(object.to_owned(), resource.clone());
     }
+    if let Some(states) = child.protocol_states.get(object) {
+        parent
+            .protocol_states
+            .insert(object.to_owned(), states.clone());
+    }
+    if child.protocol_unknown.contains(object) {
+        parent.protocol_unknown.insert(object.to_owned());
+    } else {
+        parent.protocol_unknown.remove(object);
+    }
     if let Some(origin) = child.close_origins.get(object) {
         parent
             .close_origins
@@ -829,6 +1484,8 @@ fn apply_call_effects(parent: &mut State, child: &State, extra_objects: &BTreeSe
         .objects
         .keys()
         .chain(child.resources.keys())
+        .chain(child.protocol_states.keys())
+        .chain(child.protocol_unknown.iter())
         .chain(child.close_origins.keys())
         .chain(child.escaped.iter())
         .map(String::as_str)
@@ -883,7 +1540,7 @@ pub(crate) struct FlowOptions<'a> {
 
 pub(crate) fn check_file_bodies(
     target_path: &str,
-    files: &[SourceFile],
+    files: &[Arc<SourceFile>],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &mut Inspection,
     options: FlowOptions<'_>,
@@ -951,7 +1608,7 @@ pub(crate) fn check_file_bodies(
                     }
                     let binding_key = format!("{}::{}:{}", file.module, name, range.start);
                     let function = FunctionBody {
-                        file: file.clone(),
+                        file: Arc::clone(file),
                         parameters: parameters
                             .iter()
                             .map(|parameter| parameter.name.clone())
@@ -971,9 +1628,12 @@ pub(crate) fn check_file_bodies(
                                     && contract.lifecycle.is_some()
                             })
                             .map(|contract| contract.access.clone()),
-                        statements: body.clone(),
+                        statements: Arc::from(body.clone()),
                         supported_binding: true,
                         is_async: *is_async,
+                        protocol_transition: None,
+                        protocol_precondition: None,
+                        protocol_precondition_origin: None,
                         binding_key: Some(binding_key.clone()),
                         module_bindings: Arc::new(ModuleBindings::default()),
                     };
@@ -1006,7 +1666,9 @@ pub(crate) fn check_file_bodies(
                         .map(|(_, class)| class.to_owned())
                         .unwrap_or(fallback_identity);
                     for method in methods {
-                        if method.has_parameter_annotations {
+                        if method.has_parameter_annotations
+                            && !ownership.includes_advanced_contracts()
+                        {
                             boundary(
                                 result,
                                 file,
@@ -1016,16 +1678,19 @@ pub(crate) fn check_file_bodies(
                         }
                         let method_key = format!("@{class_identity}.{}", method.name);
                         let definition = FunctionBody {
-                            file: file.clone(),
+                            file: Arc::clone(file),
                             parameters: method.parameters.clone(),
                             signature: method.signature.clone(),
                             contracts: Arc::clone(&module_contracts),
                             parameter_contracts: BTreeMap::new(),
                             return_access: None,
-                            statements: method.body.clone(),
+                            statements: Arc::from(method.body.clone()),
                             supported_binding: (!method.decorated || method.must_use_decorator)
                                 && !method.is_generator,
                             is_async: method.is_async,
+                            protocol_transition: None,
+                            protocol_precondition: None,
+                            protocol_precondition_origin: None,
                             binding_key: Some(format!(
                                 "{}::{}:{}:{}",
                                 file.module, method_key, range.start, method.range.start
@@ -1248,11 +1913,282 @@ pub(crate) fn check_file_bodies(
             }),
         );
     }
+    let mut protocol_machines = BTreeMap::<String, ProtocolMachine>::new();
+    let mut protocol_classes = BTreeMap::<(String, String), Contract>::new();
+    let mut protocol_transitions = BTreeMap::<String, Option<ProtocolTransition>>::new();
+    let mut protocol_preconditions = BTreeMap::<String, (BTreeSet<String>, Span)>::new();
+    let mut transition_supported = BTreeSet::<String>::new();
+    let mut protocol_annotation_supported = BTreeSet::<String>::new();
+    if ownership.includes_advanced_contracts() {
+        for file in files {
+            let Some(declarations) = summaries
+                .get(&file.path)
+                .and_then(|summary| summary.declarations.as_ref())
+            else {
+                continue;
+            };
+            for declaration in declarations {
+                let Declaration::Class {
+                    name,
+                    decorators,
+                    methods,
+                    range,
+                    ..
+                } = declaration
+                else {
+                    continue;
+                };
+                let declaration_index = declarations
+                    .iter()
+                    .position(|candidate| std::ptr::eq(candidate, declaration))
+                    .unwrap_or(declarations.len());
+                let bindings = external_module_bindings(
+                    &declarations[..declaration_index],
+                    &external_exports,
+                    &supplied_modules,
+                );
+                let decorator_ranges = decorators
+                    .iter()
+                    .map(|decorator| decorator.range)
+                    .collect::<Vec<_>>();
+                let resource =
+                    class_resource_contract(file, name, &decorator_ranges, &result.contracts);
+                let machine = protocol_machine_for_class(
+                    file,
+                    decorators,
+                    &bindings,
+                    result,
+                    file.path == target_path,
+                );
+                let class_symbol = resource
+                    .as_ref()
+                    .map(|contract| contract.base_symbol.clone())
+                    .unwrap_or_else(|| format!("{}.{}", file.module, name));
+                if let Some(machine) = &machine {
+                    protocol_machines.insert(class_symbol.clone(), machine.clone());
+                    let contract = resource.unwrap_or_else(|| Contract {
+                        schema_version: 0,
+                        base_symbol: class_symbol.clone(),
+                        display_name: name.clone(),
+                        lifecycle: None,
+                        access: "unspecified".into(),
+                        source: machine.origin.clone(),
+                        provenance: vec![crate::Provenance {
+                            origin: "python-state-machine-decorator".into(),
+                            trust: "declared-unverified".into(),
+                        }],
+                    });
+                    protocol_classes.insert((file.module.clone(), name.clone()), contract);
+                }
+                let class_identity = class_symbol
+                    .rsplit_once('.')
+                    .map(|(_, class)| class.to_owned())
+                    .unwrap_or_else(|| name.clone());
+                for method in methods {
+                    let has_transition = method.decorators.iter().any(|decorator| {
+                        call_parts(decorator).is_some_and(|(function, _, _)| {
+                            external_codepact_identity(function, &bindings).as_deref()
+                                == Some("external:codepact.transition")
+                        })
+                    });
+                    let binding_key = format!(
+                        "{}::@{}.{}:{}:{}",
+                        file.module, class_identity, method.name, range.start, method.range.start
+                    );
+                    let mut transition = protocol_transition_for_method(
+                        file,
+                        &method.decorators,
+                        &bindings,
+                        machine.as_ref(),
+                        result,
+                        file.path == target_path,
+                    );
+                    let mut requirement = protocol_precondition_for_method(
+                        file,
+                        method,
+                        &bindings,
+                        machine.as_ref(),
+                        result,
+                        file.path == target_path,
+                    );
+                    if !has_transition && requirement.is_none() {
+                        continue;
+                    }
+                    if transition
+                        .as_ref()
+                        .zip(requirement.as_ref())
+                        .is_some_and(|(transition, (states, _))| transition.from_states != *states)
+                    {
+                        if file.path == target_path {
+                            result.coverage.status = "incomplete".into();
+                            result.diagnostics.push(Diagnostic {
+                                semantic_identity: Vec::new(),
+                                code: "TP4002".into(),
+                                severity: "error".into(),
+                                message: "State receiver annotation conflicts with transition precondition".into(),
+                                primary: requirement.as_ref().unwrap().1.clone(),
+                                related: vec![transition.as_ref().unwrap().origin.clone()],
+                                certainty: "definite".into(),
+                            });
+                        }
+                        transition = None;
+                        requirement = None;
+                    }
+                    if let Some(requirement) = requirement {
+                        protocol_preconditions.insert(binding_key.clone(), requirement);
+                        if let Some(receiver) = method.parameters.first() {
+                            if !method.parameter_annotations.is_empty()
+                                && method
+                                    .parameter_annotations
+                                    .iter()
+                                    .all(|(name, _)| name == receiver)
+                            {
+                                protocol_annotation_supported.insert(binding_key.clone());
+                            }
+                        }
+                    }
+                    let transition_only_decorators = method.decorators.iter().all(|decorator| {
+                        call_parts(decorator).is_some_and(|(function, _, _)| {
+                            external_codepact_identity(function, &bindings).as_deref()
+                                == Some("external:codepact.transition")
+                        })
+                    });
+                    if transition.is_some() && transition_only_decorators && !method.is_generator {
+                        transition_supported.insert(binding_key.clone());
+                    }
+                    protocol_transitions.insert(binding_key, transition);
+                }
+            }
+        }
+
+        let mut protocol_exports = BTreeMap::<String, BTreeMap<String, Contract>>::new();
+        for _ in 0..=files.len() {
+            let mut changed = false;
+            for file in files {
+                let Some(declarations) = summaries
+                    .get(&file.path)
+                    .and_then(|summary| summary.declarations.as_ref())
+                else {
+                    continue;
+                };
+                let mut exports = BTreeMap::new();
+                for ((module, name), contract) in &protocol_classes {
+                    if module == &file.module {
+                        exports.insert(name.clone(), contract.clone());
+                    }
+                }
+                for declaration in declarations {
+                    let Declaration::ImportFrom {
+                        module,
+                        level: 0,
+                        names,
+                        ..
+                    } = declaration
+                    else {
+                        continue;
+                    };
+                    for import in names {
+                        if let Some(contract) = protocol_exports
+                            .get(module)
+                            .and_then(|module| module.get(&import.name))
+                        {
+                            let local = import.alias.as_deref().unwrap_or(&import.name);
+                            let mut contract = contract.clone();
+                            contract.display_name = local.to_owned();
+                            exports.insert(local.to_owned(), contract);
+                        }
+                    }
+                }
+                if protocol_exports.get(&file.module) != Some(&exports) {
+                    protocol_exports.insert(file.module.clone(), exports);
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        for file in files {
+            if let (Some(exports), Some(bindings)) = (
+                protocol_exports.get(&file.module),
+                module_bindings.get_mut(&file.path),
+            ) {
+                let classes = &mut Arc::make_mut(bindings).classes;
+                for (name, contract) in exports {
+                    classes.insert(name.clone(), Some(contract.clone()));
+                }
+            }
+        }
+        for function in qualified_functions.values_mut() {
+            let Some(binding_key) = function.binding_key.as_ref() else {
+                continue;
+            };
+            if let Some(transition) = protocol_transitions.get(binding_key) {
+                function.protocol_transition = transition.clone();
+            }
+            if let Some((states, origin)) = protocol_preconditions.get(binding_key) {
+                function.protocol_precondition = Some(states.clone());
+                function.protocol_precondition_origin = Some(origin.clone());
+            }
+            if transition_supported.contains(binding_key) {
+                function.supported_binding = true;
+            }
+        }
+    }
+    for file in files {
+        let Some(declarations) = summaries
+            .get(&file.path)
+            .and_then(|summary| summary.declarations.as_ref())
+        else {
+            continue;
+        };
+        for declaration in declarations {
+            let Declaration::Class {
+                name,
+                decorators,
+                methods,
+                range,
+                ..
+            } = declaration
+            else {
+                continue;
+            };
+            let decorator_ranges = decorators
+                .iter()
+                .map(|decorator| decorator.range)
+                .collect::<Vec<_>>();
+            let resource =
+                class_resource_contract(file, name, &decorator_ranges, &result.contracts);
+            let class_identity = resource
+                .as_ref()
+                .and_then(|contract| contract.base_symbol.rsplit_once('.'))
+                .map(|(_, class)| class.to_owned())
+                .unwrap_or_else(|| name.clone());
+            for method in methods {
+                if !method.has_parameter_annotations {
+                    continue;
+                }
+                let binding_key = format!(
+                    "{}::@{}.{}:{}:{}",
+                    file.module, class_identity, method.name, range.start, method.range.start
+                );
+                if !protocol_annotation_supported.contains(&binding_key) {
+                    boundary(
+                        result,
+                        file,
+                        method.range,
+                        "method parameter annotations are not modeled",
+                    );
+                }
+            }
+        }
+    }
     for function in qualified_functions.values_mut() {
         if let Some(bindings) = module_bindings.get(&function.file.path) {
             function.module_bindings = Arc::clone(bindings);
         }
     }
+    let functions = &qualified_functions;
     for file in files {
         if file.path != target_path {
             continue;
@@ -1264,10 +2200,12 @@ pub(crate) fn check_file_bodies(
             continue;
         };
         let contracts = contracts_for_module(file, files, summaries, result);
-        let final_classes = final_class_bindings(file, declarations, files, summaries, result);
-        let functions = qualified_functions.clone();
+        let final_classes = module_bindings
+            .get(&file.path)
+            .map(|bindings| bindings.classes.clone())
+            .unwrap_or_else(|| final_class_bindings(file, declarations, files, summaries, result));
         let mut final_functions =
-            final_function_bindings(&file.module, &functions, declarations, &supplied_modules);
+            final_function_bindings(&file.module, functions, declarations, &supplied_modules);
         if let Some(external) = external_exports.get(&file.module) {
             final_functions.extend(external.clone());
         }
@@ -1302,6 +2240,7 @@ pub(crate) fn check_file_bodies(
                 scope_module: file.module.clone(),
                 target_python_version: python_version.to_owned(),
                 models: Arc::new(models.clone()),
+                protocol_machines: protocol_machines.clone(),
                 function_bindings: final_functions.clone(),
                 function_bindings_complete: true,
                 class_bindings: final_classes.clone(),
@@ -1355,6 +2294,19 @@ pub(crate) fn check_file_bodies(
                     if let Some(ownership) = env.ownership.as_mut() {
                         ownership.own(&parameter.name, &BTreeSet::from([object]));
                     }
+                } else if parameter_contract.access == "exclusive"
+                    && ownership.includes_advanced_contracts()
+                {
+                    env.borrowed.insert(object.clone());
+                    env.borrowed_origins
+                        .insert(object.clone(), parameter_contract.source.clone());
+                    env.exclusive.insert(object.clone());
+                    env.exclusive_origins
+                        .insert(object.clone(), parameter_contract.source.clone());
+                    env.exclusive_views
+                        .entry(object.clone())
+                        .or_default()
+                        .insert(parameter.name.clone());
                 }
             }
             let return_access = contracts
@@ -1364,7 +2316,7 @@ pub(crate) fn check_file_bodies(
                         && contract.lifecycle.is_some()
                 })
                 .map(|contract| contract.access.as_str());
-            let flow_outcomes = execute(body, &mut env, file, &contracts, &functions, result, 0);
+            let flow_outcomes = execute(body, &mut env, file, &contracts, functions, result, 0);
             let exits = flow_outcomes.all_abrupt().cloned().collect::<Vec<_>>();
             for exit in grouped_exits(&exits) {
                 match &exit.kind {
@@ -1376,7 +2328,7 @@ pub(crate) fn check_file_bodies(
                             file,
                             &exit,
                             return_access,
-                            &functions,
+                            functions,
                             &classes_with_unresolved_bases,
                         );
                     }
@@ -1401,7 +2353,7 @@ pub(crate) fn check_file_bodies(
                         kind: CompletionKind::Fallthrough,
                     },
                     return_access,
-                    &functions,
+                    functions,
                     &classes_with_unresolved_bases,
                 );
             }
@@ -1422,8 +2374,14 @@ pub(crate) fn check_file_bodies(
                 .iter()
                 .map(|decorator| decorator.range)
                 .collect::<Vec<_>>();
-            let class_resource =
-                class_resource_contract(file, name, &decorator_ranges, &result.contracts);
+            let class_resource = module_bindings
+                .get(&file.path)
+                .and_then(|bindings| bindings.classes.get(name))
+                .cloned()
+                .flatten()
+                .or_else(|| {
+                    class_resource_contract(file, name, &decorator_ranges, &result.contracts)
+                });
             for method in methods {
                 if method.decorated && !method.must_use_decorator {
                     continue;
@@ -1434,6 +2392,7 @@ pub(crate) fn check_file_bodies(
                     scope_module: file.module.clone(),
                     target_python_version: python_version.to_owned(),
                     models: Arc::new(models.clone()),
+                    protocol_machines: protocol_machines.clone(),
                     function_bindings: final_functions.clone(),
                     function_bindings_complete: true,
                     class_bindings: final_classes.clone(),
@@ -1476,7 +2435,7 @@ pub(crate) fn check_file_bodies(
                     &mut env,
                     file,
                     &contracts,
-                    &functions,
+                    functions,
                     result,
                     0,
                 );
@@ -1491,7 +2450,7 @@ pub(crate) fn check_file_bodies(
                                 file,
                                 &exit,
                                 None,
-                                &functions,
+                                functions,
                                 &classes_with_unresolved_bases,
                             );
                         }
@@ -1514,7 +2473,7 @@ pub(crate) fn check_file_bodies(
                             kind: CompletionKind::Fallthrough,
                         },
                         None,
-                        &functions,
+                        functions,
                         &classes_with_unresolved_bases,
                     );
                 }
@@ -1526,9 +2485,11 @@ pub(crate) fn check_file_bodies(
             scope_module: file.module.clone(),
             target_python_version: python_version.to_owned(),
             models: Arc::new(models.clone()),
+            protocol_machines: protocol_machines.clone(),
             function_bindings_complete: true,
             class_bindings_complete: true,
             module_scope: true,
+            module_class_bindings: final_classes.clone(),
             ..State::default()
         };
         for declaration in declarations {
@@ -1608,7 +2569,7 @@ pub(crate) fn check_file_bodies(
                 &mut module,
                 file,
                 &contracts,
-                &functions,
+                functions,
                 result,
                 0,
             );
@@ -1680,6 +2641,7 @@ mod tests {
             }],
         });
         reset_flow_budget(budget);
+        let file = Arc::new(file);
         check_file_bodies(
             &file.path,
             std::slice::from_ref(&file),
@@ -1724,6 +2686,8 @@ mod tests {
             }),
             "the exhausted budget cannot claim the duty was discharged: {bounded:#?}"
         );
+        assert_eq!(source_with_flow_budget(source, 2), bounded);
+        assert_eq!(source_with_flow_budget(source, 100), reference);
     }
 
     #[test]

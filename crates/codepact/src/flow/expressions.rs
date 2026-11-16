@@ -102,8 +102,75 @@ pub(super) fn consume_expr_impl(
     result: &mut Inspection,
     depth: usize,
 ) {
+    if let AstExprKind::Yield(value) = &expr.kind {
+        if let Some(value) = value {
+            consume_expr(value, env, file, contracts, functions, result, depth + 1);
+            let names = ownership::expression_names(value);
+            if env.ownership.is_some() {
+                ownership::borrow_escape(
+                    env,
+                    names.clone(),
+                    file,
+                    value.range,
+                    result,
+                    "borrowed view escapes through a yield",
+                );
+                ownership::escape_pending_value(env, file, value.range, result);
+            }
+            let affected = names
+                .iter()
+                .filter_map(|name| env.places.get(name))
+                .flatten()
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            env.escaped.extend(affected.iter().cloned());
+            weaken(env, affected.into_iter());
+        }
+        if env
+            .ownership
+            .as_ref()
+            .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
+        {
+            let message = if env.exclusive.is_empty() {
+                "generator suspension is not modeled"
+            } else {
+                "exclusive borrow remains active across yield; suspension safety is unsupported"
+            };
+            boundary(result, file, expr.range, message);
+            for object in &env.exclusive {
+                *env.objects.entry(object.clone()).or_default() |= UNKNOWN;
+                if env.resources.get(object).is_some_and(|resource| {
+                    env.protocol_machines.contains_key(&resource.base_symbol)
+                }) {
+                    env.protocol_unknown.insert(object.clone());
+                }
+            }
+        }
+        return;
+    }
     if let AstExprKind::Await(awaited) = &expr.kind {
         tasks::allow_tasks_to_start(env);
+        if env
+            .ownership
+            .as_ref()
+            .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
+            && !env.exclusive.is_empty()
+        {
+            boundary(
+                result,
+                file,
+                expr.range,
+                "exclusive borrow remains active across await; suspension safety is unsupported",
+            );
+            for object in &env.exclusive {
+                *env.objects.entry(object.clone()).or_default() |= UNKNOWN;
+                if env.resources.get(object).is_some_and(|resource| {
+                    env.protocol_machines.contains_key(&resource.base_symbol)
+                }) {
+                    env.protocol_unknown.insert(object.clone());
+                }
+            }
+        }
         if env.ownership.is_some()
             && matches!(awaited.kind, AstExprKind::Call { .. })
             && resolved_await_call(awaited, file, env, functions)
@@ -247,7 +314,6 @@ pub(super) fn consume_expr_impl(
         });
         if !exact_source_coroutine
             && before.alive
-            && (resolved || env.alive)
             && (!has_modeled_cancellation || modeled_cancelled.is_some())
         {
             let body_affected = env
@@ -439,6 +505,9 @@ pub(super) fn consume_expr_impl(
     if env.ownership.is_some() && tasks::task_call(expr, env, file, result) {
         return;
     }
+    if env.ownership.is_some() && tasks::executor_call(expr, env, file, functions, result) {
+        return;
+    }
     if let AstExprKind::Call {
         arguments,
         keywords,
@@ -446,7 +515,9 @@ pub(super) fn consume_expr_impl(
     } = &expr.kind
     {
         if env.ownership.as_ref().is_some_and(|ownership| {
-            !ownership.group_names.is_empty() || !ownership.task_names.is_empty()
+            !ownership.group_names.is_empty()
+                || !ownership.task_names.is_empty()
+                || !ownership.executor_names.is_empty()
         }) {
             let names = arguments
                 .iter()
@@ -520,6 +591,40 @@ pub(super) fn consume_expr_impl(
                     (|| {
                         let env = &mut alternative;
                         let mut mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
+                        if env
+                            .ownership
+                            .as_ref()
+                            .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
+                            && env.exclusive.contains(object)
+                            && !env
+                                .exclusive_views
+                                .get(object)
+                                .is_some_and(|views| views.contains(name))
+                        {
+                            let origin = env.exclusive_origins.get(object).cloned();
+                            report(
+                                result,
+                                "TP2101",
+                                "resource is accessed through an alias while an exclusive borrow is active",
+                                span(file, expr.range),
+                                origin.into_iter().collect(),
+                                if uncertain_receiver { "possible" } else { "definite" },
+                                contract_identity(env.resources.get(object)),
+                            );
+                            mask |= UNKNOWN;
+                            env.objects.insert(object.clone(), mask);
+                            if env.resources.get(object).is_some_and(|resource| {
+                                env.protocol_machines.contains_key(&resource.base_symbol)
+                            }) {
+                                env.protocol_unknown.insert(object.clone());
+                                boundary(
+                                    result,
+                                    file,
+                                    expr.range,
+                                    "competing alias access makes the protocol state unknown",
+                                );
+                            }
+                        }
                         let resource = env.resources.get(object).cloned();
                         let is_close = resource
                             .as_ref()
@@ -730,8 +835,21 @@ pub(super) fn consume_expr_impl(
                                 );
                                 return;
                             }
+                            let advanced = env.ownership.as_ref().is_some_and(|ownership| {
+                                ownership.mode.includes_advanced_contracts()
+                            });
+                            let (protocol_entry_states, protocol_entry_unknown) = if advanced
+                                && (definition.protocol_transition.is_some()
+                                    || definition.protocol_precondition.is_some())
+                            {
+                                check_protocol_precondition(
+                                    definition, object, env, file, expr.range, result,
+                                )
+                            } else {
+                                (BTreeSet::new(), false)
+                            };
                             let initial_mask = env.objects.get(object).copied().unwrap_or(mask);
-                            let child = execute_method_body(
+                            let mut child = execute_method_body(
                                 MethodInvocation {
                                     definition,
                                     object,
@@ -748,6 +866,40 @@ pub(super) fn consume_expr_impl(
                                 },
                                 FlowContext { functions, result },
                             );
+                            if let Some(transition) =
+                                definition.protocol_transition.as_ref().filter(|_| advanced)
+                            {
+                                if child.alive {
+                                    apply_protocol_completion(
+                                        &mut child,
+                                        ProtocolCompletionUpdate {
+                                            object,
+                                            incoming: &protocol_entry_states,
+                                            incoming_unknown: protocol_entry_unknown,
+                                            transition,
+                                            completion: &CompletionKind::Fallthrough,
+                                            file,
+                                            call_range: expr.range,
+                                        },
+                                        result,
+                                    );
+                                }
+                                for exit in &mut child.pending_raises {
+                                    apply_protocol_completion(
+                                        &mut exit.state,
+                                        ProtocolCompletionUpdate {
+                                            object,
+                                            incoming: &protocol_entry_states,
+                                            incoming_unknown: protocol_entry_unknown,
+                                            transition,
+                                            completion: &exit.kind,
+                                            file,
+                                            call_range: expr.range,
+                                        },
+                                        result,
+                                    );
+                                }
+                            }
                             if child
                                 .forbidden_borrowed_closes
                                 .iter()
@@ -1083,6 +1235,27 @@ pub(super) fn consume_expr_impl(
                             &span(file, expr.range),
                             result,
                         );
+                        if env
+                            .ownership
+                            .as_ref()
+                            .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
+                            && bindings.iter().any(|(parameter, argument)| {
+                                definition
+                                    .parameter_contracts
+                                    .get(parameter)
+                                    .is_some_and(|contract| contract.access == "exclusive")
+                                    && expr_name(argument)
+                                        .and_then(|name| env.places.get(name))
+                                        .is_some_and(|targets| !targets.is_empty())
+                            })
+                        {
+                            boundary(
+                                result,
+                                file,
+                                expr.range,
+                                "exclusive borrow is captured by an unawaited coroutine; its suspension behavior is unresolved",
+                            );
+                        }
                     }
                     register_pending_coroutine(
                         expr,
@@ -1163,6 +1336,8 @@ pub(super) fn consume_expr_impl(
                 let call_site = span(file, expr.range);
                 let mut owned_entry_objects = BTreeSet::new();
                 let mut borrowed_entry_objects = BTreeSet::new();
+                let mut bound_accesses = BTreeMap::<String, (String, Span)>::new();
+                let mut reported_exclusive_conflicts = BTreeSet::new();
                 for (parameter, argument) in bindings {
                     if let Some(actual) = expr_name(argument) {
                         if let Some(targets) = env.places.get(actual) {
@@ -1185,6 +1360,121 @@ pub(super) fn consume_expr_impl(
                                             .borrowed_origins
                                             .entry(object.clone())
                                             .or_insert_with(|| contract.source.clone());
+                                    }
+                                    if env.ownership.as_ref().is_some_and(|ownership| {
+                                        ownership.mode.includes_advanced_contracts()
+                                    }) {
+                                        let access = contract.access.as_str();
+                                        let is_exclusive = access == "exclusive";
+                                        let previous = bound_accesses.get(object).cloned();
+                                        bound_accesses.entry(object.clone()).or_insert_with(|| {
+                                            (access.to_owned(), contract.source.clone())
+                                        });
+                                        let overlaps = previous.as_ref().is_some_and(
+                                            |(previous_access, _)| {
+                                                is_exclusive || previous_access == "exclusive"
+                                            },
+                                        );
+                                        let active_conflict = env.exclusive.contains(object)
+                                            && (!is_exclusive
+                                                || !env
+                                                    .exclusive_views
+                                                    .get(object)
+                                                    .is_some_and(|views| views.contains(actual)));
+                                        let shared_conflict = is_exclusive
+                                            && env.borrowed.contains(object)
+                                            && !env.exclusive.contains(object);
+                                        if (overlaps || active_conflict || shared_conflict)
+                                            && reported_exclusive_conflicts.insert(object.clone())
+                                        {
+                                            let origin = previous
+                                                .as_ref()
+                                                .map(|(_, origin)| origin.clone())
+                                                .or_else(|| {
+                                                    env.exclusive_origins.get(object).cloned()
+                                                })
+                                                .or_else(|| {
+                                                    env.borrowed_origins.get(object).cloned()
+                                                });
+                                            report(
+                                                result,
+                                                "TP2101",
+                                                "call arguments overlap an active exclusive borrow",
+                                                call_site.clone(),
+                                                origin.into_iter().collect(),
+                                                "definite",
+                                                contract_identity(env.resources.get(object)),
+                                            );
+                                        }
+                                        let nested_region = is_exclusive
+                                            && env.exclusive.contains(object)
+                                            && env
+                                                .exclusive_views
+                                                .get(object)
+                                                .is_some_and(|views| views.contains(actual));
+                                        if nested_region {
+                                            boundary(
+                                                result,
+                                                file,
+                                                expr.range,
+                                                "nested exclusive borrow regions are not modeled",
+                                            );
+                                            child.protocol_unknown.insert(object.clone());
+                                        }
+                                        if is_exclusive {
+                                            let capture_sites =
+                                                ownership::exclusive_capture_sites(env, object);
+                                            let active_sites = capture_sites
+                                                .iter()
+                                                .filter(|(_, _, scheduled)| *scheduled)
+                                                .collect::<Vec<_>>();
+                                            if !active_sites.is_empty() {
+                                                report(
+                                                    result,
+                                                    "TP2101",
+                                                    "exclusive access overlaps a live task capture",
+                                                    call_site.clone(),
+                                                    active_sites
+                                                        .iter()
+                                                        .map(|(origin, _, _)| origin.clone())
+                                                        .collect(),
+                                                    if active_sites
+                                                        .iter()
+                                                        .any(|(_, possible, _)| !possible)
+                                                    {
+                                                        "definite"
+                                                    } else {
+                                                        "possible"
+                                                    },
+                                                    contract_identity(env.resources.get(object)),
+                                                );
+                                                child.protocol_unknown.insert(object.clone());
+                                            }
+                                            if capture_sites
+                                                .iter()
+                                                .any(|(_, _, scheduled)| !scheduled)
+                                            {
+                                                boundary(
+                                                    result,
+                                                    file,
+                                                    expr.range,
+                                                    "an unresolved coroutine capture may outlive the exclusive region",
+                                                );
+                                            }
+                                            child.borrowed.insert(object.clone());
+                                            child
+                                                .borrowed_origins
+                                                .insert(object.clone(), contract.source.clone());
+                                            child.exclusive.insert(object.clone());
+                                            child
+                                                .exclusive_origins
+                                                .insert(object.clone(), contract.source.clone());
+                                            child
+                                                .exclusive_views
+                                                .entry(object.clone())
+                                                .or_default()
+                                                .insert(parameter.clone());
+                                        }
                                     }
                                 }
                             }

@@ -39,7 +39,7 @@ The [0.5 ownership plan](phases/0.5-ownership.md) orders explicit moves, handle 
 
 ## Phase 4: expand contract expressiveness
 
-Implement finite typestate, exclusive borrowing and bounded effect summaries. Add runtime variants and explicit conversion adapters if their API RFC is accepted. Develop finite exhaustiveness checks without assuming guarded patterns cover all values.
+The [0.6 advanced contracts plan](phases/0.6-advanced-contracts.md) orders exclusive regions, finite typestate, per-exit effects and model qualification. A preview implementation and user guide exist; the [release specification](phases/0.6/specification.md) and [V06 matrix](phases/0.6/validation.md) keep T01–T07 and CS04 evidence pending. The [0.7 typed outcomes plan](phases/0.7-typed-outcomes.md) covers runtime variants, explicit conversion and finite exhaustiveness.
 
 Completion: feature-specific gates in features.md pass; both frontends produce the same relevant facts and diagnostics.
 

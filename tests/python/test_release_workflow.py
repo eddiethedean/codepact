@@ -53,6 +53,11 @@ class ReleaseWorkflowTest(unittest.TestCase):
         validate = job_section(workflow, "validate-artifacts")
         self.assertIn("scripts/verify_release_distributions.py", validate)
         self.assertIn("scripts/smoke_release_distributions.py", validate)
+        smoke = (ROOT / "scripts/smoke_release_distributions.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("typing-extensions", smoke)
+        self.assertIn('"--find-links"', smoke)
 
     def test_release_installs_wheels_on_every_supported_python_before_publishing(
         self,

@@ -344,7 +344,7 @@ pub fn write_baseline(
         target_python_version: result.target_python_version.clone(),
         model_catalog_version: result.model_catalog_version,
         ownership: config.ownership,
-        ownership_model_revision: ownership_model_revision(result).map(str::to_owned),
+        ownership_model_revision: ownership_model_revision(result),
         snapshot_id: snapshot_id.clone(),
         source_manifest: source_manifest.clone(),
         logical_root: ".".into(),

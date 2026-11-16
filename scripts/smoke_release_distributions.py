@@ -7,7 +7,10 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
+import tomllib
+from typing import cast
 import venv
 
 from packaging.tags import sys_tags
@@ -58,6 +61,23 @@ def run(command: list[str], *, cwd: Path, environment: dict[str, str]) -> None:
     subprocess.run(command, cwd=cwd, env=environment, check=True)
 
 
+def locked_package_version(root: Path, name: str) -> str:
+    lock = cast(
+        dict[str, object],
+        tomllib.loads((root / "uv.lock").read_text(encoding="utf-8")),
+    )
+    packages = lock.get("package")
+    if not isinstance(packages, list):
+        raise RuntimeError("uv.lock does not contain a package list")
+    for package in cast(list[object], packages):
+        if isinstance(package, dict):
+            entry = cast(dict[str, object], package)
+            version = entry.get("version")
+            if entry.get("name") == name and isinstance(version, str):
+                return version
+    raise RuntimeError(f"uv.lock has no locked version for {name}")
+
+
 def exercise(environment: Path, workdir: Path, env: dict[str, str]) -> None:
     python = environment_python(environment)
     binary_name = "codepact.exe" if os.name == "nt" else "codepact"
@@ -102,9 +122,36 @@ def smoke(directory: Path, version: str, *, wheel_only: bool = False) -> None:
     if uv is None:
         raise RuntimeError("uv is required to create isolated artifact environments")
 
-    with tempfile.TemporaryDirectory(prefix="codepact-release-wheel-") as temp:
+    with tempfile.TemporaryDirectory(prefix="codepact-release-") as temp:
+        root = Path(__file__).resolve().parents[1]
         workdir = Path(temp)
-        venv_path = workdir / "venv"
+        wheelhouse = workdir / "wheelhouse"
+        wheelhouse.mkdir()
+        system_python = Path(sys.base_prefix) / (
+            "python.exe"
+            if os.name == "nt"
+            else f"bin/python{sys.version_info.major}.{sys.version_info.minor}"
+        )
+        typing_extensions = locked_package_version(root, "typing-extensions")
+        run(
+            [
+                str(system_python),
+                "-m",
+                "pip",
+                "download",
+                "--no-deps",
+                "--only-binary=:all:",
+                "--dest",
+                str(wheelhouse),
+                f"typing-extensions=={typing_extensions}",
+            ],
+            cwd=workdir,
+            environment=environment,
+        )
+
+        wheel_dir = workdir / "wheel"
+        wheel_dir.mkdir()
+        venv_path = wheel_dir / "venv"
         venv.EnvBuilder(with_pip=False).create(venv_path)
         python = environment_python(venv_path)
         run(
@@ -115,20 +162,37 @@ def smoke(directory: Path, version: str, *, wheel_only: bool = False) -> None:
                 "--python",
                 str(python),
                 "--no-index",
+                "--find-links",
+                str(wheelhouse),
                 str(cli_wheel),
                 str(helper_wheel),
             ],
-            cwd=workdir,
+            cwd=wheel_dir,
             environment=environment,
         )
-        exercise(venv_path, workdir, environment)
+        exercise(venv_path, wheel_dir, environment)
 
-    if not wheel_only:
-        with tempfile.TemporaryDirectory(prefix="codepact-release-sdist-") as temp:
-            workdir = Path(temp)
+        if not wheel_only:
+            workdir = Path(temp) / "sdist"
+            workdir.mkdir()
             venv_path = workdir / "venv"
             venv.EnvBuilder(with_pip=False).create(venv_path)
             python = environment_python(venv_path)
+            run(
+                [
+                    uv,
+                    "pip",
+                    "install",
+                    "--python",
+                    str(python),
+                    "--no-index",
+                    "--find-links",
+                    str(wheelhouse),
+                    f"typing-extensions=={typing_extensions}",
+                ],
+                cwd=workdir,
+                environment=environment,
+            )
             for source in (cli_source, helper_source):
                 run(
                     [

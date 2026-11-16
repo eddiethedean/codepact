@@ -19,6 +19,13 @@ pub(super) struct OwnershipState {
     closures: BTreeMap<String, BTreeSet<String>>,
     pub(super) groups: BTreeMap<String, TaskGroup>,
     pub(super) group_names: BTreeMap<String, String>,
+    pub(super) group_origins: BTreeMap<String, Span>,
+    pub(super) entered_groups: BTreeSet<String>,
+    pub(super) possibly_entered_groups: BTreeSet<String>,
+    pub(super) fresh_groups: BTreeSet<String>,
+    pub(super) possibly_fresh_groups: BTreeSet<String>,
+    pub(super) executor_names: BTreeMap<String, String>,
+    pub(super) executors: BTreeMap<String, ExecutorState>,
     pub(super) task_names: BTreeMap<String, (String, String)>,
     pub(super) pending_task: Option<(String, String)>,
     pub(super) incompatible_task_factory: bool,
@@ -39,6 +46,18 @@ struct MovedHandle {
 pub(super) struct TaskGroup {
     pub(super) tasks: BTreeMap<String, ScheduledTask>,
     pub(super) incomplete: bool,
+    pub(super) active_possible: bool,
+}
+
+pub(super) const EXECUTOR_ACCEPTING: u8 = 1;
+pub(super) const EXECUTOR_SHUTDOWN: u8 = 2;
+pub(super) const EXECUTOR_UNKNOWN: u8 = 4;
+
+#[derive(Clone, PartialEq, Eq)]
+pub(super) struct ExecutorState {
+    pub(super) states: u8,
+    pub(super) origin: Span,
+    pub(super) has_submissions: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -108,9 +127,43 @@ impl OwnershipState {
                 .or_default()
                 .extend(captures.iter().cloned());
         }
+        joined
+            .entered_groups
+            .retain(|group| right.entered_groups.contains(group));
+        joined
+            .possibly_entered_groups
+            .extend(right.possibly_entered_groups.iter().cloned());
+        joined
+            .possibly_entered_groups
+            .extend(joined.entered_groups.iter().cloned());
+        joined
+            .fresh_groups
+            .retain(|group| right.fresh_groups.contains(group));
+        joined
+            .possibly_fresh_groups
+            .extend(right.possibly_fresh_groups.iter().cloned());
+        joined
+            .possibly_fresh_groups
+            .extend(joined.fresh_groups.iter().cloned());
+        for (id, executor) in &right.executors {
+            if let Some(existing) = joined.executors.get_mut(id) {
+                existing.states |= executor.states;
+                existing.has_submissions |= executor.has_submissions;
+            } else {
+                let mut executor = executor.clone();
+                executor.states |= EXECUTOR_UNKNOWN;
+                joined.executors.insert(id.clone(), executor);
+            }
+        }
+        for (id, executor) in &mut joined.executors {
+            if !right.executors.contains_key(id) {
+                executor.states |= EXECUTOR_UNKNOWN;
+            }
+        }
         for (group, left_group) in &mut joined.groups {
             if let Some(right_group) = right.groups.get(group) {
                 left_group.incomplete |= right_group.incomplete;
+                left_group.active_possible |= right_group.active_possible;
                 for (id, task) in &mut left_group.tasks {
                     task.possible |= right_group.tasks.get(id).is_none_or(|other| other.possible);
                     task.cancel_requested |= right_group
@@ -135,6 +188,7 @@ impl OwnershipState {
                 }
             } else {
                 left_group.incomplete = true;
+                left_group.active_possible = true;
                 for task in left_group.tasks.values_mut() {
                     task.possible = true;
                 }
@@ -144,15 +198,25 @@ impl OwnershipState {
             joined.groups.entry(id.clone()).or_insert_with(|| {
                 let mut group = group.clone();
                 group.incomplete = true;
+                group.active_possible = true;
                 group
             });
         }
         joined
             .group_names
             .retain(|name, group| right.group_names.get(name) == Some(group));
+        for (id, origin) in &right.group_origins {
+            joined
+                .group_origins
+                .entry(id.clone())
+                .or_insert_with(|| origin.clone());
+        }
         joined
             .task_names
             .retain(|name, task| right.task_names.get(name) == Some(task));
+        joined
+            .executor_names
+            .retain(|name, executor| right.executor_names.get(name) == Some(executor));
         if joined.pending_task != right.pending_task {
             joined.pending_task = None;
         }
@@ -183,6 +247,7 @@ impl OwnershipState {
         self.closures.remove(name);
         self.group_names.remove(name);
         self.task_names.remove(name);
+        self.executor_names.remove(name);
     }
 
     pub(super) fn own(&mut self, name: &str, targets: &BTreeSet<String>) {
@@ -230,6 +295,9 @@ impl OwnershipState {
                 .and_then(|source| self.task_names.get(source))
                 .cloned()
         });
+        let executor = source
+            .and_then(|source| self.executor_names.get(source))
+            .cloned();
         if source != Some(name) {
             self.rebind(name);
         }
@@ -244,6 +312,9 @@ impl OwnershipState {
         }
         if let Some(task) = task {
             self.task_names.insert(name.into(), task);
+        }
+        if let Some(executor) = executor {
+            self.executor_names.insert(name.into(), executor);
         }
         if let Some(targets) = targets {
             if receives_owner && !self.overflowed {
@@ -267,33 +338,48 @@ impl OwnershipState {
 pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str> {
     match (module, member) {
         ("codepact", "move") => Some(MOVE),
+        ("codepact", "state_machine") => Some("external:codepact.state_machine"),
+        ("codepact", "transition") => Some("external:codepact.transition"),
+        ("codepact", "State") => Some("external:codepact.State"),
+        ("codepact.contracts", "State") | ("codepact.rust", "State") => {
+            Some("external:codepact.State")
+        }
+        ("codepact.contracts", "StateAccess") => Some("external:codepact.StateAccess"),
+        ("concurrent.futures", "ThreadPoolExecutor") => {
+            Some("external:concurrent.futures.ThreadPoolExecutor")
+        }
         ("asyncio", "TaskGroup") => Some(TASK_GROUP),
         _ => None,
     }
 }
 
 pub(super) fn external_identity(expression: &AstExpr, env: &State) -> Option<String> {
-    match &expression.kind {
-        AstExprKind::Name(name) if !env.shadowed_functions.contains(name) => env
-            .function_bindings
-            .get(name)
-            .filter(|key| key.starts_with("external:"))
-            .cloned(),
-        AstExprKind::Attribute(base, member) => {
-            let base = expr_name(base)?;
-            if env.shadowed_functions.contains(base) {
-                return None;
+    fn external_path(expression: &AstExpr, env: &State) -> Option<String> {
+        match &expression.kind {
+            AstExprKind::Name(name) if !env.shadowed_functions.contains(name) => env
+                .function_bindings
+                .get(name)
+                .filter(|binding| binding.starts_with("external:"))
+                .filter(|binding| {
+                    !env.ownership
+                        .as_ref()
+                        .is_some_and(|ownership| ownership.invalidated_modules.contains(*binding))
+                })
+                .cloned(),
+            AstExprKind::Attribute(base, member) => {
+                let binding = external_path(base, env)?;
+                let module = binding.strip_prefix("external:")?;
+                Some(
+                    external_member(module, member)
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| format!("external:{module}.{member}")),
+                )
             }
-            let binding = env.function_bindings.get(base)?;
-            if env
-                .ownership
-                .as_ref()
-                .is_some_and(|ownership| ownership.invalidated_modules.contains(binding))
-            {
-                return None;
-            }
-            external_member(binding.strip_prefix("external:")?, member).map(str::to_owned)
+            _ => None,
         }
+    }
+    match &expression.kind {
+        AstExprKind::Name(_) | AstExprKind::Attribute(_, _) => external_path(expression, env),
         _ => None,
     }
 }
@@ -426,6 +512,22 @@ pub(super) fn escape_task_handles(
             "structured task or group handle escapes the tracked scope",
         );
     }
+    let executors = names
+        .iter()
+        .filter_map(|name| ownership.executor_names.get(name))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    for executor in executors {
+        if let Some(state) = ownership.executors.get_mut(&executor) {
+            state.states |= EXECUTOR_UNKNOWN;
+        }
+        boundary(
+            result,
+            file,
+            range,
+            "ThreadPoolExecutor handle escapes the qualified local model",
+        );
+    }
 }
 
 pub(super) fn argument_escapes(
@@ -509,6 +611,13 @@ fn live_capture_sites(env: &State, object: &str) -> Vec<CaptureSite> {
         });
     }
     sites
+}
+
+pub(super) fn exclusive_capture_sites(env: &State, object: &str) -> Vec<(Span, bool, bool)> {
+    live_capture_sites(env, object)
+        .into_iter()
+        .map(|site| (site.origin, site.possible, site.scheduled))
+        .collect()
 }
 
 pub(super) fn check_close(
@@ -791,6 +900,7 @@ pub(super) fn prepare_call(
                     || env.ownership.as_ref().is_some_and(|ownership| {
                         ownership.group_names.contains_key(&name)
                             || ownership.task_names.contains_key(&name)
+                            || ownership.executor_names.contains_key(&name)
                     })
                     || env
                         .function_bindings
@@ -858,6 +968,7 @@ fn snapshot_name(
     let closure = ownership.closures.get(source).cloned();
     let group = ownership.group_names.get(source).cloned();
     let task = ownership.task_names.get(source).cloned();
+    let executor = ownership.executor_names.get(source).cloned();
     // Captures restored by the coroutine executor already have value identity.
     if ownership.transfer_arguments.contains(source)
         || targets.is_none()
@@ -866,6 +977,7 @@ fn snapshot_name(
             && closure.is_none()
             && group.is_none()
             && task.is_none()
+            && executor.is_none()
     {
         return;
     }
@@ -890,6 +1002,9 @@ fn snapshot_name(
     }
     if let Some(task) = task {
         ownership.task_names.insert(temporary.clone(), task);
+    }
+    if let Some(executor) = executor {
+        ownership.executor_names.insert(temporary.clone(), executor);
     }
     expression.kind = AstExprKind::Name(temporary.clone());
     temporaries.push(temporary);

@@ -45,7 +45,9 @@ class TaskGroupModelConformance(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(task.cancelled())
         self.assertEqual(events, [])
 
-    async def test_rejected_submission_has_version_specific_coroutine_state(self) -> None:
+    async def test_rejected_submission_has_version_specific_coroutine_state(
+        self,
+    ) -> None:
         async def child() -> None:
             self.fail("an inactive group must not start a worker")
 
@@ -56,7 +58,11 @@ class TaskGroupModelConformance(unittest.IsolatedAsyncioTestCase):
                 pass
             with self.assertRaises(RuntimeError):
                 group.create_task(coroutine)
-            expected = inspect.CORO_CLOSED if sys.version_info >= (3, 13) else inspect.CORO_CREATED
+            expected = (
+                inspect.CORO_CLOSED
+                if sys.version_info >= (3, 13)
+                else inspect.CORO_CREATED
+            )
             self.assertEqual(inspect.getcoroutinestate(coroutine), expected)
         finally:
             coroutine.close()

@@ -5,8 +5,24 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import tomllib
 import zipfile
 import site
+from typing import cast
+
+
+def locked_package_version(root: Path, name: str) -> str:
+    lock = cast(dict[str, object], tomllib.loads((root / "uv.lock").read_text()))
+    packages = lock.get("package")
+    if not isinstance(packages, list):
+        raise RuntimeError("uv.lock does not contain a package list")
+    for package in cast(list[object], packages):
+        if isinstance(package, dict):
+            entry = cast(dict[str, object], package)
+            version = entry.get("version")
+            if entry.get("name") == name and isinstance(version, str):
+                return version
+    raise RuntimeError(f"uv.lock has no locked version for {name}")
 
 
 def main() -> None:
@@ -32,7 +48,11 @@ def main() -> None:
                 env=environment,
                 check=True,
             )
-        artifacts = sorted((work / "dist").iterdir())
+        artifacts = sorted(
+            artifact
+            for artifact in (work / "dist").iterdir()
+            if artifact.name.startswith(("codepact-", "codepact_cli-"))
+        )
         assert len(artifacts) == 4
         for artifact in artifacts:
             if artifact.suffix == ".whl":
@@ -44,6 +64,29 @@ def main() -> None:
                         any(".data/scripts/codepact" in name for name in names) == cli
                     )
                     assert ("codepact/py.typed" in names) != cli
+        typing_extensions_version = locked_package_version(root, "typing-extensions")
+        python_executable = Path(sys.base_prefix) / (
+            "python.exe"
+            if os.name == "nt"
+            else f"bin/python{sys.version_info.major}.{sys.version_info.minor}"
+        )
+        wheelhouse = work / "wheelhouse"
+        wheelhouse.mkdir()
+        subprocess.run(
+            [
+                str(python_executable),
+                "-m",
+                "pip",
+                "download",
+                "--no-deps",
+                "--only-binary=:all:",
+                "--dest",
+                str(wheelhouse),
+                f"typing-extensions=={typing_extensions_version}",
+            ],
+            env=environment,
+            check=True,
+        )
         subprocess.run(
             [sys.executable, "-m", "twine", "check", "--strict", *map(str, artifacts)],
             check=True,
@@ -60,7 +103,13 @@ def main() -> None:
             options = (
                 ["--no-deps"]
                 if cli
-                else ["--no-index", "--find-links", str(work / "dist")]
+                else [
+                    "--no-index",
+                    "--find-links",
+                    str(work / "dist"),
+                    "--find-links",
+                    str(wheelhouse),
+                ]
             )
             if artifact.name.endswith(".tar.gz"):
                 options.append("--no-build-isolation")

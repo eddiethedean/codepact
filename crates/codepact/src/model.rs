@@ -4,10 +4,11 @@ use std::collections::BTreeSet;
 pub const CHECK_SCHEMA_VERSION: u8 = 1;
 pub const CHECK_MODEL_CATALOG_VERSION: u8 = 2;
 pub(crate) const TASK_GROUP_CATALOG_VERSION: u8 = 3;
+pub(crate) const ADVANCED_MODEL_CATALOG_VERSION: u8 = 4;
 
 /// Lifecycle postconditions used by CodePact-owned effect summaries. These
 /// records are internal model inputs; they do not add user annotation syntax.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) enum LifecyclePostcondition {
     Preserve,
     Open,
@@ -15,7 +16,7 @@ pub(crate) enum LifecyclePostcondition {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) enum RepeatClosePolicy {
     Unspecified,
     Idempotent,
@@ -27,7 +28,7 @@ pub(crate) enum RepeatClosePolicy {
 /// `None` for an outcome means that the model establishes no such exit. A
 /// concrete postcondition is applied only to that outcome, so an exceptional
 /// or cancelled state cannot inherit the normal-close transition by accident.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) struct ResourceEffectModel {
     pub id: String,
     pub qualified_symbol: String,
@@ -53,13 +54,13 @@ pub(crate) struct ResourceEffectModel {
     pub unknown_cases: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) struct ModelAlias {
     pub source: String,
     pub target: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) struct FlowModelCatalog {
     resources: Vec<ResourceEffectModel>,
 }
@@ -304,7 +305,7 @@ mod flow_model_tests {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Span {
     pub file: String,
     pub line: usize,
@@ -313,13 +314,13 @@ pub struct Span {
     pub end_column: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Provenance {
     pub origin: String,
     pub trust: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Contract {
     pub schema_version: u8,
     pub base_symbol: String,
@@ -330,12 +331,12 @@ pub struct Contract {
     pub provenance: Vec<Provenance>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Lifecycle {
     pub closed_by: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Diagnostic {
     /// Internal canonical contract evidence; excluded from public JSON.
     #[serde(skip)]
@@ -348,7 +349,7 @@ pub struct Diagnostic {
     pub certainty: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Coverage {
     pub status: String,
     pub reasons: Vec<String>,
@@ -356,7 +357,7 @@ pub struct Coverage {
     pub declarations: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Inspection {
     pub schema_version: u8,
     pub assurance: String,
@@ -413,6 +414,25 @@ pub(crate) fn task_group_metadata(target: &str) -> Option<CheckModelMetadata> {
         selection_rule: "Exact asyncio.TaskGroup with the explicit default-task-factory assumption.".into(),
         modeled_behavior: "Local scheduling and completion at group exit, including exceptional exit and cancellation. Completion and resource cleanup have separate effects.".into(),
         qualification: "Experimental source model under a project-declared runtime assumption.".into(),
+    })
+}
+
+pub(crate) fn thread_pool_executor_revision(target: &str) -> Option<&'static str> {
+    (target == "3.13").then_some("v3.13.16")
+}
+
+pub(crate) fn thread_pool_executor_metadata(target: &str) -> Option<CheckModelMetadata> {
+    let revision = thread_pool_executor_revision(target)?;
+    Some(CheckModelMetadata {
+        id: "TPM-EXECUTOR-001".into(),
+        qualified_symbol: "concurrent.futures.ThreadPoolExecutor".into(),
+        source_revisions: vec![revision.into()],
+        source_urls: vec![format!(
+            "https://github.com/python/cpython/blob/{revision}/Lib/concurrent/futures/thread.py"
+        )],
+        selection_rule: "Exact ThreadPoolExecutor import identity, a local no-argument constructor, and CPython 3.13 source pin.".into(),
+        modeled_behavior: "Local Accepting/Shutdown protocol for submit and shutdown. Submission work, worker completion, future behavior, and worker-side cleanup are not modeled.".into(),
+        qualification: "Experimental 0.6 source model. Controlled runtime conformance and optimized performance evidence are pending.".into(),
     })
 }
 
@@ -491,6 +511,30 @@ impl CheckResult {
                     "TP1001" | "TP1002" | "TP1003" | "TP2001" => "declared-unverified",
                     "TP9001" | "TP9002" => "unknown-boundary",
                     "TP2006" if diagnostic.semantic_identity.iter().any(|id| id.starts_with("TPM-TASK-001@")) => "reviewed-model",
+                    "TP2101" | "TP2102"
+                        if diagnostic
+                            .semantic_identity
+                            .iter()
+                            .any(|id| id.starts_with("TPM-EXECUTOR-001@")) =>
+                    {
+                        "experimental-model"
+                    }
+                    "TP2102"
+                        if diagnostic
+                            .semantic_identity
+                            .iter()
+                            .any(|id| id.starts_with("TPM-TASK-001@")) =>
+                    {
+                        "reviewed-model"
+                    }
+                    "TP2101" | "TP2102"
+                        if diagnostic
+                            .semantic_identity
+                            .iter()
+                            .any(|id| id.contains("declared-unverified")) =>
+                    {
+                        "declared-unverified"
+                    }
                     _ => "static-source",
                 };
                 let repair = match diagnostic.code.as_str() {
@@ -663,7 +707,7 @@ impl CheckResult {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) enum Access {
     Unspecified,
     Shared,

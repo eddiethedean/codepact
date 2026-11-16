@@ -23,6 +23,7 @@ pub(crate) enum AstExprKind {
         keywords: Vec<(Option<String>, AstExpr)>,
     },
     Await(Box<AstExpr>),
+    Yield(Option<Box<AstExpr>>),
     Tuple(Vec<AstExpr>),
     Collection(Vec<AstExpr>),
     Starred(Box<AstExpr>),

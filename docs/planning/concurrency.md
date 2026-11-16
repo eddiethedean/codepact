@@ -26,6 +26,8 @@ The [root roadmap](../../ROADMAP.md) remains authoritative. Each CS gate below i
 
 The 0.5 proposal specifies the initial TaskGroup subset, transfer commit points and required CS03 controls. [Ownership specification](phases/0.5/specification.md#structured-tasks-and-cs03) · [V05 validation matrix](phases/0.5/validation.md)
 
+The 0.6 preview implements local TaskGroup and executor protocol states for CS04; their completion, model-conformance, and performance evidence remains pending. [Named protocol models](phases/0.6/specification.md#named-protocol-models-and-cs04) · [V06 validation matrix](phases/0.6/validation.md)
+
 Calling a coroutine function creates a coroutine; it does not establish that its body ran, a resource was consumed, or cleanup completed. Distinguish creation, scheduling, running, cancellation requested and joined/completed tasks. Model resource capture when work can retain an alias, including coroutine creation, rather than waiting until first execution. Do not grant an async close's successful postcondition merely because its coroutine was created.
 
 A reviewed model must specify when execution starts, when an ownership handoff commits, and what happens on scheduling failure, cancellation, exception and group exit. Ordinary argument evaluation retains its specified effects even if scheduling later fails. Do not restore a moved handle without a modeled recovery operation. A pending coroutine can retain a borrow even if it was never scheduled.
