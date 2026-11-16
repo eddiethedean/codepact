@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -60,6 +61,15 @@ def main() -> None:
                 assert artifact.name.endswith("none-any.whl") != cli
                 with zipfile.ZipFile(artifact) as archive:
                     names = archive.namelist()
+                    if not cli:
+                        for module in (
+                            "__init__.py",
+                            "contracts.py",
+                            "outcomes.py",
+                            "rust.py",
+                            "py.typed",
+                        ):
+                            assert f"codepact/{module}" in names
                     assert (
                         any(".data/scripts/codepact" in name for name in names) == cli
                     )
@@ -127,7 +137,7 @@ def main() -> None:
                 env=environment,
                 check=True,
             )
-            arguments = ["--cli-only"] if cli else []
+            arguments = ["--cli-only"] if cli else ["--helper-only"]
             subprocess.run(
                 [
                     str(interpreter),
@@ -138,6 +148,85 @@ def main() -> None:
                 cwd=work,
                 check=True,
             )
+
+        extra_environment = work / "install-cli-extra"
+        subprocess.run(
+            ["uv", "venv", "--python", sys.executable, str(extra_environment)],
+            check=True,
+        )
+        extra_interpreter = extra_environment / (
+            "Scripts/python.exe" if os.name == "nt" else "bin/python"
+        )
+        helper_version = locked_package_version(root, "codepact")
+        subprocess.run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(extra_interpreter),
+                "--no-index",
+                "--find-links",
+                str(work / "dist"),
+                "--find-links",
+                str(wheelhouse),
+                f"codepact[cli]=={helper_version}",
+            ],
+            cwd=work,
+            env=environment,
+            check=True,
+        )
+        subprocess.run(
+            [
+                str(extra_interpreter),
+                "-I",
+                str(root / "scripts/verify_installed_package.py"),
+            ],
+            cwd=work,
+            check=True,
+        )
+
+        source_artifacts = work / "cli-extra-sources"
+        source_artifacts.mkdir()
+        for artifact in artifacts:
+            if artifact.suffix == ".gz":
+                shutil.copy2(artifact, source_artifacts / artifact.name)
+        source_environment = work / "install-cli-extra-from-sdists"
+        subprocess.run(
+            ["uv", "venv", "--python", sys.executable, str(source_environment)],
+            check=True,
+        )
+        source_interpreter = source_environment / (
+            "Scripts/python.exe" if os.name == "nt" else "bin/python"
+        )
+        subprocess.run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(source_interpreter),
+                "--no-index",
+                "--no-build-isolation",
+                "--find-links",
+                str(source_artifacts),
+                "--find-links",
+                str(wheelhouse),
+                f"codepact[cli]=={helper_version}",
+            ],
+            cwd=work,
+            env=environment,
+            check=True,
+        )
+        subprocess.run(
+            [
+                str(source_interpreter),
+                "-I",
+                str(root / "scripts/verify_installed_package.py"),
+            ],
+            cwd=work,
+            check=True,
+        )
 
 
 if __name__ == "__main__":

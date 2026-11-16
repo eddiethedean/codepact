@@ -1,5 +1,39 @@
 # Upgrade CodePact
 
+## Upgrade from 0.5 or 0.6 to 0.7
+
+CodePact 0.7 separates the pure-Python helper from the native command. A
+project that previously installed `codepact` to get both must add the optional
+CLI extra:
+
+```sh
+uv add 'codepact[cli]==0.7.0'
+uv sync --locked
+uv run --locked codepact --version
+```
+
+Install `codepact==0.7.0` by itself when the application needs only annotation
+or outcome helpers. Install `codepact-cli==0.7.0` separately for a command-only
+environment. Keep the helper and CLI versions matched.
+
+- **Typed outcomes.** `codepact` and `codepact.rust` export `Ok`, `Err`,
+  `Some`, `Nothing`, `Result`, `Option`, nullable adapters, and sync/async
+  exception adapters. These tags do not carry ownership or cleanup semantics.
+- **Finite matches.** `TP5001` is an opt-in warning. It is off by default;
+  enable it with `experimental-finite-matches = true` or the matching CLI flag.
+  Unsupported patterns and resource payloads retain coverage boundaries.
+- **Installed providers.** Configure explicit dependency roots and
+  `required-providers` to inspect marked pure-Python wheel declarations. Local
+  source and earlier roots retain import precedence.
+- **Reports.** CLI completed reports and their failure envelopes use report
+  schema 3; `CheckResult` remains schema 1. `--show-settings --json` uses
+  settings schema 2. Update strict JSON consumers before upgrading. Existing
+  baselines remain readable, but regenerate them after reviewing the changed
+  report scope and fingerprints.
+
+[0.7 specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.7/specification.md) ·
+[Installation](install.md) · [Schemas](schemas.md)
+
 ## Upgrade from 0.4 to 0.5
 
 Update the helper and its matching CLI with `uv add codepact==0.5.1`, then

@@ -65,8 +65,11 @@ fn measure(workload: &str, size: usize, mode: Ownership) {
             .collect(),
         mode: "advisory".into(),
         ownership: mode,
+        finite_matches: false,
         fail_on: "error".into(),
         baseline: None,
+        dependency_roots: Vec::new(),
+        required_providers: Vec::new(),
         severity: Default::default(),
         settings_origins: Default::default(),
     };

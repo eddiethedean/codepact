@@ -580,8 +580,39 @@ fn class_body_issue(statement: &Stmt) -> Option<&'static str> {
     }
 }
 
+fn absolute_import_module(
+    module_name: &str,
+    source_path: &str,
+    level: u32,
+    imported_module: Option<&str>,
+) -> Option<String> {
+    if level == 0 {
+        return imported_module.map(str::to_owned);
+    }
+    let mut package = module_name
+        .split('.')
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if std::path::Path::new(source_path)
+        .file_name()
+        .is_none_or(|name| name != "__init__.py")
+    {
+        package.pop()?;
+    }
+    let parent_levels = usize::try_from(level.checked_sub(1)?).ok()?;
+    if parent_levels > package.len() {
+        return None;
+    }
+    package.truncate(package.len() - parent_levels);
+    if let Some(imported_module) = imported_module.filter(|name| !name.is_empty()) {
+        package.extend(imported_module.split('.').map(str::to_owned));
+    }
+    (!package.is_empty()).then(|| package.join("."))
+}
+
 pub(crate) fn parse_frontend(
     source: &str,
+    source_path: &str,
     module_name: &str,
     python_version: &str,
 ) -> Result<FrontendOutput, (String, usize)> {
@@ -610,12 +641,14 @@ pub(crate) fn parse_frontend(
         .iter()
         .take(crate::DEFAULT_MAX_AST_DECLARATIONS)
         .flat_map(|statement| match statement {
-            Stmt::ImportFrom(import) if import.level == 0 => import
-                .module
-                .as_ref()
-                .map(ToString::to_string)
-                .into_iter()
-                .collect::<Vec<_>>(),
+            Stmt::ImportFrom(import) => absolute_import_module(
+                module_name,
+                source_path,
+                import.level,
+                import.module.as_ref().map(ToString::to_string).as_deref(),
+            )
+            .into_iter()
+            .collect::<Vec<_>>(),
             Stmt::Import(import) => import
                 .names
                 .iter()
@@ -652,12 +685,32 @@ pub(crate) fn parse_frontend(
         };
         match statement {
             Stmt::ImportFrom(import) => declarations.push(Declaration::ImportFrom {
-                module: import
-                    .module
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_default(),
-                level: import.level,
+                module: absolute_import_module(
+                    module_name,
+                    source_path,
+                    import.level,
+                    import.module.as_ref().map(ToString::to_string).as_deref(),
+                )
+                .unwrap_or_else(|| {
+                    import
+                        .module
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_default()
+                }),
+                level: if import.level == 0
+                    || absolute_import_module(
+                        module_name,
+                        source_path,
+                        import.level,
+                        import.module.as_ref().map(ToString::to_string).as_deref(),
+                    )
+                    .is_some()
+                {
+                    0
+                } else {
+                    import.level
+                },
                 names: imports(&import.names),
                 range: source_range(import),
             }),
@@ -1195,7 +1248,8 @@ mod tests {
     #[test]
     fn cleanup_control_flow_frontend_snapshot_keeps_exits_backedge_and_unwind_frame() {
         let source = "async def transfer(flag, manager):\n    try:\n        while flag:\n            if flag:\n                return manager\n            if not flag:\n                raise RuntimeError()\n            if flag:\n                break\n            continue\n    finally:\n        async with manager:\n            await manager.close()\n";
-        let parsed = parse_frontend(source, "fixture", "3.11").expect("fixture parses");
+        let parsed =
+            parse_frontend(source, "fixture.py", "fixture", "3.11").expect("fixture parses");
         let body = parsed
             .declarations
             .iter()

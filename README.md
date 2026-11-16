@@ -1,6 +1,6 @@
 # CodePact
 
-![CodePact banner](https://raw.githubusercontent.com/eddiethedean/codepact/v0.5.1/docs/_static/codepact-banner.png)
+![CodePact banner](https://raw.githubusercontent.com/eddiethedean/codepact/v0.7.0/docs/_static/codepact-banner.png)
 
 CodePact finds Python resource bugs before runtime. Declare how an object
 closes and which functions own or borrow it. CodePact reads source and can flag
@@ -18,10 +18,10 @@ discarded must-use result. Run it alongside your type checker and tests.
 [Rule catalog](https://codepact.readthedocs.io/en/latest/rules.html) ·
 [Roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md)
 
-**New in 0.5.0.** Opt in to explicit moves, lexical shared borrows, and a
-bounded `asyncio.TaskGroup` model. The default scope retains lifecycle and
-must-use checks. [Ownership guide](https://codepact.readthedocs.io/en/latest/ownership.html) ·
-[Release availability](https://codepact.readthedocs.io/en/latest/availability.html)
+**New in 0.7.0.** Add typed `Result` and `Option` values, opt in to finite
+outcome-match checks, and install the pure-Python helpers separately from the
+native CLI. [Typed outcomes](https://codepact.readthedocs.io/en/latest/contracts.html#typed-outcomes) ·
+[Installation options](https://codepact.readthedocs.io/en/latest/install.html)
 
 ## Quick start
 
@@ -30,12 +30,12 @@ and Python 3.11 or later, start a project.
 
 ```sh
 uv init --bare --name codepact-demo
-uv add codepact==0.5.1
+uv add 'codepact[cli]==0.7.0'
 uv run --locked codepact --version
 mkdir src
 ```
 
-Save the complete [connection example](https://github.com/eddiethedean/codepact/blob/v0.5.1/examples/lifecycle.py)
+Save the complete [connection example](https://github.com/eddiethedean/codepact/blob/v0.7.0/examples/lifecycle.py)
 as `src/connection.py` and run the check.
 
 ```sh

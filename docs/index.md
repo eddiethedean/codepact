@@ -50,9 +50,9 @@ missed cleanup, and discarded results directly in source.
 ::::{container} cp-release-strip
 
 :::{container} cp-release cp-release-published
-**0.5.1 · Release**
+**0.7.0 · Candidate, qualification pending**
 
-[Install from PyPI or crates.io](install.md)
+[Review the phase gates](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.7-typed-outcomes.md)
 :::
 
 :::{container} cp-release cp-release-ownership

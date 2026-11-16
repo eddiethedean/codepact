@@ -95,6 +95,11 @@ pub(crate) enum FlowStatement {
         alternate: Vec<FlowStatement>,
         range: SourceRange,
     },
+    Match {
+        subject: AstExpr,
+        cases: Vec<FlowMatchCase>,
+        range: SourceRange,
+    },
     Try {
         body: Vec<FlowStatement>,
         handlers: Vec<FlowHandler>,
@@ -154,6 +159,83 @@ pub(crate) enum FlowStatement {
     Unsupported {
         range: SourceRange,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FlowMatchCase {
+    pub pattern: AstPattern,
+    pub guard: Option<AstExpr>,
+    pub body: Vec<FlowStatement>,
+    pub range: SourceRange,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum AstPattern {
+    Class {
+        class: AstExpr,
+        positional: Vec<AstPattern>,
+        keywords: Vec<(String, AstPattern)>,
+        range: SourceRange,
+    },
+    As {
+        pattern: Option<Box<AstPattern>>,
+        name: Option<String>,
+        range: SourceRange,
+    },
+    Or {
+        patterns: Vec<AstPattern>,
+        range: SourceRange,
+    },
+    Capture {
+        name: Option<String>,
+        range: SourceRange,
+    },
+    Unsupported {
+        bindings: Vec<String>,
+        range: SourceRange,
+    },
+}
+
+impl AstPattern {
+    pub(crate) fn binding_names(&self, names: &mut std::collections::BTreeSet<String>) {
+        match self {
+            Self::Class {
+                positional,
+                keywords,
+                ..
+            } => {
+                for child in positional {
+                    child.binding_names(names);
+                }
+                for (_, child) in keywords {
+                    child.binding_names(names);
+                }
+            }
+            Self::As { pattern, name, .. } => {
+                names.extend(name.iter().cloned());
+                if let Some(child) = pattern {
+                    child.binding_names(names);
+                }
+            }
+            Self::Capture { name, .. } => names.extend(name.iter().cloned()),
+            Self::Or { patterns, .. } => {
+                for child in patterns {
+                    child.binding_names(names);
+                }
+            }
+            Self::Unsupported { bindings, .. } => names.extend(bindings.iter().cloned()),
+        }
+    }
+
+    pub(crate) fn range(&self) -> SourceRange {
+        match self {
+            Self::Class { range, .. }
+            | Self::As { range, .. }
+            | Self::Or { range, .. }
+            | Self::Capture { range, .. }
+            | Self::Unsupported { range, .. } => *range,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

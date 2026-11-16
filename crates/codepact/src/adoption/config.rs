@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"];
 pub const OWNERSHIP_RULES: &[&str] = &["TP2002", "TP2003", "TP2004", "TP2005", "TP2006"];
 pub const ADVANCED_RULES: &[&str] = &["TP2101", "TP2102"];
+pub const FINITE_MATCH_RULES: &[&str] = &["TP5001"];
 
 pub(super) const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
@@ -41,13 +42,26 @@ pub struct ProjectConfig {
     pub experimental_ownership: Option<bool>,
     #[serde(rename = "experimental-advanced-contracts")]
     pub experimental_advanced_contracts: Option<bool>,
+    #[serde(rename = "experimental-finite-matches")]
+    pub experimental_finite_matches: Option<bool>,
     #[serde(rename = "assume-default-task-factory")]
     pub assume_default_task_factory: Option<bool>,
     #[serde(rename = "fail-on")]
     pub fail_on: Option<String>,
     pub baseline: Option<PathBuf>,
     #[serde(default)]
+    pub dependencies: Option<DependenciesConfig>,
+    #[serde(default)]
     pub severity: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DependenciesConfig {
+    #[serde(default)]
+    pub roots: Option<Vec<PathBuf>>,
+    #[serde(default, rename = "required-providers")]
+    pub required_providers: Option<Vec<String>>,
 }
 
 fn default_include() -> Vec<String> {
@@ -64,8 +78,11 @@ pub struct EffectiveConfig {
     pub enabled_rules: BTreeSet<String>,
     pub mode: String,
     pub ownership: crate::Ownership,
+    pub finite_matches: bool,
     pub fail_on: String,
     pub baseline: Option<PathBuf>,
+    pub dependency_roots: Vec<PathBuf>,
+    pub required_providers: Vec<String>,
     pub severity: BTreeMap<String, String>,
     pub settings_origins: BTreeMap<String, String>,
 }
@@ -77,9 +94,11 @@ pub struct Overrides {
     pub mode: Option<String>,
     pub experimental_ownership: Option<bool>,
     pub experimental_advanced_contracts: Option<bool>,
+    pub experimental_finite_matches: Option<bool>,
     pub fail_on: Option<String>,
     pub rules: Option<Vec<String>>,
     pub baseline: Option<PathBuf>,
+    pub dependency_roots: Option<Vec<PathBuf>>,
     pub severity: Option<BTreeMap<String, String>>,
     pub no_config: bool,
     pub config: Option<PathBuf>,
@@ -247,6 +266,10 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         .experimental_advanced_contracts
         .or_else(|| c.as_ref().and_then(|c| c.experimental_advanced_contracts))
         .unwrap_or(false);
+    let finite_matches = overrides
+        .experimental_finite_matches
+        .or_else(|| c.as_ref().and_then(|c| c.experimental_finite_matches))
+        .unwrap_or(false);
     if experimental_advanced_contracts && !experimental_ownership {
         return Err("experimental-advanced-contracts requires experimental-ownership".into());
     }
@@ -264,7 +287,11 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
     let mut rules: BTreeSet<String> = c
         .as_ref()
         .and_then(|c| c.enabled_rules.clone())
-        .unwrap_or_else(|| scoped_rules(ownership).map(str::to_owned).collect())
+        .unwrap_or_else(|| {
+            scoped_rules(ownership, finite_matches)
+                .map(str::to_owned)
+                .collect()
+        })
         .into_iter()
         .collect();
     if let Some(override_rules) = &overrides.rules {
@@ -283,6 +310,9 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         }
         if ADVANCED_RULES.contains(&r.as_str()) && !ownership.includes_advanced_contracts() {
             return Err(format!("rule {r} requires experimental-advanced-contracts"));
+        }
+        if FINITE_MATCH_RULES.contains(&r.as_str()) && !finite_matches {
+            return Err(format!("rule {r} requires experimental-finite-matches"));
         }
     }
     let mut severity = c.as_ref().map(|c| c.severity.clone()).unwrap_or_default();
@@ -331,6 +361,40 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         c.as_ref()
             .and_then(|c| c.baseline.as_ref().map(|p| normalize_path(config_dir, p)))
     });
+    let dependency_root_values = overrides
+        .dependency_roots
+        .clone()
+        .or_else(|| {
+            c.as_ref()
+                .and_then(|c| c.dependencies.as_ref()?.roots.clone())
+        })
+        .unwrap_or_default();
+    let dependency_root_base = if overrides.dependency_roots.is_some() {
+        cwd
+    } else {
+        config_dir
+    };
+    let mut dependency_roots = Vec::new();
+    for root in dependency_root_values {
+        let path = normalize_path(dependency_root_base, &root);
+        reject_symlink_components(&path, "dependency root")?;
+        if !path.is_dir() {
+            return Err(format!(
+                "dependency root is not a directory: {}",
+                path.display()
+            ));
+        }
+        let canonical = fs::canonicalize(&path).map_err(|error| {
+            format!("cannot resolve dependency root {}: {error}", path.display())
+        })?;
+        if !dependency_roots.contains(&canonical) {
+            dependency_roots.push(canonical);
+        }
+    }
+    let required_providers = c
+        .as_ref()
+        .and_then(|c| c.dependencies.as_ref()?.required_providers.clone())
+        .unwrap_or_default();
     let include = c
         .as_ref()
         .and_then(|c| c.include.clone())
@@ -409,6 +473,20 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
             .into(),
         );
     }
+    if overrides.experimental_finite_matches.is_some()
+        || c.as_ref()
+            .is_some_and(|c| c.experimental_finite_matches.is_some())
+    {
+        settings_origins.insert(
+            "experimental-finite-matches".into(),
+            origin(
+                overrides.experimental_finite_matches.is_some(),
+                c.as_ref()
+                    .is_some_and(|c| c.experimental_finite_matches.is_some()),
+            )
+            .into(),
+        );
+    }
     if c.as_ref()
         .is_some_and(|c| c.assume_default_task_factory.is_some())
     {
@@ -458,6 +536,29 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         )
         .into(),
     );
+    settings_origins.insert(
+        "dependency-roots".into(),
+        origin(
+            overrides.dependency_roots.is_some(),
+            c.as_ref().is_some_and(|config| {
+                config
+                    .dependencies
+                    .as_ref()
+                    .and_then(|d| d.roots.as_ref())
+                    .is_some()
+            }),
+        )
+        .into(),
+    );
+    if c.as_ref().is_some_and(|config| {
+        config
+            .dependencies
+            .as_ref()
+            .and_then(|d| d.required_providers.as_ref())
+            .is_some()
+    }) {
+        settings_origins.insert("required-providers".into(), "pyproject.toml".into());
+    }
     for rule in severity.keys() {
         settings_origins.insert(
             format!("severity.{rule}"),
@@ -481,8 +582,11 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         enabled_rules: rules,
         mode,
         ownership,
+        finite_matches,
         fail_on,
         baseline,
+        dependency_roots,
+        required_providers,
         severity,
         settings_origins,
     })
@@ -494,6 +598,38 @@ fn validate_config(c: &ProjectConfig) -> Result<(), String> {
             "unsupported config-version {}; expected 1",
             c.config_version
         ));
+    }
+    if let Some(dependencies) = &c.dependencies {
+        if let Some(required) = &dependencies.required_providers {
+            let mut seen = BTreeSet::new();
+            for name in required {
+                if name.is_empty()
+                    || !name.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
+                    })
+                {
+                    return Err(format!(
+                        "invalid required provider distribution name {name:?}"
+                    ));
+                }
+                let mut normalized = String::new();
+                let mut separator = false;
+                for character in name.chars() {
+                    if matches!(character, '.' | '_' | '-') {
+                        if !separator {
+                            normalized.push('-');
+                        }
+                        separator = true;
+                    } else {
+                        normalized.push(character.to_ascii_lowercase());
+                        separator = false;
+                    }
+                }
+                if !seen.insert(normalized) {
+                    return Err("required-providers must contain unique distribution names".into());
+                }
+            }
+        }
     }
     for p in c.include.iter().flatten().chain(c.exclude.iter().flatten()) {
         validate_pattern(p)?;
@@ -543,6 +679,7 @@ pub(super) fn eligible_code(code: &str) -> bool {
     DEFAULT_RULES.contains(&code)
         || OWNERSHIP_RULES.contains(&code)
         || ADVANCED_RULES.contains(&code)
+        || FINITE_MATCH_RULES.contains(&code)
 }
 
 pub(super) fn validate_rule(r: &str) -> Result<(), String> {
@@ -553,7 +690,10 @@ pub(super) fn validate_rule(r: &str) -> Result<(), String> {
     }
 }
 
-pub(super) fn scoped_rules(ownership: crate::Ownership) -> impl Iterator<Item = &'static str> {
+pub(super) fn scoped_rules(
+    ownership: crate::Ownership,
+    finite_matches: bool,
+) -> impl Iterator<Item = &'static str> {
     DEFAULT_RULES
         .iter()
         .copied()
@@ -568,6 +708,12 @@ pub(super) fn scoped_rules(ownership: crate::Ownership) -> impl Iterator<Item = 
                 .iter()
                 .copied()
                 .filter(move |_| ownership.includes_advanced_contracts()),
+        )
+        .chain(
+            FINITE_MATCH_RULES
+                .iter()
+                .copied()
+                .filter(move |_| finite_matches),
         )
 }
 pub(super) fn validate_pattern(p: &str) -> Result<(), String> {

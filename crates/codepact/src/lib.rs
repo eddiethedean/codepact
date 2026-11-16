@@ -25,6 +25,77 @@ pub const OWNERSHIP_ASSURANCE: &str = "experimental-ownership-checking-for-suppo
 pub const ADVANCED_ASSURANCE: &str =
     "experimental-advanced-contract-checking-for-supported-exit-flow";
 
+/// Options for opt-in checker analyses that extend the stable rule set.
+#[derive(Clone, Debug, Default)]
+pub struct CheckOptions {
+    pub ownership: Ownership,
+    pub experimental_finite_matches: bool,
+    /// Resolved provider source supplied by a host that owns environment
+    /// discovery and distribution verification.
+    pub provider_sources: Vec<ProviderSource>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProviderSource {
+    distribution: String,
+    version: String,
+    source: SourceFile,
+}
+
+impl ProviderSource {
+    pub fn new(
+        distribution: impl Into<String>,
+        version: impl Into<String>,
+        source: SourceFile,
+    ) -> Result<Self, String> {
+        use std::path::Component;
+        let distribution = distribution.into();
+        let version = version.into();
+        let valid_identity = |value: &str| {
+            !value.is_empty()
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        };
+        if !valid_identity(&distribution) || !valid_identity(&version) {
+            return Err(
+                "provider distribution and version must be safe package identifiers".into(),
+            );
+        }
+        let path = std::path::Path::new(&source.path);
+        if path.as_os_str().is_empty()
+            || path.is_absolute()
+            || path
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            return Err("provider source path must be a safe relative path".into());
+        }
+        if source.module.is_empty() {
+            return Err("provider source module must not be empty".into());
+        }
+        Ok(Self {
+            distribution,
+            version,
+            source,
+        })
+    }
+
+    fn into_source_file(self) -> SourceFile {
+        SourceFile::new(
+            format!(
+                "{}{}@{}/{}",
+                DEPENDENCY_SOURCE_PREFIX,
+                self.distribution,
+                self.version,
+                self.source.path.replace('\\', "/")
+            ),
+            self.source.module,
+            self.source.source,
+        )
+    }
+}
+
 /// Select the experimental transfer and borrowing analysis.
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
@@ -66,6 +137,7 @@ pub const DEFAULT_MAX_AST_DECLARATIONS: usize = 20_000;
 pub const DEFAULT_MAX_TOTAL_AST_DECLARATIONS: usize = 50_000;
 pub const DEFAULT_MAX_IMPORT_EDGES: usize = 50_000;
 pub const DEFAULT_MAX_SESSION_MUTATIONS: usize = 1_000;
+pub(crate) const DEPENDENCY_SOURCE_PREFIX: &str = "@dependency/";
 
 pub(crate) fn cancelled_inspection(files: &[SourceFile]) -> Inspection {
     let path = files.first().map_or("<input>", |file| file.path.as_str());
@@ -166,6 +238,16 @@ pub fn check_with_ownership(
     ownership: Ownership,
 ) -> CheckResult {
     AnalysisSession::default().check_with_ownership(files, python_version, ownership)
+}
+
+/// Check using explicit preview options. Finite outcome matching is disabled
+/// unless `experimental_finite_matches` is set.
+pub fn check_with_options(
+    files: &[SourceFile],
+    python_version: &str,
+    options: CheckOptions,
+) -> CheckResult {
+    AnalysisSession::default().check_with_options(files, python_version, options)
 }
 
 /// Check resource cleanup duties and return the versioned checker-specific

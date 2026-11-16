@@ -31,7 +31,7 @@ use ownership::OwnershipState;
 pub(crate) use reporting::reset_flow_budget;
 use reporting::{
     boundary, boundary_at_span, contract_identity, grouped_exits, report, report_cleanup_exit,
-    report_module_scope_lifetimes, span, take_flow_step,
+    report_module_scope_lifetimes, span, suggests_owned_handoff, take_flow_step,
 };
 use resolution::{
     await_call_captures, contracts_for_module, evaluate_call_arguments, external_module_bindings,
@@ -765,6 +765,9 @@ fn statements_may_return_resource(statements: &[FlowStatement]) -> bool {
         FlowStatement::If {
             body, alternate, ..
         } => statements_may_return_resource(body) || statements_may_return_resource(alternate),
+        FlowStatement::Match { cases, .. } => cases
+            .iter()
+            .any(|case| statements_may_return_resource(&case.body)),
         FlowStatement::Try {
             body,
             handlers,
@@ -971,6 +974,12 @@ fn collect_assigned_names(statements: &[FlowStatement], names: &mut BTreeSet<Str
                 collect_assigned_names(body, names);
                 collect_assigned_names(alternate, names);
             }
+            FlowStatement::Match { cases, .. } => {
+                for case in cases {
+                    collect_pattern_names(&case.pattern, names);
+                    collect_assigned_names(&case.body, names);
+                }
+            }
             FlowStatement::Try {
                 body,
                 handlers,
@@ -1008,6 +1017,43 @@ fn collect_assigned_names(statements: &[FlowStatement], names: &mut BTreeSet<Str
             }
             _ => {}
         }
+    }
+}
+
+fn collect_pattern_names(pattern: &crate::frontend::AstPattern, names: &mut BTreeSet<String>) {
+    use crate::frontend::AstPattern as Pattern;
+    match pattern {
+        Pattern::Class {
+            positional,
+            keywords,
+            ..
+        } => {
+            for pattern in positional {
+                collect_pattern_names(pattern, names);
+            }
+            for (_, pattern) in keywords {
+                collect_pattern_names(pattern, names);
+            }
+        }
+        Pattern::As { pattern, name, .. } => {
+            if let Some(name) = name {
+                names.insert(name.clone());
+            }
+            if let Some(pattern) = pattern {
+                collect_pattern_names(pattern, names);
+            }
+        }
+        Pattern::Or { patterns, .. } => {
+            for pattern in patterns {
+                collect_pattern_names(pattern, names);
+            }
+        }
+        Pattern::Capture {
+            name: Some(name), ..
+        } => {
+            names.insert(name.clone());
+        }
+        Pattern::Capture { name: None, .. } | Pattern::Unsupported { .. } => {}
     }
 }
 
@@ -1516,6 +1562,7 @@ fn statement_range(statement: &FlowStatement) -> SourceRange {
         | FlowStatement::AnnotatedDeclaration { range, .. }
         | FlowStatement::Expression { range, .. }
         | FlowStatement::If { range, .. }
+        | FlowStatement::Match { range, .. }
         | FlowStatement::Try { range, .. }
         | FlowStatement::Loop { range, .. }
         | FlowStatement::With { range, .. }
@@ -1577,6 +1624,9 @@ pub(crate) fn check_file_bodies(
     let mut historical_functions = FunctionMap::new();
     let mut class_generations = BTreeMap::<(String, String), usize>::new();
     for file in files {
+        if file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
+            continue;
+        }
         let Some(declarations) = summaries
             .get(&file.path)
             .and_then(|summary| summary.declarations.as_ref())
@@ -1712,6 +1762,9 @@ pub(crate) fn check_file_bodies(
         .collect();
     qualified_functions.extend(historical_functions);
     for provider in files {
+        if provider.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
+            continue;
+        }
         let Some(declarations) = summaries
             .get(&provider.path)
             .and_then(|summary| summary.declarations.as_ref())
@@ -2220,6 +2273,7 @@ pub(crate) fn check_file_bodies(
             let Declaration::Function {
                 name,
                 parameters,
+                returns,
                 body,
                 range,
                 ..
@@ -2317,6 +2371,8 @@ pub(crate) fn check_file_bodies(
                 })
                 .map(|contract| contract.access.as_str());
             let flow_outcomes = execute(body, &mut env, file, &contracts, functions, result, 0);
+            let suggest_owned =
+                suggests_owned_handoff(&flow_outcomes.returns, env.alive, return_access);
             let exits = flow_outcomes.all_abrupt().cloned().collect::<Vec<_>>();
             for exit in grouped_exits(&exits) {
                 match &exit.kind {
@@ -2328,6 +2384,9 @@ pub(crate) fn check_file_bodies(
                             file,
                             &exit,
                             return_access,
+                            *range,
+                            returns.as_ref().map(|annotation| annotation.range),
+                            suggest_owned,
                             functions,
                             &classes_with_unresolved_bases,
                         );
@@ -2353,6 +2412,9 @@ pub(crate) fn check_file_bodies(
                         kind: CompletionKind::Fallthrough,
                     },
                     return_access,
+                    *range,
+                    returns.as_ref().map(|annotation| annotation.range),
+                    suggest_owned,
                     functions,
                     &classes_with_unresolved_bases,
                 );
@@ -2439,6 +2501,7 @@ pub(crate) fn check_file_bodies(
                     result,
                     0,
                 );
+                let suggest_owned = suggests_owned_handoff(&outcomes.returns, env.alive, None);
                 let exits = outcomes.all_abrupt().cloned().collect::<Vec<_>>();
                 for exit in grouped_exits(&exits) {
                     match &exit.kind {
@@ -2450,6 +2513,9 @@ pub(crate) fn check_file_bodies(
                                 file,
                                 &exit,
                                 None,
+                                method.range,
+                                method.returns.as_ref().map(|annotation| annotation.range),
+                                suggest_owned,
                                 functions,
                                 &classes_with_unresolved_bases,
                             );
@@ -2473,6 +2539,9 @@ pub(crate) fn check_file_bodies(
                             kind: CompletionKind::Fallthrough,
                         },
                         None,
+                        method.range,
+                        method.returns.as_ref().map(|annotation| annotation.range),
+                        suggest_owned,
                         functions,
                         &classes_with_unresolved_bases,
                     );
@@ -2601,7 +2670,7 @@ mod tests {
 
     fn source_with_flow_budget(source: &str, budget: usize) -> Inspection {
         let file = SourceFile::new("module.py", "module", source);
-        let parsed = crate::frontend::parse_frontend(source, "module", "3.11")
+        let parsed = crate::frontend::parse_frontend(source, "module.py", "module", "3.11")
             .expect("the bounded reference fixture parses");
         let decorator_span = parsed
             .declarations

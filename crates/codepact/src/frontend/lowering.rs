@@ -141,6 +141,111 @@ pub(super) fn expression(node: &Expr, budget: &mut ExpressionBudget, depth: usiz
     AstExpr { range, kind }
 }
 
+struct PatternBindings<'a> {
+    budget: &'a mut ExpressionBudget,
+    depth: usize,
+    names: BTreeSet<String>,
+}
+
+impl<'a> Visitor<'a> for PatternBindings<'_> {
+    fn visit_expr(&mut self, _: &'a Expr) {}
+
+    fn visit_pattern(&mut self, pattern: &'a Pattern) {
+        if self.budget.exceeded
+            || self.depth >= ExpressionBudget::MAX_DEPTH
+            || self.budget.nodes >= ExpressionBudget::MAX_NODES
+        {
+            self.budget.exceeded = true;
+            return;
+        }
+        self.budget.nodes += 1;
+        let name = match pattern {
+            Pattern::MatchAs(pattern) => &pattern.name,
+            Pattern::MatchStar(pattern) => &pattern.name,
+            Pattern::MatchMapping(pattern) => &pattern.rest,
+            _ => &None,
+        };
+        self.names.extend(name.iter().map(ToString::to_string));
+        self.depth += 1;
+        walk_pattern(self, pattern);
+        self.depth -= 1;
+    }
+}
+
+fn pattern(node: &Pattern, budget: &mut ExpressionBudget, depth: usize) -> AstPattern {
+    if budget.exceeded
+        || depth >= ExpressionBudget::MAX_DEPTH
+        || budget.nodes >= ExpressionBudget::MAX_NODES
+    {
+        budget.exceeded = true;
+        return AstPattern::Unsupported {
+            bindings: Vec::new(),
+            range: source_range(node),
+        };
+    }
+    budget.nodes += 1;
+    use ruff_python_ast::Pattern;
+    match node {
+        Pattern::MatchClass(class) => AstPattern::Class {
+            class: expression(&class.cls, budget, 0),
+            positional: class
+                .arguments
+                .patterns
+                .iter()
+                .map(|pattern_node| pattern(pattern_node, budget, depth + 1))
+                .collect(),
+            keywords: class
+                .arguments
+                .keywords
+                .iter()
+                .map(|keyword| {
+                    (
+                        keyword.attr.to_string(),
+                        pattern(&keyword.pattern, budget, depth + 1),
+                    )
+                })
+                .collect(),
+            range: source_range(class),
+        },
+        Pattern::MatchAs(pattern_as) => {
+            let name = pattern_as.name.as_ref().map(ToString::to_string);
+            let range = source_range(pattern_as);
+            match pattern_as.pattern.as_deref() {
+                Some(pattern_node) => AstPattern::As {
+                    pattern: Some(Box::new(pattern(pattern_node, budget, depth + 1))),
+                    name,
+                    range,
+                },
+                None => AstPattern::Capture { name, range },
+            }
+        }
+        Pattern::MatchOr(pattern_or) => AstPattern::Or {
+            patterns: pattern_or
+                .patterns
+                .iter()
+                .map(|pattern_node| pattern(pattern_node, budget, depth + 1))
+                .collect(),
+            range: source_range(pattern_or),
+        },
+        Pattern::MatchValue(_)
+        | Pattern::MatchSingleton(_)
+        | Pattern::MatchSequence(_)
+        | Pattern::MatchMapping(_)
+        | Pattern::MatchStar(_) => {
+            let mut visitor = PatternBindings {
+                budget,
+                depth,
+                names: BTreeSet::new(),
+            };
+            visitor.visit_pattern(node);
+            AstPattern::Unsupported {
+                bindings: visitor.names.into_iter().collect(),
+                range: source_range(node),
+            }
+        }
+    }
+}
+
 pub(super) fn imports(names: &[ruff_python_ast::Alias]) -> Vec<ImportName> {
     names
         .iter()
@@ -338,7 +443,12 @@ fn flow_statements_at(
             if depth >= 128
                 && matches!(
                     statement,
-                    Stmt::If(_) | Stmt::Try(_) | Stmt::For(_) | Stmt::While(_) | Stmt::With(_)
+                    Stmt::If(_)
+                        | Stmt::Match(_)
+                        | Stmt::Try(_)
+                        | Stmt::For(_)
+                        | Stmt::While(_)
+                        | Stmt::With(_)
                 )
             {
                 return FlowStatement::Unsupported {
@@ -493,6 +603,37 @@ fn flow_statements_at(
                         body: flow_statements_at(&branch.body, budget, scope_escapes, depth + 1),
                         alternate,
                         range: source_range(branch),
+                    }
+                }
+                Stmt::Match(match_) => {
+                    let lowered = FlowStatement::Match {
+                        subject: expression(&match_.subject, budget, 0),
+                        cases: match_
+                            .cases
+                            .iter()
+                            .map(|case| FlowMatchCase {
+                                pattern: pattern(&case.pattern, budget, 0),
+                                guard: case
+                                    .guard
+                                    .as_deref()
+                                    .map(|guard| expression(guard, budget, 0)),
+                                body: flow_statements_at(
+                                    &case.body,
+                                    budget,
+                                    scope_escapes,
+                                    depth + 1,
+                                ),
+                                range: source_range(case),
+                            })
+                            .collect(),
+                        range: source_range(match_),
+                    };
+                    if budget.exceeded {
+                        FlowStatement::Unsupported {
+                            range: source_range(match_),
+                        }
+                    } else {
+                        lowered
                     }
                 }
                 Stmt::Try(attempt) if attempt.is_star => FlowStatement::Unsupported {

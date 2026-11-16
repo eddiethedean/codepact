@@ -37,7 +37,7 @@ fn must_use_forms_report_discard_and_accept_assignment_and_explicit_discard() {
         String::from_utf8_lossy(&output.stdout)
     );
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["check_schema_version"], 2);
+    assert_eq!(report["check_schema_version"], 1);
     let findings = report["diagnostics"]
         .as_array()
         .unwrap()
@@ -1161,15 +1161,29 @@ fn capabilities_and_rule_explanations_publish_the_supported_surface_and_limits()
     let rules = capabilities["rules"].as_array().unwrap();
     assert_eq!(
         rules.len(),
-        9 + codepact::adoption::OWNERSHIP_RULES.len() + codepact::adoption::ADVANCED_RULES.len()
+        9 + codepact::adoption::OWNERSHIP_RULES.len()
+            + codepact::adoption::ADVANCED_RULES.len()
+            + codepact::adoption::FINITE_MATCH_RULES.len()
+            + 2
     );
+    let rule_codes: Vec<_> = rules
+        .iter()
+        .map(|rule| rule["code"].as_str().unwrap())
+        .collect();
+    let unique_rule_codes: std::collections::HashSet<_> = rule_codes.iter().copied().collect();
+    assert_eq!(unique_rule_codes.len(), rule_codes.len());
     for rule in rules {
         let code = rule["code"].as_str().unwrap();
         if codepact::adoption::OWNERSHIP_RULES.contains(&code)
             || codepact::adoption::ADVANCED_RULES.contains(&code)
+            || codepact::adoption::FINITE_MATCH_RULES.contains(&code)
         {
             assert_eq!(rule["tier"], "experimental");
             assert_eq!(rule["enabled_by_default"], false);
+        }
+        if ["TP6001", "TP6002"].contains(&code) {
+            assert_eq!(rule["tier"], "review-hint");
+            assert_eq!(rule["enabled_by_default"], true);
         }
         let explanation = cli(&root, &["explain", code, "--json"]);
         assert_eq!(explanation.status.code(), Some(0), "{code}");

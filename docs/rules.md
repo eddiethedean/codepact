@@ -68,6 +68,27 @@ boundary. Async return declarations are not treated as synchronous TP3001
 callables. `discard` preserves evaluation effects and does not clear cleanup
 duties. [Adoption examples](adopting.md)
 
+## Experimental finite outcome matches
+
+TP5001 is an opt-in warning. Enable it with
+`--experimental-finite-matches` or `experimental-finite-matches = true`. It
+reports known reachable `Ok`/`Err` and `Some`/`Nothing` variants that can
+fall through a supported `match`. The preview resolves exact CodePact
+identities and supported closed outcome annotations; it does not infer
+arbitrary unions, nested payload tests, or dynamic patterns. Guards do not
+provide unconditional coverage. Resource payloads do not establish cleanup,
+ownership transfer, or task completion. See the
+[outcome API and preview limits](contracts.md#typed-outcomes).
+
+## Informational review hints
+
+TP6001 suggests a `@resource(closed_by="close")` declaration for a local
+class with a supported `close` method passed to resolved `contextlib.closing`.
+TP6002 suggests `@must_use` on a synchronous wrapper that directly returns a
+resolved must-use call. Both hints have `info` severity, are not selectable or
+baseline eligible, and do not affect coverage or exit status. Review the
+declaration and implementation before adopting either suggestion.
+
 (tp3001)=
 ## TP3001: Discarded must-use result
 

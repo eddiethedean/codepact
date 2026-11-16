@@ -216,7 +216,7 @@ fn assert_adoption_report_matches_check_result(
 ) {
     assert_eq!(report["assurance"], codepact::ADOPTION_ASSURANCE);
     assert_eq!(expected["assurance"], codepact::LIFECYCLE_ASSURANCE);
-    assert_eq!(report["check_schema_version"], 2);
+    assert_eq!(report["check_schema_version"], 1);
     assert_eq!(expected["check_schema_version"], 1);
     for field in [
         "target_python_version",
@@ -331,7 +331,7 @@ fn phase03_text_and_json_reports_agree_on_cleanup_diagnostics() {
     assert_eq!(finding["completion"], "fallthrough");
     assert_eq!(finding["certainty"], "definite");
     assert_eq!(finding["trust"], "declared-unverified");
-    assert_eq!(report["check_schema_version"], 2);
+    assert_eq!(report["check_schema_version"], 1);
     assert_eq!(
         report["coverage"]["status"],
         "complete-for-supported-subset"
@@ -2020,7 +2020,7 @@ fn assignment_of_a_resource_returning_close_method_keeps_identity_and_flags_unow
         diagnostics.iter().any(|diagnostic| {
             diagnostic["code"] == "TP9001"
                 && diagnostic["message"].as_str().is_some_and(|message| {
-                    message.contains("resource returned without an Owned contract")
+                    message.contains("resource returned without a verified Owned contract")
                 })
         }),
         "{diagnostics:#?}"
@@ -2266,5 +2266,215 @@ fn unknown_method_effect_is_applied_when_receiver_is_closed() {
         .iter()
         .any(|diagnostic| diagnostic["code"] == "TP9001"));
     assert_eq!(result["coverage"]["status"], "incomplete");
+    fs::remove_dir_all(root).unwrap();
+}
+
+fn phase07_report(root: &std::path::Path, args: &[&str]) -> (i32, serde_json::Value) {
+    let output = Command::new(env!("CARGO_BIN_EXE_codepact"))
+        .current_dir(root)
+        .args(["check", "--no-config", "--json"])
+        .args(args)
+        .output()
+        .expect("CLI starts");
+    let report = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("{error}: {output:?}"));
+    (output.status.code().expect("CLI exited"), report)
+}
+
+#[test]
+fn phase07_match_captures_cannot_close_a_shadowed_resource() {
+    let root = fixture_root().with_extension("phase07-match-capture");
+    fs::create_dir_all(&root).unwrap();
+    for (subject, pattern) in [
+        ("None", "r"),
+        ("[None]", "[r]"),
+        ("{'r': None}", "{'r': r}"),
+    ] {
+        fs::write(
+            root.join("main.py"),
+            format!(
+                "from codepact import resource\n@resource(closed_by='close')\nclass R:\n    def close(self): pass\ndef f():\n    r = R()\n    match {subject}:\n        case {pattern}:\n            r.close()\n"
+            ),
+        )
+        .unwrap();
+        let (status, report) = phase07_report(&root, &["--mode", "strict"]);
+        assert_eq!(status, 1, "{report:#}");
+        assert!(
+            report["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["code"] == "TP1002"),
+            "{report:#}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_failed_match_guard_effects_reach_the_next_case() {
+    let root = fixture_root().with_extension("phase07-match-guards");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import resource\n@resource(closed_by='close')\nclass R:\n    def close(self): return False\n    def read(self): pass\ndef f():\n    r = R()\n    match 1:\n        case _ if r.close():\n            pass\n        case _:\n            r.read()\n",
+    )
+    .unwrap();
+    let (status, report) = phase07_report(&root, &["--mode", "strict"]);
+    assert_eq!(status, 1, "{report:#}");
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["code"] == "TP1001" && item["primary"]["line"] == 12),
+        "{report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_finite_match_checks_terminating_branches_and_tracks_unknown_variants() {
+    let root = fixture_root().with_extension("phase07-finite-match");
+    fs::create_dir_all(&root).unwrap();
+    for (body, missing, unresolved) in [
+        ("    if flag:\n        match value:\n            case Ok(_): pass\n        return\n", Some("Err"), false),
+        ("    match value:\n        case Ok(1): pass\n", Some("Err"), true),
+        ("    match value:\n        case Ok(1): pass\n        case Err(_): pass\n", None, true),
+        ("    match value:\n        case Ok(1) | Err(_): pass\n", None, true),
+        ("    match value:\n        case Ok(1): pass\n        case Ok(_): pass\n", Some("Err"), false),
+        ("    match value:\n        case Ok(_): pass\n        case Ok(1): pass\n        case Err(_): pass\n", None, false),
+        ("    match value:\n        case Ok(_) if flag: pass\n        case Err(_): pass\n", Some("Ok"), false),
+    ] {
+        fs::write(root.join("main.py"), format!("from codepact import Ok, Err, Result\ndef f(value: Result[int, str], flag: bool):\n{body}")).unwrap();
+        let (_, report) = phase07_report(&root, &["--experimental-finite-matches"]);
+        let diagnostics = report["diagnostics"].as_array().unwrap();
+        let missing_messages = diagnostics.iter().filter(|item| item["code"] == "TP5001")
+            .map(|item| item["message"].as_str().unwrap()).collect::<Vec<_>>();
+        assert_eq!(missing_messages, missing.map(|variant| format!("outcome match leaves {variant} uncovered")).into_iter().collect::<Vec<_>>(), "{report:#}");
+        assert_eq!(
+            diagnostics.iter().any(|item| item["code"] == "TP9001"
+                && item["message"] == "outcome match pattern is unresolved or tests unsupported payload structure"),
+            unresolved,
+            "{report:#}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_finite_match_does_not_trust_contradictory_or_async_annotations() {
+    let root = fixture_root().with_extension("phase07-finite-match-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import Ok, Result\nasync def get() -> Result[int, str]:\n    return Ok(1)\ndef f():\n    value: Result[int, str] = 17\n    match value:\n        case Ok(_): pass\ndef g():\n    value = get()\n    match value:\n        case Ok(_): pass\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(&root, &["--experimental-finite-matches"]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    for line in [6, 10] {
+        assert!(
+            diagnostics
+                .iter()
+                .any(|item| item["code"] == "TP9001" && item["primary"]["line"] == line),
+            "{report:#}"
+        );
+    }
+    assert!(
+        !diagnostics.iter().any(|item| item["code"] == "TP5001"),
+        "{report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_must_use_checks_reachable_match_arms() {
+    let root = fixture_root().with_extension("phase07-match-must-use");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use\n@must_use\ndef result() -> int: return 1\ndef f(value):\n    match value:\n        case 1: result()\n        case _: pass\n",
+    )
+    .unwrap();
+    let (status, report) = phase07_report(&root, &[]);
+    assert_eq!(
+        status, 0,
+        "advisory mode reports warnings without failing: {report:#}"
+    );
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["code"] == "TP3001"),
+        "{report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_provider_selection_skips_namespace_portions_and_unrelated_missing_records() {
+    let root = fixture_root().with_extension("phase07-providers");
+    let project = root.join("project");
+    let earlier = root.join("earlier");
+    let installed = root.join("installed");
+    let info = installed.join("demo-1.0.dist-info");
+    fs::create_dir_all(&project).unwrap();
+    fs::create_dir_all(earlier.join("demo")).unwrap();
+    fs::create_dir_all(installed.join("demo")).unwrap();
+    fs::create_dir_all(installed.join("unrelated-1.0.dist-info")).unwrap();
+    fs::create_dir_all(&info).unwrap();
+    fs::write(project.join("main.py"), "from demo import value\nvalue()\n").unwrap();
+    fs::write(installed.join("demo/py.codepact"), "").unwrap();
+    fs::write(
+        installed.join("demo/__init__.py"),
+        "from codepact import must_use\n@must_use\ndef value() -> int:\n    return 1\n",
+    )
+    .unwrap();
+    fs::write(
+        info.join("WHEEL"),
+        "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+    )
+    .unwrap();
+    fs::write(info.join("METADATA"), "Name: demo\nVersion: 1.0\n").unwrap();
+    fs::write(
+        info.join("RECORD"),
+        "demo/__init__.py,,\ndemo/py.codepact,,\n",
+    )
+    .unwrap();
+    let args = [
+        "--dependency-root",
+        earlier.to_str().unwrap(),
+        "--dependency-root",
+        installed.to_str().unwrap(),
+    ];
+    let (_, report) = phase07_report(&project, &args);
+    assert_eq!(report["execution_status"], "completed", "{report:#}");
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["code"] == "TP3001"
+                && item["related"][0]["file"] == "@dependency/demo@1.0/demo/__init__.py"),
+        "{report:#}"
+    );
+
+    for shadow in ["demo/__init__.py", "demo.py"] {
+        let path = earlier.join(shadow);
+        fs::write(&path, "def value() -> int: return 2\n").unwrap();
+        let (_, report) = phase07_report(&project, &args);
+        assert_eq!(report["execution_status"], "completed", "{report:#}");
+        assert!(
+            !report["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["code"] == "TP3001"),
+            "{report:#}"
+        );
+        fs::remove_file(path).unwrap();
+    }
     fs::remove_dir_all(root).unwrap();
 }

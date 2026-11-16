@@ -153,7 +153,7 @@ fn report(output: &Output) -> Value {
         )
     });
     assert_eq!(report["execution_status"], "completed", "{report:#}");
-    assert_eq!(report["check_schema_version"], 2);
+    assert_eq!(report["check_schema_version"], 1);
     assert_eq!(report["details_truncated"], false);
     assert_eq!(
         report["exit_code"].as_i64(),

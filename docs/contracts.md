@@ -87,6 +87,60 @@ metadata is a declaration error. See the
 [rule catalog](rules.md#tp3001-discarded-must-use-result) and
 [adoption workflow](adopting.md); 0.4 is a synthetic preview with real-world usefulness unqualified.
 
+## Typed outcomes
+
+The pure-Python helpers expose covariant `Result[T, E]` and `Option[T]` aliases
+from both `codepact` and `codepact.rust`. `Ok(value)`, `Err(error)`,
+`Some(value)`, and fieldless `Nothing()` are frozen, final dataclasses. The
+payload remains an ordinary Python value; the outcome tag adds no ownership or
+cleanup behavior.
+
+```python
+from codepact import Err, Ok, Result, must_use
+
+
+@must_use
+def parse_port(text: str) -> Result[int, ValueError]:
+    try:
+        return Ok(int(text))
+    except ValueError as error:
+        return Err(error)
+
+
+def port_or_raise(text: str) -> int:
+    match parse_port(text):
+        case Ok(value):
+            return value
+        case Err(error):
+            raise error
+```
+
+The synchronous `match` handles the marked call's immediate result. To check
+known missing variants, opt in to the finite-match preview:
+
+```toml
+[tool.codepact]
+experimental-finite-matches = true
+```
+
+The preview is off by default. It supports resolved `Result` and `Option`
+variants, captures and wildcards, simple OR patterns, and guarded arms with
+fallthrough. Unresolved identities and unsupported payload tests remain
+coverage boundaries. If an outcome contains a modeled resource, wrapping,
+matching, extracting, forwarding, or discarding its payload does not prove
+cleanup or ownership transfer.
+
+`from_nullable(value)` converts `None` to `Nothing()` and other values to
+`Some(value)`. `to_nullable(option)` collapses `Nothing()` and `Some(None)` to
+`None`, so that conversion can lose the distinction. `capture` and
+`capture_async` convert only selected `Exception` subclasses into `Err`;
+cancellation, process-control exceptions, and exception groups propagate.
+`capture_async` awaits in the current task and creates no background task.
+
+See the [Python API reference](python-api.rst) for signatures and the
+[rule catalog](rules.md#experimental-finite-outcome-matches) for the static
+preview boundary.
+
 ## Use `Annotated` directly
 
 You can spell the metadata explicitly with `typing.Annotated`:

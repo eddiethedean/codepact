@@ -154,7 +154,7 @@ fn report(output: &Output) -> Value {
         )
     });
     assert_eq!(report["execution_status"], "completed", "{report:#}");
-    assert_eq!(report["check_schema_version"], 2);
+    assert_eq!(report["check_schema_version"], 1);
     assert_eq!(report["details_truncated"], false);
     assert_eq!(
         report["exit_code"].as_i64(),
@@ -208,6 +208,13 @@ fn assert_oracle(project: &Project, report: &Value, root: &Path, buggy: bool) {
                     .any(|text| message.contains(text)),
                 "unexpected boundary: {diagnostic:#}"
             );
+            continue;
+        }
+        if ["TP6001", "TP6002"].contains(&code) {
+            assert_eq!(diagnostic["severity"], "info");
+            assert_eq!(diagnostic["effective_severity"], "info");
+            assert_eq!(diagnostic["actionable"], false);
+            assert_eq!(diagnostic["trust"], "static-source");
             continue;
         }
         assert!(
@@ -527,6 +534,13 @@ fn assert_smell_report(
                 .find(|reason| message.contains(reason.as_str()))
                 .unwrap_or_else(|| panic!("unexpected boundary: {diagnostic:#}"));
             actual_boundaries.insert(reason);
+            continue;
+        }
+        if ["TP6001", "TP6002"].contains(&code) {
+            assert_eq!(diagnostic["severity"], "info");
+            assert_eq!(diagnostic["effective_severity"], "info");
+            assert_eq!(diagnostic["actionable"], false);
+            assert_eq!(diagnostic["trust"], "static-source");
             continue;
         }
         assert_eq!(diagnostic["primary"]["file"], "main.py", "{diagnostic:#}");

@@ -496,7 +496,7 @@ fn v03_08_unannotated_owned_return_keeps_an_unknown_escape_duty() {
             diagnostic.code == "TP9001"
                 && diagnostic
                     .message
-                    .contains("returned without an Owned contract")
+                    .contains("returned without a verified Owned contract")
         }),
         "{result:#?}"
     );

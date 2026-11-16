@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 project = "CodePact"
 author = "CodePact contributors"
 copyright = "2026, CodePact contributors"
-version = "0.6"
-release = "0.6.0"
+version = "0.7"
+release = "0.7.0"
 
 extensions = [
     "myst_parser",
@@ -43,6 +43,16 @@ nitpick_ignore = [
     ("py:class", "P"),
     ("py:class", "~P"),
     ("py:class", "codepact.R"),
+    ("py:class", "codepact.outcomes.T_co"),
+    ("py:class", "codepact.outcomes.E_co"),
+    ("py:class", "codepact.outcomes.T"),
+    ("py:class", "codepact.outcomes.E"),
+    ("py:obj", "codepact.outcomes.T_co"),
+    ("py:obj", "codepact.outcomes.E_co"),
+    ("py:obj", "codepact.outcomes.T"),
+    ("py:obj", "codepact.outcomes.E"),
+    ("py:obj", "typing.~P"),
+    ("py:class", "collections.abc.Awaitable"),
 ]
 
 html_theme = "sphinx_rtd_theme"

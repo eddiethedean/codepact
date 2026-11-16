@@ -149,6 +149,7 @@ pub(super) fn is_misplaced_must_use_decorator(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn check_must_use_body(
     result: &mut Inspection,
     file: &SourceFile,
@@ -156,9 +157,27 @@ pub(super) fn check_must_use_body(
     state: &FileState,
     class_scope: Option<(&str, Option<&str>)>,
     parameters: &[String],
+    parameter_annotations: &[(String, AstExpr)],
+    finite_matches: bool,
 ) {
     let mut locals = parameters.iter().cloned().collect::<BTreeSet<_>>();
     collect_must_use_locals(statements, &mut locals);
+    if finite_matches {
+        let mut finite_imports = state.imports.clone();
+        let mut local_returns = state.outcome_returns.clone();
+        for name in &locals {
+            finite_imports.remove(name);
+            local_returns.remove(name);
+        }
+        check_finite_matches(
+            result,
+            file,
+            statements,
+            &finite_imports,
+            parameter_annotations,
+            &local_returns,
+        );
+    }
     let mut marked = state.must_use_callables.clone();
     let mut imports = state.imports.clone();
     let mut instances = state.instances.clone();
@@ -178,6 +197,476 @@ pub(super) fn check_must_use_body(
         class_scope,
         0,
     );
+}
+
+pub(super) fn outcome_variants_for_annotation(
+    annotation: &AstExpr,
+    imports: &BTreeMap<String, String>,
+) -> Option<BTreeSet<String>> {
+    let AstExprKind::Subscript(container, _) = &annotation.kind else {
+        return None;
+    };
+    match canonical(container, imports).as_deref() {
+        Some("codepact::Result") => Some(BTreeSet::from([
+            "codepact::Ok".into(),
+            "codepact::Err".into(),
+        ])),
+        Some("codepact::Option") => Some(BTreeSet::from([
+            "codepact::Some".into(),
+            "codepact::Nothing".into(),
+        ])),
+        _ => None,
+    }
+}
+
+type OutcomeFacts = BTreeMap<String, BTreeSet<String>>;
+
+fn expression_outcomes(
+    expression: &AstExpr,
+    facts: &OutcomeFacts,
+    imports: &BTreeMap<String, String>,
+    returns: &BTreeMap<String, BTreeSet<String>>,
+) -> Option<BTreeSet<String>> {
+    match &expression.kind {
+        AstExprKind::Name(name) => facts.get(name).cloned(),
+        AstExprKind::Call { function, .. } => {
+            let name = expression_path(function)?;
+            if let Some(identity) =
+                canonical(function, imports).filter(|identity| is_outcome_variant(identity))
+            {
+                return Some(BTreeSet::from([identity]));
+            }
+            returns.get(&name).cloned()
+        }
+        _ => None,
+    }
+}
+
+fn is_outcome_variant(identity: &str) -> bool {
+    matches!(
+        identity,
+        "codepact::Ok" | "codepact::Err" | "codepact::Some" | "codepact::Nothing"
+    )
+}
+
+#[derive(Default)]
+struct PatternCoverage {
+    covered: BTreeSet<String>,
+    unresolved: BTreeSet<String>,
+}
+
+fn payload_pattern_is_capture(pattern: &crate::frontend::AstPattern) -> bool {
+    use crate::frontend::AstPattern as Pattern;
+    match pattern {
+        Pattern::Capture { .. } => true,
+        Pattern::As { pattern: None, .. } => true,
+        Pattern::As {
+            pattern: Some(pattern),
+            ..
+        } => payload_pattern_is_capture(pattern),
+        _ => false,
+    }
+}
+
+fn pattern_coverage(
+    pattern: &crate::frontend::AstPattern,
+    imports: &BTreeMap<String, String>,
+    reachable: &BTreeSet<String>,
+) -> PatternCoverage {
+    use crate::frontend::AstPattern as Pattern;
+    match pattern {
+        Pattern::Capture { .. } | Pattern::As { pattern: None, .. } => PatternCoverage {
+            covered: reachable.clone(),
+            ..PatternCoverage::default()
+        },
+        Pattern::As {
+            pattern: Some(pattern),
+            ..
+        } => pattern_coverage(pattern, imports, reachable),
+        Pattern::Or { patterns, .. } => {
+            let mut result = PatternCoverage::default();
+            let mut remaining = reachable.clone();
+            for pattern in patterns {
+                if remaining.is_empty() {
+                    break;
+                }
+                let alternative = pattern_coverage(pattern, imports, &remaining);
+                remaining.retain(|variant| !alternative.covered.contains(variant));
+                result.covered.extend(alternative.covered);
+                result.unresolved.extend(alternative.unresolved);
+            }
+            result
+                .unresolved
+                .retain(|variant| remaining.contains(variant));
+            result
+        }
+        Pattern::Class {
+            class,
+            positional,
+            keywords,
+            ..
+        } => {
+            let Some(identity) = canonical(class, imports).filter(|name| is_outcome_variant(name))
+            else {
+                return PatternCoverage {
+                    unresolved: reachable.clone(),
+                    ..PatternCoverage::default()
+                };
+            };
+            if !reachable.contains(&identity) {
+                return PatternCoverage::default();
+            }
+            let field = match identity.as_str() {
+                "codepact::Ok" | "codepact::Some" => Some("value"),
+                "codepact::Err" => Some("error"),
+                "codepact::Nothing" => None,
+                _ => unreachable!(),
+            };
+            let valid = positional.len() + keywords.len() <= usize::from(field.is_some())
+                && positional.iter().all(payload_pattern_is_capture)
+                && keywords.iter().all(|(name, pattern)| {
+                    Some(name.as_str()) == field && payload_pattern_is_capture(pattern)
+                });
+            if valid {
+                PatternCoverage {
+                    covered: BTreeSet::from([identity]),
+                    ..PatternCoverage::default()
+                }
+            } else {
+                PatternCoverage {
+                    unresolved: BTreeSet::from([identity]),
+                    ..PatternCoverage::default()
+                }
+            }
+        }
+        Pattern::Unsupported { .. } => PatternCoverage {
+            unresolved: reachable.clone(),
+            ..PatternCoverage::default()
+        },
+    }
+}
+
+fn merge_outcome_facts(paths: &[OutcomeFacts]) -> OutcomeFacts {
+    let Some(first) = paths.first() else {
+        return OutcomeFacts::new();
+    };
+    let mut merged = OutcomeFacts::new();
+    for (name, first_values) in first {
+        let mut values = first_values.clone();
+        let mut present = true;
+        for path in &paths[1..] {
+            if let Some(other) = path.get(name) {
+                values.extend(other.iter().cloned());
+            } else {
+                present = false;
+                break;
+            }
+        }
+        if present {
+            merged.insert(name.clone(), values);
+        }
+    }
+    merged
+}
+
+fn check_finite_matches(
+    result: &mut Inspection,
+    file: &SourceFile,
+    statements: &[crate::frontend::FlowStatement],
+    imports: &BTreeMap<String, String>,
+    parameter_annotations: &[(String, AstExpr)],
+    returns: &BTreeMap<String, BTreeSet<String>>,
+) {
+    let mut facts = OutcomeFacts::new();
+    for (name, annotation) in parameter_annotations {
+        if let Some(variants) = outcome_variants_for_annotation(annotation, imports) {
+            facts.insert(name.clone(), variants);
+        }
+    }
+    scan_outcome_statements(result, file, statements, imports, returns, &mut facts, 0);
+}
+
+fn scan_outcome_statements(
+    result: &mut Inspection,
+    file: &SourceFile,
+    statements: &[crate::frontend::FlowStatement],
+    imports: &BTreeMap<String, String>,
+    returns: &BTreeMap<String, BTreeSet<String>>,
+    facts: &mut OutcomeFacts,
+    depth: usize,
+) {
+    use crate::frontend::FlowStatement as Flow;
+    if depth >= 128 {
+        return;
+    }
+    for statement in statements {
+        match statement {
+            Flow::Assign {
+                name,
+                annotation: _,
+                value,
+                ..
+            } => {
+                // A local annotation describes the expected value; it cannot
+                // turn an arbitrary or contradictory RHS into a closed result.
+                let assigned = expression_outcomes(value, facts, imports, returns);
+                if let Some(assigned) = assigned {
+                    facts.insert(name.clone(), assigned);
+                } else {
+                    facts.remove(name);
+                }
+            }
+            Flow::EscapingAssign { name, .. } => {
+                facts.remove(name);
+            }
+            Flow::If {
+                test,
+                body,
+                alternate,
+                ..
+            } => {
+                if let AstExprKind::Boolean(value) = test.kind {
+                    scan_outcome_statements(
+                        result,
+                        file,
+                        if value { body } else { alternate },
+                        imports,
+                        returns,
+                        facts,
+                        depth + 1,
+                    );
+                } else {
+                    let mut paths = Vec::new();
+                    for statements in [body, alternate] {
+                        let mut branch = facts.clone();
+                        scan_outcome_statements(
+                            result,
+                            file,
+                            statements,
+                            imports,
+                            returns,
+                            &mut branch,
+                            depth + 1,
+                        );
+                        if !must_use_sequence_terminates(statements, 0) {
+                            paths.push(branch);
+                        }
+                    }
+                    *facts = merge_outcome_facts(&paths);
+                }
+            }
+            Flow::Match {
+                subject,
+                cases,
+                range: _,
+            } => {
+                let Some(known) = expression_outcomes(subject, facts, imports, returns) else {
+                    unsupported(
+                        result,
+                        file,
+                        subject.range,
+                        "finite outcome match has an unresolved or open scrutinee",
+                    );
+                    let mut paths = Vec::new();
+                    for case in cases {
+                        let mut branch = facts.clone();
+                        let mut names = BTreeSet::new();
+                        case.pattern.binding_names(&mut names);
+                        for name in names {
+                            branch.remove(&name);
+                        }
+                        scan_outcome_statements(
+                            result,
+                            file,
+                            &case.body,
+                            imports,
+                            returns,
+                            &mut branch,
+                            depth + 1,
+                        );
+                        paths.push(branch);
+                    }
+                    if !paths.is_empty() {
+                        paths.push(facts.clone());
+                        *facts = merge_outcome_facts(&paths);
+                    }
+                    continue;
+                };
+                let mut remaining = known;
+                let mut paths = Vec::new();
+                let mut uncertain_patterns = Vec::new();
+                for case in cases {
+                    if remaining.is_empty() {
+                        break;
+                    }
+                    let coverage = pattern_coverage(&case.pattern, imports, &remaining);
+                    if coverage.covered.is_empty() && coverage.unresolved.is_empty() {
+                        continue;
+                    }
+                    let mut branch = facts.clone();
+                    let mut names = BTreeSet::new();
+                    case.pattern.binding_names(&mut names);
+                    for name in names {
+                        branch.remove(&name);
+                    }
+                    scan_outcome_statements(
+                        result,
+                        file,
+                        &case.body,
+                        imports,
+                        returns,
+                        &mut branch,
+                        depth + 1,
+                    );
+                    if !must_use_sequence_terminates(&case.body, 0) {
+                        paths.push(branch);
+                    }
+                    if case.guard.is_some() {
+                        paths.push(facts.clone());
+                    } else {
+                        remaining.retain(|variant| !coverage.covered.contains(variant));
+                        if !coverage.unresolved.is_empty() {
+                            uncertain_patterns.push((case.pattern.range(), coverage.unresolved));
+                        }
+                    }
+                }
+                if !remaining.is_empty() {
+                    paths.push(facts.clone());
+                }
+                let mut unresolved = BTreeSet::new();
+                for (range, variants) in uncertain_patterns {
+                    if !remaining.is_disjoint(&variants) {
+                        unsupported(
+                            result,
+                            file,
+                            range,
+                            "outcome match pattern is unresolved or tests unsupported payload structure",
+                        );
+                        unresolved.extend(remaining.intersection(&variants).cloned());
+                    }
+                }
+                remaining.retain(|variant| !unresolved.contains(variant));
+                if !remaining.is_empty() {
+                    let variants = remaining
+                        .iter()
+                        .map(|identity| identity.rsplit("::").next().unwrap_or(identity))
+                        .collect::<Vec<_>>();
+                    result.diagnostics.push(Diagnostic {
+                        semantic_identity: remaining.iter().cloned().collect(),
+                        code: "TP5001".into(),
+                        severity: "warning".into(),
+                        message: format!("outcome match leaves {} uncovered", variants.join(", ")),
+                        primary: crate::source_span(&file.path, &file.source, subject.range),
+                        related: Vec::new(),
+                        certainty: if unresolved.is_empty() {
+                            "definite"
+                        } else {
+                            "possible"
+                        }
+                        .into(),
+                    });
+                }
+                if paths.is_empty() {
+                    facts.clear();
+                    break;
+                }
+                *facts = merge_outcome_facts(&paths);
+            }
+            Flow::Try {
+                body,
+                handlers,
+                alternate,
+                finalbody,
+                ..
+            } => {
+                let mut paths = vec![facts.clone()];
+                let mut normal = facts.clone();
+                scan_outcome_statements(
+                    result,
+                    file,
+                    body,
+                    imports,
+                    returns,
+                    &mut normal,
+                    depth + 1,
+                );
+                if !alternate.is_empty() {
+                    scan_outcome_statements(
+                        result,
+                        file,
+                        alternate,
+                        imports,
+                        returns,
+                        &mut normal,
+                        depth + 1,
+                    );
+                }
+                scan_outcome_statements(
+                    result,
+                    file,
+                    finalbody,
+                    imports,
+                    returns,
+                    &mut normal,
+                    depth + 1,
+                );
+                paths.push(normal);
+                for handler in handlers {
+                    let mut branch = facts.clone();
+                    scan_outcome_statements(
+                        result,
+                        file,
+                        &handler.body,
+                        imports,
+                        returns,
+                        &mut branch,
+                        depth + 1,
+                    );
+                    paths.push(branch);
+                }
+                *facts = merge_outcome_facts(&paths);
+            }
+            Flow::Loop {
+                body, alternate, ..
+            } => {
+                let mut looped = facts.clone();
+                scan_outcome_statements(
+                    result,
+                    file,
+                    body,
+                    imports,
+                    returns,
+                    &mut looped,
+                    depth + 1,
+                );
+                scan_outcome_statements(
+                    result,
+                    file,
+                    alternate,
+                    imports,
+                    returns,
+                    &mut looped,
+                    depth + 1,
+                );
+                *facts = merge_outcome_facts(&[facts.clone(), looped]);
+            }
+            Flow::With { body, .. } => {
+                scan_outcome_statements(result, file, body, imports, returns, facts, depth + 1);
+            }
+            Flow::DeleteLocal { names, .. } => {
+                for name in names {
+                    facts.remove(name);
+                }
+            }
+            Flow::BindFunction { name, .. } | Flow::ClosureDefinition { name, .. } => {
+                facts.remove(name);
+            }
+            _ => {}
+        }
+        if must_use_statement_terminates(statement, 0) {
+            break;
+        }
+    }
 }
 
 fn collect_must_use_locals(
@@ -205,6 +694,12 @@ fn collect_must_use_locals(
             } => {
                 collect_must_use_locals(body, names);
                 collect_must_use_locals(alternate, names);
+            }
+            Flow::Match { cases, .. } => {
+                for case in cases {
+                    case.pattern.binding_names(names);
+                    collect_must_use_locals(&case.body, names);
+                }
             }
             Flow::Try {
                 body,
@@ -236,7 +731,7 @@ fn collect_must_use_locals(
     }
 }
 
-fn resolve_marked_callable(
+pub(super) fn resolve_marked_callable(
     name: &str,
     marked: &BTreeMap<String, Span>,
     instances: &BTreeMap<String, String>,
@@ -394,12 +889,20 @@ fn must_use_statement_terminates(
         Flow::Return { .. } | Flow::Raise { .. } => true,
         Flow::Break { .. } | Flow::Continue { .. } => loop_depth > 0,
         Flow::If {
-            body, alternate, ..
-        } => {
-            !alternate.is_empty()
-                && must_use_sequence_terminates(body, loop_depth)
-                && must_use_sequence_terminates(alternate, loop_depth)
-        }
+            test,
+            body,
+            alternate,
+            ..
+        } => match test.kind {
+            AstExprKind::Boolean(value) => {
+                must_use_sequence_terminates(if value { body } else { alternate }, loop_depth)
+            }
+            _ => {
+                !alternate.is_empty()
+                    && must_use_sequence_terminates(body, loop_depth)
+                    && must_use_sequence_terminates(alternate, loop_depth)
+            }
+        },
         Flow::Try {
             body,
             handlers,
@@ -617,6 +1120,41 @@ fn walk_must_use_body(
                 merge_equal_bindings(&mut left_instances, &right_instances);
                 *marked = left_marked;
                 *instances = left_instances;
+            }
+            Flow::Match { cases, .. } => {
+                // Each case is a reachable branch for must-use purposes. Keep
+                // the incoming path as a possible no-match/guard-failure path,
+                // then retain only bindings that agree across every path.
+                let mut outcomes = vec![(marked.clone(), instances.clone())];
+                for case in cases {
+                    let mut case_marked = marked.clone();
+                    let mut case_instances = instances.clone();
+                    let mut names = BTreeSet::new();
+                    case.pattern.binding_names(&mut names);
+                    for name in names {
+                        case_marked.remove(&name);
+                        case_instances.remove(&name);
+                    }
+                    walk_must_use_body(
+                        result,
+                        file,
+                        &case.body,
+                        &mut case_marked,
+                        &mut case_instances,
+                        imports,
+                        known_classes,
+                        class_scope,
+                        loop_depth,
+                    );
+                    outcomes.push((case_marked, case_instances));
+                }
+                let (mut merged_marked, mut merged_instances) = outcomes.remove(0);
+                for (case_marked, case_instances) in outcomes {
+                    merge_equal_bindings(&mut merged_marked, &case_marked);
+                    merge_equal_bindings(&mut merged_instances, &case_instances);
+                }
+                *marked = merged_marked;
+                *instances = merged_instances;
             }
             Flow::Try {
                 body,

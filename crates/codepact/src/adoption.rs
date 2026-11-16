@@ -15,15 +15,15 @@ use config::{eligible_code, scoped_rules, validate_pattern, validate_rule};
 #[cfg(test)]
 use config::{glob_match, read_configuration, MAX_CONFIG_BYTES};
 pub use config::{
-    included, reject_symlink_components, resolve_config, EffectiveConfig, Overrides, ProjectConfig,
-    ADVANCED_RULES, DEFAULT_RULES, OWNERSHIP_RULES,
+    included, reject_symlink_components, resolve_config, DependenciesConfig, EffectiveConfig,
+    Overrides, ProjectConfig, ADVANCED_RULES, DEFAULT_RULES, FINITE_MATCH_RULES, OWNERSHIP_RULES,
 };
 use fingerprint::{code_before_comment, fingerprint, hash, source_comments, AnchorCache};
 
-pub const ADOPTION_SCHEMA_VERSION: u8 = 2;
+pub const ADOPTION_SCHEMA_VERSION: u8 = 3;
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
 pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 5;
-pub const RULE_SEMANTIC_VERSION: u8 = 2;
+pub const RULE_SEMANTIC_VERSION: u8 = 3;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AdoptionDiagnostic {
     #[serde(flatten)]
@@ -73,12 +73,15 @@ pub struct AdoptionReport {
     pub logical_root: String,
     pub config_file: Option<String>,
     pub selected_files: Vec<String>,
+    pub dependency_roots: Vec<String>,
+    pub required_providers: Vec<String>,
     pub include: Vec<String>,
     pub exclude: Vec<String>,
     pub selected_rules: Vec<String>,
     pub disabled_rules: Vec<String>,
     pub mode: String,
     pub fail_on: String,
+    pub experimental_finite_matches: bool,
     pub settings_origins: BTreeMap<String, String>,
     pub baseline: BaselineSummary,
     pub exit_code: u8,
@@ -380,6 +383,7 @@ pub fn build_report(
             &result.assurance,
             config.python_version.as_str(),
             result.model_catalog_version,
+            config.finite_matches,
             &snapshot_manifest,
             &module_manifest,
         ))
@@ -410,8 +414,10 @@ pub fn build_report(
             &config.severity,
             config.mode.as_str(),
             config.fail_on.as_str(),
+            config.finite_matches,
             &config.include,
             &config.exclude,
+            &config.required_providers,
             &baseline_content_hash,
             &suppression_policy,
         ))
@@ -671,7 +677,7 @@ pub fn build_report(
                 || diagnostic.message_omitted_bytes > 0
                 || diagnostic.repair_omitted_bytes > 0
         });
-    let disabled_rules = scoped_rules(config.ownership)
+    let disabled_rules = scoped_rules(config.ownership, config.finite_matches)
         .filter(|rule| !config.enabled_rules.contains(*rule))
         .map(str::to_owned)
         .collect();
@@ -684,7 +690,7 @@ pub fn build_report(
         execution_status: "completed".into(),
         engine_version: env!("CARGO_PKG_VERSION").into(),
         report_schema_version: ADOPTION_SCHEMA_VERSION,
-        check_schema_version: ADOPTION_SCHEMA_VERSION,
+        check_schema_version: result.check_schema_version,
         target_python_version: result.target_python_version,
         model_catalog_version: result.model_catalog_version,
         available_models: result.available_models,
@@ -719,12 +725,19 @@ pub fn build_report(
             .iter()
             .map(|entry| entry.logical_path.clone())
             .collect(),
+        dependency_roots: config
+            .dependency_roots
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
+        required_providers: config.required_providers.clone(),
         include: config.include.clone(),
         exclude: config.exclude.clone(),
         selected_rules: config.enabled_rules.iter().cloned().collect(),
         disabled_rules,
         mode: config.mode.clone(),
         fail_on: config.fail_on.clone(),
+        experimental_finite_matches: config.finite_matches,
         settings_origins: config.settings_origins.clone(),
         baseline: baseline_summary,
         exit_code,
@@ -737,7 +750,7 @@ pub fn failure(message: String) -> serde_json::Value {
         "execution_status":"failed",
         "engine_version":env!("CARGO_PKG_VERSION"),
         "report_schema_version":ADOPTION_SCHEMA_VERSION,
-        "check_schema_version":ADOPTION_SCHEMA_VERSION,
+        "check_schema_version":crate::CHECK_SCHEMA_VERSION,
         "error":{"category":"configuration-or-execution","message":message}
     })
 }

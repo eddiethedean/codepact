@@ -8,6 +8,18 @@ from collections.abc import Callable, Iterable
 from typing import ParamSpec, TypeVar, overload
 
 from .contracts import MustUseResult, Resource, State
+from .outcomes import (
+    Err,
+    Nothing,
+    Ok,
+    Option,
+    Result,
+    Some,
+    capture,
+    capture_async,
+    from_nullable,
+    to_nullable,
+)
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -134,4 +146,14 @@ __all__ = [
     "discard",
     "move",
     "MustUseResult",
+    "Ok",
+    "Err",
+    "Some",
+    "Nothing",
+    "Result",
+    "Option",
+    "from_nullable",
+    "to_nullable",
+    "capture",
+    "capture_async",
 ]

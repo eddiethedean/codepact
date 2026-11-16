@@ -33,6 +33,47 @@ marker on supported synchronous returns.
 ``discard`` evaluates the given value and returns ``None`` without changing
 resource ownership, cleanup or exception behavior.
 
+Typed outcomes
+--------------
+
+The outcome values are pure-Python frozen dataclasses. Their payloads retain
+ordinary Python identity and behavior; the tags do not transfer ownership or
+perform cleanup.
+
+.. autoclass:: codepact.outcomes.Ok
+   :members:
+
+.. autoclass:: codepact.outcomes.Err
+   :members:
+
+.. autoclass:: codepact.outcomes.Some
+   :members:
+
+.. autoclass:: codepact.outcomes.Nothing
+
+.. py:data:: codepact.Result
+
+   Covariant annotation alias for ``Ok[T] | Err[E]``.
+
+.. py:data:: codepact.Option
+
+   Covariant annotation alias for ``Some[T] | Nothing``.
+
+.. autofunction:: codepact.from_nullable
+
+.. autofunction:: codepact.to_nullable
+
+.. autofunction:: codepact.capture
+
+.. autofunction:: codepact.capture_async
+
+``capture`` and ``capture_async`` require a nonempty tuple of ``Exception``
+subclasses. Cancellation, process-control exceptions and exception groups
+propagate unchanged. The async helper creates no task; it invokes and awaits
+the supplied callable in the current task. ``Some(None)`` converts to
+``None`` with ``to_nullable``, so absence and an explicit ``None`` payload
+cannot both be recovered after conversion.
+
 ``codepact.move``
 -----------------
 

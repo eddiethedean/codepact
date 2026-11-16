@@ -2,7 +2,7 @@
   "baseline_schema_version": 1,
   "capability_schema_version": 1,
   "checker_schema_version": 2,
-  "engine_version": "0.4.0",
+  "engine_version": "0.7.0",
   "explanation_schema_version": 1,
   "formats": [
     "text",
@@ -92,6 +92,27 @@
       "explanation_id": "TP9002.R001",
       "semantic_version": 1,
       "tier": "mandatory"
+    },
+    {
+      "code": "TP5001",
+      "enabled_by_default": false,
+      "explanation_id": "TP5001.R001",
+      "semantic_version": 1,
+      "tier": "experimental"
+    },
+    {
+      "code": "TP6001",
+      "enabled_by_default": true,
+      "explanation_id": "TP6001.R001",
+      "semantic_version": 1,
+      "tier": "review-hint"
+    },
+    {
+      "code": "TP6002",
+      "enabled_by_default": true,
+      "explanation_id": "TP6002.R001",
+      "semantic_version": 1,
+      "tier": "review-hint"
     }
   ],
   "services": {
@@ -109,6 +130,9 @@
     "mode",
     "fail-on",
     "baseline",
-    "severity"
+    "severity",
+    "experimental-finite-matches",
+    "dependency-roots",
+    "required-providers"
   ]
 }

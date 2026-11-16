@@ -19,6 +19,58 @@ pub(super) fn contract_identity(contract: Option<&Contract>) -> Vec<String> {
         .collect()
 }
 
+pub(super) fn suggests_owned_handoff(
+    exits: &[FlowExit],
+    has_fallthrough: bool,
+    return_access: Option<&str>,
+) -> bool {
+    if has_fallthrough
+        || exits.is_empty()
+        || return_access.is_some_and(|access| access != "unspecified")
+    {
+        return false;
+    }
+    let mut returned_type: Option<&str> = None;
+    for exit in exits {
+        let CompletionKind::Return(value) = &exit.kind else {
+            continue;
+        };
+        let targets = exit
+            .state
+            .pending_return_targets
+            .clone()
+            .or_else(|| {
+                value
+                    .as_ref()
+                    .and_then(expr_name)
+                    .filter(|name| !exit.state.unknown_places.contains(*name))
+                    .and_then(|name| exit.state.places.get(name).cloned())
+            })
+            .unwrap_or_default();
+        if targets.len() != 1 {
+            return false;
+        }
+        let object = targets.iter().next().expect("one target");
+        if exit.state.objects.get(object).copied() != Some(OPEN)
+            || exit.state.borrowed.contains(object)
+            || !exit.state.duty_origins.contains_key(object)
+        {
+            return false;
+        }
+        let Some(resource) = exit.state.resources.get(object) else {
+            return false;
+        };
+        if returned_type.is_some_and(|base| base != resource.base_symbol) {
+            return false;
+        }
+        returned_type = Some(&resource.base_symbol);
+    }
+    exits
+        .iter()
+        .all(|exit| matches!(exit.kind, CompletionKind::Return(_)))
+        && returned_type.is_some()
+}
+
 pub(super) fn report(
     result: &mut Inspection,
     code: &str,
@@ -66,11 +118,15 @@ pub(super) fn report(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn report_cleanup_exit(
     result: &mut Inspection,
     file: &SourceFile,
     exit: &FlowExit,
     return_access: Option<&str>,
+    signature_range: SourceRange,
+    return_annotation_range: Option<SourceRange>,
+    suggest_owned: bool,
     functions: &FunctionMap,
     classes_with_unresolved_bases: &BTreeSet<String>,
 ) {
@@ -109,11 +165,61 @@ pub(super) fn report_cleanup_exit(
         }
     }
     if !escaped_return.is_empty() {
+        let signature_span = span(file, return_annotation_range.unwrap_or(signature_range));
+        let mut related = vec![exit_span.clone()];
+        for object in &escaped_return {
+            if let Some(origin) = exit.state.duty_origins.get(object) {
+                related.push(origin.clone());
+            }
+            if let Some(resource) = exit.state.resources.get(object) {
+                related.push(resource.source.clone());
+            }
+        }
+        related.sort_by(|left, right| {
+            (
+                &left.file,
+                left.line,
+                left.column,
+                left.end_line,
+                left.end_column,
+            )
+                .cmp(&(
+                    &right.file,
+                    right.line,
+                    right.column,
+                    right.end_line,
+                    right.end_column,
+                ))
+        });
+        related.dedup();
+        let borrowed = escaped_return
+            .iter()
+            .any(|object| exit.state.borrowed.contains(object));
+        let guidance = if borrowed {
+            "the returned resource is borrowed; keep cleanup with its owner"
+        } else if suggest_owned {
+            "consider declaring Owned[T] for this uniform open-resource handoff"
+        } else {
+            "review every return and cleanup path before declaring an ownership transfer"
+        };
+        report(
+            result,
+            "TP1002",
+            &format!("resource return has no verified ownership handoff; {guidance}"),
+            signature_span,
+            related,
+            "possible",
+            escaped_return
+                .iter()
+                .filter_map(|object| exit.state.resources.get(object))
+                .flat_map(|resource| contract_identity(Some(resource)))
+                .collect(),
+        );
         boundary(
             result,
             file,
             exit.range,
-            "resource returned without an Owned contract; duty transfer is unknown",
+            "resource returned without a verified Owned contract; duty transfer is unknown",
         );
     }
     if matches!(exit.kind, CompletionKind::Return(_)) && return_access == Some("owned") {

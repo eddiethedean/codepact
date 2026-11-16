@@ -1,6 +1,6 @@
 # 0.7 validation matrix
 
-Status **Planned**. Run against the exact release candidate. Use the published
+Status **Pending**. Run against the exact release candidate. Use the published
 [0.6.0 evidence](../../../releases/0.6.0-evidence.md) for inherited settings,
 fixtures and performance comparisons. The [phase plan](../0.7-typed-outcomes.md)
 defines the gates and the [specification](specification.md) defines the expected

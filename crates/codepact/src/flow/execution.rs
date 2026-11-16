@@ -1,5 +1,159 @@
 use super::*;
 
+#[allow(clippy::too_many_arguments)]
+fn execute_match_statement(
+    subject: &AstExpr,
+    cases: &[crate::frontend::FlowMatchCase],
+    range: SourceRange,
+    env: &mut State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+    depth: usize,
+) -> FlowResult {
+    let mut outcomes = FlowResult::default();
+    consume_expr(subject, env, file, contracts, functions, result, 0);
+    outcomes.raises.extend(take_pending_raises(env));
+    if !env.alive {
+        return outcomes;
+    }
+    if depth >= MAX_CONTROL_FLOW_DEPTH || env.control_depth >= MAX_CONTROL_FLOW_DEPTH {
+        weaken(
+            env,
+            env.places
+                .values()
+                .flatten()
+                .cloned()
+                .collect::<Vec<_>>()
+                .into_iter(),
+        );
+        boundary(
+            result,
+            file,
+            range,
+            "control-flow nesting budget exceeded; tracked resources are unknown",
+        );
+        return outcomes;
+    }
+    let original_control_depth = env.control_depth;
+    let mut next_case = Some(Box::new(env.clone()));
+    let mut fallthrough = None;
+    for case in cases {
+        let Some(mut incoming) = next_case.take() else {
+            break;
+        };
+        if !take_flow_step(&mut incoming, file, case.range, result) {
+            next_case = Some(incoming);
+            break;
+        }
+
+        let irrefutable = pattern_is_irrefutable(&case.pattern);
+        let mut branch = Box::new(incoming.as_ref().clone());
+        let mut captures = BTreeSet::new();
+        case.pattern.binding_names(&mut captures);
+        for name in &captures {
+            rebind_match_capture(&mut branch, name);
+        }
+        if !irrefutable && !captures.is_empty() {
+            // A failed pattern can leave partial bindings in place.
+            incoming = merge_match_states(Some(incoming), branch.clone(), file, case.range, result);
+        }
+        next_case = (!irrefutable).then_some(incoming);
+
+        branch.control_depth = original_control_depth.saturating_add(1);
+        if let Some(guard) = &case.guard {
+            consume_expr(guard, &mut branch, file, contracts, functions, result, 0);
+            outcomes.raises.extend(take_pending_raises(&mut branch));
+            if branch.alive && !matches!(guard.kind, AstExprKind::Boolean(true)) {
+                let mut guard_failed = Box::new(branch.as_ref().clone());
+                guard_failed.control_depth = original_control_depth;
+                next_case = Some(merge_match_states(
+                    next_case,
+                    guard_failed,
+                    file,
+                    case.range,
+                    result,
+                ));
+            }
+            if matches!(guard.kind, AstExprKind::Boolean(false)) {
+                continue;
+            }
+        }
+        if branch.alive {
+            outcomes.append(execute(
+                &case.body,
+                &mut branch,
+                file,
+                contracts,
+                functions,
+                result,
+                depth + 1,
+            ));
+            if branch.alive {
+                fallthrough = Some(merge_match_states(
+                    fallthrough,
+                    branch,
+                    file,
+                    case.range,
+                    result,
+                ));
+            }
+        }
+    }
+    if let Some(unmatched) = next_case {
+        fallthrough = Some(merge_match_states(
+            fallthrough,
+            unmatched,
+            file,
+            range,
+            result,
+        ));
+    }
+    if let Some(mut joined) = fallthrough {
+        joined.alive = true;
+        joined.control_depth = original_control_depth;
+        *env = *joined;
+        ownership::cap_handles(env, file, range, result);
+    } else {
+        env.alive = false;
+    }
+    outcomes
+}
+
+fn rebind_match_capture(state: &mut State, name: &str) {
+    clear_local_binding(state, name);
+    for views in state.exclusive_views.values_mut() {
+        views.remove(name);
+    }
+    state.definitely_bound_names.insert(name.to_owned());
+    state.unknown_places.insert(name.to_owned());
+}
+
+fn merge_match_states(
+    previous: Option<Box<State>>,
+    incoming: Box<State>,
+    file: &SourceFile,
+    range: SourceRange,
+    result: &mut Inspection,
+) -> Box<State> {
+    let Some(previous) = previous else {
+        return incoming;
+    };
+    let (joined, effects) = merge(&previous, &incoming);
+    for place in effects.aliases_over_budget {
+        boundary(
+            result,
+            file,
+            range,
+            &format!(
+                "alias target budget exceeded for {place}; affected resource states are unknown"
+            ),
+        );
+    }
+    Box::new(joined)
+}
+
 pub(super) fn execute(
     statements: &[FlowStatement],
     env: &mut State,
@@ -16,6 +170,17 @@ pub(super) fn execute(
         }
         if !take_flow_step(env, file, statement_range(statement), result) {
             break;
+        }
+        if let FlowStatement::Match {
+            subject,
+            cases,
+            range,
+        } = statement
+        {
+            outcomes.append(execute_match_statement(
+                subject, cases, *range, env, file, contracts, functions, result, depth,
+            ));
+            continue;
         }
         if let FlowStatement::If {
             test,
@@ -260,6 +425,20 @@ pub(super) fn execute(
     outcomes
 }
 
+fn pattern_is_irrefutable(pattern: &crate::frontend::AstPattern) -> bool {
+    use crate::frontend::AstPattern as Pattern;
+    match pattern {
+        Pattern::Capture { .. } => true,
+        Pattern::As { pattern: None, .. } => true,
+        Pattern::As {
+            pattern: Some(pattern),
+            ..
+        } => pattern_is_irrefutable(pattern),
+        Pattern::Or { patterns, .. } => patterns.iter().any(pattern_is_irrefutable),
+        Pattern::Class { .. } | Pattern::Unsupported { .. } => false,
+    }
+}
+
 const MAX_LOOP_ITERATIONS: usize = 16;
 
 fn push_exit(outcomes: &mut FlowResult, exit: FlowExit) {
@@ -498,7 +677,7 @@ pub(super) fn exception_handler_match(
     }
 }
 
-fn clear_exception_target(state: &mut State, name: &str) {
+fn clear_local_binding(state: &mut State, name: &str) {
     state.possibly_unbound_places.remove(name);
     state.definitely_bound_names.remove(name);
     if let Some(ownership) = state.ownership.as_mut() {
@@ -522,7 +701,7 @@ fn clear_exception_target_from_outcomes(outcomes: &mut FlowResult, name: &str) {
         .chain(&mut outcomes.breaks)
         .chain(&mut outcomes.continues)
     {
-        clear_exception_target(&mut exit.state, name);
+        clear_local_binding(&mut exit.state, name);
     }
 }
 
@@ -665,7 +844,7 @@ fn execute_try(
                 depth + 1,
             );
             if let Some(name) = &handler.name {
-                clear_exception_target(&mut handler_state, name);
+                clear_local_binding(&mut handler_state, name);
                 clear_exception_target_from_outcomes(&mut handler_outcomes, name);
                 if exception_target_was_possibly_unbound {
                     handler_state.possibly_unbound_places.insert(name.clone());
@@ -2588,6 +2767,7 @@ fn execute_non_if_statement(
             );
         }
         FlowStatement::If { .. }
+        | FlowStatement::Match { .. }
         | FlowStatement::Try { .. }
         | FlowStatement::Loop { .. }
         | FlowStatement::With { .. } => {

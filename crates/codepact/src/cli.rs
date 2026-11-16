@@ -16,7 +16,7 @@ fn write_stderr(value: &str) -> Result<(), String> {
 }
 
 fn usage() {
-    stderr_line!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--config PYPROJECT|--no-config] [--python-version VERSION] [--experimental-ownership|--no-experimental-ownership] [--experimental-advanced-contracts|--no-experimental-advanced-contracts] [--mode advisory|strict] [--fail-on error|warning] [--rules CODE[,CODE...]] [--severity CODE=LEVEL] [--json|--output-format text|json|concise] [--baseline FILE] [--max-diagnostics N] [FILE...]\n       codepact baseline update --output FILE --reason TEXT [--replace] [--json] [check options]\n       codepact capabilities --json\n       codepact explain RULE --json\n       codepact --version");
+    stderr_line!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--dependency-root DIR] [--config PYPROJECT|--no-config] [--python-version VERSION] [--experimental-ownership|--no-experimental-ownership] [--experimental-advanced-contracts|--no-experimental-advanced-contracts] [--experimental-finite-matches|--no-experimental-finite-matches] [--mode advisory|strict] [--fail-on error|warning] [--rules CODE[,CODE...]] [--severity CODE=LEVEL] [--json|--output-format text|json|concise] [--baseline FILE] [--max-diagnostics N] [FILE...]\n       codepact baseline update --output FILE --reason TEXT [--replace] [--json] [check options]\n       codepact capabilities --json\n       codepact explain RULE --json\n       codepact --version");
 }
 
 fn emit_failure(format: &str, message: String) -> ExitCode {
@@ -24,7 +24,7 @@ fn emit_failure(format: &str, message: String) -> ExitCode {
         let value = serde_json::to_string_pretty(&codepact::adoption::failure(message))
             .unwrap_or_else(|_| {
                 format!(
-                    "{{\"execution_status\":\"failed\",\"engine_version\":\"{}\",\"report_schema_version\":2,\"check_schema_version\":2,\"error\":{{\"category\":\"configuration-or-execution\",\"message\":\"error details could not be serialized\"}}}}",
+                    "{{\"execution_status\":\"failed\",\"engine_version\":\"{}\",\"report_schema_version\":3,\"check_schema_version\":1,\"error\":{{\"category\":\"configuration-or-execution\",\"message\":\"error details could not be serialized\"}}}}",
                     env!("CARGO_PKG_VERSION")
                 )
             });
@@ -179,6 +179,7 @@ pub(super) fn run() -> ExitCode {
         };
         let output = serde_json::to_string_pretty(&serde_json::json!({
             "execution_status": "settings-resolved",
+            "settings_schema_version": 2,
             "root": root,
             "config_file": c.source,
             "python_version": c.python_version,
@@ -188,6 +189,9 @@ pub(super) fn run() -> ExitCode {
             "mode": c.mode,
             "experimental_ownership": c.ownership.is_enabled(),
             "experimental_advanced_contracts": c.ownership.includes_advanced_contracts(),
+            "experimental_finite_matches": c.finite_matches,
+            "dependency_roots": c.dependency_roots,
+            "required_providers": c.required_providers,
             "assume_default_task_factory": c.ownership.assumes_default_task_factory(),
             "fail_on": c.fail_on,
             "baseline": c.baseline,
@@ -280,6 +284,7 @@ pub(super) fn run() -> ExitCode {
     };
     let files = loaded.files;
     let physical_files = loaded.physical_files;
+    let provider_distributions = loaded.provider_distributions;
     if let Some(destination) = baseline_destination.as_deref() {
         let canonical_destination = fs::canonicalize(destination).or_else(|_| {
             let parent = destination.parent().unwrap_or(Path::new("."));
@@ -323,7 +328,46 @@ pub(super) fn run() -> ExitCode {
         };
     }
     let config: EffectiveConfig = effective.expect("checking resolves effective configuration");
-    let result = codepact::check_with_ownership(&files, &python_version, config.ownership);
+    let mut result = codepact::check_with_options(
+        &files,
+        &python_version,
+        codepact::CheckOptions {
+            ownership: config.ownership,
+            experimental_finite_matches: config.finite_matches,
+            ..codepact::CheckOptions::default()
+        },
+    );
+    for provider in &config.required_providers {
+        let expected = input::normalized_distribution(provider).unwrap_or_default();
+        if provider_distributions.contains(&expected) {
+            continue;
+        }
+        let message = format!("required CodePact provider {provider} was not resolved from the selected dependency roots");
+        let path = files.first().map_or("<input>", |file| file.path.as_str());
+        result.coverage.status = "incomplete".into();
+        result.coverage.reasons.push(format!("{path}:1: {message}"));
+        result.diagnostics.push(codepact::CheckDiagnostic {
+            semantic_identity: vec![provider.clone()],
+            code: "TP9001".into(),
+            severity: "warning".into(),
+            message: message.clone(),
+            primary: codepact::Span {
+                file: path.into(),
+                line: 1,
+                column: 1,
+                end_line: 1,
+                end_column: 1,
+            },
+            related: Vec::new(),
+            certainty: "unknown".into(),
+            completion: None,
+            trust: "unresolved-provider".into(),
+            coverage_reason: Some(message),
+            repair: Some(
+                "Add a dependency root containing the marked installed distribution.".into(),
+            ),
+        });
+    }
     if baseline_update {
         let destination = baseline_destination
             .as_deref()

@@ -2,7 +2,7 @@
 
 Start with a narrow source root and an advisory report. Review what the
 checker covered before choosing which results should fail CI. The examples
-use the 0.5.1 default scope.
+use the 0.7.0 default scope.
 [Release scope and qualification](availability.md)
 
 ## Evaluate one package
@@ -25,12 +25,12 @@ use the 0.5.1 default scope.
    has meaningful coverage, findings are understood, and owners agree on
    the warning threshold and exception review. Expand one package at a time.
 
-## Install 0.5.1
+## Install 0.7.0
 
 In your uv project, install the helper and matching CLI:
 
 ```sh
-uv add codepact==0.5.1
+uv add 'codepact[cli]==0.7.0'
 uv run --locked codepact --version
 uv run --locked codepact capabilities --json
 ```
@@ -52,10 +52,20 @@ exclude = ["generated/**"]
 enabled-rules = ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"]
 mode = "advisory"
 fail-on = "error"
+experimental-finite-matches = true
+
+[tool.codepact.dependencies]
+roots = [".venv/lib/python3.12/site-packages"]
+required-providers = ["billing-sdk"]
 
 [tool.codepact.severity]
 TP3001 = "warning"
 ```
+
+Finite matches are off by default; enable them only when the outcome types and
+supported patterns are in scope. Dependency roots are explicit. Add a provider
+to `required-providers` when an unresolved installation should leave a visible
+coverage boundary. Local source and earlier roots keep normal import priority.
 
 This initial policy does not require a baseline. A baseline file is created explicitly after reviewing the first report, as described below.
 Use `--show-settings --json` to see the effective values and their origins

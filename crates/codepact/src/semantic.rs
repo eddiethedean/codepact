@@ -5,6 +5,7 @@ use crate::{
     DEFAULT_MAX_DECLARATIONS, SCHEMA_VERSION,
 };
 mod annotations;
+mod hints;
 mod must_use;
 mod project;
 use annotations::{
@@ -12,10 +13,11 @@ use annotations::{
     lower_function_annotation, merge_annotation_metadata, parse_annotation,
     report_annotation_problem,
 };
+use hints::report_review_hints;
 use must_use::{
     annotation_is_must_use, check_must_use_body, contains_must_use_marker, function_is_must_use,
-    is_misplaced_must_use_decorator, report_misplaced_must_use_annotation,
-    supported_method_must_use,
+    is_misplaced_must_use_decorator, outcome_variants_for_annotation,
+    report_misplaced_must_use_annotation, supported_method_must_use,
 };
 use project::order_project_files;
 pub(crate) use project::{context_for_module, plan_project};
@@ -41,6 +43,7 @@ fn inspect_inner(
     prepared: &BTreeMap<String, ParseSummary>,
     module_context: Option<&ModuleContext>,
     run_must_use: bool,
+    finite_matches: bool,
     mut check_cancelled: impl FnMut(),
 ) -> SemanticProject {
     let mut result = Inspection {
@@ -151,6 +154,7 @@ fn inspect_inner(
             Vec<crate::frontend::FlowStatement>,
             Option<(String, Option<String>)>,
             Vec<String>,
+            Vec<(String, AstExpr)>,
         )>::new();
         state.future_annotations = declarations.iter().any(|declaration| {
             matches!(
@@ -268,7 +272,7 @@ fn inspect_inner(
                     range,
                     ..
                 } => {
-                    if run_must_use {
+                    if run_must_use && !file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
                         for decorator in decorators {
                             if is_misplaced_must_use_decorator(decorator, &state.imports) {
                                 declaration_error(
@@ -363,6 +367,7 @@ fn inspect_inner(
                                         .flatten(),
                                 )),
                                 method.parameters.clone(),
+                                method.parameter_annotations.clone(),
                             )
                         })
                         .collect::<Vec<_>>();
@@ -389,8 +394,8 @@ fn inspect_inner(
                             "Ruff AST marked syntax outside the supported declaration subset (class bases, keywords, and type parameters are not resolved)",
                         );
                     }
-                    for (body, class_scope, parameters) in pending_methods {
-                        pending_must_use_bodies.push((body, class_scope, parameters));
+                    for (body, class_scope, parameters, annotations) in pending_methods {
+                        pending_must_use_bodies.push((body, class_scope, parameters, annotations));
                     }
                 }
                 Declaration::Assignment {
@@ -576,6 +581,15 @@ fn inspect_inner(
                                 crate::source_span(&file.path, &file.source, *range),
                             );
                         }
+                        if let Some(variants) = (!*is_async && !*is_generator)
+                            .then_some(returns.as_ref())
+                            .flatten()
+                            .and_then(|annotation| {
+                                outcome_variants_for_annotation(annotation, &state.imports)
+                            })
+                        {
+                            state.outcome_returns.insert(name.clone(), variants);
+                        }
                         if !*is_generator {
                             pending_must_use_bodies.push((
                                 body.clone(),
@@ -583,6 +597,15 @@ fn inspect_inner(
                                 parameters
                                     .iter()
                                     .map(|parameter| parameter.name.clone())
+                                    .collect(),
+                                parameters
+                                    .iter()
+                                    .filter_map(|parameter| {
+                                        parameter
+                                            .annotation
+                                            .clone()
+                                            .map(|annotation| (parameter.name.clone(), annotation))
+                                    })
                                     .collect(),
                             ));
                         }
@@ -596,7 +619,7 @@ fn inspect_inner(
                     state.clear_module(&file.module, &mut bindings);
                 }
                 Declaration::Expression { value, range } => {
-                    if run_must_use {
+                    if run_must_use && !file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
                         let statement = crate::frontend::FlowStatement::Expression {
                             value: value.clone(),
                             range: *range,
@@ -608,8 +631,10 @@ fn inspect_inner(
                             &state,
                             None,
                             &[],
+                            &[],
+                            finite_matches,
                         );
-                    } else {
+                    } else if !run_must_use {
                         unsupported(
                             &mut result,
                             file,
@@ -622,8 +647,8 @@ fn inspect_inner(
             }
         }
         if !stop {
-            if run_must_use {
-                for (body, class_scope, parameters) in pending_must_use_bodies {
+            if run_must_use && !file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
+                for (body, class_scope, parameters, annotations) in pending_must_use_bodies {
                     check_must_use_body(
                         &mut result,
                         file,
@@ -633,8 +658,11 @@ fn inspect_inner(
                             .as_ref()
                             .map(|(class, receiver)| (class.as_str(), receiver.as_deref())),
                         &parameters,
+                        &annotations,
+                        finite_matches,
                     );
                 }
+                report_review_hints(&mut result, file, declarations, &state);
             }
             module_exports.insert(file.module.clone(), state.exports.clone());
             module_functions.insert(file.module.clone(), state.callables.clone());
@@ -860,6 +888,7 @@ pub(crate) fn inspect_module(
     summary: &ParseSummary,
     context: &ModuleContext,
     run_must_use: bool,
+    finite_matches: bool,
     check_cancelled: impl FnMut(),
 ) -> ModuleAnalysis {
     let prepared = BTreeMap::from([(file.path.clone(), summary.clone())]);
@@ -869,6 +898,7 @@ pub(crate) fn inspect_module(
         &prepared,
         Some(context),
         run_must_use,
+        finite_matches,
         check_cancelled,
     );
     let names = project
@@ -991,6 +1021,7 @@ struct FileState {
     alias_access: BTreeMap<String, (Access, Span)>,
     exports: BTreeMap<String, ExportedView>,
     callables: BTreeSet<String>,
+    outcome_returns: BTreeMap<String, BTreeSet<String>>,
 }
 
 #[derive(Clone)]
@@ -1020,6 +1051,7 @@ impl FileState {
         self.alias_access.remove(name);
         self.exports.remove(name);
         self.callables.remove(name);
+        self.outcome_returns.remove(name);
         self.must_use_callables.remove(name);
         let method_prefix = format!("{name}.");
         self.must_use_callables
@@ -1040,6 +1072,7 @@ impl FileState {
         self.exports.clear();
         self.callables.clear();
         self.must_use_callables.clear();
+        self.outcome_returns.clear();
         self.known_classes.clear();
         self.instances.clear();
     }
@@ -1123,6 +1156,16 @@ fn register_import(original: &str, local: &str, module: &str, state: &mut FileSt
     let canonical = match format!("{module}.{original}").as_str() {
         "typing.Annotated" => "typing::Annotated",
         "codepact.rust" => "codepact::rust",
+        "codepact.Ok" | "codepact.rust.Ok" => "codepact::Ok",
+        "codepact.Err" | "codepact.rust.Err" => "codepact::Err",
+        "codepact.Some" | "codepact.rust.Some" => "codepact::Some",
+        "codepact.Nothing" | "codepact.rust.Nothing" => "codepact::Nothing",
+        "codepact.Result" | "codepact.rust.Result" => "codepact::Result",
+        "codepact.Option" | "codepact.rust.Option" => "codepact::Option",
+        "codepact.from_nullable" | "codepact.rust.from_nullable" => "codepact::from_nullable",
+        "codepact.to_nullable" | "codepact.rust.to_nullable" => "codepact::to_nullable",
+        "codepact.capture" | "codepact.rust.capture" => "codepact::capture",
+        "codepact.capture_async" | "codepact.rust.capture_async" => "codepact::capture_async",
         "codepact.contracts" => "codepact::contracts",
         "codepact.resource" => "codepact::resource",
         "codepact.must_use" => "codepact::must_use",
@@ -1171,6 +1214,9 @@ fn register_supplied_module_import(
         && !ambiguous_modules.contains(module)
         && matches!(original, "closing" | "aclosing")
     {
+        state
+            .imports
+            .insert(local.to_owned(), format!("external:contextlib.{original}"));
         state.callables.insert(local.to_owned());
         return;
     }
@@ -1729,7 +1775,7 @@ mod tests {
     #[test]
     fn ast_ranges_use_one_based_utf8_byte_columns() {
         let source = "from codepact.rust import Borrowed\nclass C: pass\ndef use(label: str = 'é', *, value: Borrowed[C]): pass\n";
-        let output = crate::frontend::parse_frontend(source, "test", "3.11").unwrap();
+        let output = crate::frontend::parse_frontend(source, "test.py", "test", "3.11").unwrap();
         let Declaration::Function { parameters, .. } = output
             .declarations
             .iter()
@@ -1749,7 +1795,7 @@ mod tests {
     #[test]
     fn ast_expressions_retain_multiline_source_ranges() {
         let source = "from codepact.rust import Borrowed\nclass C: pass\ndef use(\n    value: Borrowed[C],\n): pass\n";
-        let output = crate::frontend::parse_frontend(source, "test", "3.11").unwrap();
+        let output = crate::frontend::parse_frontend(source, "test.py", "test", "3.11").unwrap();
         let Declaration::Function {
             parameters, range, ..
         } = output

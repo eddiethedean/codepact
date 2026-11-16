@@ -6,6 +6,7 @@ from pathlib import Path
 import tarfile
 import zipfile
 
+from packaging.requirements import Requirement
 from packaging.utils import parse_sdist_filename, parse_wheel_filename
 from packaging.version import Version
 
@@ -51,7 +52,13 @@ def verify(directory: Path, version: str) -> None:
                 raise ValueError("codepact must remain pure Python")
             with zipfile.ZipFile(wheel) as archive:
                 names = archive.namelist()
-                for module in ("__init__.py", "contracts.py", "rust.py", "py.typed"):
+                for module in (
+                    "__init__.py",
+                    "contracts.py",
+                    "outcomes.py",
+                    "rust.py",
+                    "py.typed",
+                ):
                     if f"codepact/{module}" not in names:
                         raise ValueError(f"Missing helper: {module}")
                 metadata_file = next(
@@ -70,11 +77,25 @@ def verify(directory: Path, version: str) -> None:
                     or "LICENSE" not in metadata.get_all("License-File", [])
                 ):
                     raise ValueError("Helper wheel must include the MIT license text")
-                if f"codepact-cli=={version}" not in metadata.get_all(
-                    "Requires-Dist", []
+                requirements = [
+                    Requirement(value)
+                    for value in metadata.get_all("Requires-Dist", [])
+                ]
+                cli_requirements = [
+                    requirement
+                    for requirement in requirements
+                    if requirement.name.lower().replace("_", "-") == "codepact-cli"
+                ]
+                if (
+                    len(cli_requirements) != 1
+                    or str(cli_requirements[0].specifier) != f"=={version}"
+                    or cli_requirements[0].marker is None
+                    or not cli_requirements[0].marker.evaluate({"extra": "cli"})
+                    or cli_requirements[0].marker.evaluate({"extra": ""})
                 ):
                     raise ValueError(
-                        "Helper wheel must require its matching CLI version"
+                        "Helper wheel must put the exact matching CLI pin in"
+                        " the cli extra"
                     )
                 if (
                     metadata["Version"] != version

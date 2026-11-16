@@ -3,6 +3,8 @@
 This development tool requires the pinned jsonschema development dependency.
 A trusted fresh snapshot ID is required because source hashes alone cannot
 establish that configuration, baseline or model policy is still current.
+For reports containing provider sources, pass each installed source root with
+``--dependency-root`` so those files can be rehashed at consumption time.
 """
 
 from __future__ import annotations
@@ -65,12 +67,42 @@ def validate_document(document: JsonObject, schema: str) -> None:
         raise ValueError(f"invalid CodePact document: {error.message}")
 
 
-def consume(document: JsonObject, root: Path, expected_snapshot: str) -> str:
+def dependency_file(logical: str, roots: list[Path]) -> Path | None:
+    """Resolve a synthetic provider path inside one of the caller's roots."""
+    parts = PurePosixPath(logical).parts
+    if (
+        len(parts) < 3
+        or parts[0] != "@dependency"
+        or "@" not in parts[1]
+        or any(part in {"", ".", ".."} for part in parts[2:])
+        or "\\" in logical
+    ):
+        raise ValueError("invalid synthetic dependency path")
+    relative = Path(*parts[2:])
+    for dependency_root in roots:
+        if dependency_root.is_symlink():
+            raise ValueError("dependency root is a symlink")
+        candidate = dependency_root
+        for part in relative.parts:
+            candidate = candidate / part
+            if candidate.is_symlink():
+                raise ValueError("dependency source contains a symlink")
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def consume(
+    document: JsonObject,
+    root: Path,
+    expected_snapshot: str,
+    dependency_roots: list[Path] | None = None,
+) -> str:
     """Return an explicit policy/scope result; never infer whole-program safety."""
     if document.get("execution_status") == "failed":
-        validate_document(document, "failure-v2.schema.json")
+        validate_document(document, "failure-v3.schema.json")
         return "execution-failed"
-    validate_document(document, "check-report-v2.schema.json")
+    validate_document(document, "check-report-v3.schema.json")
     if document.get("snapshot_algorithm_version") != 1:
         raise ValueError("unsupported snapshot algorithm")
     semantic, policy, model = (
@@ -89,6 +121,7 @@ def consume(document: JsonObject, root: Path, expected_snapshot: str) -> str:
     source_lines: dict[str, list[bytes]] = {}
     paths: list[str] = []
     total_bytes = 0
+    dependency_roots = dependency_roots or []
     for item in manifest:
         if not isinstance(item, dict):
             raise ValueError("invalid manifest entry")
@@ -99,11 +132,16 @@ def consume(document: JsonObject, root: Path, expected_snapshot: str) -> str:
         parts = PurePosixPath(logical)
         if parts.is_absolute() or ".." in parts.parts or "\\" in logical:
             raise ValueError("manifest path escapes the project")
-        path = root
-        for part in parts.parts:
-            path = path / part
-            if path.is_symlink():
-                raise ValueError("manifest contains a symlink")
+        if logical.startswith("@dependency/"):
+            path = dependency_file(logical, dependency_roots)
+            if path is None:
+                return "stale-recheck-required"
+        else:
+            path = root
+            for part in parts.parts:
+                path = path / part
+                if path.is_symlink():
+                    raise ValueError("manifest contains a symlink")
         try:
             with path.open("rb") as stream:
                 raw = stream.read(1_000_001 - total_bytes)
@@ -187,13 +225,26 @@ def main() -> int:
     _ = parser.add_argument("report", type=Path)
     _ = parser.add_argument("--root", type=Path, required=True)
     _ = parser.add_argument("--expected-snapshot", required=True)
+    _ = parser.add_argument(
+        "--dependency-root",
+        type=Path,
+        action="append",
+        default=[],
+        help="installed provider source root (repeat for each configured root)",
+    )
     args = parser.parse_args()
     # argparse's dynamic namespace is checked at this boundary.
     report = cast(Path, args.report)
     root = cast(Path, args.root)
     expected = cast(str, args.expected_snapshot)
+    dependency_roots = cast(list[Path], args.dependency_root)
     try:
-        result = consume(read_object(report), root.resolve(strict=True), expected)
+        result = consume(
+            read_object(report),
+            root.resolve(strict=True),
+            expected,
+            [path.resolve(strict=True) for path in dependency_roots],
+        )
     except (ValueError, OSError) as error:
         print(f"invalid-or-unavailable-report: {error}")
         return 2

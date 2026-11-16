@@ -1,8 +1,9 @@
 # 0.7 typed outcomes specification
 
-Status **Proposed**. The API spellings and preview boundaries below are for
-implementation and qualification against the [phase gates](../0.7-typed-outcomes.md#required-exit-gates)
-and [V07 matrix](validation.md).
+Status **Implemented; qualification pending**. The finalized API and preview
+boundaries below are subject to the [phase gates](../0.7-typed-outcomes.md#required-exit-gates)
+and [V07 matrix](validation.md). Implementation alone does not satisfy those
+gates.
 
 ## Python API
 
@@ -82,10 +83,11 @@ join or release effect. [Concurrency gate](../../concurrency.md#release-mapping-
 
 ## Finite-match preview
 
-Use an explicit preview setting shared by CLI configuration, check and
-baseline overrides, and the Rust API. Apply advisory and strict policy to
-the selected scope. Finalize the setting, the missing-variant rule code and
-severity, and any report schema change during implementation.
+Use `experimental-finite-matches` in CLI configuration and the corresponding
+check/baseline flags and `CheckOptions.experimental_finite_matches` in Rust.
+The preview is off by default. TP5001 is a warning and is selected only when
+the preview is enabled. The CLI adoption report is schema 3; `CheckResult`
+remains schema 1.
 
 1. Resolve constructors, aliases and pattern classes by canonical identity.
    Track exact variant values through simple local assignment and feasible
@@ -139,7 +141,12 @@ every feasible modeled normal completion hands off an open owned resource of
 the same type and the handoff remains valid after `finally`. A borrowed,
 closed, mixed, or unresolved return gets guidance based on the evidence.
 
-Preview two review hints using resolved identities and source-backed evidence.
+Preview two informational-only review hints using resolved identities and
+source-backed evidence. TP6001 points at an undeclared local class with a
+supported `close` method when it is passed to resolved `contextlib.closing`.
+TP6002 points at a synchronous wrapper that directly returns a resolved
+must-use call. These hints are not selectable rules and cannot affect policy,
+baseline disposition or coverage.
 Suggest `@resource(closed_by="close")` once at the undeclared local class in
 supported `contextlib.closing(LocalType(...))` calls when a supported `close`
 method resolves. Relate the qualifying call sites. Suggest `@must_use` at an

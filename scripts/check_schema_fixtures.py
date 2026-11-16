@@ -153,6 +153,12 @@ def main() -> int:
             "explanation-v1.schema.json",
             cli_output(["explain", code, "--json"]),
         )
+    for code in ("TP5001", "TP6001", "TP6002"):
+        validate_emitted(
+            f"{code} explanation",
+            "explanation-v1.schema.json",
+            cli_output(["explain", code, "--json"]),
+        )
 
     with tempfile.TemporaryDirectory(prefix="codepact-schema-output-") as temp:
         root = Path(temp)
@@ -183,20 +189,31 @@ def main() -> int:
         ]
         validate_emitted(
             "completed check",
-            "check-report-v2.schema.json",
+            "check-report-v3.schema.json",
             cli_output(check_args),
+        )
+        finite_args = [*check_args, "--experimental-finite-matches"]
+        validate_emitted(
+            "finite-match check",
+            "check-report-v3.schema.json",
+            cli_output(finite_args),
         )
         validate_emitted(
             "settings",
-            "settings-v1.schema.json",
+            "settings-v2.schema.json",
             cli_output(["check", "--root", str(project), "--show-settings", "--json"]),
+        )
+        validate_emitted(
+            "finite-match settings",
+            "settings-v2.schema.json",
+            cli_output([*finite_args, "--show-settings"]),
         )
         (project / "invalid.toml").write_text(
             "[tool.codepact]\nconfig-version=999\n", encoding="utf-8"
         )
         validate_emitted(
             "failed check",
-            "failure-v2.schema.json",
+            "failure-v3.schema.json",
             cli_output(
                 [
                     "check",
@@ -236,12 +253,12 @@ def main() -> int:
         )
         validate_emitted(
             "ownership check",
-            "check-report-v2.schema.json",
+            "check-report-v3.schema.json",
             cli_output([*check_args, "--experimental-ownership"]),
         )
         validate_emitted(
             "ownership settings",
-            "settings-v1.schema.json",
+            "settings-v2.schema.json",
             cli_output([*check_args, "--experimental-ownership", "--show-settings"]),
         )
         advanced_args = [
@@ -255,12 +272,12 @@ def main() -> int:
         ]
         validate_emitted(
             "advanced check",
-            "check-report-v2.schema.json",
+            "check-report-v3.schema.json",
             cli_output(advanced_args, expected_exit=1),
         )
         validate_emitted(
             "advanced settings",
-            "settings-v1.schema.json",
+            "settings-v2.schema.json",
             cli_output([*advanced_args, "--show-settings"]),
         )
         _ = cli_output(

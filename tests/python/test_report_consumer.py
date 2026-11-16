@@ -24,7 +24,7 @@ class ReportConsumerTests(unittest.TestCase):
         self.source = b"pass\n"
         _ = (self.root / "main.py").write_bytes(self.source)
         self.report = read_object(
-            Path("docs/schemas/fixtures/check-report-v2.valid.json")
+            Path("docs/schemas/fixtures/check-report-v3.valid.json")
         )
         self.report["selected_files"] = ["main.py"]
         self.report["snapshot_manifest"] = [
@@ -110,7 +110,7 @@ class ReportConsumerTests(unittest.TestCase):
         self.assertEqual(
             consume(incomplete, self.root, self.snapshot), "incomplete-supported-scope"
         )
-        failure = read_object(Path("docs/schemas/fixtures/failure-v2.valid.json"))
+        failure = read_object(Path("docs/schemas/fixtures/failure-v3.valid.json"))
         self.assertEqual(consume(failure, self.root, self.snapshot), "execution-failed")
 
     def test_tampered_snapshots_counts_and_escaping_paths_fail(self) -> None:
@@ -188,6 +188,29 @@ class ReportConsumerTests(unittest.TestCase):
         (self.root / "main.py").unlink()
         self.assertEqual(
             consume(self.report, self.root, self.snapshot), "stale-recheck-required"
+        )
+
+    def test_provider_sources_are_resolved_against_explicit_dependency_roots(self) -> None:
+        provider_root = self.root / "site-packages"
+        provider = provider_root / "demo" / "__init__.py"
+        provider.parent.mkdir(parents=True)
+        provider_bytes = b"class Value: pass\n"
+        _ = provider.write_bytes(provider_bytes)
+        logical = "@dependency/demo@1.0/demo/__init__.py"
+        report = copy.deepcopy(self.report)
+        report["selected_files"] = ["main.py", logical]
+        report["snapshot_manifest"] = [
+            {"logical_path": "main.py", "sha256": hashlib.sha256(self.source).hexdigest()},
+            {"logical_path": logical, "sha256": hashlib.sha256(provider_bytes).hexdigest()},
+        ]
+        snapshot = self.set_snapshot(report)
+        self.assertEqual(
+            consume(report, self.root, snapshot, [provider_root]), "policy-passed"
+        )
+        self.assertEqual(consume(report, self.root, snapshot), "stale-recheck-required")
+        _ = provider.write_bytes(b"class Value: changed\n")
+        self.assertEqual(
+            consume(report, self.root, snapshot, [provider_root]), "stale-recheck-required"
         )
 
 

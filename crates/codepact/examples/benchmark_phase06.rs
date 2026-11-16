@@ -100,8 +100,11 @@ fn measure(workload: &str, size: usize) {
             .collect::<BTreeSet<_>>(),
         mode: "advisory".into(),
         ownership: Ownership::Advanced,
+        finite_matches: false,
         fail_on: "error".into(),
         baseline: None,
+        dependency_roots: Vec::new(),
+        required_providers: Vec::new(),
         severity: Default::default(),
         settings_origins: Default::default(),
     };

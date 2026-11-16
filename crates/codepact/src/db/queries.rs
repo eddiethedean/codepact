@@ -24,8 +24,12 @@ pub fn parse_file(db: &dyn Db, file: FileInput, python_version: String) -> Parse
             absolute_imports: Vec::new(),
         };
     }
-    let parsed =
-        crate::frontend::parse_frontend(file.semantic_source(db), file.module(db), &python_version);
+    let parsed = crate::frontend::parse_frontend(
+        file.semantic_source(db),
+        file.path(db),
+        file.module(db),
+        &python_version,
+    );
     db.unwind_if_revision_cancelled();
     match parsed {
         Ok(frontend) => ParseSummary {
@@ -54,6 +58,7 @@ fn inspect_module_query(
     python_version: String,
     context: crate::semantic::ModuleContext,
     run_must_use: bool,
+    finite_matches: bool,
 ) -> crate::semantic::ModuleAnalysis {
     let source = SourceFile::new(file.path(db), file.module(db), file.semantic_source(db));
     let summary = parse_file(db, file, python_version.clone());
@@ -64,6 +69,7 @@ fn inspect_module_query(
             summary,
             &context,
             run_must_use,
+            finite_matches,
             || {
                 db.unwind_if_revision_cancelled();
             },
@@ -79,7 +85,7 @@ fn module_exports_query(
     python_version: String,
     context: crate::semantic::ModuleContext,
 ) -> crate::semantic::SemanticExports {
-    inspect_module_query(db, file, python_version, context, false)
+    inspect_module_query(db, file, python_version, context, false, false)
         .exports
         .clone()
 }
@@ -90,6 +96,7 @@ pub(super) fn inspect_project_query(
     files: Vec<FileInput>,
     python_version: String,
     run_must_use: bool,
+    finite_matches: bool,
 ) -> Inspection {
     db.unwind_if_revision_cancelled();
     let sizes: Vec<_> = files
@@ -146,6 +153,7 @@ pub(super) fn inspect_project_query(
             python_version.clone(),
             context.clone(),
             run_must_use,
+            finite_matches,
         );
         let exports = module_exports_query(db, file, python_version.clone(), context);
         computed_exports.insert(source.module.clone(), exports.clone());
@@ -253,6 +261,13 @@ pub(super) fn check_flow_query(
     }
     let mut contracts_by_path = BTreeMap::<String, Vec<usize>>::new();
     for (index, contract) in inspection.contracts.iter().enumerate() {
+        if contract
+            .source
+            .file
+            .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+        {
+            continue;
+        }
         contracts_by_path
             .entry(contract.source.file.clone())
             .or_default()
@@ -264,6 +279,9 @@ pub(super) fn check_flow_query(
     let flow_budget = crate::flow::MAX_FLOW_STEPS / files.len().max(1);
     for (target, source) in files.iter().copied().zip(&sources) {
         db.unwind_if_revision_cancelled();
+        if target.path(db).starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
+            continue;
+        }
         let mut dependency_modules = BTreeSet::from([source.module.clone()]);
         let mut pending = vec![source.module.clone()];
         while let Some(module) = pending.pop() {

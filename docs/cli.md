@@ -1,6 +1,7 @@
 # Command-line reference
 
-This reference covers the 0.5 analyzer and the experimental 0.6 advanced-contract preview.
+This reference covers the 0.7 analyzer, experimental finite matches, and the
+advanced-contract preview.
 The analyzer reads Python source without importing or executing the project.
 [Release availability](availability.md)
 
@@ -17,10 +18,11 @@ The analyzer reads Python source without importing or executing the project.
 ```text
 codepact --version
 codepact inspect-contracts [--root DIR] [--python-version 3.11|3.12|3.13] [--json] FILE...
-codepact check [--root DIR] [--config PYPROJECT|--no-config]
+codepact check [--root DIR] [--dependency-root DIR ...] [--config PYPROJECT|--no-config]
                [--python-version 3.11|3.12|3.13]
                [--experimental-ownership|--no-experimental-ownership]
                [--experimental-advanced-contracts|--no-experimental-advanced-contracts]
+               [--experimental-finite-matches|--no-experimental-finite-matches]
                [--mode advisory|strict]
                [--fail-on error|warning] [--rules CODE[,CODE...]]
                [--severity CODE=LEVEL] [--baseline FILE]
@@ -35,7 +37,7 @@ codepact explain RULE --json
 
 `inspect-contracts` keeps the inspection interface: it requires explicit files
 and returns inspection schema 0. `check --json` uses the CLI adoption
-report, schema 2. The Rust `check` API returns `Inspection` (schema 0), and
+report, schema 3. The Rust `check` API returns `Inspection` (schema 0), and
 `check_report` returns `CheckResult` (schema 1).
 [JSON output reference](output.md)
 
@@ -64,6 +66,11 @@ enabled-rules = ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"]
 mode = "advisory"
 fail-on = "error"
 baseline = "codepact-baseline.json"
+experimental-finite-matches = true
+
+[tool.codepact.dependencies]
+roots = [".venv/lib/python3.12/site-packages"]
+required-providers = ["billing-sdk"]
 
 [tool.codepact.severity]
 TP3001 = "warning"
@@ -73,7 +80,29 @@ Create the baseline with `baseline update` before adding its path.
 Unknown keys, invalid patterns or rule codes, unsupported targets, and
 severity overrides for mandatory or disabled rules fail configuration.
 `--show-settings --json` reports each setting's origin without reading
-source. It accepts no file operands or detail limit.
+source. It accepts no file operands or detail limit and emits settings schema 2.
+
+## Experimental finite matches
+
+`TP5001` is selected only when `experimental-finite-matches` is enabled with
+the config setting or `--experimental-finite-matches`. The preview is off by
+default. It checks supported finite `Result` and `Option` matches; guards leave
+a fallthrough path, and unresolved identities or unsupported payload tests
+remain coverage boundaries. The setting participates in report and baseline
+identity.
+
+## Installed contract providers
+
+Add explicit installed environment roots under `[tool.codepact.dependencies]`
+or repeat `--dependency-root DIR`. CLI roots replace configured roots. The
+analyzer reads regular pure-Python wheels that contain a `py.codepact` marker
+inside a package and whose `.dist-info` `RECORD` owns both that marker and the
+source. It recognizes supported must-use declarations and same-distribution
+re-exports. It reads selected source as text and never imports or executes the
+package. Local project modules and earlier dependency roots shadow later
+ones. Use `required-providers` when an unresolved installed provider should be
+reported as incomplete coverage. Reports include selected roots and required
+distribution names.
 
 For a nested project, select the intended policy explicitly. For example,
 from the repository root, if `services/billing/pyproject.toml` contains the
@@ -97,8 +126,9 @@ Python module names. The 10,000-file input limit counts selected Python files.
 Discovery visits at most 100,000 filesystem entries, buffers at most 20,000
 entries from any one directory to keep deterministic sorting bounded, and
 descends at most 256 directories below the root. Exceeding a discovery limit
-fails with status 2 and does not produce a completed check.
-CodePact does not search installed packages.
+fails with status 2 and does not produce a completed check. Installed
+packages are considered only through the explicit provider roots described
+above.
 
 ## Output modes
 

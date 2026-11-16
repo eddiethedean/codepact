@@ -8,23 +8,25 @@ do not imply schema versions.
 | --- | --- |
 | `inspect-contracts --json` and Rust `Inspection` | [inspection schema 0](schemas/inspection-v0.schema.json) |
 | Rust `CheckResult` from `check_report` | [checker result schema 1](schemas/check-result-v1.schema.json) |
-| CLI `check --json` | [adoption report schema 2](schemas/check-report-v2.schema.json) |
+| CLI `check --json` | [adoption report schema 3](schemas/check-report-v3.schema.json) |
 | Baseline file | [baseline schema 1](schemas/baseline-v1.schema.json) |
 | `capabilities --json` | [capabilities schema 1](schemas/capabilities-v1.schema.json) |
 | `explain RULE --json` | [explanation schema 1](schemas/explanation-v1.schema.json) |
-| `check --show-settings --json` | [settings schema 1](schemas/settings-v1.schema.json) |
+| `check --show-settings --json` | [settings schema 2](schemas/settings-v2.schema.json) |
 | `baseline update --json` summary | [baseline-update schema 1](schemas/baseline-update-v1.schema.json) |
-| CLI execution/configuration error in JSON mode | [failure envelope schema 2](schemas/failure-v2.schema.json) |
+| CLI execution/configuration error in JSON mode | [failure envelope for report schema 3](schemas/failure-v3.schema.json) |
 
 Downloadable schemas and fixture links are listed in the [schema reference](schemas.md).
-The 0.4 CLI schema change does not alter inspection schema 0 or the Rust checker API's
-schema 1 result. Consumers should reject unknown schema versions and treat a
-failed execution envelope as an error, never as an empty completed report.
+The CLI adoption-report schema changes do not alter inspection schema 0 or the
+Rust checker API's schema 1 result. Consumers should reject unknown schema
+versions and treat a failed execution envelope as an error, never as an empty
+completed report.
 
 ## CLI adoption report
 
 `codepact check --json` writes one adoption report to stdout. A completed
-report has `execution_status: "completed"`, report/check schema version 2,
+report has `execution_status: "completed"`, report schema version 3 and check
+schema version 1,
 findings, policy, coverage, source identities and a calculated `exit_code`.
 The process status matches the report's exit code. A failure has
 `execution_status: "failed"`, version identities, and an `error` object with
@@ -62,9 +64,19 @@ Logical paths and finding fingerprints are relative to the project root.
 The snapshot manifest includes per-file source hashes.
 [Share reports safely](ci-reporting.md#preserve-reports-safely)
 
+## Experimental finite matches and provider scope
+
+Schema 3 records `experimental_finite_matches`, the ordered `dependency_roots`,
+and `required_providers`. The finite-match setting participates in semantic
+and baseline identity. Provider roots and distribution ownership are included
+in the selected source manifest. TP6001 and TP6002 are informational-only
+review hints with `info` severity; they are not eligible for policy, inline
+suppression, or baseline disposition. They do not change coverage or the exit
+code.
+
 ## Experimental ownership scope
 
-With ownership enabled, schema 2 reports use the assurance value
+With ownership enabled, schema 3 reports use the assurance value
 `experimental-ownership-checking-for-supported-exit-flow`. The selected
 rules can include TP2002–TP2006. The settings and snapshot identify the
 semantic scope. When the TaskGroup model is selected, `available_models`

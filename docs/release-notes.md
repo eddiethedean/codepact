@@ -1,5 +1,20 @@
 # Release notes
 
+## 0.7.0 — typed outcomes and finite-match candidate
+
+The 0.7.0 implementation adds pure-Python result and optional outcome values,
+explicit nullable and exception adapters, an opt-in finite-match rule, and
+static must-use resolution for marked installed wheel providers. The helper
+package is now independent of the CLI; use the `cli` extra for a matching
+command install. CLI reports use schema 3 and settings reports use schema 2.
+
+This candidate is **not release-qualified**. TP5001 is off by default. The
+provider preview requires explicit environment roots and a `py.codepact`
+marker. Outcome payloads do not establish ownership or cleanup. See the
+[phase gates](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.7-typed-outcomes.md),
+[specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.7/specification.md), and
+[validation matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.7/validation.md).
+
 ## 0.6.0 — unreleased experimental contracts candidate
 
 The 0.6.0 candidate adds opt-in advanced contracts on top of experimental

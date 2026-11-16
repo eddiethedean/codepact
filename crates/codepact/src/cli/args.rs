@@ -29,6 +29,7 @@ fn option_takes_value(option: &str, baseline_update: bool) -> bool {
         option,
         "--python-version"
             | "--root"
+            | "--dependency-root"
             | "--config"
             | "--mode"
             | "--fail-on"
@@ -114,6 +115,13 @@ pub(super) fn parse(
                 }
                 Err(error) => return Err(failure(&output_format, error)),
             },
+            "--dependency-root" => match take() {
+                Ok(value) => overrides
+                    .dependency_roots
+                    .get_or_insert_with(Vec::new)
+                    .push(PathBuf::from(value)),
+                Err(error) => return Err(failure(&output_format, error)),
+            },
             "--config" => match take() {
                 Ok(value) => overrides.config = Some(PathBuf::from(value)),
                 Err(error) => return Err(failure(&output_format, error)),
@@ -137,6 +145,16 @@ pub(super) fn parse(
                 }
                 overrides.experimental_advanced_contracts =
                     Some(argument == "--experimental-advanced-contracts");
+            }
+            "--experimental-finite-matches" | "--no-experimental-finite-matches" => {
+                if overrides.experimental_finite_matches.is_some() {
+                    return Err(failure(
+                        &output_format,
+                        "specify at most one finite-matches override",
+                    ));
+                }
+                overrides.experimental_finite_matches =
+                    Some(argument == "--experimental-finite-matches");
             }
             "--mode" => match take() {
                 Ok(value) => overrides.mode = Some(value),
@@ -286,9 +304,11 @@ pub(super) fn parse(
             || overrides.mode.is_some()
             || overrides.experimental_ownership.is_some()
             || overrides.experimental_advanced_contracts.is_some()
+            || overrides.experimental_finite_matches.is_some()
             || overrides.fail_on.is_some()
             || overrides.rules.is_some()
             || overrides.baseline.is_some()
+            || overrides.dependency_roots.is_some()
             || overrides.severity.is_some()
             || max_diagnostics.is_some()
             || show_settings)

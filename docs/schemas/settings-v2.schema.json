@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/settings-v2.schema.json",
+  "title": "CodePact resolved settings, schema 2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "execution_status",
+    "root",
+    "config_file",
+    "python_version",
+    "include",
+    "exclude",
+    "enabled_rules",
+    "mode",
+    "fail_on",
+    "baseline",
+    "severity",
+    "settings_origins",
+    "settings_schema_version",
+    "experimental_finite_matches",
+    "dependency_roots",
+    "required_providers"
+  ],
+  "properties": {
+    "execution_status": {
+      "const": "settings-resolved"
+    },
+    "root": {
+      "type": "string"
+    },
+    "config_file": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "python_version": {
+      "enum": [
+        "3.11",
+        "3.12",
+        "3.13"
+      ]
+    },
+    "include": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exclude": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "enabled_rules": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "TP1001",
+          "TP1002",
+          "TP1003",
+          "TP2001",
+          "TP2002",
+          "TP2003",
+          "TP2004",
+          "TP2005",
+          "TP2006",
+          "TP2101",
+          "TP2102",
+          "TP3001",
+          "TP4001",
+          "TP4002",
+          "TP9001",
+          "TP9002",
+          "TP5001"
+        ]
+      }
+    },
+    "experimental_ownership": {
+      "type": "boolean"
+    },
+    "experimental_advanced_contracts": {
+      "type": "boolean"
+    },
+    "assume_default_task_factory": {
+      "type": "boolean"
+    },
+    "mode": {
+      "enum": [
+        "advisory",
+        "strict"
+      ]
+    },
+    "fail_on": {
+      "enum": [
+        "error",
+        "warning"
+      ]
+    },
+    "baseline": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "severity": {
+      "type": "object",
+      "additionalProperties": {
+        "enum": [
+          "error",
+          "warning",
+          "info"
+        ]
+      }
+    },
+    "settings_origins": {
+      "type": "object",
+      "additionalProperties": {
+        "enum": [
+          "command-line",
+          "pyproject.toml",
+          "pyproject-directory",
+          "default",
+          "current-directory"
+        ]
+      }
+    },
+    "settings_schema_version": {
+      "const": 2
+    },
+    "experimental_finite_matches": {
+      "type": "boolean"
+    },
+    "dependency_roots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_providers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -561,6 +561,12 @@ impl CheckResult {
                     "TP3001" => Some(
                         "Handle the result, assign it for immediate handling, or call codepact.discard when abandonment is intentional.".into(),
                     ),
+                    "TP6001" => Some(
+                        "Consider @resource(closed_by=\"close\") after reviewing the class's close method.".into(),
+                    ),
+                    "TP6002" => Some(
+                        "Consider @must_use if callers should handle the forwarded result.".into(),
+                    ),
                     "TP9001" => Some(
                         "Resolve the reported model boundary or keep the affected lifecycle state unknown.".into(),
                     ),
