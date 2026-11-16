@@ -17,6 +17,7 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [0.5 ownership plan](phases/0.5-ownership.md) | Published opt-in transfer, lexical borrowing, and TaskGroup checks with verified release evidence |
 | [0.6 advanced contracts plan](phases/0.6-advanced-contracts.md) | Preview implementation of exclusive access, finite typestate and protocol models; V06 validation and release gates remain pending |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
+| [Publishing CodePact contracts](published-contracts.md) | Package markers, installed dependency analysis, manifest design, and contract compatibility checks |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
 | [Feature specifications](features.md) | Contracts and acceptance criteria for each capability |
 | [Follow-on contract phases](phases/contract-extensions.md) | Proposed 0.7+ resource declarations, state predicates, typed outcome contracts, and value, field, and dependency checks |
@@ -55,4 +56,4 @@ The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequenc
 
 ## Python helper and CLI distributions
 
-D015 established the pure-Python helper and matching native CLI distribution model, inherited by CodePact under the `codepact` and `codepact-cli` names for 0.3. The planned inventory includes eight CLI platform builds, one pure helper wheel and two source archives; the Cargo crate route remains part of the distribution plan. The release plan is authoritative for the target matrix; later phases inherit it.
+D015 established the pure-Python helper and matching native CLI distribution model, inherited by CodePact under the `codepact` and `codepact-cli` names for 0.3. From 0.7, D022 moves the matching CLI dependency to `codepact[cli]`. The inventory includes eight CLI platform builds, one pure helper wheel, two source archives and the Cargo route. [Decisions](decisions.md) · [Release plan](releases.md)

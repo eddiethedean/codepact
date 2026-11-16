@@ -76,7 +76,7 @@ Mark Complete only after G8 and every required gate pass. Hold the release while
 
 ## Python helper and CLI distributions
 
-Record the D015 eight-platform CLI build inventory plus the pure helper wheel, wheel tags and hashes, exact CLI/helper dependency versions, both sdist contents, and local installed-wheel/sdist CLI results. Mark unexecuted target runtime qualification explicitly pending.
+Record the eight-platform CLI build inventory, pure helper wheel, wheel tags and hashes, exact CLI pin and its dependency metadata, both sdist contents, and local installed-wheel/sdist CLI results. From 0.7, include D022 evidence for helper-only, combined-extra, and standalone CLI installs. Mark unexecuted target runtime qualification explicitly pending.
 
 ## Concurrent resource evidence (when applicable)
 

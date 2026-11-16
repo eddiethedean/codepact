@@ -10,9 +10,16 @@ CodePact 0.x grows from declaration inspection toward broader resource lifecycle
 | 0.4.x | Published preview of adoption tooling and synchronous must-use checking |
 | 0.5.x | Release with opt-in ownership transfer, lexical borrowing, and structured task lifetimes |
 | 0.6.x | Suspension-aware exclusive access, typestate, and effects |
-| 0.7.x | Typed outcomes and finite exhaustiveness |
-| 0.8.x | Ecosystem integrations, shared lint language server and IDE diagnostics |
-| 0.9.x | Stabilization and a 1.0 readiness decision |
+| 0.7.x | Typed outcomes, helper and CLI install split, and an installed-wheel must-use preview |
+| 0.8.x | Editor integration, cross-package resource contracts, and wheel manifest tooling |
+| 0.9.x | Stabilization, published-contract compatibility, and a 1.0 readiness decision |
+
+Starting in 0.7, the planned install paths are `pip install codepact` for
+Python helpers, `pip install 'codepact[cli]'` for the helpers and matching
+CLI, and `pip install codepact-cli` for the command. The `py.codepact` preview
+starts with checking discarded results across installed wheels. Later phases
+extend it to resources, package manifests, and upgrade checks.
+[Published contracts design](https://github.com/eddiethedean/codepact/blob/main/docs/planning/published-contracts.md)
 
 The roadmap describes direction, not arbitrary Python ownership proofs or memory-safety guarantees. CodePact 0.5.0 adds experimental ownership to the 0.4 adoption preview. Qualification is synthetic and field usefulness remains unqualified. Read [availability](availability.md) for the current package boundary and [release notes](release-notes.md) for published behavior. Each phase must define its supported subset and evidence before a release claim is made.
 

@@ -53,7 +53,7 @@ The [migration plan](analyzer-migration.md) requires a jointly compatible Ruff p
 
 ## Python helper and CLI distributions
 
-The codepact distribution remains pure Python and pins its codepact-cli dependency, which supplies native platform wheels containing the Rust CLI (D015). Installation supports Python 3.11+; qualify helper behavior on 3.11–3.14 independently of the analyzer grammar target. See the eight-target release matrix and Rust prerequisites for source installs in [releases](releases.md).
+The `codepact` distribution is pure Python. Through 0.6 it requires the exact matching `codepact-cli` version. From 0.7, D022 places that pin in `codepact[cli]`. Installation supports Python 3.11+; qualify helper behavior on 3.11–3.14 independently of the analyzer grammar target. [Distribution decisions](decisions.md) · [Wheel matrix and source prerequisites](releases.md)
 
 ## Concurrency model compatibility
 

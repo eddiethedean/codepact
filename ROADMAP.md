@@ -14,9 +14,9 @@ This document is the authoritative release sequence. The original [feature miles
 | 0.4.x | Adoption tooling and synthetic preview | [0.4 plan](docs/planning/phases/0.4-adoption.md) | M2 part 2 |
 | 0.5.x | Explicit ownership, lexical borrowing and structured task lifetimes | [0.5 plan](docs/planning/phases/0.5-ownership.md) | M3 |
 | 0.6.x | Suspension-aware exclusive access, typestate and effects | [0.6 plan](docs/planning/phases/0.6-advanced-contracts.md) | M4 |
-| 0.7.x | Typed outcomes and finite exhaustiveness | [0.7 plan](docs/planning/phases/0.7-typed-outcomes.md) | M5 runtime portion |
-| 0.8.x | Ecosystem integration, editor services and persistent caching | [0.8 plan](docs/planning/phases/0.8-ecosystem.md) | M5 integration portion |
-| 0.9.x | Stabilization and 1.0 readiness | [0.9 plan](docs/planning/phases/0.9-stabilization.md) | M5 stability portion |
+| 0.7.x | Typed outcomes, helper and CLI install split, and an installed-wheel must-use preview | [0.7 plan](docs/planning/phases/0.7-typed-outcomes.md) | M5 runtime portion |
+| 0.8.x | Ecosystem integration, cross-package resource contracts, and wheel manifest tooling | [0.8 plan](docs/planning/phases/0.8-ecosystem.md) | M5 integration portion |
+| 0.9.x | Stabilization, published-contract compatibility, and 1.0 readiness | [0.9 plan](docs/planning/phases/0.9-stabilization.md) | M5 stability portion |
 
 ## Sequence and dependencies
 
@@ -52,6 +52,14 @@ After the composition alpha, TypePact's selected TC01–TC03 stages add inferred
 The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded async cleanup and cancellation foundations in 0.3 (CS01), reporting and synthetic async controls in 0.4 under AD01-A2 (CS02), opt-in structured task ownership/borrow checking in 0.5 (CS03), suspension-aware exclusivity and protocol states in 0.6 (CS04), cancellation-preserving outcomes in 0.7 (CS05), qualified models and integration parity in 0.8 (CS06), and a stable-scope audit in 0.9 (CS07). Start task-lifetime modeling with `asyncio.TaskGroup` in 0.5; 0.3 qualifies intratask cleanup only. Multiprocessing and thread handoffs remain conservative escape boundaries until separately qualified; no race, deadlock, Send/Sync or general process-ownership guarantee is added. The published synchronous 0.2 scope is unchanged.
 
 ## Follow-on contract phases
+
+### Published contracts and Python installs (0.7+)
+
+- **0.7** makes `codepact` the helper-only install, `codepact[cli]` the helper plus matching CLI, and `codepact-cli` the standalone command. It also targets an opt-in `py.codepact` preview for discarded synchronous results across an installed wheel.
+- **0.8** extends the preview to qualified resource and ownership effects, versioned wheel manifests, and author commands to export, verify, and compare contracts. Editor and cache integration share the CLI's provider selection and evidence.
+- **0.9** rehearses contract upgrades and audits the marker, manifest, policies, and tooling for 1.0 readiness. Further capabilities and provider layouts enter support after their own qualification.
+
+[Published contracts design](docs/planning/published-contracts.md) · [Packaging decision](docs/planning/decisions.md)
 
 ### Contracts on methods and values (0.7+)
 

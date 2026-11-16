@@ -17,7 +17,7 @@ The accountable maintainer can validate and approve a release alone, including t
 
 ## Artifacts
 
-Deliver a pure Python `codepact` package built with Hatchling and an exact dependency on `codepact-cli` at the same version (D015's distribution model, renamed under D019). Maturin bin bindings build `codepact-cli` with the Rust command. Publish eight CLI platform wheels, one universal helper wheel and two complete source archives. Retain the reusable `codepact` Rust crate and optional Cargo CLI installation. The Ruff/Salsa migration must retain reproducible registry-compatible dependencies and documented Rust prerequisites; qualify these before selecting dependency versions.
+Deliver a pure Python `codepact` package built with Hatchling. Through 0.6 it requires the exact matching `codepact-cli` version. From 0.7, move the exact pin into the `cli` extra under D022. Maturin bin bindings build `codepact-cli` with the Rust command. Publish eight CLI platform wheels, one universal helper wheel and two complete source archives. Retain the reusable `codepact` Rust crate and optional Cargo CLI installation. The Ruff/Salsa migration must retain reproducible registry-compatible dependencies and documented Rust prerequisites; qualify these before selecting dependency versions. [Distribution decisions](decisions.md)
 
 Confirm ownership and availability of the new `codepact` and `codepact-cli`
 PyPI projects and the `codepact` crates.io name before publication. Repository
@@ -56,7 +56,7 @@ Record the public URLs and exact revisions in the evidence record.
 
 ## Planned TypePact combined product
 
-The [TypePact plan](typepact.md) supersedes the `codepact-pyrefly-cli` proposal. TypePact combines pinned embedded Pyrefly with the CodePact Rust engine, using proposed `typepact` and `typepact-cli` distributions and the `typepact` command. Its main package supplies the compatible CodePact helpers through an exact dependency; Python source continues to import `codepact`. D015's helper/standalone CLI dependency remains in force, including its additional binary download.
+The [TypePact plan](typepact.md) supersedes the `codepact-pyrefly-cli` proposal. TypePact combines pinned embedded Pyrefly with the CodePact Rust engine, using proposed `typepact` and `typepact-cli` distributions and the `typepact` command. Its main package supplies the compatible CodePact helpers through an exact dependency; Python source continues to import `codepact`. The selected CodePact version determines whether the helper install includes the standalone CodePact CLI.
 
 Qualify PF01–PF05 and PF-V01–PF-V08 for the new combined product. Migration and historical backward compatibility are not release requirements. The first proposed combined version is `0.4.0a1`, tagged `typepact-v0.4.0a1`, subject to checking published version history. Use a separate `release-typepact.yml` workflow and artifact verifier; manual candidate builds do not publish. Verify current ownership and trusted publishers for both TypePact projects against the current repository and workflow. No earlier publisher screenshot establishes the new identity.
 
@@ -108,9 +108,9 @@ A Ruff or Salsa update requires a pinned dependency record, license/notice revie
 
 The build matrix follows [robin-sparkless release CI](https://github.com/eddiethedean/robin-sparkless/blob/main/.github/workflows/release.yml); its test topology is not copied. Linux builds use Zig for explicit libc compatibility. Maturin 1.9.6 and Rust 1.96.0 build the release wheels. Python tags are py3-none with platform tags, constrained by Requires-Python >=3.11; no per-CPython ABI rebuild is needed for a standalone executable. Python 3.11–3.14 helper compatibility remains covered by quality CI. The analyzer's supported source grammar is a distinct capability.
 
-The codepact source archive contains only its Python helpers, py.typed, metadata and license; installing it resolves the matching CLI dependency. The codepact-cli source archive contains Rust sources, workspace/crate manifests, Cargo.lock, CLI metadata and license files. Only CLI source installs compile Rust locally and require Rust 1.96+, a linker and network/cache access to locked Cargo dependencies. CLI platform wheels contain the executable and require no Rust compiler at installation. Runtime imports never start the analyzer or download executables. A user may explicitly choose Cargo installation for Rust library/CLI use.
+The `codepact` source archive contains its Python helpers, `py.typed`, metadata and license. From 0.7, its `cli` extra resolves the matching CLI dependency. The `codepact-cli` source archive contains Rust sources, workspace/crate manifests, `Cargo.lock`, CLI metadata and license files. Building the CLI from source requires Rust 1.96+, a linker and network/cache access to locked Cargo dependencies. CLI platform wheels contain the executable and require no Rust compiler at installation. Runtime imports never start the analyzer or download executables. A user may explicitly choose Cargo installation for Rust library/CLI use.
 
-All later phases inherit this distribution contract. Changes to the matrix, minimum platform versions or bundling model must update D015, this plan, the workflow and artifact verifier together. Cross-platform builds remain unqualified until their candidate jobs succeed; a successful local macOS build does not establish another target's compatibility.
+All later phases inherit the applicable D015/D022 distribution contract. Changes to the matrix, minimum platform versions or bundling model must update the distribution decision, this plan, the workflow and artifact verifier together. Cross-platform builds remain unqualified until their candidate jobs succeed; a successful local macOS build does not establish another target's compatibility.
 
 
 ## Two-project PyPI publication

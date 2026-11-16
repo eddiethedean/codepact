@@ -35,6 +35,8 @@ D009–D012 establish direction, not implementation completion. [AM01–AM06](an
 
 **D021 — Staged type-informed contract analysis.** At the maintainer's request, incorporate the strongest combined-analysis ideas into the [TypePact plan](typepact.md): TC01 selects reviewed resource models from inferred type/call facts, TC02 uses qualified branch narrowing, and TC03 tracks obligations through typed Result/Option payloads after the relevant core ownership/outcome gates pass. A versioned engine-neutral fact bridge carries source-bound evidence into CodePact; contract identity, aliases, state and obligations remain CodePact-owned. The composition alpha keeps PF01–PF05/PF-V01–PF-V08; enriched stages add TC-V01–TC-V06, experimental mode/reporting and stage-specific qualification. Ordinary type success never proves resource state or uniqueness. Callback/protocol behavioral compatibility is the next candidate, not an added alpha requirement. This selects planned priorities, not available upstream APIs or implemented capabilities; D020's exclusion of migration work remains in force.
 
+**D022 — Install the Python helpers independently from 0.7.** Plan `codepact` for the pure-Python helpers, `codepact[cli]` for the helper and exact same-version CLI, and `codepact-cli` for the standalone command. This revises D015's dependency placement from 0.7 onward. D015's native wheel and source archive inventory and Cargo delivery still apply. Qualify each install path and document migration from the implicit CLI under [R08](phases/0.7-typed-outcomes.md#required-exit-gates).
+
 ## Proposed decisions requiring evidence
 
 | Question | Starting proposal | Evidence needed |
