@@ -75,6 +75,13 @@ class ReleaseEvidenceTest(unittest.TestCase):
         )
         self.assertEqual(rows["CS02"], ("Pending", "Evidence needed.", ""))
 
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            phase_plan = root / "docs/planning/phases/0.7-typed-outcomes.md"
+            phase_plan.parent.mkdir(parents=True)
+            phase_plan.write_text("- [ ] **R01** — Runtime outcome checks.\n")
+            self.assertEqual(required_phase_gates(root, "0.7.0"), ["R01"])
+
     def test_maintainer_can_validate_and_approve_every_gate_alone(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

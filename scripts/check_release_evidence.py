@@ -65,7 +65,10 @@ def required_phase_gates(root: Path, version: str) -> list[str]:
     plans = sorted((root / "docs/planning/phases").glob(f"0.{minor}-*.md"))
     if len(plans) != 1:
         return []
-    gate_pattern = re.compile(r"^\s*-\s*\[[ xX]\]\s*\*\*([A-Z]+\d{2})\s+[—-]", re.M)
+    gate_pattern = re.compile(
+        r"^\s*-\s*\[[ xX]\]\s*\*\*([A-Z]+\d{2})(?:\*\*\s*|[ \t]+)[—-]",
+        re.M,
+    )
     return gate_pattern.findall(plans[0].read_text(encoding="utf-8"))
 
 
