@@ -1,6 +1,6 @@
 # Concurrent resource safety
 
-Adopted 2026-10-31. CS01–CS03 are complete for the published 0.3–0.5 scopes. CS04–CS07 remain planned. [0.3.0 release evidence](../releases/0.3.0-evidence.md) · [0.4.0 release evidence](../releases/0.4.0-evidence.md) · [0.5.0 release evidence](../releases/0.5.0-evidence.md)
+Adopted 2026-10-31. CS01–CS04 are complete for the published 0.3–0.6 scopes. CS05–CS07 remain planned. [0.3.0 release evidence](../releases/0.3.0-evidence.md) · [0.4.0 release evidence](../releases/0.4.0-evidence.md) · [0.5.0 release evidence](../releases/0.5.0-evidence.md) · [0.6.0 release evidence](../releases/0.6.0-evidence.md)
 
 ## Outcome and scope
 
@@ -18,7 +18,7 @@ The [root roadmap](../../ROADMAP.md) remains authoritative. Each CS gate below i
 | CS02 | 0.4 | Report task origin, resource owner, close/transfer site, suspension or escape boundary, certainty and coverage where modeled. Qualify the synthetic async application and boundary controls under [0.4 AD01-A2](phases/0.4/synthetic-preview-protocol.md); real-world async usefulness remains unqualified. Record unsupported patterns separately from supported violations. |
 | CS03 | 0.5 | Qualify opt-in structured task captures, owner/borrow regions and explicit transfers with a pinned `asyncio.TaskGroup` model. Accept completion before resource closure; diagnose supported escaping borrows, reuse/double transfer and close while a known borrower remains live. Unknown callbacks, detached tasks and process handoffs cannot establish uniqueness or completion. |
 | CS04 | 0.6 | Reject modeled overlapping exclusive access and reject or explicitly report unsupported exclusive borrows spanning suspension according to mode. Qualify finite task-group and local pool protocol states and normal/exceptional effects only for named models. No lock or race-freedom inference. |
-| CS05 | 0.7 | Result/exception adapters preserve cancellation and process-control exceptions by default; an outcome wrapper never establishes task completion or resource cleanup. |
+| CS05 | 0.7 | Qualify sync and async capture under cancellation, process-control exceptions and exception groups. An outcome wrapper supplies no task completion or cleanup effect. Retain controlled cancellation-before-start, interrupted await and interrupted cleanup cases, and compare fresh/reused analyzer results for the affected summaries. [Adapter specification](phases/0.7/specification.md#explicit-conversions) · [V07 matrix](phases/0.7/validation.md) |
 | CS06 | 0.8 | Publish a versioned concurrency-model support matrix; qualify CLI/editor/agent and fresh/cached parity for supported models and unsupported process boundaries. Multiprocessing semantic support requires a separate accepted model proposal and evidence; boundary reporting is sufficient for this gate. |
 | CS07 | 0.9 | Audit every async/process claim against the model matrix and CS evidence; exclude unsupported or experimental behavior from stable guarantees. |
 

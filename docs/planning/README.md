@@ -15,7 +15,10 @@ Planning baseline: 2026-10-31. These documents record the direction from the “
 | [0.3 cleanup plan](phases/0.3-cleanup.md) | Published cleanup and bounded async behavior with verified artifacts |
 | [0.4 adoption plan](phases/0.4-adoption.md) | Published synthetic preview with completed A01–A08, CS02, and G1–G8 |
 | [0.5 ownership plan](phases/0.5-ownership.md) | Published opt-in transfer, lexical borrowing, and TaskGroup checks with verified release evidence |
-| [0.6 advanced contracts plan](phases/0.6-advanced-contracts.md) | Preview implementation of exclusive access, finite typestate and protocol models; V06 validation and release gates remain pending |
+| [0.6 advanced contracts plan](phases/0.6-advanced-contracts.md) | Published preview of exclusive access, finite typestate and protocol models |
+| [0.7 typed outcomes plan](phases/0.7-typed-outcomes.md) | Planned Result/Option, finite matches, install split and published must-use preview. [Specification](phases/0.7/specification.md) · [V07 matrix](phases/0.7/validation.md) |
+| [0.8 ecosystem plan](phases/0.8-ecosystem.md) | Planned provider effects, manifests, adoption policy, persistent reuse and integrations |
+| [0.9 stabilization plan](phases/0.9-stabilization.md) | Planned compatibility rehearsals and 1.0 readiness decision |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Publishing CodePact contracts](published-contracts.md) | Package markers, installed dependency analysis, manifest design, and contract compatibility checks |
 | [Concurrent resource safety](concurrency.md) | Structured async lifetimes, cancellation, process boundaries and CS01–CS07 gates |
@@ -48,11 +51,11 @@ In planning documents, “must” describes an acceptance requirement and is not
 
 ## Repository baseline
 
-A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The predecessor TypePact's 0.1.0 and 0.2.0 releases are published and qualified under the `typepact` names; see their historical phase plans, validation matrices, and release evidence. CodePact 0.3.0 was the first release using the renamed packages and crate. CodePact 0.4.0 published the adoption preview. CodePact 0.5.1 is the current release and includes opt-in ownership introduced in 0.5.0. [0.5.1 release evidence](../releases/0.5.1-evidence.md)
+A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The predecessor TypePact's 0.1.0 and 0.2.0 releases are published and qualified under the `typepact` names. CodePact 0.3.0 was the first release using the renamed packages and crate. CodePact 0.4.0 published the adoption preview, and 0.5.0 introduced opt-in ownership. CodePact 0.6.0 adds the qualified advanced-contracts preview. [0.6.0 release evidence](../releases/0.6.0-evidence.md)
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0, 0.4.0, and 0.5.0 passed their phase-specific and common release gates; 0.5.1 passed its corrective release gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.9 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 through 0.6.0 passed their phase-specific and common release gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 

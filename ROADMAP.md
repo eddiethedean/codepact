@@ -39,7 +39,7 @@ The [0.4 adoption plan](docs/planning/phases/0.4-adoption.md), [specification](d
 
 CodePact 0.5.0 was published and verified on November 10, 2026. The [0.5 ownership plan](docs/planning/phases/0.5-ownership.md), [specification](docs/planning/phases/0.5/specification.md), and [V05 matrix](docs/planning/phases/0.5/validation.md) define the opt-in transfer, lexical borrow, and TaskGroup subset. O01–O07, CS03, and G1–G8 are complete. [0.5.0 release evidence](docs/releases/0.5.0-evidence.md)
 
-The [0.6 advanced contracts plan](docs/planning/phases/0.6-advanced-contracts.md) builds on the published 0.5 scope. A preview implementation is documented in the [specification](docs/planning/phases/0.6/specification.md); the [V06 matrix](docs/planning/phases/0.6/validation.md) remains pending for release qualification. T01–T07 and CS04 remain pending.
+CodePact 0.6.0 was published and verified. T01–T07, CS04 and G1–G8 passed for the qualified advanced-contracts preview. Its [release evidence](docs/releases/0.6.0-evidence.md) establishes the entry baseline for 0.7.
 
 The 0.4.0 release includes CLI reporting foundations. The [linting and IDE diagnostics plan](docs/planning/linting-and-editors.md) keeps a shared language server plus VS Code, PyCharm/IntelliJ, Neovim and Emacs integration targets in 0.8. Acceptance requires CLI/editor parity, correct source highlighting, current-revision hints and verified setup for each claimed editor; those integrations remain planned.
 
@@ -55,8 +55,8 @@ The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded
 
 ### Published contracts and Python installs (0.7+)
 
-- **0.7** makes `codepact` the helper-only install, `codepact[cli]` the helper plus matching CLI, and `codepact-cli` the standalone command. It also targets an opt-in `py.codepact` preview for discarded synchronous results across an installed wheel.
-- **0.8** extends the preview to qualified resource and ownership effects, versioned wheel manifests, and author commands to export, verify, and compare contracts. Editor and cache integration share the CLI's provider selection and evidence.
+- **0.7** makes `codepact` the helper-only install, `codepact[cli]` the helper plus matching CLI, and `codepact-cli` the standalone command. The opt-in `py.codepact` preview checks discarded synchronous results across installed wheels. Finite-match checking covers resolved outcome variants, with resource payload tracking deferred to TypePact TC03. [0.7 scope](docs/planning/phases/0.7-typed-outcomes.md#finite-matches)
+- **0.8** qualifies installed resource and ownership effects first, followed by wheel manifests, author tooling and adoption policy. Persistent caching and editor and agent qualification build on the shared provider selection and evidence. [0.8 delivery order](docs/planning/phases/0.8-ecosystem.md#delivery-order)
 - **0.9** rehearses contract upgrades and audits the marker, manifest, policies, and tooling for 1.0 readiness. Further capabilities and provider layouts enter support after their own qualification.
 
 [Published contracts design](docs/planning/published-contracts.md) · [Packaging decision](docs/planning/decisions.md)
@@ -109,14 +109,12 @@ include `aclosing` discovery and propagation from a qualified must-use result
 type once typed outcomes are supported. Usage patterns such as callers usually
 checking a status result can supply optional review hints. [0.9 work packages](docs/planning/phases/0.9-stabilization.md#work-packages)
 
-**Acceptance evidence.** Qualify an annotation-free class that receives one
-hint and a shadowed lookalike that receives none. Test a version-pinned dependency
-leak and undocumented handoff, their separate passing repairs, and a stale model
-after a dependency upgrade. Verify that preview, strict enforcement, and
-baselines work together while incomplete coverage remains visible. Compare
-fresh and reused results after contract changes. Verify that weak must-use hints
-alone leave the exit status unchanged and that a wrapper forwarding a resolved
-must-use result receives a hint.
+**Acceptance evidence.** [R10](docs/planning/phases/0.7-typed-outcomes.md#required-exit-gates)
+qualifies the ownership diagnostic and advisory hints.
+[E11–E12](docs/planning/phases/0.8-ecosystem.md#required-exit-gates) qualify
+project-supplied models and declaration policy.
+[S09](docs/planning/phases/0.9-stabilization.md#required-exit-gates) rehearses
+adoption and dependency upgrades and records what qualifies for 1.0.
 
 ### Contracts on methods and values (0.7+)
 

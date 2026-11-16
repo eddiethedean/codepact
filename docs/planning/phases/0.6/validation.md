@@ -1,10 +1,10 @@
 # 0.6 validation matrix
 
-Rows remain pending as phase-gate statuses until the accountable maintainer reviews and records the evidence. The updated tree adds integrated TaskGroup/coroutine budget controls, a recorded Salsa query-event sequence, a valid/bug/repair/boundary corpus across all four claimed preview areas, and optimized budget stress measurements. The prior run [43775369196](https://github.com/eddiethedean/codepact/actions/runs/43775369196) qualifies an earlier candidate; the [candidate release record](../../../releases/0.6.0-evidence.md) tracks the frozen candidate's eight-wheel and Python 3.11–3.14 qualification. See also [pinned model evidence](evidence/models-2026-11-14.md), [candidate performance evidence](performance.md), and [task/query event evidence](evidence/task-query-events.json).
+The [0.6.0 release evidence](../../../releases/0.6.0-evidence.md) records maintainer acceptance of T01–T07 and CS04, eight-wheel qualification and Python 3.11–3.14 install checks. The updated candidate adds integrated TaskGroup/coroutine budget controls, recorded Salsa query events, a valid/bug/repair/boundary corpus across all four claimed preview areas, and optimized budget stress measurements. See also [pinned model evidence](evidence/models-2026-11-14.md), [candidate performance evidence](performance.md), and [task/query event evidence](evidence/task-query-events.json).
 
 ## Exact-candidate local coverage
 
-The rows below link regression controls and evidence added after base `0b6b76c`. Their gate status remains pending until final-candidate qualification and maintainer review.
+The rows below link regression controls and evidence added after base `0b6b76c`.
 
 | Rows | Exact-candidate evidence |
 | --- | --- |
