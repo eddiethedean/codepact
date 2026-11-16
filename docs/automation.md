@@ -8,7 +8,7 @@ with the [evaluation workflow](adopting.md#evaluate-one-package).
 ## Run the checker in GitHub Actions
 
 Save this as `.github/workflows/codepact.yml`. The job runs a standalone
-0.5.1 checker against `src/` and uploads the report even when the check
+0.7.0 checker against `src/` and uploads the report even when the check
 fails. The workflow inherits the check step's success or failure.
 
 ```yaml
@@ -30,7 +30,7 @@ jobs:
           python-version: '3.11'
       - name: Check resource contracts
         run: >-
-          uv tool run --from codepact-cli==0.5.1 codepact check
+          uv tool run --from codepact-cli==0.7.0 codepact check
           --root src --python-version 3.11 --mode strict --json
           > codepact-report.json
       - name: Upload the report
@@ -47,10 +47,11 @@ envelope. [Interpret reports and validate JSON](ci-reporting.md)
 
 ## Use a locked uv project
 
-Commit `pyproject.toml` and `uv.lock` after adding CodePact. A runner with
-uv can install and check the project.
+Commit `pyproject.toml` and `uv.lock` after adding CodePact with its matching
+CLI extra. A runner with uv can install and check the project.
 
 ```sh
+uv add 'codepact[cli]==0.7.0'
 uv sync --locked
 uv run --locked codepact check --root src --mode strict --json > codepact-report.json
 ```

@@ -28,9 +28,13 @@ jobs:
         run: make check-docs
       - name: Build wheels for the documented installation
         run: uv build --wheel --no-sources --all-packages --out-dir "$RUNNER_TEMP/docs-wheels"
+      - name: Add the locked helper runtime dependency to the local wheelhouse
+        run: |
+          typing_extensions_version="$(python -c 'from pathlib import Path; from scripts.check_python_package import locked_package_version; print(locked_package_version(Path("."), "typing-extensions"))')"
+          python -m pip download --no-deps --only-binary=:all: --dest "$RUNNER_TEMP/docs-wheels" "typing-extensions==$typing_extensions_version"
       - name: Replay the documented commands
         env:
-          UV_NO_INDEX: "1"
+          UV_OFFLINE: "1"
           UV_FIND_LINKS: ${{ runner.temp }}/docs-wheels
         run: python scripts/check_docs_examples.py --checkout
       - name: Check the Rust integration example

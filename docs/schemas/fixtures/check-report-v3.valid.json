@@ -47,10 +47,10 @@
       "message_omitted_bytes": 0,
       "primary": {
         "column": 1,
-        "end_column": 7,
-        "end_line": 4,
-        "file": "@dependency/demo-dist@1.0/demo/_impl.py",
-        "line": 4
+        "end_column": 5,
+        "end_line": 1,
+        "file": "main.py",
+        "line": 1
       },
       "provider_evidence": {
         "public_symbol": "demo.public",

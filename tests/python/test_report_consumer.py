@@ -95,8 +95,8 @@ class ReportConsumerTests(unittest.TestCase):
             consume(limited, self.root, self.snapshot), "limited-recheck-required"
         )
         limited["details_truncated"] = False
-        limited["total_diagnostics"] = 1
-        limited["counts"] = {"TP3001": 1}
+        limited["total_diagnostics"] = 2
+        limited["counts"] = {"TP3001": 2}
         self.assertEqual(
             consume(limited, self.root, self.snapshot), "limited-recheck-required"
         )
@@ -119,7 +119,7 @@ class ReportConsumerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _ = consume(altered, self.root, self.snapshot)
         altered = copy.deepcopy(self.report)
-        altered["returned_diagnostics"] = 1
+        altered["returned_diagnostics"] = 2
         with self.assertRaises(ValueError):
             _ = consume(altered, self.root, self.snapshot)
         for logical in ["../outside.py", "/absolute.py", "a\\b.py"]:
@@ -199,6 +199,19 @@ class ReportConsumerTests(unittest.TestCase):
         logical = "@dependency/demo@1.0/demo/__init__.py"
         report = copy.deepcopy(self.report)
         report["selected_files"] = ["main.py", logical]
+        diagnostics = report["diagnostics"]
+        assert isinstance(diagnostics, list)
+        diagnostic = diagnostics[0]
+        assert isinstance(diagnostic, dict)
+        diagnostic["related"] = [
+            {
+                "file": logical,
+                "line": 1,
+                "column": 1,
+                "end_line": 1,
+                "end_column": 18,
+            }
+        ]
         report["snapshot_manifest"] = [
             {"logical_path": "main.py", "sha256": hashlib.sha256(self.source).hexdigest()},
             {"logical_path": logical, "sha256": hashlib.sha256(provider_bytes).hexdigest()},

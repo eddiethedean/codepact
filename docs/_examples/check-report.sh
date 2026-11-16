@@ -27,7 +27,7 @@ except (OSError, ValueError) as error:
 if (
     not isinstance(report, dict)
     or report.get("execution_status") != "completed"
-    or report.get("report_schema_version") != 2
+    or report.get("report_schema_version") not in {2, 3}
     or report.get("exit_code") != status
 ):
     print("Invalid or unsupported completed CodePact report", file=sys.stderr)

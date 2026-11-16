@@ -53,12 +53,13 @@ def report(path: Path) -> dict[str, object]:
 
 def replay(workspace: Path, checkout_version: str | None) -> None:
     setup = snippet("quickstart.md", "setup")
-    version = re.search(r"uv add codepact==([^\s]+)", setup)
-    assert version is not None, "Quick start should pin a helper and CLI version"
+    version = re.search(r"uv add ['\"]codepact\[cli\]==([^'\"\s]+)['\"]", setup)
+    assert version is not None, "Quick start should pin the helper and CLI extra"
     published_version = version[1]
     selected_version = checkout_version or published_version
     setup = setup.replace(
-        f"codepact=={published_version}", f"codepact=={selected_version}"
+        f"codepact[cli]=={published_version}",
+        f"codepact[cli]=={selected_version}",
     )
     assert f"codepact {selected_version}" in shell(workspace, setup)
 
