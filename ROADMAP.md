@@ -61,6 +61,63 @@ The [concurrent resource safety plan](docs/planning/concurrency.md) adds bounded
 
 [Published contracts design](docs/planning/published-contracts.md) · [Packaging decision](docs/planning/decisions.md)
 
+### Strict mode and contract adoption (0.7+)
+
+Help projects find their first useful declaration, then let them require
+explicit contracts where callers depend on cleanup ownership or result
+handling. Advisory and strict use the same analysis. Strict continues to fail
+on incomplete coverage. Projects can preview and opt into additional declaration
+requirements. Review hints add no failure by themselves.
+
+**0.7 — Find and explain gaps.** Put the existing missing ownership diagnostic
+on the function signature and relate the return and acquisition sites. Suggest
+`-> Owned[T]` when each modeled normal completion hands off an open owned
+resource of that type. Give different guidance for borrowed or closed returns,
+mixed outcomes, and cleanup in `finally`. For a resolved
+`contextlib.closing(LocalType(...))` call, suggest `@resource(closed_by="close")`
+once on an undeclared local class with a `close` method, with the call as
+evidence. Preview a `@must_use` hint for synchronous wrappers that directly
+forward the result of a resolved must-use callable. [0.7 work packages](docs/planning/phases/0.7-typed-outcomes.md#work-packages)
+
+**0.8 — Supply dependency contracts and enforce selected boundaries.** Let
+projects configure versioned contract files for installed packages. The first
+slice identifies an exact distribution version, a qualified resource and its
+cleanup method, and a resolved factory that returns a fresh open owned resource.
+Verify applicability against the selected environment's package metadata, with
+`uv.lock` as the first lockfile to qualify for consistency checks. Use the same
+provider resolution as published contracts. Explicit version-bounded overrides
+record what they replace. A successful close discharges cleanup under the
+supplied contract. A raised close keeps cleanup unknown unless the contract
+specifies its exceptional effect. [Model selection and policy](docs/planning/published-contracts.md#models-policy-and-downstream-reports)
+
+Add rule codes for missing declarations on supported synchronous signatures.
+Cover unspecified access on known resource parameters, supported ownership
+handoffs, and project-defined requirements on named APIs or selected modules,
+including `@must_use`. Let projects preview, baseline, and enforce those rules
+independently. A missing required declaration is definite. Enforcement follows
+the project's opt-in strict policy and leaves underlying coverage visible.
+Stale or ambiguous dependency contracts cause incomplete coverage at affected
+calls. Malformed or conflicting project contract files exit `2`. Reports carry
+the contract's origin, symbol, resolved version, and project-supplied
+provenance. Contract changes
+invalidate affected analysis, snapshots, and incompatible baselines. [0.8 work packages](docs/planning/phases/0.8-ecosystem.md#work-packages)
+
+**0.9 — Qualify and review the policy for 1.0.** Rehearse adoption from preview
+through enforcement and test dependency upgrades. Review each rule for stable
+opt-in support before considering any change to strict defaults. Follow-ons
+include `aclosing` discovery and propagation from a qualified must-use result
+type once typed outcomes are supported. Usage patterns such as callers usually
+checking a status result can supply optional review hints. [0.9 work packages](docs/planning/phases/0.9-stabilization.md#work-packages)
+
+**Acceptance evidence.** Qualify an annotation-free class that receives one
+hint and a shadowed lookalike that receives none. Test a version-pinned dependency
+leak and undocumented handoff, their separate passing repairs, and a stale model
+after a dependency upgrade. Verify that preview, strict enforcement, and
+baselines work together while incomplete coverage remains visible. Compare
+fresh and reused results after contract changes. Verify that weak must-use hints
+alone leave the exit status unchanged and that a wrapper forwarding a resolved
+must-use result receives a hint.
+
 ### Contracts on methods and values (0.7+)
 
 Start with bare `@resource`, a method-level `@closes` marker, and recognition
