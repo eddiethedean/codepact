@@ -1197,12 +1197,23 @@ fn v04_10_distinct_ast_sites_on_one_line_have_independent_baseline_identities() 
 #[cfg(unix)]
 #[test]
 fn v04_19_broken_stderr_and_both_streams_return_execution_failure_without_panicking() {
+    use std::io::Write;
     use std::process::Stdio;
     let p = Project::new("broken-stderr");
     p.write("main.py", MARKED);
     for both in [false, true] {
-        let mut child = Command::new(binary())
+        // Keep the CLI behind a shell read until the parent has closed the
+        // output pipes. Otherwise a fast CLI can write successfully before
+        // the parent drops the read end, making this check scheduler-dependent.
+        let mut command = Command::new("sh");
+        command
             .current_dir(&p.0)
+            .args([
+                "-c",
+                "IFS= read -r _ || exit 125; exec \"$@\"",
+                "codepact-test",
+            ])
+            .arg(binary())
             .args([
                 "check",
                 "--no-config",
@@ -1211,14 +1222,15 @@ fn v04_19_broken_stderr_and_both_streams_return_execution_failure_without_panick
                 "--fail-on",
                 "warning",
             ])
+            .stdin(Stdio::piped())
             .stdout(if both { Stdio::piped() } else { Stdio::null() })
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .stderr(Stdio::piped());
+        let mut child = command.spawn().unwrap();
         drop(child.stderr.take());
         if both {
             drop(child.stdout.take());
         }
+        writeln!(child.stdin.take().unwrap(), "go").unwrap();
         assert_eq!(child.wait().unwrap().code(), Some(2));
     }
 }
