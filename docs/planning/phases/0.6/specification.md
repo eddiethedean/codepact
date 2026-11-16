@@ -1,6 +1,6 @@
 # 0.6 advanced contracts specification
 
-Status **Preview implementation complete; exact-candidate distribution requalification and maintainer acceptance remain pending**. This file remains the release acceptance specification. Local evidence now includes the advanced synthetic preview corpus, integrated TaskGroup/coroutine budget and Salsa event controls, and the budget stress benchmark. A prior cross-platform workflow run applies to an earlier candidate; the [candidate release record](../../../releases/0.6.0-evidence.md) tracks qualification for the frozen candidate. See also the [phase plan](../0.6-advanced-contracts.md) and [V06 matrix](validation.md).
+Status **Preview implementation complete; release qualification and maintainer acceptance are tracked in the candidate record**. This file remains the release acceptance specification. Local evidence now includes the advanced synthetic preview corpus, integrated TaskGroup/coroutine budget and Salsa event controls, and the budget stress benchmark. A prior cross-platform workflow run applies to an earlier candidate; the [candidate release record](../../../releases/0.6.0-evidence.md) tracks qualification for the frozen candidate. See also the [phase plan](../0.6-advanced-contracts.md) and [V06 matrix](validation.md).
 
 ### Preview implementation choices
 
