@@ -323,6 +323,11 @@ pub(crate) enum Declaration {
         value: AstExpr,
         range: SourceRange,
     },
+    ModuleFlow {
+        statements: Vec<FlowStatement>,
+        unknown_exception_bindings: Vec<String>,
+        range: SourceRange,
+    },
     Unsupported {
         message: &'static str,
         unknown_exception_bindings: Vec<String>,

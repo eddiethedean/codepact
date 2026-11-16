@@ -2414,6 +2414,110 @@ fn phase07_must_use_checks_reachable_match_arms() {
 }
 
 #[test]
+fn phase07_must_use_match_skips_false_guards_and_preserves_guaranteed_bindings() {
+    let root = fixture_root().with_extension("phase07-match-must-use-bindings");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use\n@must_use\ndef result() -> int: return 1\ndef f(value):\n    match value:\n        case _ if False: result()\n        case _: callback = result\n    callback()\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(&root, &[]);
+    let discards = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["code"] == "TP3001")
+        .collect::<Vec<_>>();
+    assert_eq!(discards.len(), 1, "{report:#}");
+    assert_eq!(discards[0]["primary"]["line"], 8, "{report:#}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_finite_match_ignores_false_guarded_unresolved_pattern() {
+    let root = fixture_root().with_extension("phase07-finite-false-guard");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import Ok, Result\ndef f(value: Result[int, str]):\n    match value:\n        case Ok(1) if False: pass\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(&root, &["--experimental-finite-matches"]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert!(
+        diagnostics.iter().any(|item| {
+            item["code"] == "TP5001" && item["message"] == "outcome match leaves Err, Ok uncovered"
+        }),
+        "{report:#}"
+    );
+    assert!(
+        !diagnostics.iter().any(|item| {
+            item["message"]
+                == "outcome match pattern is unresolved or tests unsupported payload structure"
+        }),
+        "{report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_loop_rebinding_invalidates_finite_outcome_facts() {
+    let root = fixture_root().with_extension("phase07-loop-outcome-rebinding");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import Ok, Result\ndef f(value: Result[int, str]):\n    for value in (17,):\n        match value:\n            case Ok(_): pass\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(&root, &["--experimental-finite-matches"]);
+    assert!(
+        report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["code"] == "TP9001"
+                && item["message"] == "finite outcome match has an unresolved or open scrutinee"),
+        "{report:#}"
+    );
+    assert!(
+        !report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["code"] == "TP5001"),
+        "{report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_module_level_match_checks_must_use_calls_and_finite_coverage() {
+    let root = fixture_root().with_extension("phase07-module-match");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use, Ok, Err\n@must_use\ndef result() -> int: return 1\nmatch Ok(1):\n    case Err(_): pass\nmatch 1:\n    case _: result()\nresult()\nmatch 2:\n    case result: pass\nresult()\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(&root, &["--experimental-finite-matches"]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|item| item["code"] == "TP3001")
+            .count(),
+        2,
+        "{report:#}"
+    );
+    assert!(
+        diagnostics.iter().any(|item| item["code"] == "TP5001"),
+        "{report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn phase07_provider_selection_skips_namespace_portions_and_unrelated_missing_records() {
     let root = fixture_root().with_extension("phase07-providers");
     let project = root.join("project");
@@ -2476,5 +2580,99 @@ fn phase07_provider_selection_skips_namespace_portions_and_unrelated_missing_rec
         );
         fs::remove_file(path).unwrap();
     }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_provider_alias_reports_public_canonical_and_distribution_identity() {
+    let root = fixture_root().with_extension("phase07-provider-provenance");
+    let project = root.join("project");
+    let installed = root.join("installed");
+    let package = installed.join("demo");
+    let info = installed.join("demo_dist-1.0.dist-info");
+    fs::create_dir_all(&project).unwrap();
+    fs::create_dir_all(&package).unwrap();
+    fs::create_dir_all(&info).unwrap();
+    fs::write(
+        project.join("main.py"),
+        "from demo import public as alias\nalias()\n",
+    )
+    .unwrap();
+    fs::write(
+        package.join("__init__.py"),
+        "from ._impl import value as public\n",
+    )
+    .unwrap();
+    fs::write(
+        package.join("_impl.py"),
+        "from codepact import must_use\n@must_use\ndef value(): return 1\n",
+    )
+    .unwrap();
+    fs::write(package.join("py.codepact"), "").unwrap();
+    fs::write(
+        info.join("WHEEL"),
+        "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+    )
+    .unwrap();
+    fs::write(info.join("METADATA"), "Name: demo-dist\nVersion: 1.0\n").unwrap();
+    fs::write(
+        info.join("RECORD"),
+        "demo/__init__.py,,\ndemo/_impl.py,,\ndemo/py.codepact,,\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(
+        &project,
+        &["--dependency-root", installed.to_str().unwrap()],
+    );
+    let diagnostic = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["code"] == "TP3001")
+        .unwrap();
+    let message = diagnostic["message"].as_str().unwrap();
+    assert!(message.contains("demo.public"), "{report:#}");
+    assert!(message.contains("demo._impl.value"), "{report:#}");
+    assert!(message.contains("demo-dist 1.0"), "{report:#}");
+    assert_eq!(
+        diagnostic["provider_evidence"]["public_symbol"],
+        "demo.public"
+    );
+    assert_eq!(
+        diagnostic["provider_evidence"]["canonical_symbol"],
+        "demo._impl.value"
+    );
+    assert_eq!(diagnostic["provider_evidence"]["distribution"], "demo-dist");
+    assert_eq!(diagnostic["provider_evidence"]["version"], "1.0");
+    assert_eq!(
+        diagnostic["related"][0]["file"],
+        "@dependency/demo-dist@1.0/demo/_impl.py"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_unimported_marked_provider_with_invalid_record_does_not_fail_check() {
+    let root = fixture_root().with_extension("phase07-unrelated-provider");
+    let project = root.join("project");
+    let dependencies = root.join("dependencies");
+    fs::create_dir_all(&project).unwrap();
+    fs::create_dir_all(dependencies.join("unused")).unwrap();
+    let info = dependencies.join("unused_dist-1.0.dist-info");
+    fs::create_dir_all(&info).unwrap();
+    fs::write(project.join("main.py"), "pass\n").unwrap();
+    fs::write(dependencies.join("unused/__init__.py"), "pass\n").unwrap();
+    fs::write(dependencies.join("unused/py.codepact"), "").unwrap();
+    fs::write(info.join("RECORD"), vec![b'x'; 16 * 1024 * 1024 + 1]).unwrap();
+    let (_, report) = phase07_report(
+        &project,
+        &["--dependency-root", dependencies.to_str().unwrap()],
+    );
+    assert_eq!(report["execution_status"], "completed", "{report:#}");
+    assert_eq!(
+        report["diagnostics"].as_array().unwrap().len(),
+        0,
+        "{report:#}"
+    );
     fs::remove_dir_all(root).unwrap();
 }

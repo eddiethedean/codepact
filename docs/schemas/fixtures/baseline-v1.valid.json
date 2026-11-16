@@ -6,9 +6,9 @@
   "entries": [
     {
       "certainty": "definite",
-      "code": "TP3001",
+      "code": "TP5001",
       "completion": null,
-      "explanation": "A must-use result was discarded.",
+      "explanation": "An outcome match leaves a reachable variant uncovered.",
       "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "logical_path": "main.py",
       "trust": "declared-unverified"

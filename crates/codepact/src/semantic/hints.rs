@@ -1,7 +1,7 @@
 use super::{
     annotations::{canonical, expression_path},
     must_use::{function_is_must_use, resolve_marked_callable},
-    ExportedView, FileState,
+    ExportedView, FileState, MustUseCallable,
 };
 use crate::{frontend::*, Diagnostic, Inspection, SourceFile, Span};
 use std::collections::{BTreeMap, BTreeSet};
@@ -234,7 +234,7 @@ fn report_forwarding_hint(
     is_async: bool,
     is_generator: bool,
     imports: &BTreeMap<String, String>,
-    module_marked: &BTreeMap<String, Span>,
+    module_marked: &BTreeMap<String, MustUseCallable>,
     class_scope: Option<(&str, Option<&str>)>,
 ) {
     if is_async
@@ -278,7 +278,7 @@ fn report_forwarding_hint(
         call_sites.push((
             resolved,
             crate::source_span(&file.path, &file.source, *call_range),
-            declaration,
+            declaration.span,
         ));
     }
     let Some((target, _, _)) = call_sites.first() else {

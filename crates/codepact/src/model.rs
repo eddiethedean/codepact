@@ -441,6 +441,8 @@ pub struct CheckDiagnostic {
     /// Internal canonical contract evidence used for baseline identity.
     #[serde(skip)]
     pub semantic_identity: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub provider_evidence: Option<ProviderEvidence>,
     pub code: String,
     pub severity: String,
     pub message: String,
@@ -455,6 +457,15 @@ pub struct CheckDiagnostic {
     pub coverage_reason: Option<String>,
     /// Suggested source-level action; this is guidance, not an auto-fix.
     pub repair: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderEvidence {
+    pub public_symbol: String,
+    pub canonical_symbol: String,
+    pub distribution: String,
+    pub version: String,
+    pub origin_kind: String,
 }
 
 impl CheckResult {
@@ -572,8 +583,18 @@ impl CheckResult {
                     ),
                     _ => None,
                 };
+                let provider_evidence = (diagnostic.semantic_identity.len() >= 5
+                    && !diagnostic.semantic_identity[3].is_empty())
+                    .then(|| ProviderEvidence {
+                        public_symbol: diagnostic.semantic_identity[1].clone(),
+                        canonical_symbol: diagnostic.semantic_identity[2].clone(),
+                        distribution: diagnostic.semantic_identity[3].clone(),
+                        version: diagnostic.semantic_identity[4].clone(),
+                        origin_kind: "installed-wheel".into(),
+                    });
                 CheckDiagnostic {
                     semantic_identity: diagnostic.semantic_identity,
+                    provider_evidence,
                     code: diagnostic.code,
                     severity: diagnostic.severity,
                     message: diagnostic.message,

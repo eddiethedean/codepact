@@ -309,8 +309,14 @@ fn discover_marked_provider_sources(
             if shadowed_top_levels.contains(top_level) || !selected_modules.insert(module.clone()) {
                 continue;
             }
-            let Some((distribution, version)) = owner_for_provider_files(&root, &marker, &path)?
-            else {
+            let ownership = match owner_for_provider_files(&root, &marker, &path) {
+                Ok(ownership) => ownership,
+                // Unresolved publications are relevant only if a project
+                // import reaches them. The semantic resolver reports that
+                // missing contract at the caller.
+                Err(_) => continue,
+            };
+            let Some((distribution, version)) = ownership else {
                 continue;
             };
             let relative_path = relative.to_string_lossy().replace('\\', "/");

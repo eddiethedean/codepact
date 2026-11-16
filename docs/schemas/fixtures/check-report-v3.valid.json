@@ -1,7 +1,7 @@
 {
   "actionable_diagnostics": 0,
   "assurance": "lifecycle-and-must-use-checking-for-supported-exit-flow",
-  "audit_diagnostics": 0,
+  "audit_diagnostics": 1,
   "available_models": [],
   "baseline": {
     "compatible": null,
@@ -14,9 +14,15 @@
   "check_schema_version": 1,
   "config_file": null,
   "contracts": [],
-  "counts": {},
-  "counts_by_certainty": {},
-  "counts_by_disposition": {},
+  "counts": {
+    "TP3001": 1
+  },
+  "counts_by_certainty": {
+    "definite": 1
+  },
+  "counts_by_disposition": {
+    "active": 1
+  },
   "coverage": {
     "declarations": 0,
     "reasons": [],
@@ -24,7 +30,43 @@
     "status": "complete-for-supported-subset"
   },
   "details_truncated": false,
-  "diagnostics": [],
+  "diagnostics": [
+    {
+      "actionable": false,
+      "base_severity": "warning",
+      "certainty": "definite",
+      "code": "TP3001",
+      "completion": null,
+      "coverage_reason": null,
+      "disposition": "active",
+      "disposition_reason": null,
+      "effective_severity": "warning",
+      "explanation_id": "TP3001.R001",
+      "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "message": "must-use result from demo.public is discarded",
+      "message_omitted_bytes": 0,
+      "primary": {
+        "column": 1,
+        "end_column": 7,
+        "end_line": 4,
+        "file": "@dependency/demo-dist@1.0/demo/_impl.py",
+        "line": 4
+      },
+      "provider_evidence": {
+        "public_symbol": "demo.public",
+        "canonical_symbol": "demo._impl.value",
+        "distribution": "demo-dist",
+        "version": "1.0",
+        "origin_kind": "installed-wheel"
+      },
+      "related": [],
+      "related_sites_omitted": 0,
+      "repair": null,
+      "repair_omitted_bytes": 0,
+      "severity": "warning",
+      "trust": "installed-wheel"
+    }
+  ],
   "disabled_rules": [],
   "engine_version": "0.7.0",
   "exclude": [],
@@ -43,7 +85,7 @@
   "policy_warnings": [],
   "project_root": "/project",
   "report_schema_version": 3,
-  "returned_diagnostics": 0,
+  "returned_diagnostics": 1,
   "selected_files": [],
   "selected_rules": [
     "TP1001",
@@ -58,7 +100,7 @@
   "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "snapshot_manifest": [],
   "target_python_version": "3.11",
-  "total_diagnostics": 0,
+  "total_diagnostics": 1,
   "unused_suppressions": [],
   "dependency_roots": [],
   "required_providers": [],

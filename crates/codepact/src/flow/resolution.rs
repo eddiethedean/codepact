@@ -371,6 +371,17 @@ pub(super) fn final_class_bindings(
                     bindings.insert(UNKNOWN_EXCEPTION_BINDINGS.to_owned(), None);
                 }
             }
+            Declaration::ModuleFlow {
+                unknown_exception_bindings,
+                ..
+            } => {
+                for binding in bindings.values_mut() {
+                    *binding = None;
+                }
+                for name in unknown_exception_bindings {
+                    bindings.insert(name.clone(), None);
+                }
+            }
             Declaration::Assignment { .. }
             | Declaration::TypeAlias { .. }
             | Declaration::Expression { .. } => {}

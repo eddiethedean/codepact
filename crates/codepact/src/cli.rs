@@ -348,6 +348,7 @@ pub(super) fn run() -> ExitCode {
         result.coverage.reasons.push(format!("{path}:1: {message}"));
         result.diagnostics.push(codepact::CheckDiagnostic {
             semantic_identity: vec![provider.clone()],
+            provider_evidence: None,
             code: "TP9001".into(),
             severity: "warning".into(),
             message: message.clone(),

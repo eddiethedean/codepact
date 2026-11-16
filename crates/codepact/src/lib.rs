@@ -15,7 +15,8 @@ mod source;
 pub(crate) use model::Access;
 pub use model::{
     CheckDiagnostic, CheckModelMetadata, CheckResult, Contract, Coverage, Diagnostic, Inspection,
-    Lifecycle, Provenance, Span, CHECK_MODEL_CATALOG_VERSION, CHECK_SCHEMA_VERSION,
+    Lifecycle, Provenance, ProviderEvidence, Span, CHECK_MODEL_CATALOG_VERSION,
+    CHECK_SCHEMA_VERSION,
 };
 pub(crate) use source::span as source_span;
 pub const SCHEMA_VERSION: u8 = 0;

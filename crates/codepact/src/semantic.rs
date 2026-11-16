@@ -33,7 +33,7 @@ struct SemanticProject {
     inspection: Inspection,
     module_exports: BTreeMap<String, BTreeMap<String, ExportedView>>,
     module_functions: BTreeMap<String, BTreeSet<String>>,
-    module_must_use_callables: BTreeMap<String, BTreeMap<String, Span>>,
+    module_must_use_callables: BTreeMap<String, BTreeMap<String, MustUseCallable>>,
     symbols: BTreeMap<String, ClassDecl>,
 }
 
@@ -381,7 +381,8 @@ fn inspect_inner(
                         &mut bindings,
                     );
                     for (callable, span) in method_contracts {
-                        state.must_use_callables.insert(callable, span);
+                        let evidence = must_use_evidence(file, &callable, span);
+                        state.must_use_callables.insert(callable, evidence);
                     }
                     if !has_unsupported_syntax {
                         state.known_classes.insert(name.clone());
@@ -439,8 +440,8 @@ fn inspect_inner(
                             &symbols,
                             &mut bindings,
                         );
-                        if let Some(span) = must_use_source {
-                            state.must_use_callables.insert(name.clone(), span);
+                        if let Some(evidence) = must_use_source {
+                            state.must_use_callables.insert(name.clone(), evidence);
                             state.callables.insert(name.clone());
                         } else {
                             state.must_use_callables.remove(name);
@@ -578,7 +579,11 @@ fn inspect_inner(
                         if marked && !*is_async && !*is_generator {
                             state.must_use_callables.insert(
                                 name.clone(),
-                                crate::source_span(&file.path, &file.source, *range),
+                                must_use_evidence(
+                                    file,
+                                    name,
+                                    crate::source_span(&file.path, &file.source, *range),
+                                ),
                             );
                         }
                         if let Some(variants) = (!*is_async && !*is_generator)
@@ -643,6 +648,44 @@ fn inspect_inner(
                         );
                         state.clear_module(&file.module, &mut bindings);
                     }
+                }
+                Declaration::ModuleFlow {
+                    statements,
+                    unknown_exception_bindings,
+                    ..
+                } => {
+                    if run_must_use && !file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
+                        check_must_use_body(
+                            &mut result,
+                            file,
+                            statements,
+                            &state,
+                            None,
+                            &[],
+                            &[],
+                            finite_matches,
+                        );
+                        unsupported(
+                            &mut result,
+                            file,
+                            declaration.range(),
+                            "module-level match is checked for result use and outcome coverage; resource lifecycle flow remains unresolved",
+                        );
+                    } else if !run_must_use {
+                        unsupported(
+                            &mut result,
+                            file,
+                            declaration.range(),
+                            "module-level control flow and executable statements are unsupported",
+                        );
+                    }
+                    clear_module_flow_state(
+                        &mut state,
+                        &file.module,
+                        statements,
+                        unknown_exception_bindings,
+                        &mut bindings,
+                    );
                 }
             }
         }
@@ -720,12 +763,39 @@ struct ExportedView {
     closed_by_span: Option<Span>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct MustUseCallable {
+    pub span: Span,
+    pub public_symbol: String,
+    pub canonical_symbol: String,
+    pub distribution: Option<String>,
+    pub version: Option<String>,
+}
+
+fn must_use_evidence(file: &SourceFile, symbol: &str, span: Span) -> MustUseCallable {
+    let provider_identity = file
+        .path
+        .strip_prefix(crate::DEPENDENCY_SOURCE_PREFIX)
+        .and_then(|identity| identity.split_once('/'))
+        .and_then(|(distribution_version, _)| distribution_version.rsplit_once('@'));
+    let (distribution, version) = provider_identity
+        .map(|(distribution, version)| (Some(distribution.to_owned()), Some(version.to_owned())))
+        .unwrap_or((None, None));
+    MustUseCallable {
+        span,
+        public_symbol: format!("{}.{symbol}", file.module),
+        canonical_symbol: format!("{}.{symbol}", file.module),
+        distribution,
+        version,
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct SemanticExports {
     classes: BTreeMap<String, ClassDecl>,
     names: BTreeMap<String, ExportedView>,
     functions: BTreeSet<String>,
-    must_use_callables: BTreeMap<String, Span>,
+    must_use_callables: BTreeMap<String, MustUseCallable>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -876,7 +946,9 @@ fn summary_uses_contract_wrapper(summary: &ParseSummary) -> bool {
             Declaration::TypeAlias { .. } | Declaration::Unsupported { .. } => {
                 state.clear_module("", &mut bindings);
             }
-            Declaration::Assignment { .. } | Declaration::Expression { .. } => {}
+            Declaration::Assignment { .. }
+            | Declaration::Expression { .. }
+            | Declaration::ModuleFlow { .. } => {}
         }
     }
     false
@@ -1012,7 +1084,7 @@ struct FileState {
     python_version: String,
     future_annotations: bool,
     imports: BTreeMap<String, String>,
-    must_use_callables: BTreeMap<String, Span>,
+    must_use_callables: BTreeMap<String, MustUseCallable>,
     known_classes: BTreeSet<String>,
     instances: BTreeMap<String, String>,
     unresolved_imports: BTreeMap<String, UnresolvedImport>,
@@ -1022,6 +1094,115 @@ struct FileState {
     exports: BTreeMap<String, ExportedView>,
     callables: BTreeSet<String>,
     outcome_returns: BTreeMap<String, BTreeSet<String>>,
+}
+
+fn clear_module_flow_state(
+    state: &mut FileState,
+    module: &str,
+    statements: &[crate::frontend::FlowStatement],
+    additional_names: &[String],
+    bindings: &mut BTreeMap<String, String>,
+) {
+    fn collect_mutations(
+        statements: &[crate::frontend::FlowStatement],
+        names: &mut BTreeSet<String>,
+        unknown: &mut bool,
+    ) {
+        use crate::frontend::FlowStatement as Flow;
+        for statement in statements {
+            if *unknown {
+                return;
+            }
+            match statement {
+                Flow::Assign { name, .. }
+                | Flow::EscapingAssign { name, .. }
+                | Flow::ClosureDefinition { name, .. } => {
+                    names.insert(name.clone());
+                }
+                Flow::AnnotatedDeclaration { name, .. } => {
+                    names.extend(name.iter().cloned());
+                }
+                Flow::BindFunction { name, binding, .. } => {
+                    names.insert(name.clone());
+                    names.extend(binding.iter().cloned());
+                }
+                Flow::DeleteLocal { names: deleted, .. } => {
+                    names.extend(deleted.iter().cloned());
+                }
+                Flow::If {
+                    body, alternate, ..
+                } => {
+                    collect_mutations(body, names, unknown);
+                    collect_mutations(alternate, names, unknown);
+                }
+                Flow::Match { cases, .. } => {
+                    for case in cases {
+                        case.pattern.binding_names(names);
+                        collect_mutations(&case.body, names, unknown);
+                    }
+                }
+                Flow::Try {
+                    body,
+                    handlers,
+                    alternate,
+                    finalbody,
+                    ..
+                } => {
+                    collect_mutations(body, names, unknown);
+                    for handler in handlers {
+                        names.extend(handler.name.iter().cloned());
+                        collect_mutations(&handler.body, names, unknown);
+                    }
+                    collect_mutations(alternate, names, unknown);
+                    collect_mutations(finalbody, names, unknown);
+                }
+                Flow::Loop {
+                    target,
+                    body,
+                    alternate,
+                    ..
+                } => {
+                    names.extend(target.iter().cloned());
+                    collect_mutations(body, names, unknown);
+                    collect_mutations(alternate, names, unknown);
+                }
+                Flow::With { items, body, .. } => {
+                    for item in items {
+                        names.extend(item.target.iter().cloned());
+                    }
+                    collect_mutations(body, names, unknown);
+                }
+                Flow::Store {
+                    target: Some(target),
+                    ..
+                } => {
+                    if let crate::frontend::AstExprKind::Name(name) = &target.kind {
+                        names.insert(name.clone());
+                    }
+                }
+                Flow::Store { target: None, .. } | Flow::Unsupported { .. } => {
+                    *unknown = true;
+                }
+                Flow::Pass { .. }
+                | Flow::Expression { .. }
+                | Flow::Break { .. }
+                | Flow::Continue { .. }
+                | Flow::Return { .. }
+                | Flow::Raise { .. } => {}
+            }
+        }
+    }
+
+    let mut names = additional_names.iter().cloned().collect::<BTreeSet<_>>();
+    let mut unknown = false;
+    collect_mutations(statements, &mut names, &mut unknown);
+    if unknown {
+        state.clear_module(module, bindings);
+    } else {
+        for name in names {
+            state.clear_name(&name, module, bindings);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1089,6 +1270,7 @@ impl Declaration {
             | Self::Delete { range, .. }
             | Self::TypeAlias { range, .. }
             | Self::Expression { range, .. }
+            | Self::ModuleFlow { range, .. }
             | Self::Unsupported { range, .. } => *range,
         }
     }
@@ -1107,7 +1289,7 @@ fn process_import_from(
     symbols: &BTreeMap<String, ClassDecl>,
     module_exports: &BTreeMap<String, BTreeMap<String, ExportedView>>,
     module_functions: &BTreeMap<String, BTreeSet<String>>,
-    module_must_use_callables: &BTreeMap<String, BTreeMap<String, Span>>,
+    module_must_use_callables: &BTreeMap<String, BTreeMap<String, MustUseCallable>>,
     bindings: &mut BTreeMap<String, String>,
     state: &mut FileState,
 ) {
@@ -1205,7 +1387,7 @@ fn register_supplied_module_import(
     symbols: &BTreeMap<String, ClassDecl>,
     module_exports: &BTreeMap<String, BTreeMap<String, ExportedView>>,
     module_functions: &BTreeMap<String, BTreeSet<String>>,
-    module_must_use_callables: &BTreeMap<String, BTreeMap<String, Span>>,
+    module_must_use_callables: &BTreeMap<String, BTreeMap<String, MustUseCallable>>,
     bindings: &mut BTreeMap<String, String>,
     state: &mut FileState,
 ) {
@@ -1254,9 +1436,9 @@ fn register_supplied_module_import(
             .get(module)
             .and_then(|functions| functions.get(original))
         {
-            state
-                .must_use_callables
-                .insert(local.to_owned(), declaration.clone());
+            let mut evidence = declaration.clone();
+            evidence.public_symbol = format!("{module}.{original}");
+            state.must_use_callables.insert(local.to_owned(), evidence);
             state.callables.insert(local.to_owned());
             return;
         }

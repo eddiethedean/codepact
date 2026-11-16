@@ -249,6 +249,19 @@ fn is_outcome_variant(identity: &str) -> bool {
     )
 }
 
+fn pattern_is_irrefutable(pattern: &crate::frontend::AstPattern) -> bool {
+    use crate::frontend::AstPattern as Pattern;
+    match pattern {
+        Pattern::Capture { .. } | Pattern::As { pattern: None, .. } => true,
+        Pattern::As {
+            pattern: Some(pattern),
+            ..
+        } => pattern_is_irrefutable(pattern),
+        Pattern::Or { patterns, .. } => patterns.iter().any(pattern_is_irrefutable),
+        _ => false,
+    }
+}
+
 #[derive(Default)]
 struct PatternCoverage {
     covered: BTreeSet<String>,
@@ -503,6 +516,20 @@ fn scan_outcome_statements(
                     if coverage.covered.is_empty() && coverage.unresolved.is_empty() {
                         continue;
                     }
+                    let guard_false = case
+                        .guard
+                        .as_ref()
+                        .is_some_and(|guard| matches!(guard.kind, AstExprKind::Boolean(false)));
+                    if guard_false {
+                        let mut failed_guard = facts.clone();
+                        let mut names = BTreeSet::new();
+                        case.pattern.binding_names(&mut names);
+                        for name in names {
+                            failed_guard.remove(&name);
+                        }
+                        paths.push(failed_guard);
+                        continue;
+                    }
                     let mut branch = facts.clone();
                     let mut names = BTreeSet::new();
                     case.pattern.binding_names(&mut names);
@@ -521,8 +548,21 @@ fn scan_outcome_statements(
                     if !must_use_sequence_terminates(&case.body, 0) {
                         paths.push(branch);
                     }
-                    if case.guard.is_some() {
-                        paths.push(facts.clone());
+                    let guard_true = case
+                        .guard
+                        .as_ref()
+                        .is_none_or(|guard| matches!(guard.kind, AstExprKind::Boolean(true)));
+                    if !guard_true {
+                        let mut failed_guard = facts.clone();
+                        let mut names = BTreeSet::new();
+                        case.pattern.binding_names(&mut names);
+                        for name in names {
+                            failed_guard.remove(&name);
+                        }
+                        paths.push(failed_guard);
+                        if !coverage.unresolved.is_empty() {
+                            uncertain_patterns.push((case.pattern.range(), coverage.unresolved));
+                        }
                     } else {
                         remaining.retain(|variant| !coverage.covered.contains(variant));
                         if !coverage.unresolved.is_empty() {
@@ -627,9 +667,15 @@ fn scan_outcome_statements(
                 *facts = merge_outcome_facts(&paths);
             }
             Flow::Loop {
-                body, alternate, ..
+                target,
+                body,
+                alternate,
+                ..
             } => {
                 let mut looped = facts.clone();
+                if let Some(target) = target {
+                    looped.remove(target);
+                }
                 scan_outcome_statements(
                     result,
                     file,
@@ -733,10 +779,10 @@ fn collect_must_use_locals(
 
 pub(super) fn resolve_marked_callable(
     name: &str,
-    marked: &BTreeMap<String, Span>,
+    marked: &BTreeMap<String, MustUseCallable>,
     instances: &BTreeMap<String, String>,
     class_scope: Option<(&str, Option<&str>)>,
-) -> Option<(String, Span)> {
+) -> Option<(String, MustUseCallable)> {
     if let Some(declaration) = marked.get(name) {
         return Some((name.to_owned(), declaration.clone()));
     }
@@ -759,7 +805,7 @@ pub(super) fn resolve_marked_callable(
 
 fn expression_has_marked_call(
     expression: &AstExpr,
-    marked: &BTreeMap<String, Span>,
+    marked: &BTreeMap<String, MustUseCallable>,
     instances: &BTreeMap<String, String>,
     class_scope: Option<(&str, Option<&str>)>,
 ) -> bool {
@@ -801,7 +847,7 @@ fn expression_has_marked_call(
 /// callee remains an unqualified boundary.
 fn has_unsupported_nested_marked_call(
     expression: &AstExpr,
-    marked: &BTreeMap<String, Span>,
+    marked: &BTreeMap<String, MustUseCallable>,
     instances: &BTreeMap<String, String>,
     class_scope: Option<(&str, Option<&str>)>,
 ) -> bool {
@@ -852,7 +898,7 @@ fn has_unsupported_nested_marked_call(
 
 fn direct_marked_call(
     expression: &AstExpr,
-    marked: &BTreeMap<String, Span>,
+    marked: &BTreeMap<String, MustUseCallable>,
     instances: &BTreeMap<String, String>,
     class_scope: Option<(&str, Option<&str>)>,
 ) -> bool {
@@ -928,7 +974,7 @@ fn walk_must_use_body(
     result: &mut Inspection,
     file: &SourceFile,
     statements: &[crate::frontend::FlowStatement],
-    marked: &mut BTreeMap<String, Span>,
+    marked: &mut BTreeMap<String, MustUseCallable>,
     instances: &mut BTreeMap<String, String>,
     imports: &BTreeMap<String, String>,
     known_classes: &BTreeSet<String>,
@@ -968,13 +1014,28 @@ fn walk_must_use_body(
                 });
                 if let Some((resolved, declaration)) = resolved {
                     let primary = crate::source_span(&file.path, &file.source, value.range);
+                    let provenance = match (&declaration.distribution, &declaration.version) {
+                        (Some(distribution), Some(version)) => format!(
+                            "; public symbol {}, canonical symbol {}, distribution {distribution} {version}",
+                            declaration.public_symbol, declaration.canonical_symbol
+                        ),
+                        _ => String::new(),
+                    };
                     result.diagnostics.push(Diagnostic {
-                        semantic_identity: vec![resolved.clone()],
+                        semantic_identity: vec![
+                            resolved.clone(),
+                            declaration.public_symbol.clone(),
+                            declaration.canonical_symbol.clone(),
+                            declaration.distribution.clone().unwrap_or_default(),
+                            declaration.version.clone().unwrap_or_default(),
+                        ],
                         code: "TP3001".into(),
                         severity: "warning".into(),
-                        message: format!("must-use result from {resolved} is discarded"),
+                        message: format!(
+                            "must-use result from {resolved} is discarded{provenance}"
+                        ),
                         primary,
-                        related: vec![declaration],
+                        related: vec![declaration.span],
                         certainty: "definite".into(),
                     });
                 }
@@ -1122,11 +1183,17 @@ fn walk_must_use_body(
                 *instances = left_instances;
             }
             Flow::Match { cases, .. } => {
-                // Each case is a reachable branch for must-use purposes. Keep
-                // the incoming path as a possible no-match/guard-failure path,
-                // then retain only bindings that agree across every path.
-                let mut outcomes = vec![(marked.clone(), instances.clone())];
+                let mut outcomes = Vec::new();
+                let mut unmatched_possible = true;
                 for case in cases {
+                    if !unmatched_possible
+                        || matches!(
+                            case.guard.as_ref().map(|guard| &guard.kind),
+                            Some(AstExprKind::Boolean(false))
+                        )
+                    {
+                        continue;
+                    }
                     let mut case_marked = marked.clone();
                     let mut case_instances = instances.clone();
                     let mut names = BTreeSet::new();
@@ -1135,6 +1202,11 @@ fn walk_must_use_body(
                         case_marked.remove(&name);
                         case_instances.remove(&name);
                     }
+                    let irrefutable = pattern_is_irrefutable(&case.pattern);
+                    let guard_always_true = case
+                        .guard
+                        .as_ref()
+                        .is_none_or(|guard| matches!(guard.kind, AstExprKind::Boolean(true)));
                     walk_must_use_body(
                         result,
                         file,
@@ -1146,7 +1218,16 @@ fn walk_must_use_body(
                         class_scope,
                         loop_depth,
                     );
-                    outcomes.push((case_marked, case_instances));
+                    if !must_use_sequence_terminates(&case.body, loop_depth) {
+                        outcomes.push((case_marked, case_instances));
+                    }
+                    unmatched_possible = !(irrefutable && guard_always_true);
+                }
+                if unmatched_possible {
+                    outcomes.push((marked.clone(), instances.clone()));
+                }
+                if outcomes.is_empty() {
+                    continue;
                 }
                 let (mut merged_marked, mut merged_instances) = outcomes.remove(0);
                 for (case_marked, case_instances) in outcomes {

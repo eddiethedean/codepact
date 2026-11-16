@@ -23,7 +23,7 @@ use fingerprint::{code_before_comment, fingerprint, hash, source_comments, Ancho
 pub const ADOPTION_SCHEMA_VERSION: u8 = 3;
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
 pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 5;
-pub const RULE_SEMANTIC_VERSION: u8 = 3;
+pub const RULE_SEMANTIC_VERSION: u8 = 4;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AdoptionDiagnostic {
     #[serde(flatten)]
@@ -763,6 +763,7 @@ pub fn suppression_diagnostic(
 ) -> CheckDiagnostic {
     CheckDiagnostic {
         semantic_identity: Vec::new(),
+        provider_evidence: None,
         code: "TP4002".into(),
         severity: "error".into(),
         message,

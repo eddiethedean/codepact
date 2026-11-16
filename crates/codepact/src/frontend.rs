@@ -931,6 +931,17 @@ pub(crate) fn parse_frontend(
                     range: source_range(alias),
                 });
             }
+            Stmt::Match(match_) => {
+                let unknown_exception_bindings = module_binding_uncertainty(statement).1;
+                declarations.push(Declaration::ModuleFlow {
+                    statements: flow_statements(
+                        std::slice::from_ref(statement),
+                        &mut expression_budget,
+                    ),
+                    unknown_exception_bindings,
+                    range: source_range(match_),
+                });
+            }
             _ => {
                 let (wildcard_import, unknown_exception_bindings) =
                     module_binding_uncertainty(statement);

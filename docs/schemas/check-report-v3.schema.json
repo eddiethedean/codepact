@@ -403,6 +403,18 @@
             "$ref": "#/$defs/span"
           }
         },
+        "provider_evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["public_symbol", "canonical_symbol", "distribution", "version", "origin_kind"],
+          "properties": {
+            "public_symbol": {"type": "string", "minLength": 1},
+            "canonical_symbol": {"type": "string", "minLength": 1},
+            "distribution": {"type": "string", "minLength": 1},
+            "version": {"type": "string", "minLength": 1},
+            "origin_kind": {"const": "installed-wheel"}
+          }
+        },
         "certainty": {
           "enum": [
             "definite",
