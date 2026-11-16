@@ -1,0 +1,142 @@
+{
+  "ownership_mode": "advanced-assume-default-task-factory",
+  "pending_coroutine_budget": 128,
+  "phases": [
+    {
+      "coverage": "complete-for-supported-subset",
+      "flow_query_count": 3,
+      "flow_query_keys": [
+        "check_flow_file_query",
+        "check_flow_file_query",
+        "check_flow_file_query"
+      ],
+      "phase": "initial-128-task-limit",
+      "query_events": [
+        "inspect_project_query",
+        "parse_file",
+        "parse_file",
+        "parse_file",
+        "inspect_module_query",
+        "module_exports_query",
+        "inspect_module_query",
+        "inspect_module_query",
+        "module_exports_query",
+        "inspect_module_query",
+        "inspect_module_query",
+        "module_exports_query",
+        "inspect_module_query",
+        "check_flow_query",
+        "check_flow_file_query",
+        "check_flow_file_query",
+        "check_flow_file_query"
+      ],
+      "retained_coroutine_count": 128,
+      "scheduled_task_count": 128,
+      "tp2102_definite": true
+    },
+    {
+      "flow_query_count": 0,
+      "flow_query_keys": [],
+      "phase": "unchanged-session",
+      "query_events": []
+    },
+    {
+      "coroutine_budget_boundary": true,
+      "coverage": "incomplete",
+      "flow_query_count": 1,
+      "flow_query_keys": [
+        "check_flow_file_query"
+      ],
+      "known_typestate_violation_preserved": true,
+      "phase": "129th-task-coroutine-boundary",
+      "query_events": [
+        "inspect_project_query",
+        "parse_file",
+        "inspect_module_query",
+        "inspect_module_query",
+        "module_exports_query",
+        "check_flow_query",
+        "check_flow_file_query"
+      ],
+      "retained_coroutine_count": 128,
+      "scheduled_task_attempts": 129,
+      "separate_task_count_boundary": false,
+      "task_schedule_boundary": true
+    },
+    {
+      "dependent_typestate_violation_removed": true,
+      "flow_query_count": 2,
+      "flow_query_keys": [
+        "check_flow_file_query",
+        "check_flow_file_query"
+      ],
+      "phase": "provider-transition-edit",
+      "query_events": [
+        "inspect_project_query",
+        "parse_file",
+        "inspect_module_query",
+        "inspect_module_query",
+        "module_exports_query",
+        "check_flow_query",
+        "check_flow_file_query",
+        "check_flow_file_query"
+      ],
+      "refreshed_files": [
+        "provider.py",
+        "main.py"
+      ],
+      "task_and_coroutine_budget_boundary_preserved": true,
+      "unrelated_file_reused": true
+    },
+    {
+      "coverage": "complete-for-supported-subset",
+      "flow_query_count": 1,
+      "flow_query_keys": [
+        "check_flow_file_query"
+      ],
+      "matches_fresh": true,
+      "phase": "task-budget-recovery",
+      "query_events": [
+        "inspect_project_query",
+        "parse_file",
+        "inspect_module_query",
+        "inspect_module_query",
+        "module_exports_query",
+        "check_flow_query",
+        "check_flow_file_query"
+      ],
+      "scheduled_task_count": 128
+    },
+    {
+      "cancelled_without_partial_result": true,
+      "flow_query_count": 0,
+      "flow_query_keys": [],
+      "phase": "cancelled-provider-edit",
+      "query_events": []
+    },
+    {
+      "dependent_typestate_violation_restored": true,
+      "flow_query_count": 2,
+      "flow_query_keys": [
+        "check_flow_file_query",
+        "check_flow_file_query"
+      ],
+      "matches_fresh": true,
+      "phase": "cancellation-recovery",
+      "query_events": [
+        "inspect_project_query",
+        "parse_file",
+        "inspect_module_query",
+        "inspect_module_query",
+        "module_exports_query",
+        "check_flow_query",
+        "check_flow_file_query",
+        "check_flow_file_query"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "source_execution": false,
+  "target_python": "3.13",
+  "task_schedule_bound": "no separate task counter; scheduled coroutine records share the 128-record limit"
+}

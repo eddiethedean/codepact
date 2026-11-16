@@ -1,6 +1,6 @@
 # 0.6 advanced contracts specification
 
-Status **Candidate implementation frozen; release qualification pending**. This file remains the release acceptance specification. Candidate `1da46b68d8e0d9ebc226441abb3eea3c1c28f13f` implements the preview choices below and passes the recorded local checks; all V06 evidence rows remain pending as release-gate statuses. See the [candidate release record](../../../releases/0.6.0-evidence.md), [phase plan](../0.6-advanced-contracts.md) and [V06 matrix](validation.md).
+Status **Preview implementation complete; exact-candidate distribution requalification and maintainer acceptance remain pending**. This file remains the release acceptance specification. Local evidence now includes the advanced synthetic preview corpus, integrated TaskGroup/coroutine budget and Salsa event controls, and the budget stress benchmark. A prior cross-platform workflow run applies to an earlier candidate; the [candidate release record](../../../releases/0.6.0-evidence.md) tracks qualification for the frozen candidate. See also the [phase plan](../0.6-advanced-contracts.md) and [V06 matrix](validation.md).
 
 ### Preview implementation choices
 
@@ -22,18 +22,23 @@ Status **Candidate implementation frozen; release qualification pending**. This 
   conformance probes and imported source hashes are recorded in
   [pinned model evidence](evidence/models-2026-11-14.md). The existing
   TaskGroup source pins and explicit default-task-factory assumption remain in
-  force. Exact-candidate local probes passed; cross-platform qualification and
-  maintainer review remain pending.
+  force. The shutdown-state regression now reports the known rejected submit
+  without adding an unrelated unknown worker-effect boundary.
 - The preview reuses the existing flow and Salsa query infrastructure,
   100,000 per-file flow-step budget, 256 exit partitions, 4,096 tracked object
   limit, 32 protocol states, and 32 local handles each for TaskGroups and
-  executors. Exact-candidate invalidation and performance evidence is
-  recorded; integrated task-budget parity and the remaining V06-13/V06-16
-  acceptance controls are still pending.
+  executors. TaskGroup scheduling retains up to 128 distinct coroutine records;
+  the 129th creation is an incomplete-coverage boundary. There is no second
+  scheduled-task counter because scheduled entries refer to those same
+  retained coroutine records. The integrated budget test confirms 128
+  scheduled children complete, the next child reports the coroutine boundary,
+  and an edit back under the limit recovers fresh/reused parity. See
+  [task/query evidence](evidence/task-query-events.json) and the
+  [budget stress measurements](performance.md#taskgroup-coroutine-budget).
 
 ## Activation and declarations
 
-The preview implements a separate `experimental-advanced-contracts` opt-in on top of experimental ownership, through project config, check and baseline CLI overrides, and the Rust `Ownership` API. An explicit advanced opt-in with ownership disabled is a configuration error. Defaults and ownership-only checks retain their 0.5 semantic scope. Strict mode applies the existing policy to the selected scope. V06-01 still needs to qualify merge precedence, CLI/API parity, and report compatibility.
+The preview implements a separate `experimental-advanced-contracts` opt-in on top of experimental ownership, through project config, check and baseline CLI overrides, and the Rust `Ownership` API. An explicit advanced opt-in with ownership disabled is a configuration error. Defaults and ownership-only checks retain their 0.5 semantic scope. Strict mode applies the existing policy to the selected scope. V06-01 now compares canonical diagnostics, contracts, coverage and model metadata between the Rust API and a config-driven CLI run; it also checks CLI override precedence and rejects contradictory configuration. The candidate acceptance record tracks final report review.
 
 The preview reuses existing `BorrowedMut[T]` and `Annotated[T, ExclusiveBorrow()]` metadata. It resolves these and new declarations by exact symbol identity through supported imports, aliases and direct re-exports. Dynamic metadata, unresolved re-exports, lookalikes and rebound names follow the existing resolution rules. Python helpers preserve ordinary typing, object identity and signatures, and remain independent of the native analyzer.
 
@@ -43,8 +48,8 @@ The preview implements `@state_machine(states=..., initial=...)`,
 `Annotated[T, StateAccess[Literal[...]]]` form. Both operation forms carry the
 same receiver precondition and per-exit receiver state. A receiver annotation
 by itself declares an entry requirement and supplies no transition. The
-spellings are recorded as preview choices; paired checker/runtime
-qualification remains pending in V06-02 and V06-15.
+spellings are recorded as preview choices; paired checker, typing and runtime
+fixtures are retained in V06-02 and V06-15 for final gate review.
 
 | Canonical input | Initial contract |
 | --- | --- |

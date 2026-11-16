@@ -209,6 +209,33 @@ fn v06_03_transition_to_an_undeclared_state_is_rejected() {
 }
 
 #[test]
+fn v06_03_protocol_state_budget_accepts_32_and_rejects_33_before_flow() {
+    let machine = |count: usize| {
+        let states = (0..count)
+            .map(|index| format!("'s{index}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("@state_machine(states=({states}), initial='s0')\nclass Channel: pass\n")
+    };
+    let at_limit = check(&machine(32), Ownership::Advanced, "3.13");
+    lacks(&at_limit, "TP4002");
+    assert_eq!(
+        at_limit.coverage.status, "complete-for-supported-subset",
+        "{at_limit:#?}"
+    );
+
+    let over_limit = check(&machine(33), Ownership::Advanced, "3.13");
+    has(&over_limit, "TP4002");
+    lacks(&over_limit, "TP2102");
+    assert!(over_limit.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "TP4002"
+            && diagnostic
+                .message
+                .contains("state_machine requires literal states")
+    }));
+}
+
+#[test]
 fn v06_02_import_aliases_resolve_protocol_declarations() {
     let result = check(
         "from codepact import state_machine as machine, transition as changes\n@machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @changes(from_state='ready', to_state='closed')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n",
@@ -816,6 +843,82 @@ fn v06_11_nested_local_task_groups_keep_each_group_scope_valid() {
 }
 
 #[test]
+fn v06_11_taskgroup_scheduling_respects_coroutine_budget_and_recovers() {
+    fn task_source(count: usize) -> String {
+        let mut source = String::from(
+            "from asyncio import TaskGroup\nasync def worker(): pass\nasync def run():\n    async with TaskGroup() as group:\n",
+        );
+        for index in 0..count {
+            source.push_str(&format!(
+                "        pending_{index} = worker()\n        group.create_task(pending_{index})\n"
+            ));
+        }
+        source
+    }
+
+    let at_limit = [SourceFile::new("main.py", "main", task_source(128))];
+    let bounded = [SourceFile::new("main.py", "main", task_source(129))];
+    let mut session = codepact::AnalysisSession::default();
+
+    let at_limit_result = session.check_with_ownership(
+        &at_limit,
+        "3.13",
+        Ownership::AdvancedAssumeDefaultTaskFactory,
+    );
+    assert_eq!(
+        at_limit_result.coverage.status, "complete-for-supported-subset",
+        "128 retained TaskGroup tasks fit the pending-coroutine limit: {at_limit_result:#?}"
+    );
+    assert!(
+        at_limit_result.diagnostics.is_empty(),
+        "{at_limit_result:#?}"
+    );
+
+    let over_limit = session.check_with_ownership(
+        &bounded,
+        "3.13",
+        Ownership::AdvancedAssumeDefaultTaskFactory,
+    );
+    assert_eq!(over_limit.coverage.status, "incomplete", "{over_limit:#?}");
+    assert!(over_limit.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "TP9001"
+            && diagnostic
+                .message
+                .contains("pending coroutine budget exceeded")
+    }));
+    assert!(!over_limit.diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("structured task budget exceeded")
+    }));
+    assert_eq!(
+        over_limit,
+        codepact::check_with_ownership(
+            &bounded,
+            "3.13",
+            Ownership::AdvancedAssumeDefaultTaskFactory
+        ),
+        "the task-budget boundary is deterministic and matches a fresh check"
+    );
+
+    let recovered = session.check_with_ownership(
+        &at_limit,
+        "3.13",
+        Ownership::AdvancedAssumeDefaultTaskFactory,
+    );
+    assert_eq!(recovered, at_limit_result);
+    assert_eq!(
+        recovered,
+        codepact::check_with_ownership(
+            &at_limit,
+            "3.13",
+            Ownership::AdvancedAssumeDefaultTaskFactory
+        ),
+        "removing the over-budget task recovers complete fresh/reused parity"
+    );
+}
+
+#[test]
 fn v06_11_completed_task_protocol_effect_reaches_parent_after_group_exit() {
     let files = [SourceFile::new(
         "main.py",
@@ -871,6 +974,20 @@ fn v06_12_executor_submission_after_shutdown_is_invalid_and_pinned() {
     )];
     let result = check_with_ownership(&files, "3.13", Ownership::Advanced);
     has(&result, "TP2102");
+    assert_eq!(
+        result.coverage.status,
+        "complete-for-supported-subset",
+        "a definitely shut down executor rejects submit without creating an unknown worker effect: {result:#?}"
+    );
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP9001")
+            .count(),
+        0,
+        "{result:#?}"
+    );
     assert!(
         result
             .available_models

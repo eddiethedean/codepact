@@ -1,0 +1,215 @@
+{
+  "execution_status": "completed",
+  "engine_version": "0.6.0",
+  "report_schema_version": 2,
+  "check_schema_version": 2,
+  "target_python_version": "3.11",
+  "model_catalog_version": 4,
+  "available_models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-TASK-001",
+      "qualified_symbol": "asyncio.TaskGroup",
+      "source_revisions": [
+        "v3.11.15"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.15/Lib/asyncio/taskgroups.py"
+      ],
+      "selection_rule": "Exact asyncio.TaskGroup with the explicit default-task-factory assumption.",
+      "modeled_behavior": "Local scheduling and completion at group exit, including exceptional exit and cancellation. Completion and resource cleanup have separate effects.",
+      "qualification": "Experimental source model under a project-declared runtime assumption."
+    }
+  ],
+  "assurance": "experimental-advanced-contract-checking-for-supported-exit-flow",
+  "contracts": [],
+  "coverage": {
+    "status": "incomplete",
+    "reasons": [
+      "src/main.py:11: created coroutine is not awaited before this scope exit; captured resource effects remain unresolved"
+    ],
+    "source_bytes": 201,
+    "declarations": 0
+  },
+  "diagnostics": [
+    {
+      "code": "TP2102",
+      "severity": "error",
+      "message": "TaskGroup.create_task requires an active group",
+      "primary": {
+        "file": "src/main.py",
+        "line": 11,
+        "column": 5,
+        "end_line": 11,
+        "end_column": 32
+      },
+      "related": [
+        {
+          "file": "src/main.py",
+          "line": 9,
+          "column": 16,
+          "end_line": 9,
+          "end_column": 36
+        }
+      ],
+      "certainty": "definite",
+      "completion": null,
+      "trust": "reviewed-model",
+      "coverage_reason": "src/main.py:11: created coroutine is not awaited before this scope exit; captured resource effects remain unresolved",
+      "repair": null,
+      "fingerprint": "219e8df5825b04524315a59e4c211ecbdf923e4dd43efed9d8b4a3866aab076a",
+      "base_severity": "error",
+      "effective_severity": "error",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP2102.R001",
+      "actionable": true,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "created coroutine is not awaited before this scope exit; captured resource effects remain unresolved",
+      "primary": {
+        "file": "src/main.py",
+        "line": 11,
+        "column": 23,
+        "end_line": 11,
+        "end_column": 31
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "created coroutine is not awaited before this scope exit; captured resource effects remain unresolved",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "36706f72b0d556468294c4bfd4e746ef88a71c7a05e6beabe4aee170c755f3ad",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    }
+  ],
+  "counts": {
+    "TP2102": 1,
+    "TP9001": 1
+  },
+  "counts_by_certainty": {
+    "definite": 1,
+    "unknown": 1
+  },
+  "counts_by_disposition": {
+    "active": 2
+  },
+  "total_diagnostics": 2,
+  "actionable_diagnostics": 1,
+  "returned_diagnostics": 2,
+  "audit_diagnostics": 1,
+  "policy_failures": [
+    "TP2102 TaskGroup.create_task requires an active group",
+    "analysis coverage is incomplete"
+  ],
+  "policy_warnings": [],
+  "unused_suppressions": [],
+  "details_truncated": false,
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "057413fccec922731d47d7081810ce648ac51f555e92567b5219e9459d70aaa3",
+  "semantic_fingerprint": "8ae0f1933936af9c364052f69efa23e3bd57b0c01ead6014bd621a27d779d253",
+  "policy_fingerprint": "e5d9b5c6b85d4217f19c9cd4d7d02cf5086e16276d8cdc8f2f81e432a142374d",
+  "model_fingerprint": "2513d621325ca6a968b021ceab295b5b7c801dcbbb52c6c384c0cb085526bf74",
+  "snapshot_manifest": [
+    {
+      "logical_path": "src/main.py",
+      "sha256": "dd4142e8f04eb09c674174267f7df32465613f45332635933b815f0413b42029"
+    }
+  ],
+  "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-task_group-3.11",
+  "logical_root": ".",
+  "config_file": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-task_group-3.11/pyproject.toml",
+  "selected_files": [
+    "src/main.py"
+  ],
+  "include": [
+    "src/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP2002",
+    "TP2003",
+    "TP2004",
+    "TP2005",
+    "TP2006",
+    "TP2101",
+    "TP2102",
+    "TP3001"
+  ],
+  "disabled_rules": [],
+  "mode": "strict",
+  "fail_on": "error",
+  "settings_origins": {
+    "assume-default-task-factory": "pyproject.toml",
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "experimental-advanced-contracts": "pyproject.toml",
+    "experimental-ownership": "pyproject.toml",
+    "fail-on": "default",
+    "include": "pyproject.toml",
+    "mode": "command-line",
+    "python-version": "command-line",
+    "root": "pyproject-directory"
+  },
+  "baseline": {
+    "configured": false,
+    "compatible": null,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "exit_code": 1
+}

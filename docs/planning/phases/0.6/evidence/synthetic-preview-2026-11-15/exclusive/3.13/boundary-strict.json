@@ -1,0 +1,420 @@
+{
+  "execution_status": "completed",
+  "engine_version": "0.6.0",
+  "report_schema_version": 2,
+  "check_schema_version": 2,
+  "target_python_version": "3.13",
+  "model_catalog_version": 4,
+  "available_models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-EXECUTOR-001",
+      "qualified_symbol": "concurrent.futures.ThreadPoolExecutor",
+      "source_revisions": [
+        "v3.13.16"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.13.16/Lib/concurrent/futures/thread.py"
+      ],
+      "selection_rule": "Exact ThreadPoolExecutor import identity, a local no-argument constructor, and CPython 3.13 source pin.",
+      "modeled_behavior": "Local Accepting/Shutdown protocol for submit and shutdown. Submission work, worker completion, future behavior, and worker-side cleanup are not modeled.",
+      "qualification": "Experimental 0.6 source model. Controlled runtime conformance and optimized performance evidence are pending."
+    }
+  ],
+  "assurance": "experimental-advanced-contract-checking-for-supported-exit-flow",
+  "contracts": [
+    {
+      "schema_version": 0,
+      "base_symbol": "src.main.Buffer",
+      "display_name": "Buffer",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "unspecified",
+      "source": {
+        "file": "src/main.py",
+        "line": 7,
+        "column": 1,
+        "end_line": 7,
+        "end_column": 29
+      },
+      "provenance": [
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "base_symbol": "src.main.Buffer",
+      "display_name": "edit.view",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "exclusive",
+      "source": {
+        "file": "src/main.py",
+        "line": 17,
+        "column": 11,
+        "end_line": 17,
+        "end_column": 30
+      },
+      "provenance": [
+        {
+          "origin": "explicit-access-alias",
+          "trust": "declared-unverified"
+        },
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "base_symbol": "src.main.Buffer",
+      "display_name": "write_view.view",
+      "lifecycle": {
+        "closed_by": "close"
+      },
+      "access": "exclusive",
+      "source": {
+        "file": "src/main.py",
+        "line": 24,
+        "column": 22,
+        "end_line": 24,
+        "end_column": 41
+      },
+      "provenance": [
+        {
+          "origin": "explicit-access-alias",
+          "trust": "declared-unverified"
+        },
+        {
+          "origin": "python-resource-decorator",
+          "trust": "declared-unverified"
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "status": "incomplete",
+    "reasons": [
+      "src/main.py:18: nested CodePact contracts are unsupported in this annotation form",
+      "src/main.py:20: unknown call effect for callback",
+      "src/main.py:16: unsupported flow weakens tracked resources",
+      "src/main.py:24: unsupported flow weakens tracked resources"
+    ],
+    "source_bytes": 534,
+    "declarations": 3
+  },
+  "diagnostics": [
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unsupported flow weakens tracked resources",
+      "primary": {
+        "file": "src/main.py",
+        "line": 16,
+        "column": 1,
+        "end_line": 21,
+        "end_column": 17
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unsupported flow weakens tracked resources",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "272244ae73a1a5ce23c612c846951e6063281355c95b176e634682c7d0defed9",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "nested CodePact contracts are unsupported in this annotation form",
+      "primary": {
+        "file": "src/main.py",
+        "line": 18,
+        "column": 15,
+        "end_line": 18,
+        "end_column": 52
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "nested CodePact contracts are unsupported in this annotation form",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "6a2ac7923e4ae80b8d77dbe495782dc251d6309b02a26150133748635638cad0",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unknown call effect for callback",
+      "primary": {
+        "file": "src/main.py",
+        "line": 20,
+        "column": 5,
+        "end_line": 20,
+        "end_column": 19
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unknown call effect for callback",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "72b2328630df00bbe5746ae87b30a43341d093b8d44a05fc0d54bbd882709d4a",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unsupported flow weakens tracked resources",
+      "primary": {
+        "file": "src/main.py",
+        "line": 24,
+        "column": 1,
+        "end_line": 25,
+        "end_column": 17
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unsupported flow weakens tracked resources",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "b6c8acd4e71d42c9da333c3c2854a30dd248ab3bdfb0aac9dd953ede242ca570",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP1002",
+      "severity": "warning",
+      "message": "owned resource cleanup obligation remains open on fallthrough",
+      "primary": {
+        "file": "src/main.py",
+        "line": 28,
+        "column": 1,
+        "end_line": 31,
+        "end_column": 17
+      },
+      "related": [
+        {
+          "file": "src/main.py",
+          "line": 29,
+          "column": 5,
+          "end_line": 29,
+          "end_column": 20
+        },
+        {
+          "file": "src/main.py",
+          "line": 31,
+          "column": 5,
+          "end_line": 31,
+          "end_column": 17
+        }
+      ],
+      "certainty": "possible",
+      "completion": "fallthrough",
+      "trust": "declared-unverified",
+      "coverage_reason": null,
+      "repair": "Close the resource on every reported exit, or return it through a resolved Owned[T] boundary.",
+      "fingerprint": "d6e51587649349537e81143be480c90a1713bdfed946802c7450246137eb0da9",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP1002.R001",
+      "actionable": true,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP1002",
+      "severity": "warning",
+      "message": "owned resource cleanup obligation remains open on raise",
+      "primary": {
+        "file": "src/main.py",
+        "line": 30,
+        "column": 5,
+        "end_line": 30,
+        "end_column": 27
+      },
+      "related": [
+        {
+          "file": "src/main.py",
+          "line": 29,
+          "column": 5,
+          "end_line": 29,
+          "end_column": 20
+        }
+      ],
+      "certainty": "possible",
+      "completion": "raise",
+      "trust": "declared-unverified",
+      "coverage_reason": null,
+      "repair": "Close the resource on every reported exit, or return it through a resolved Owned[T] boundary.",
+      "fingerprint": "000e11a4a1a4bf8d5ff6e7bf54c0ff70e23b26c6f02e3874ea80c38419885b2a",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP1002.R001",
+      "actionable": true,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    }
+  ],
+  "counts": {
+    "TP1002": 2,
+    "TP9001": 4
+  },
+  "counts_by_certainty": {
+    "possible": 2,
+    "unknown": 4
+  },
+  "counts_by_disposition": {
+    "active": 6
+  },
+  "total_diagnostics": 6,
+  "actionable_diagnostics": 2,
+  "returned_diagnostics": 6,
+  "audit_diagnostics": 4,
+  "policy_failures": [
+    "TP1002 owned resource cleanup obligation remains open on fallthrough",
+    "TP1002 owned resource cleanup obligation remains open on raise",
+    "analysis coverage is incomplete"
+  ],
+  "policy_warnings": [],
+  "unused_suppressions": [],
+  "details_truncated": false,
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "4f403803571e6f7c8b6e4c8c24ccc50648acde490339bb6c7a7ce2ee1e99521d",
+  "semantic_fingerprint": "a207ceb767eabfd7d0c0bcb60de138d967ff21090360e87ea0b7437bd41c4d12",
+  "policy_fingerprint": "e5d9b5c6b85d4217f19c9cd4d7d02cf5086e16276d8cdc8f2f81e432a142374d",
+  "model_fingerprint": "4e83201ab8d3a744bbce38770a3f45ae8a6c09b20991631e80dc3b0baa7aa332",
+  "snapshot_manifest": [
+    {
+      "logical_path": "src/main.py",
+      "sha256": "861005ec9e999ef9611294c0494dc5951e7018f45dd68c86ba069c55ef9c71eb"
+    }
+  ],
+  "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-exclusive-3.13",
+  "logical_root": ".",
+  "config_file": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-exclusive-3.13/pyproject.toml",
+  "selected_files": [
+    "src/main.py"
+  ],
+  "include": [
+    "src/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP2002",
+    "TP2003",
+    "TP2004",
+    "TP2005",
+    "TP2006",
+    "TP2101",
+    "TP2102",
+    "TP3001"
+  ],
+  "disabled_rules": [],
+  "mode": "strict",
+  "fail_on": "error",
+  "settings_origins": {
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "experimental-advanced-contracts": "pyproject.toml",
+    "experimental-ownership": "pyproject.toml",
+    "fail-on": "default",
+    "include": "pyproject.toml",
+    "mode": "command-line",
+    "python-version": "command-line",
+    "root": "pyproject-directory"
+  },
+  "baseline": {
+    "configured": false,
+    "compatible": null,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "exit_code": 1
+}

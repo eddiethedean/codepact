@@ -1,0 +1,231 @@
+{
+  "execution_status": "completed",
+  "engine_version": "0.6.0",
+  "report_schema_version": 2,
+  "check_schema_version": 2,
+  "target_python_version": "3.13",
+  "model_catalog_version": 4,
+  "available_models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-EXECUTOR-001",
+      "qualified_symbol": "concurrent.futures.ThreadPoolExecutor",
+      "source_revisions": [
+        "v3.13.16"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.13.16/Lib/concurrent/futures/thread.py"
+      ],
+      "selection_rule": "Exact ThreadPoolExecutor import identity, a local no-argument constructor, and CPython 3.13 source pin.",
+      "modeled_behavior": "Local Accepting/Shutdown protocol for submit and shutdown. Submission work, worker completion, future behavior, and worker-side cleanup are not modeled.",
+      "qualification": "Experimental 0.6 source model. Controlled runtime conformance and optimized performance evidence are pending."
+    }
+  ],
+  "assurance": "experimental-advanced-contract-checking-for-supported-exit-flow",
+  "contracts": [],
+  "coverage": {
+    "status": "incomplete",
+    "reasons": [
+      "src/main.py:9: unknown call effect for ThreadPoolExecutor",
+      "src/main.py:9: resource-valued call result is not tracked",
+      "src/main.py:10: unresolved method receiver may affect tracked resources"
+    ],
+    "source_bytes": 194,
+    "declarations": 0
+  },
+  "diagnostics": [
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "resource-valued call result is not tracked",
+      "primary": {
+        "file": "src/main.py",
+        "line": 9,
+        "column": 5,
+        "end_line": 9,
+        "end_column": 51
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "resource-valued call result is not tracked",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "64352d5ee828030667a20a1e2f1c8b008f9567e1beb1b05706381f3b7bc8c5cd",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unknown call effect for ThreadPoolExecutor",
+      "primary": {
+        "file": "src/main.py",
+        "line": 9,
+        "column": 12,
+        "end_line": 9,
+        "end_column": 51
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unknown call effect for ThreadPoolExecutor",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "77a22418015633d6a70c9f463a385b985dc3ba8cd8b709a7dfedfe50d93a89db",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unresolved method receiver may affect tracked resources",
+      "primary": {
+        "file": "src/main.py",
+        "line": 10,
+        "column": 5,
+        "end_line": 10,
+        "end_column": 24
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unresolved method receiver may affect tracked resources",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "40a089e95b6f56bbe3eff92571c3a02974811dc6bbbf925f59cd57a548864f15",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    }
+  ],
+  "counts": {
+    "TP9001": 3
+  },
+  "counts_by_certainty": {
+    "unknown": 3
+  },
+  "counts_by_disposition": {
+    "active": 3
+  },
+  "total_diagnostics": 3,
+  "actionable_diagnostics": 0,
+  "returned_diagnostics": 3,
+  "audit_diagnostics": 3,
+  "policy_failures": [],
+  "policy_warnings": [],
+  "unused_suppressions": [],
+  "details_truncated": false,
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "fb4c6adddc580a6f472f9496f26754ab5a8c9581dbab88493e760e86fa054066",
+  "semantic_fingerprint": "e875d15fed82d5e26fa6e2da8254d63a84de4cf71a3d5276690916d543093457",
+  "policy_fingerprint": "ab38474dc0e0a8e9eebc758174d061653979a9fc52529a7ac62fbaa31b13af73",
+  "model_fingerprint": "4e83201ab8d3a744bbce38770a3f45ae8a6c09b20991631e80dc3b0baa7aa332",
+  "snapshot_manifest": [
+    {
+      "logical_path": "src/main.py",
+      "sha256": "5b63bc72fcaeb79bd1be3d6f976428c18756a5d5b2d61dd6f8e519351975ff6d"
+    }
+  ],
+  "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-executor-3.13",
+  "logical_root": ".",
+  "config_file": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-executor-3.13/pyproject.toml",
+  "selected_files": [
+    "src/main.py"
+  ],
+  "include": [
+    "src/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP2002",
+    "TP2003",
+    "TP2004",
+    "TP2005",
+    "TP2006",
+    "TP2101",
+    "TP2102",
+    "TP3001"
+  ],
+  "disabled_rules": [],
+  "mode": "advisory",
+  "fail_on": "error",
+  "settings_origins": {
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "experimental-advanced-contracts": "pyproject.toml",
+    "experimental-ownership": "pyproject.toml",
+    "fail-on": "default",
+    "include": "pyproject.toml",
+    "mode": "command-line",
+    "python-version": "command-line",
+    "root": "pyproject-directory"
+  },
+  "baseline": {
+    "configured": false,
+    "compatible": null,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "exit_code": 0
+}

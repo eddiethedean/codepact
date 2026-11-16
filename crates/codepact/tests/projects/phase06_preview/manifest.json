@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "provenance": "synthetic",
+  "real_project_pilot_credit": false,
+  "oracle": "Independently specified valid, seeded-bug, minimal-repair, and unsupported controls for the four claimed advanced feature areas.",
+  "oracle_revision": 1,
+  "features": [
+    {
+      "id": "exclusive",
+      "title": "Exclusive access regions",
+      "targets": ["3.11", "3.12", "3.13"],
+      "bug": {
+        "code": "TP2101",
+        "function": "run",
+        "certainty": "definite",
+        "primary_text": "edit(item, alias)",
+        "related_text": "alias: Borrowed[Buffer]"
+      },
+      "boundary_reasons": ["unknown call effect for callback"]
+    },
+    {
+      "id": "typestate",
+      "title": "Typestate exceptional exits",
+      "targets": ["3.11", "3.12", "3.13"],
+      "bug": {
+        "code": "TP2102",
+        "function": "run",
+        "certainty": "definite",
+        "primary_text": "channel.send()",
+        "related_text": "def send(self: State[\"Channel\", Literal[\"ready\"]])"
+      },
+      "boundary_reasons": ["unknown call effect"]
+    },
+    {
+      "id": "task_group",
+      "title": "Structured TaskGroup protocol",
+      "targets": ["3.11", "3.12", "3.13"],
+      "bug": {
+        "code": "TP2102",
+        "function": "run",
+        "certainty": "definite",
+        "primary_text": "group.create_task(worker())",
+        "related_text": "async with TaskGroup() as group:"
+      },
+      "bug_boundary_targets": ["3.11", "3.12"],
+      "bug_boundary_reasons": ["created coroutine is not awaited"],
+      "boundary_reasons": ["task factory"]
+    },
+    {
+      "id": "executor",
+      "title": "ThreadPoolExecutor protocol",
+      "targets": ["3.13"],
+      "bug": {
+        "code": "TP2102",
+        "function": "run",
+        "certainty": "definite",
+        "primary_text": "pool.submit(worker)",
+        "related_text": "pool = ThreadPoolExecutor()"
+      },
+      "boundary_reasons": ["unknown call effect for ThreadPoolExecutor"]
+    }
+  ]
+}

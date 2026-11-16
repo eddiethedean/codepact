@@ -1,0 +1,348 @@
+{
+  "execution_status": "completed",
+  "engine_version": "0.6.0",
+  "report_schema_version": 2,
+  "check_schema_version": 2,
+  "target_python_version": "3.11",
+  "model_catalog_version": 4,
+  "available_models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-TASK-001",
+      "qualified_symbol": "asyncio.TaskGroup",
+      "source_revisions": [
+        "v3.11.15"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.15/Lib/asyncio/taskgroups.py"
+      ],
+      "selection_rule": "Exact asyncio.TaskGroup with the explicit default-task-factory assumption.",
+      "modeled_behavior": "Local scheduling and completion at group exit, including exceptional exit and cancellation. Completion and resource cleanup have separate effects.",
+      "qualification": "Experimental source model under a project-declared runtime assumption."
+    }
+  ],
+  "assurance": "experimental-advanced-contract-checking-for-supported-exit-flow",
+  "contracts": [],
+  "coverage": {
+    "status": "incomplete",
+    "reasons": [
+      "src/main.py:11: task factory mutation invalidates the declared default-factory model",
+      "src/main.py:11: unresolved method receiver may affect tracked resources",
+      "src/main.py:12: TaskGroup operation requires the explicit default-task-factory assumption",
+      "src/main.py:10: TaskGroup membership or completion is unresolved",
+      "src/main.py:13: unresolved method receiver may affect tracked resources",
+      "src/main.py:12: created coroutine is not awaited before this scope exit; captured resource effects remain unresolved",
+      "src/main.py:9: unsupported flow weakens tracked resources"
+    ],
+    "source_bytes": 331,
+    "declarations": 0
+  },
+  "diagnostics": [
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unsupported flow weakens tracked resources",
+      "primary": {
+        "file": "src/main.py",
+        "line": 9,
+        "column": 1,
+        "end_line": 13,
+        "end_column": 18
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unsupported flow weakens tracked resources",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "307453430972cb936ab03ceea5a436523a07fa1fd157b2203ca1fc71105f158e",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "TaskGroup membership or completion is unresolved",
+      "primary": {
+        "file": "src/main.py",
+        "line": 10,
+        "column": 16,
+        "end_line": 10,
+        "end_column": 36
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "TaskGroup membership or completion is unresolved",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "62b84472f8f53199028d97241232a200f2eaa747af1c456805f3d7aba9eff52b",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "task factory mutation invalidates the declared default-factory model",
+      "primary": {
+        "file": "src/main.py",
+        "line": 11,
+        "column": 9,
+        "end_line": 11,
+        "end_column": 40
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "task factory mutation invalidates the declared default-factory model",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "86763b32c9cdcd6bd3955a45ab8e8882d1040c757264f9e03aeeae76a98dc78d",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unresolved method receiver may affect tracked resources",
+      "primary": {
+        "file": "src/main.py",
+        "line": 11,
+        "column": 9,
+        "end_line": 11,
+        "end_column": 40
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unresolved method receiver may affect tracked resources",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "86763b32c9cdcd6bd3955a45ab8e8882d1040c757264f9e03aeeae76a98dc78d",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "TaskGroup operation requires the explicit default-task-factory assumption",
+      "primary": {
+        "file": "src/main.py",
+        "line": 12,
+        "column": 16,
+        "end_line": 12,
+        "end_column": 43
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "TaskGroup operation requires the explicit default-task-factory assumption",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "fd7aa669bce5589c17b8ffe2c5d1c92e50073d8f115c5469b5a75e686480f87f",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "created coroutine is not awaited before this scope exit; captured resource effects remain unresolved",
+      "primary": {
+        "file": "src/main.py",
+        "line": 12,
+        "column": 34,
+        "end_line": 12,
+        "end_column": 42
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "created coroutine is not awaited before this scope exit; captured resource effects remain unresolved",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "e390913f2f2b75cf20a6af22c39b8d9eb7a755ffe7ad91f5f9ab2c2bd5c5441b",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unresolved method receiver may affect tracked resources",
+      "primary": {
+        "file": "src/main.py",
+        "line": 13,
+        "column": 5,
+        "end_line": 13,
+        "end_column": 18
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unresolved method receiver may affect tracked resources",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "6bace31ad86f8a395174cdefeb2982dfcf5b0b98864749b3b3372a0054579e2c",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    }
+  ],
+  "counts": {
+    "TP9001": 7
+  },
+  "counts_by_certainty": {
+    "unknown": 7
+  },
+  "counts_by_disposition": {
+    "active": 7
+  },
+  "total_diagnostics": 7,
+  "actionable_diagnostics": 0,
+  "returned_diagnostics": 7,
+  "audit_diagnostics": 7,
+  "policy_failures": [],
+  "policy_warnings": [],
+  "unused_suppressions": [],
+  "details_truncated": false,
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "19cbbe910ea88d3217d2c21098894b97cad2f8204828690a6ce9e9223777263b",
+  "semantic_fingerprint": "6f96b4f4a58987686b73e86de11613334143e56e7b09c2ad192c1fa994cdbc2f",
+  "policy_fingerprint": "ab38474dc0e0a8e9eebc758174d061653979a9fc52529a7ac62fbaa31b13af73",
+  "model_fingerprint": "2513d621325ca6a968b021ceab295b5b7c801dcbbb52c6c384c0cb085526bf74",
+  "snapshot_manifest": [
+    {
+      "logical_path": "src/main.py",
+      "sha256": "76ae57cf4af41535c3b73631910e31c639bc8fdf673ef50991166bc86696af70"
+    }
+  ],
+  "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-task_group-3.11",
+  "logical_root": ".",
+  "config_file": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-task_group-3.11/pyproject.toml",
+  "selected_files": [
+    "src/main.py"
+  ],
+  "include": [
+    "src/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP2002",
+    "TP2003",
+    "TP2004",
+    "TP2005",
+    "TP2006",
+    "TP2101",
+    "TP2102",
+    "TP3001"
+  ],
+  "disabled_rules": [],
+  "mode": "advisory",
+  "fail_on": "error",
+  "settings_origins": {
+    "assume-default-task-factory": "pyproject.toml",
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "experimental-advanced-contracts": "pyproject.toml",
+    "experimental-ownership": "pyproject.toml",
+    "fail-on": "default",
+    "include": "pyproject.toml",
+    "mode": "command-line",
+    "python-version": "command-line",
+    "root": "pyproject-directory"
+  },
+  "baseline": {
+    "configured": false,
+    "compatible": null,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "exit_code": 0
+}

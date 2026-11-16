@@ -1,6 +1,6 @@
 # Phase 0.6 candidate performance evidence
 
-The exact candidate is `1da46b68d8e0d9ebc226441abb3eea3c1c28f13f`. The retained baseline is the released `v0.5.1` tag at `d0f41fa`. Both were built in optimized mode with Rust/Cargo 1.96.0 on macOS 26.5.2 arm64 (Darwin 25.5.0), using separate target directories. Each time is the median of seven samples. Phase 0.6 workloads target Python 3.13; retained workloads target Python 3.11. Source is analyzed statically and never executed. The benchmark asserts reused results match fresh analysis after edits. RSS is the whole benchmark process, including parity checks.
+The retained 0.6-versus-0.5 performance comparison uses candidate `1da46b68d8e0d9ebc226441abb3eea3c1c28f13f` and the released `v0.5.1` tag at `d0f41fa`. Both were built in optimized mode with Rust/Cargo 1.96.0 on macOS 26.5.2 arm64 (Darwin 25.5.0), using separate target directories. Each time is the median of seven samples. Phase 0.6 workloads target Python 3.13; retained workloads target Python 3.11. Source is analyzed statically and never executed. The benchmark asserts reused results match fresh analysis after edits. RSS is the whole benchmark process, including parity checks.
 
 ## New 0.6 workloads
 
@@ -26,6 +26,22 @@ Times compare seven-sample medians from the exact candidate with a fresh optimiz
 
 The retained comparison shows no large time regression: the largest cold/edit change is +2.5%, and peak RSS changes by at most 3.6%. These are single-host observations, not cross-platform performance claims.
 
+## TaskGroup/coroutine budget stress
+
+The updated working tree was measured separately from the exact-candidate comparison above. The workload uses Python 3.13 and `advanced-assume-default-task-factory`, with 8,849 source bytes at the 128-record limit. Scheduled tasks are represented by pending coroutine records, so the 129th task attempt reaches the shared coroutine budget and produces one visible boundary. There is no separate task counter or second task-budget boundary. Every sample checks recovered, reused and fresh results for semantic parity; target Python source is analyzed statically and never executed.
+
+| Operation | Seven-sample median ms |
+| --- | ---: |
+| Cold analysis at 128 | 14.247 |
+| Warm unchanged session | 0.006 |
+| Edit to 129, including boundary | 27.785 |
+| Edit back to 128, recovery | 14.223 |
+| Unrelated-file edit | 0.114 |
+| Location-only edit | 14.256 |
+| Report serialization | 0.311 |
+
+The seven raw samples for each operation are retained in [task-budget-performance.json](evidence/task-budget-performance.json). `/usr/bin/time -l` measured 0.59 seconds for the whole benchmark process and peak RSS of 9,322,496 bytes (8.9 MiB) on macOS 26.5.2 arm64, using optimized Rust/Cargo 1.96.0. This is an added local stress measurement, not a cross-platform performance claim.
+
 ## Rust-level optimization follow-up
 
 Source-sharing, session reconciliation and query-indexing changes are measured
@@ -37,4 +53,4 @@ edits, and function-source memory scaling. The repeatable generator is
 
 ## Reproduction and provenance
 
-Build each revision separately with `cargo build --release --locked -p codepact --examples`. Run `/usr/bin/time -l target/release/examples/benchmark_phase05 {legacy,alias,recursive,tasks} SIZE` and `/usr/bin/time -l target/release/examples/benchmark_phase06 {state,exclusive,executor} 250`. The complete raw samples, commits, commands and memory readings are in the [exact candidate performance record](evidence/candidate-performance-2026-11-14.json). The earlier [preliminary advanced record](evidence/phase06-benchmark-2026-11-14.json) and [preliminary retained record](evidence/phase05-retained-2026-11-14.json) were measured on mutable, unhashed worktree source and do not reproduce these exact-candidate values; they are retained for audit and excluded from comparison. The [0.5 performance baseline](../0.5/performance.md) documents the prior measurements.
+Build each revision separately with `cargo build --release --locked -p codepact --examples`. Run `/usr/bin/time -l target/release/examples/benchmark_phase05 {legacy,alias,recursive,tasks} SIZE` and `/usr/bin/time -l target/release/examples/benchmark_phase06 {state,exclusive,executor} 250`. Reproduce the added stress case with `/usr/bin/time -l cargo run --release --locked -p codepact --example benchmark_phase06_budget`; the complete samples are retained in [task-budget-performance.json](evidence/task-budget-performance.json). The complete raw samples, commits, commands and memory readings for the retained comparison are in the [candidate performance record](evidence/candidate-performance-2026-11-14.json). The earlier [preliminary advanced record](evidence/phase06-benchmark-2026-11-14.json) and [preliminary retained record](evidence/phase05-retained-2026-11-14.json) were measured on mutable, unhashed worktree source and do not reproduce these compared values; they are retained for audit. The [0.5 performance baseline](../0.5/performance.md) documents the prior measurements.

@@ -1,0 +1,326 @@
+{
+  "execution_status": "completed",
+  "engine_version": "0.6.0",
+  "report_schema_version": 2,
+  "check_schema_version": 2,
+  "target_python_version": "3.11",
+  "model_catalog_version": 4,
+  "available_models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11–3.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    }
+  ],
+  "assurance": "experimental-advanced-contract-checking-for-supported-exit-flow",
+  "contracts": [
+    {
+      "schema_version": 0,
+      "base_symbol": "src.main.Effect",
+      "display_name": "run.unknown_effect",
+      "lifecycle": null,
+      "access": "unspecified",
+      "source": {
+        "file": "src/main.py",
+        "line": 17,
+        "column": 25,
+        "end_line": 17,
+        "end_column": 31
+      },
+      "provenance": [
+        {
+          "origin": "python-annotation",
+          "trust": "declared-unverified"
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "status": "incomplete",
+    "reasons": [
+      "src/main.py:13: Ruff AST marked syntax outside the supported declaration subset (class bases, keywords, and type parameters are not resolved)",
+      "src/main.py:14: method parameter annotations are not modeled",
+      "src/main.py:19: unknown call effect for unknown_effect",
+      "src/main.py:20: protocol precondition cannot be established on every path",
+      "src/main.py:14: unsupported expression may affect or use a tracked resource",
+      "src/main.py:13: unsupported flow weakens tracked resources"
+    ],
+    "source_bytes": 453,
+    "declarations": 1
+  },
+  "diagnostics": [
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "Ruff AST marked syntax outside the supported declaration subset (class bases, keywords, and type parameters are not resolved)",
+      "primary": {
+        "file": "src/main.py",
+        "line": 13,
+        "column": 1,
+        "end_line": 14,
+        "end_column": 54
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "Ruff AST marked syntax outside the supported declaration subset (class bases, keywords, and type parameters are not resolved)",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "54713d712ca3c2d7a2e7c0258602b2f4ad42e69e3669601b28dcb178411dde20",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unsupported flow weakens tracked resources",
+      "primary": {
+        "file": "src/main.py",
+        "line": 13,
+        "column": 1,
+        "end_line": 14,
+        "end_column": 54
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unsupported flow weakens tracked resources",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "54713d712ca3c2d7a2e7c0258602b2f4ad42e69e3669601b28dcb178411dde20",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "method parameter annotations are not modeled",
+      "primary": {
+        "file": "src/main.py",
+        "line": 14,
+        "column": 5,
+        "end_line": 14,
+        "end_column": 54
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "method parameter annotations are not modeled",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "875b03aed3aa06e691c2a8a45481dd74806a8e24675ce0ab1e22142b794f9234",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unsupported expression may affect or use a tracked resource",
+      "primary": {
+        "file": "src/main.py",
+        "line": 14,
+        "column": 51,
+        "end_line": 14,
+        "end_column": 54
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unsupported expression may affect or use a tracked resource",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "465d98cd38deb3809f019674bcd387be9265b572e66fdeda6ed3114306ed25f6",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "unknown call effect for unknown_effect",
+      "primary": {
+        "file": "src/main.py",
+        "line": 19,
+        "column": 5,
+        "end_line": 19,
+        "end_column": 28
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "unknown call effect for unknown_effect",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "40b325182773e069e2c11cfb7e0b76ded075eaa0994b3826c01e6f29a3d9ea0b",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    },
+    {
+      "code": "TP9001",
+      "severity": "warning",
+      "message": "protocol precondition cannot be established on every path",
+      "primary": {
+        "file": "src/main.py",
+        "line": 20,
+        "column": 5,
+        "end_line": 20,
+        "end_column": 19
+      },
+      "related": [],
+      "certainty": "unknown",
+      "completion": null,
+      "trust": "unknown-boundary",
+      "coverage_reason": "protocol precondition cannot be established on every path",
+      "repair": "Resolve the reported model boundary or keep the affected lifecycle state unknown.",
+      "fingerprint": "974c75e2ac94cec20b6598f254794d48facf5cff511aa78ef3861ccfee0eba18",
+      "base_severity": "warning",
+      "effective_severity": "warning",
+      "disposition": "active",
+      "disposition_reason": null,
+      "explanation_id": "TP9001.R001",
+      "actionable": false,
+      "message_omitted_bytes": 0,
+      "repair_omitted_bytes": 0,
+      "related_sites_omitted": 0
+    }
+  ],
+  "counts": {
+    "TP9001": 6
+  },
+  "counts_by_certainty": {
+    "unknown": 6
+  },
+  "counts_by_disposition": {
+    "active": 6
+  },
+  "total_diagnostics": 6,
+  "actionable_diagnostics": 0,
+  "returned_diagnostics": 6,
+  "audit_diagnostics": 6,
+  "policy_failures": [],
+  "policy_warnings": [],
+  "unused_suppressions": [],
+  "details_truncated": false,
+  "snapshot_algorithm_version": 1,
+  "snapshot_id": "e5de275d16a11a0aaaa2e8920a067edc8991f000de084cd11775d020e7e786f3",
+  "semantic_fingerprint": "49f43d72b5a9d2030ff341000abf4e431812ef3bf1914103a6302987d692db36",
+  "policy_fingerprint": "ab38474dc0e0a8e9eebc758174d061653979a9fc52529a7ac62fbaa31b13af73",
+  "model_fingerprint": "43d7ff32d269d5bf2f7cc6f2d61cbacc9e4a649f1c8ead2f7a95fc447d367d23",
+  "snapshot_manifest": [
+    {
+      "logical_path": "src/main.py",
+      "sha256": "413a9ed4bac025b6341a4d1cdb4fbb797d22ff22f935817beda8a8e0c7573ec0"
+    }
+  ],
+  "project_root": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-typestate-3.11",
+  "logical_root": ".",
+  "config_file": "/private/var/folders/d0/m6dm9m4s1113jt883qbzzpph0000gn/T/codepact-phase06-preview-73280-typestate-3.11/pyproject.toml",
+  "selected_files": [
+    "src/main.py"
+  ],
+  "include": [
+    "src/*.py"
+  ],
+  "exclude": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP2002",
+    "TP2003",
+    "TP2004",
+    "TP2005",
+    "TP2006",
+    "TP2101",
+    "TP2102",
+    "TP3001"
+  ],
+  "disabled_rules": [],
+  "mode": "advisory",
+  "fail_on": "error",
+  "settings_origins": {
+    "baseline": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "experimental-advanced-contracts": "pyproject.toml",
+    "experimental-ownership": "pyproject.toml",
+    "fail-on": "default",
+    "include": "pyproject.toml",
+    "mode": "command-line",
+    "python-version": "command-line",
+    "root": "pyproject-directory"
+  },
+  "baseline": {
+    "configured": false,
+    "compatible": null,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "exit_code": 0
+}

@@ -215,7 +215,7 @@ pub(super) fn executor_call(
             } else {
                 false
             };
-            if has_unknown || !supported {
+            if has_unknown || has_accepting && !supported {
                 boundary(
                     result,
                     file,
@@ -820,30 +820,6 @@ pub(super) fn task_call(
         {
             group.incomplete = true;
         }
-    }
-    let task_count = env
-        .ownership
-        .as_ref()
-        .expect("task ownership")
-        .groups
-        .values()
-        .map(|group| group.tasks.len())
-        .sum::<usize>();
-    if task_count >= MAX_PENDING_COROUTINES {
-        env.ownership
-            .as_mut()
-            .expect("task ownership")
-            .groups
-            .get_mut(&group_id)
-            .expect("active group")
-            .incomplete = true;
-        boundary(
-            result,
-            file,
-            expression.range,
-            "structured task budget exceeded; capture completion is unknown",
-        );
-        return true;
     }
     env.ownership
         .as_mut()

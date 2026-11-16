@@ -2686,6 +2686,8 @@ mod tests {
             }),
             "the exhausted budget cannot claim the duty was discharged: {bounded:#?}"
         );
+        assert_eq!(source_with_flow_budget(source, 2), bounded);
+        assert_eq!(source_with_flow_budget(source, 100), reference);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 //! Independent acceptance controls for the 0.4 CLI, including negative controls.
+use codepact::{check_with_ownership, Ownership, SourceFile};
 use serde_json::{json, Value};
 use std::{
     fs,
@@ -191,6 +192,95 @@ fn v06_01_cli_advanced_mode_requires_both_opt_ins_and_enforces_selected_rules() 
     assert_eq!(settings["mode"], "strict");
     assert_eq!(settings["experimental_ownership"], false);
     assert_eq!(settings["experimental_advanced_contracts"], false);
+}
+
+#[test]
+fn v06_01_cli_config_precedence_and_rust_api_share_advanced_semantics() {
+    let p = Project::new("advanced-cli-api-parity");
+    let source = "from typing import Literal\nfrom codepact import state_machine, transition\nfrom codepact.rust import State\n@state_machine(states=('ready', 'closed'), initial='ready')\nclass Channel:\n    @transition(from_state='ready', to_state='closed')\n    def close(self): pass\n    def send(self: State['Channel', Literal['ready']]): pass\ndef run():\n    channel = Channel()\n    channel.close()\n    channel.send()\n";
+    p.write("main.py", source);
+    p.write(
+        "pyproject.toml",
+        "[tool.codepact]\nconfig-version=1\npython-version='3.13'\nexperimental-ownership=true\nexperimental-advanced-contracts=true\nenabled-rules=['TP2102']\n",
+    );
+
+    let output = p.run(&["check", "--json"]);
+    assert_eq!(output.status.code(), Some(1));
+    let cli: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let files = [SourceFile::new("main.py", "main", source)];
+    let api =
+        serde_json::to_value(check_with_ownership(&files, "3.13", Ownership::Advanced)).unwrap();
+
+    for field in [
+        "target_python_version",
+        "model_catalog_version",
+        "available_models",
+        "assurance",
+        "contracts",
+        "coverage",
+    ] {
+        assert_eq!(cli[field], api[field], "CLI/API mismatch in {field}");
+    }
+    let cli_diagnostics = cli["diagnostics"].as_array().unwrap();
+    let api_diagnostics = api["diagnostics"].as_array().unwrap();
+    assert_eq!(cli_diagnostics.len(), api_diagnostics.len());
+    for (cli_diagnostic, api_diagnostic) in cli_diagnostics.iter().zip(api_diagnostics) {
+        for field in [
+            "code",
+            "severity",
+            "message",
+            "primary",
+            "certainty",
+            "completion",
+            "trust",
+            "coverage_reason",
+            "repair",
+        ] {
+            assert_eq!(
+                cli_diagnostic[field], api_diagnostic[field],
+                "CLI/API diagnostic mismatch in {field}"
+            );
+        }
+        let mut cli_related = cli_diagnostic["related"].as_array().unwrap().clone();
+        let mut api_related = api_diagnostic["related"].as_array().unwrap().clone();
+        let span_order = |span: &Value| {
+            (
+                span["file"].as_str().unwrap_or_default().to_owned(),
+                span["line"].as_u64().unwrap_or_default(),
+                span["column"].as_u64().unwrap_or_default(),
+                span["end_line"].as_u64().unwrap_or_default(),
+                span["end_column"].as_u64().unwrap_or_default(),
+            )
+        };
+        cli_related.sort_by_key(span_order);
+        api_related.sort_by_key(span_order);
+        assert_eq!(cli_related, api_related, "CLI/API related spans differ");
+    }
+
+    let override_output = p.run(&[
+        "check",
+        "--no-experimental-advanced-contracts",
+        "--rules",
+        "TP1001",
+        "--show-settings",
+        "--json",
+    ]);
+    assert_eq!(override_output.status.code(), Some(0));
+    let overridden: Value = serde_json::from_slice(&override_output.stdout).unwrap();
+    assert_eq!(overridden["experimental_ownership"], true);
+    assert_eq!(overridden["experimental_advanced_contracts"], false);
+
+    p.write(
+        "pyproject.toml",
+        "[tool.codepact]\nconfig-version=1\nexperimental-ownership=false\nexperimental-advanced-contracts=true\n",
+    );
+    let contradictory = p.run(&["check", "--json"]);
+    assert_eq!(contradictory.status.code(), Some(2));
+    let contradictory: Value = serde_json::from_slice(&contradictory.stdout).unwrap();
+    assert!(contradictory["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("requires experimental-ownership"));
 }
 
 #[test]
