@@ -26,18 +26,27 @@ check-python:
 	ruff check crates/codepact/tests/projects
 	ruff format --check python/codepact scripts crates/codepact/tests/projects
 	$(PYTHON) scripts/check_synthetic_static_tools.py
-	MYPYPATH=python mypy --strict tests/checkers/valid.py
+	basedpyright tests/checkers/outcomes_valid.py
 	@diagnostics="$$(mktemp)"; \
-	if MYPYPATH=python mypy --strict tests/checkers/invalid.py >"$$diagnostics" 2>&1; then \
+	if basedpyright tests/checkers/outcomes_invalid.py >"$$diagnostics" 2>&1; then \
+		cat "$$diagnostics"; rm -f "$$diagnostics"; echo "basedpyright accepted the invalid outcome typing fixture" >&2; exit 1; \
+	fi; \
+	if ! grep -q 'reportAssignmentType' "$$diagnostics"; then \
+		cat "$$diagnostics"; rm -f "$$diagnostics"; exit 1; \
+	fi; \
+	rm -f "$$diagnostics"
+	MYPYPATH=python mypy --strict tests/checkers/valid.py tests/checkers/outcomes_valid.py
+	@diagnostics="$$(mktemp)"; \
+	if MYPYPATH=python mypy --strict tests/checkers/invalid.py tests/checkers/outcomes_invalid.py >"$$diagnostics" 2>&1; then \
 		cat "$$diagnostics"; rm -f "$$diagnostics"; echo "mypy accepted the invalid typing fixture" >&2; exit 1; \
 	fi; \
 	if ! grep -q 'Incompatible types in assignment' "$$diagnostics"; then \
 		cat "$$diagnostics"; rm -f "$$diagnostics"; exit 1; \
 	fi; \
 	rm -f "$$diagnostics"
-	PYTHONPATH=python pyright tests/checkers/valid.py
+	PYTHONPATH=python pyright tests/checkers/valid.py tests/checkers/outcomes_valid.py
 	@diagnostics="$$(mktemp)"; \
-	if PYTHONPATH=python pyright tests/checkers/invalid.py >"$$diagnostics" 2>&1; then \
+	if PYTHONPATH=python pyright tests/checkers/invalid.py tests/checkers/outcomes_invalid.py >"$$diagnostics" 2>&1; then \
 		cat "$$diagnostics"; rm -f "$$diagnostics"; echo "pyright accepted the invalid typing fixture" >&2; exit 1; \
 	fi; \
 	if ! grep -q 'reportAssignmentType' "$$diagnostics"; then \

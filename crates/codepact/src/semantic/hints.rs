@@ -71,54 +71,62 @@ fn report_closing_resource_hints(
     }
 
     let mut uses = BTreeMap::<String, Vec<Span>>::new();
-    let mut visit = |expression: &AstExpr| {
-        let AstExprKind::Call {
-            function,
-            arguments,
-            keywords,
-        } = &expression.kind
-        else {
-            return;
-        };
-        let identity = canonical(function, &state.imports);
-        if !matches!(
-            identity.as_deref(),
-            Some("external:contextlib.closing" | "external:contextlib::closing")
-        ) || !keywords.is_empty()
-            || arguments.len() != 1
-        {
-            return;
-        }
-        let AstExprKind::Call {
-            function: constructor,
-            ..
-        } = &arguments[0].kind
-        else {
-            return;
-        };
-        let Some(class) = expression_path(constructor).filter(|name| !name.contains('.')) else {
-            return;
-        };
-        if candidates.contains_key(&class) {
-            uses.entry(class).or_default().push(crate::source_span(
-                &file.path,
-                &file.source,
-                expression.range,
-            ));
-        }
-    };
     for declaration in declarations {
         match declaration {
-            Declaration::Function { body, .. } => visit_flow(body, &mut visit),
+            Declaration::Function {
+                parameters, body, ..
+            } => {
+                let (locals, imports) = scoped_imports(
+                    body,
+                    parameters.iter().map(|parameter| parameter.name.as_str()),
+                    &state.imports,
+                );
+                visit_flow(body, &mut |expression| {
+                    record_closing_use(expression, &imports, &locals, &candidates, file, &mut uses)
+                });
+            }
             Declaration::Class { methods, .. } => {
                 for method in methods {
-                    visit_flow(&method.body, &mut visit);
+                    let (locals, imports) = scoped_imports(
+                        &method.body,
+                        method.parameters.iter().map(String::as_str),
+                        &state.imports,
+                    );
+                    visit_flow(&method.body, &mut |expression| {
+                        record_closing_use(
+                            expression,
+                            &imports,
+                            &locals,
+                            &candidates,
+                            file,
+                            &mut uses,
+                        )
+                    });
                 }
             }
             Declaration::Assignment {
                 value: Some(value), ..
             }
-            | Declaration::Expression { value, .. } => visit_expression(value, &mut visit),
+            | Declaration::Expression { value, .. } => record_closing_expression(
+                value,
+                &state.imports,
+                &BTreeSet::new(),
+                &candidates,
+                file,
+                &mut uses,
+            ),
+            Declaration::ModuleFlow { statements, .. } => {
+                visit_flow(statements, &mut |expression| {
+                    record_closing_use(
+                        expression,
+                        &state.imports,
+                        &BTreeSet::new(),
+                        &candidates,
+                        file,
+                        &mut uses,
+                    )
+                })
+            }
             _ => {}
         }
     }
@@ -149,6 +157,203 @@ fn report_closing_resource_hints(
             certainty: "definite".into(),
         });
     }
+}
+
+fn scoped_imports<'a>(
+    body: &[FlowStatement],
+    parameters: impl Iterator<Item = &'a str>,
+    module_imports: &BTreeMap<String, String>,
+) -> (BTreeSet<String>, BTreeMap<String, String>) {
+    let mut locals = parameters.map(str::to_owned).collect::<BTreeSet<_>>();
+    collect_locals(body, &mut locals);
+
+    let mut imports = module_imports.clone();
+    for name in &locals {
+        imports.remove(name);
+    }
+
+    let mut local_imports = BTreeMap::new();
+    let mut shadowed = BTreeSet::new();
+    collect_scoped_imports(body, &mut local_imports, &mut shadowed, true);
+    for (name, identity) in local_imports {
+        if locals.contains(&name) && !shadowed.contains(&name) {
+            imports.insert(name, identity);
+        }
+    }
+    (locals, imports)
+}
+
+fn collect_scoped_imports(
+    statements: &[FlowStatement],
+    imports: &mut BTreeMap<String, String>,
+    shadowed: &mut BTreeSet<String>,
+    allow_direct_imports: bool,
+) {
+    for statement in statements {
+        match statement {
+            FlowStatement::BindFunction { name, binding, .. } => {
+                if allow_direct_imports
+                    && binding.as_deref().is_some_and(|identity| {
+                        matches!(
+                            identity,
+                            "external:contextlib"
+                                | "external:contextlib.closing"
+                                | "external:contextlib.aclosing"
+                        )
+                    })
+                {
+                    imports.insert(name.clone(), binding.clone().unwrap_or_default());
+                } else {
+                    shadowed.insert(name.clone());
+                    imports.remove(name);
+                }
+            }
+            FlowStatement::Assign { name, .. }
+            | FlowStatement::EscapingAssign { name, .. }
+            | FlowStatement::AnnotatedDeclaration {
+                name: Some(name), ..
+            }
+            | FlowStatement::ClosureDefinition { name, .. } => {
+                shadowed.insert(name.clone());
+                imports.remove(name);
+            }
+            FlowStatement::AnnotatedDeclaration { name: None, .. }
+            | FlowStatement::Pass { .. }
+            | FlowStatement::Expression { .. }
+            | FlowStatement::Return { .. }
+            | FlowStatement::Raise { .. }
+            | FlowStatement::Break { .. }
+            | FlowStatement::Continue { .. }
+            | FlowStatement::Unsupported { .. } => {}
+            FlowStatement::Store { target, .. } => {
+                if let Some(AstExpr {
+                    kind: AstExprKind::Name(name),
+                    ..
+                }) = target
+                {
+                    shadowed.insert(name.clone());
+                    imports.remove(name);
+                }
+            }
+            FlowStatement::DeleteLocal { names, .. } => {
+                for name in names {
+                    shadowed.insert(name.clone());
+                    imports.remove(name);
+                }
+            }
+            FlowStatement::If {
+                body, alternate, ..
+            } => {
+                collect_scoped_imports(body, imports, shadowed, false);
+                collect_scoped_imports(alternate, imports, shadowed, false);
+            }
+            FlowStatement::Loop {
+                target,
+                body,
+                alternate,
+                ..
+            } => {
+                if let Some(name) = target {
+                    shadowed.insert(name.clone());
+                    imports.remove(name);
+                }
+                collect_scoped_imports(body, imports, shadowed, false);
+                collect_scoped_imports(alternate, imports, shadowed, false);
+            }
+            FlowStatement::Match { cases, .. } => {
+                for case in cases {
+                    case.pattern.binding_names(shadowed);
+                    collect_scoped_imports(&case.body, imports, shadowed, false);
+                }
+            }
+            FlowStatement::Try {
+                body,
+                handlers,
+                alternate,
+                finalbody,
+                ..
+            } => {
+                collect_scoped_imports(body, imports, shadowed, false);
+                for handler in handlers {
+                    if let Some(name) = &handler.name {
+                        shadowed.insert(name.clone());
+                        imports.remove(name);
+                    }
+                    collect_scoped_imports(&handler.body, imports, shadowed, false);
+                }
+                collect_scoped_imports(alternate, imports, shadowed, false);
+                collect_scoped_imports(finalbody, imports, shadowed, false);
+            }
+            FlowStatement::With { items, body, .. } => {
+                for item in items {
+                    if let Some(name) = &item.target {
+                        shadowed.insert(name.clone());
+                        imports.remove(name);
+                    }
+                }
+                collect_scoped_imports(body, imports, shadowed, false);
+            }
+        }
+    }
+}
+
+fn record_closing_expression(
+    expression: &AstExpr,
+    imports: &BTreeMap<String, String>,
+    locals: &BTreeSet<String>,
+    candidates: &BTreeMap<String, LocalCloseClass>,
+    file: &SourceFile,
+    uses: &mut BTreeMap<String, Vec<Span>>,
+) {
+    let mut visit = |expression: &AstExpr| {
+        record_closing_use(expression, imports, locals, candidates, file, uses)
+    };
+    visit_expression(expression, &mut visit);
+}
+
+fn record_closing_use(
+    expression: &AstExpr,
+    imports: &BTreeMap<String, String>,
+    locals: &BTreeSet<String>,
+    candidates: &BTreeMap<String, LocalCloseClass>,
+    file: &SourceFile,
+    uses: &mut BTreeMap<String, Vec<Span>>,
+) {
+    let AstExprKind::Call {
+        function,
+        arguments,
+        keywords,
+    } = &expression.kind
+    else {
+        return;
+    };
+    let identity = canonical(function, imports);
+    if !matches!(
+        identity.as_deref(),
+        Some("external:contextlib.closing" | "external:contextlib::closing")
+    ) || !keywords.is_empty()
+        || arguments.len() != 1
+    {
+        return;
+    }
+    let AstExprKind::Call {
+        function: constructor,
+        ..
+    } = &arguments[0].kind
+    else {
+        return;
+    };
+    let Some(class) = expression_path(constructor).filter(|name| !name.contains('.')) else {
+        return;
+    };
+    if locals.contains(&class) || !candidates.contains_key(&class) {
+        return;
+    }
+    uses.entry(class).or_default().push(crate::source_span(
+        &file.path,
+        &file.source,
+        expression.range,
+    ));
 }
 
 fn report_must_use_forwarding_hints(
@@ -363,7 +568,8 @@ fn collect_locals(statements: &[FlowStatement], names: &mut BTreeSet<String>) {
         match statement {
             FlowStatement::Assign { name, .. }
             | FlowStatement::EscapingAssign { name, .. }
-            | FlowStatement::BindFunction { name, .. } => {
+            | FlowStatement::BindFunction { name, .. }
+            | FlowStatement::ClosureDefinition { name, .. } => {
                 names.insert(name.clone());
             }
             FlowStatement::AnnotatedDeclaration {
@@ -373,10 +579,19 @@ fn collect_locals(statements: &[FlowStatement], names: &mut BTreeSet<String>) {
             }
             FlowStatement::If {
                 body, alternate, ..
-            }
-            | FlowStatement::Loop {
-                body, alternate, ..
             } => {
+                collect_locals(body, names);
+                collect_locals(alternate, names);
+            }
+            FlowStatement::Loop {
+                target,
+                body,
+                alternate,
+                ..
+            } => {
+                if let Some(name) = target {
+                    names.insert(name.clone());
+                }
                 collect_locals(body, names);
                 collect_locals(alternate, names);
             }
@@ -413,6 +628,16 @@ fn collect_locals(statements: &[FlowStatement], names: &mut BTreeSet<String>) {
             }
             FlowStatement::DeleteLocal { names: deleted, .. } => {
                 names.extend(deleted.iter().cloned());
+            }
+            FlowStatement::Store {
+                target:
+                    Some(AstExpr {
+                        kind: AstExprKind::Name(name),
+                        ..
+                    }),
+                ..
+            } => {
+                names.insert(name.clone());
             }
             _ => {}
         }

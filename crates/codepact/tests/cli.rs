@@ -2363,6 +2363,108 @@ fn phase07_finite_match_checks_terminating_branches_and_tracks_unknown_variants(
 }
 
 #[test]
+fn phase07_finite_option_match_covers_each_variant_and_guard_fallbacks() {
+    let root = fixture_root().with_extension("phase07-finite-option-match");
+    fs::create_dir_all(&root).unwrap();
+    for (body, missing) in [
+        (
+            "    match value:\n        case Some(_): pass\n        case Nothing(): pass\n",
+            None,
+        ),
+        (
+            "    match value:\n        case Some(_): pass\n",
+            Some("outcome match leaves Nothing uncovered"),
+        ),
+        (
+            "    match value:\n        case Some(_) | Nothing(): pass\n",
+            None,
+        ),
+        (
+            "    match value:\n        case Some(_) if flag: pass\n        case Some(value=_): pass\n        case Nothing(): pass\n",
+            None,
+        ),
+        (
+            "    match Some(1):\n        case Some(_): pass\n        case Nothing(): pass\n",
+            None,
+        ),
+        (
+            "    match value:\n        case Some(_): pass\n        case _: pass\n        case Nothing(): pass\n",
+            None,
+        ),
+    ] {
+        fs::write(
+            root.join("main.py"),
+            format!(
+                "from codepact import Nothing, Option, Some\ndef f(value: Option[int], flag: bool):\n{body}"
+            ),
+        )
+        .unwrap();
+        let (_, report) = phase07_report(&root, &["--experimental-finite-matches"]);
+        let diagnostics = report["diagnostics"].as_array().unwrap();
+        let missing_matches = diagnostics
+            .iter()
+            .filter(|item| item["code"] == "TP5001")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            missing_matches
+                .iter()
+                .map(|item| item["message"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            missing.into_iter().collect::<Vec<_>>(),
+            "{report:#}"
+        );
+        if missing.is_some() {
+            assert_eq!(missing_matches[0]["primary"]["line"], 3, "{report:#}");
+            assert_eq!(missing_matches[0]["primary"]["column"], 11, "{report:#}");
+            assert_eq!(
+                missing_matches[0]["primary"]["end_column"],
+                16,
+                "{report:#}"
+            );
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_outcome_constructors_preserve_plain_and_resource_payload_boundaries() {
+    let root = fixture_root().with_extension("phase07-outcome-payloads");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import Err, Ok, resource\nfrom codepact.rust import Some\nfrom codepact.outcomes import Nothing\n@resource(closed_by='close')\nclass Resource:\n    def close(self): pass\n    def read(self): pass\ndef plain_payloads():\n    Ok(1)\n    Err('bad')\n    Some(False)\n    Nothing()\ndef resource_payloads():\n    resource = Resource()\n    Ok(resource)\n    Err(error=resource)\n    Some(value=resource)\n    resource.read()\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(&root, &[]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert!(
+        !diagnostics.iter().any(|item| {
+            item["code"] == "TP9001"
+                && item["message"]
+                    .as_str()
+                    .is_some_and(|message| message.starts_with("unknown call effect for "))
+        }),
+        "{report:#}"
+    );
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|item| {
+                item["code"] == "TP9001"
+                    && item["message"] == "outcome payload ownership is not tracked"
+            })
+            .count(),
+        3,
+        "{report:#}"
+    );
+    assert!(
+        diagnostics.iter().any(|item| item["code"] == "TP1002"),
+        "resource payload wrapping must not discharge the resource duty: {report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn phase07_finite_match_does_not_trust_contradictory_or_async_annotations() {
     let root = fixture_root().with_extension("phase07-finite-match-boundaries");
     fs::create_dir_all(&root).unwrap();
@@ -2384,6 +2486,32 @@ fn phase07_finite_match_does_not_trust_contradictory_or_async_annotations() {
     assert!(
         !diagnostics.iter().any(|item| item["code"] == "TP5001"),
         "{report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_shadowed_constructor_makes_outcome_pattern_unresolved() {
+    let root = fixture_root().with_extension("phase07-shadowed-outcome");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import Err, Ok, Result\nclass Ok: pass\ndef f(value: Result[int, str]):\n    match value:\n        case Ok(_): pass\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(&root, &["--experimental-finite-matches"]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert!(
+        diagnostics.iter().any(|item| {
+            item["code"] == "TP9001"
+                && item["message"]
+                    == "outcome match pattern is unresolved or tests unsupported payload structure"
+        }),
+        "{report:#}"
+    );
+    assert!(
+        !diagnostics.iter().any(|item| item["code"] == "TP5001"),
+        "a shadowed constructor cannot establish which variant remains uncovered: {report:#}"
     );
     fs::remove_dir_all(root).unwrap();
 }
@@ -2675,4 +2803,196 @@ fn phase07_unimported_marked_provider_with_invalid_record_does_not_fail_check() 
         "{report:#}"
     );
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_review_hints_respect_scope_and_do_not_drive_strict_policy() {
+    let root = fixture_root().with_extension("phase07-review-hints");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        r#"import contextlib as ctx
+from codepact import must_use, resource
+@must_use
+def fetch() -> int: return 1
+def wrapped(): return fetch()
+def wrapped_twice(flag):
+    if flag:
+        return fetch()
+    return fetch()
+def unrelated(): return plain()
+def plain(): return 1
+def shadowed_callable(fetch): return fetch()
+class LocalResource:
+    def close(self): pass
+def hinted_closing():
+    with ctx.closing(LocalResource()): pass
+    with ctx.closing(LocalResource()): pass
+def local_import():
+    from contextlib import closing as scoped_closing
+    with scoped_closing(LocalResource()): pass
+def local_module_import():
+    import contextlib as scoped_ctx
+    with scoped_ctx.closing(LocalResource()): pass
+def shadowed_closing(ctx):
+    with ctx.closing(LocalResource()): pass
+def shadowed_class(LocalResource):
+    with ctx.closing(LocalResource()): pass
+@resource(closed_by='close')
+class DeclaredResource:
+    def close(self): pass
+def already_declared():
+    with ctx.closing(DeclaredResource()): pass
+"#,
+    )
+    .unwrap();
+
+    let (advisory_status, report) = phase07_report(&root, &[]);
+    assert_eq!(
+        advisory_status, 0,
+        "review hints are informational: {report:#}"
+    );
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    let closing = diagnostics
+        .iter()
+        .filter(|item| item["code"] == "TP6001")
+        .collect::<Vec<_>>();
+    assert_eq!(closing.len(), 1, "{report:#}");
+    assert_eq!(closing[0]["primary"]["line"], 13, "{report:#}");
+    assert_eq!(closing[0]["related"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        closing[0]["related"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|span| span["line"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![14, 16, 17, 20, 23]
+    );
+    assert_eq!(closing[0]["severity"], "info");
+
+    let forwarding = diagnostics
+        .iter()
+        .filter(|item| item["code"] == "TP6002")
+        .collect::<Vec<_>>();
+    assert_eq!(forwarding.len(), 2, "{report:#}");
+    assert!(forwarding
+        .iter()
+        .any(|item| item["message"].as_str().unwrap().contains("wrapped")));
+    assert!(forwarding
+        .iter()
+        .any(|item| item["message"].as_str().unwrap().contains("wrapped_twice")));
+    assert!(forwarding
+        .iter()
+        .all(|item| item["severity"] == "info" && !item["related"].as_array().unwrap().is_empty()));
+
+    let (strict_status, strict_report) = phase07_report(&root, &["--mode", "strict"]);
+    assert_eq!(
+        strict_status, 1,
+        "the source has independent unknown boundaries"
+    );
+    assert_eq!(
+        strict_report["policy_failures"],
+        serde_json::json!(["analysis coverage is incomplete"])
+    );
+    assert!(strict_report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["code"] == "TP6001" && item["severity"] == "info"));
+
+    fs::write(
+        root.join("main.py"),
+        "from codepact import must_use\n@must_use\ndef fetch() -> int: return 1\ndef wrapped(): return fetch()\n",
+    )
+    .unwrap();
+    let (strict_hint_status, strict_hint_report) = phase07_report(&root, &["--mode", "strict"]);
+    assert_eq!(strict_hint_status, 0, "{strict_hint_report:#}");
+    assert!(strict_hint_report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["code"] == "TP6002" && item["severity"] == "info"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_finite_match_session_matches_fresh_results_after_edits() {
+    let stages = [
+        (
+            "missing-result-variant",
+            "from codepact import Err, Ok, Result\ndef inspect(value: Result[int, str], flag: bool):\n    match value:\n        case Ok(_): pass\n",
+            Some("outcome match leaves Err uncovered"),
+            Some(3),
+        ),
+        (
+            "span-only-edit",
+            "# shifted source location\nfrom codepact import Err, Ok, Result\ndef inspect(value: Result[int, str], flag: bool):\n    match value:\n        case Ok(_): pass\n",
+            Some("outcome match leaves Err uncovered"),
+            Some(4),
+        ),
+        (
+            "guard-change",
+            "from codepact import Err, Ok, Result\ndef inspect(value: Result[int, str], flag: bool):\n    match value:\n        case Ok(_) if flag: pass\n        case Err(_): pass\n",
+            Some("outcome match leaves Ok uncovered"),
+            Some(3),
+        ),
+        (
+            "guard-fallback-repair",
+            "from codepact import Err, Ok, Result\ndef inspect(value: Result[int, str], flag: bool):\n    match value:\n        case Ok(_) if flag: pass\n        case Ok(_): pass\n        case Err(_): pass\n",
+            None,
+            None,
+        ),
+        (
+            "outcome-signature-change",
+            "from codepact import Nothing, Option, Some\ndef inspect(value: Option[int], flag: bool):\n    match value:\n        case Some(_) if flag: pass\n        case Some(_): pass\n        case Nothing(): pass\n",
+            None,
+            None,
+        ),
+        (
+            "unrelated-file-edit",
+            "from codepact import Nothing, Option, Some\ndef inspect(value: Option[int], flag: bool):\n    match value:\n        case Some(_) if flag: pass\n        case Some(_): pass\n        case Nothing(): pass\n",
+            None,
+            None,
+        ),
+    ];
+    let options = codepact::CheckOptions {
+        experimental_finite_matches: true,
+        ..Default::default()
+    };
+    let mut session = codepact::AnalysisSession::default();
+    let mut previous = None;
+
+    for (name, source, expected_message, expected_line) in stages {
+        let mut files = vec![codepact::SourceFile::new("main.py", "main", source)];
+        if name == "unrelated-file-edit" {
+            files.push(codepact::SourceFile::new(
+                "other.py",
+                "other",
+                "unrelated_value = 1\n",
+            ));
+        }
+        let reused = session.check_with_options(&files, "3.11", options.clone());
+        let fresh = codepact::check_with_options(&files, "3.11", options.clone());
+        assert_eq!(reused, fresh, "fresh/reused mismatch after {name}");
+        let missing = reused
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "TP5001")
+            .collect::<Vec<_>>();
+        match expected_message {
+            Some(message) => {
+                assert_eq!(missing.len(), 1, "{name}: {reused:#?}");
+                assert_eq!(missing[0].message, message, "{name}: {reused:#?}");
+                assert_eq!(missing[0].primary.line, expected_line.unwrap(), "{name}");
+            }
+            None => assert!(missing.is_empty(), "{name}: {reused:#?}"),
+        }
+        if let Some(previous) = previous.replace(reused.clone()) {
+            assert_ne!(
+                previous, reused,
+                "the edit in {name} must refresh its result"
+            );
+        }
+    }
 }

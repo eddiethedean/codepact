@@ -753,6 +753,46 @@ fn flow_statements_at(
                 Stmt::Pass(_) => FlowStatement::Pass {
                     range: source_range(statement),
                 },
+                Stmt::ImportFrom(import)
+                    if import.level == 0
+                        && import.names.len() == 1
+                        && import
+                            .module
+                            .as_ref()
+                            .is_some_and(|module| module.as_str() == "contextlib")
+                        && import
+                            .names
+                            .iter()
+                            .all(|alias| matches!(alias.name.as_str(), "closing" | "aclosing")) =>
+                {
+                    let range = source_range(import);
+                    let alias = &import.names[0];
+                    FlowStatement::BindFunction {
+                        name: alias
+                            .asname
+                            .as_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| alias.name.to_string()),
+                        binding: Some(format!("external:contextlib.{}", alias.name.as_str())),
+                        class_decorators: Vec::new(),
+                        range,
+                    }
+                }
+                Stmt::Import(import)
+                    if import.names.len() == 1 && import.names[0].name.as_str() == "contextlib" =>
+                {
+                    let alias = &import.names[0];
+                    FlowStatement::BindFunction {
+                        name: alias
+                            .asname
+                            .as_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| "contextlib".to_owned()),
+                        binding: Some("external:contextlib".into()),
+                        class_decorators: Vec::new(),
+                        range: source_range(import),
+                    }
+                }
                 Stmt::Global(_) => FlowStatement::Pass {
                     range: source_range(statement),
                 },

@@ -1,5 +1,50 @@
 use super::*;
 
+fn outcome_constructor_payload<'a>(
+    identity: &str,
+    arguments: &'a [AstExpr],
+    keywords: &'a [CallKeyword],
+) -> Result<Option<&'a AstExpr>, ()> {
+    let field = match identity {
+        "external:codepact.Ok" | "external:codepact.Some" => Some("value"),
+        "external:codepact.Err" => Some("error"),
+        "external:codepact.Nothing" => None,
+        _ => return Err(()),
+    };
+    if field.is_none() {
+        return if arguments.is_empty() && keywords.is_empty() {
+            Ok(None)
+        } else {
+            Err(())
+        };
+    }
+    match (arguments, keywords) {
+        ([payload], []) => Ok(Some(payload)),
+        ([], [(Some(name), payload)]) if Some(name.as_str()) == field => Ok(Some(payload)),
+        _ => Err(()),
+    }
+}
+
+fn expression_contains_tracked_resource(expression: &AstExpr, env: &State) -> bool {
+    match &expression.kind {
+        AstExprKind::Name(name) => {
+            env.unknown_places.contains(name)
+                || env
+                    .places
+                    .get(name)
+                    .is_some_and(|places| !places.is_empty())
+        }
+        AstExprKind::Attribute(value, _) | AstExprKind::Await(value) => {
+            expression_contains_tracked_resource(value, env)
+        }
+        AstExprKind::Tuple(values) | AstExprKind::Collection(values) => values
+            .iter()
+            .any(|value| expression_contains_tracked_resource(value, env)),
+        AstExprKind::Starred(value) => expression_contains_tracked_resource(value, env),
+        _ => false,
+    }
+}
+
 pub(super) fn report_unawaited_coroutines(
     state: &State,
     file: &SourceFile,
@@ -1201,6 +1246,45 @@ pub(super) fn consume_expr_impl(
                         "codepact.discard call does not match its declared single-value signature",
                     );
                     queue_raise(env, expr.range, None);
+                }
+                return;
+            }
+            if let Some(identity) = external_binding.filter(|identity| {
+                matches!(
+                    *identity,
+                    "external:codepact.Ok"
+                        | "external:codepact.Err"
+                        | "external:codepact.Some"
+                        | "external:codepact.Nothing"
+                )
+            }) {
+                let payload = outcome_constructor_payload(identity, arguments, keywords);
+                for argument in arguments
+                    .iter()
+                    .chain(keywords.iter().map(|(_, argument)| argument))
+                {
+                    if !expression_contains_tracked_resource(argument, env) {
+                        consume_expr(argument, env, file, contracts, functions, result, depth + 1);
+                    }
+                }
+                match payload {
+                    Ok(Some(payload)) if expression_contains_tracked_resource(payload, env) => {
+                        boundary(
+                            result,
+                            file,
+                            expr.range,
+                            "outcome payload ownership is not tracked",
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(()) => queue_raise(
+                        env,
+                        expr.range,
+                        Some(AstExpr {
+                            range: expr.range,
+                            kind: AstExprKind::Name("TypeError".into()),
+                        }),
+                    ),
                 }
                 return;
             }

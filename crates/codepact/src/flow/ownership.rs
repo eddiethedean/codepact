@@ -338,6 +338,16 @@ impl OwnershipState {
 pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str> {
     match (module, member) {
         ("codepact", "move") => Some(MOVE),
+        ("codepact" | "codepact.rust" | "codepact.outcomes", "Ok") => Some("external:codepact.Ok"),
+        ("codepact" | "codepact.rust" | "codepact.outcomes", "Err") => {
+            Some("external:codepact.Err")
+        }
+        ("codepact" | "codepact.rust" | "codepact.outcomes", "Some") => {
+            Some("external:codepact.Some")
+        }
+        ("codepact" | "codepact.rust" | "codepact.outcomes", "Nothing") => {
+            Some("external:codepact.Nothing")
+        }
         ("codepact", "state_machine") => Some("external:codepact.state_machine"),
         ("codepact", "transition") => Some("external:codepact.transition"),
         ("codepact", "State") => Some("external:codepact.State"),
