@@ -1433,6 +1433,245 @@ mod tests {
     }
 
     #[test]
+    fn phase07_capture_adapter_signature_edits_refresh_match_consumers() {
+        use serde_json::json;
+
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured = Arc::clone(&events);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                captured.lock().unwrap().push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            ..AnalysisSession::default()
+        };
+        let source = |signature: &str| {
+            format!(
+                "from codepact import Err, Ok, Option, Result, capture, must_use\n@must_use\ndef adapt() -> {signature}:\n    return capture(lambda: 1)\ndef inspect():\n    match adapt():\n        case Ok(_): pass\n        case Err(_): pass\n"
+            )
+        };
+        let files = |signature: &str| {
+            vec![
+                SourceFile::new("main.py", "main", source(signature)),
+                SourceFile::new("independent.py", "independent", "value = 1\n"),
+            ]
+        };
+        let options = crate::CheckOptions {
+            experimental_finite_matches: true,
+            ..Default::default()
+        };
+        let flow_executions = || {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .count()
+        };
+        let mut phases = Vec::new();
+        let result_type = files("Result[int, Exception]");
+        let initial = session.check_with_options(&result_type, "3.11", options.clone());
+        assert!(!initial
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP5001" || finding.code == "TP3001"));
+        assert_eq!(flow_executions(), 2);
+        phases.push(json!({
+            "phase": "capture-adapter-returns-result",
+            "coverage": initial.coverage.status,
+            "outcome_match_complete": true,
+            "flow_query_count": 2
+        }));
+
+        events.lock().unwrap().clear();
+        assert_eq!(
+            session.check_with_options(&result_type, "3.11", options.clone()),
+            initial,
+            "unchanged adapter and caller reuse their summaries"
+        );
+        assert_eq!(flow_executions(), 0);
+        phases.push(json!({"phase":"unchanged-session","flow_query_count":0}));
+
+        events.lock().unwrap().clear();
+        let option_type = files("Option[int]");
+        let changed = session.check_with_options(&option_type, "3.11", options.clone());
+        assert!(changed.diagnostics.iter().any(|finding| {
+            finding.code == "TP5001"
+                && finding.message == "outcome match leaves Nothing, Some uncovered"
+        }));
+        assert_eq!(
+            changed,
+            crate::check_with_options(&option_type, "3.11", options.clone())
+        );
+        assert_eq!(flow_executions(), 1, "the independent query is reused");
+        phases.push(json!({
+            "phase": "capture-adapter-result-family-changes-to-option",
+            "missing_option_variants_reported": true,
+            "matches_fresh": true,
+            "flow_query_count": 1,
+            "unrelated_query_reused": true
+        }));
+
+        events.lock().unwrap().clear();
+        let repaired = session.check_with_options(&result_type, "3.11", options.clone());
+        assert!(!repaired
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP5001"));
+        assert_eq!(
+            repaired,
+            crate::check_with_options(&result_type, "3.11", options)
+        );
+        assert_eq!(flow_executions(), 1);
+        phases.push(json!({
+            "phase": "capture-adapter-result-family-restored",
+            "missing_variant_finding_removed": true,
+            "matches_fresh": true,
+            "flow_query_count": 1,
+            "unrelated_query_reused": true
+        }));
+
+        if let Some(path) = std::env::var_os("CODEPACT_PHASE07_ADAPTER_EVIDENCE") {
+            let path = std::path::PathBuf::from(path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(
+                path,
+                serde_json::to_vec_pretty(&json!({
+                    "schema_version": 1,
+                    "analysis": "capture adapter return summary invalidation",
+                    "target_python": "3.11",
+                    "experimental_finite_matches": true,
+                    "source_execution": false,
+                    "phases": phases
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn phase07_review_hint_evidence_edits_refresh_only_the_affected_file() {
+        use serde_json::json;
+
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured = Arc::clone(&events);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                captured.lock().unwrap().push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            ..AnalysisSession::default()
+        };
+        let source = |marked: bool, direct_return: bool| {
+            format!(
+                "from codepact import must_use\n{}def fetch() -> int: return 1\ndef wrapper():\n{}\n",
+                if marked { "@must_use\n" } else { "" },
+                if direct_return {
+                    "    return fetch()"
+                } else {
+                    "    result = fetch()\n    return result"
+                }
+            )
+        };
+        let files = |marked, direct_return| {
+            vec![
+                SourceFile::new("main.py", "main", source(marked, direct_return)),
+                SourceFile::new("independent.py", "independent", "value = 1\n"),
+            ]
+        };
+        let flow_executions = || {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .count()
+        };
+        let has_forwarding_hint = |result: &Inspection| {
+            result
+                .diagnostics
+                .iter()
+                .any(|finding| finding.code == "TP6002")
+        };
+        let mut phases = Vec::new();
+
+        let unmarked_files = files(false, true);
+        let unmarked = session.check_with_must_use(&unmarked_files, "3.11");
+        assert!(!has_forwarding_hint(&unmarked));
+        assert_eq!(flow_executions(), 2);
+        phases.push(json!({
+            "phase": "unmarked-callee-has-no-forwarding-hint",
+            "hint_present": false,
+            "flow_query_count": 2
+        }));
+
+        events.lock().unwrap().clear();
+        assert_eq!(
+            session.check_with_must_use(&unmarked_files, "3.11"),
+            unmarked
+        );
+        assert_eq!(flow_executions(), 0);
+        phases.push(json!({"phase":"unchanged-session","flow_query_count":0}));
+
+        events.lock().unwrap().clear();
+        let marked_files = files(true, true);
+        let marked = session.check_with_must_use(&marked_files, "3.11");
+        assert!(has_forwarding_hint(&marked));
+        assert_eq!(marked, crate::check_with_must_use(&marked_files, "3.11"));
+        assert_eq!(flow_executions(), 1);
+        phases.push(json!({
+            "phase": "must-use-marker-adds-forwarding-hint",
+            "hint_present": true,
+            "matches_fresh": true,
+            "flow_query_count": 1,
+            "unrelated_query_reused": true
+        }));
+
+        events.lock().unwrap().clear();
+        let forwarded_files = files(true, false);
+        let forwarded = session.check_with_must_use(&forwarded_files, "3.11");
+        assert!(!has_forwarding_hint(&forwarded));
+        assert_eq!(
+            forwarded,
+            crate::check_with_must_use(&forwarded_files, "3.11")
+        );
+        assert_eq!(flow_executions(), 1);
+        phases.push(json!({
+            "phase": "non-direct-return-removes-forwarding-hint",
+            "hint_removed": true,
+            "matches_fresh": true,
+            "flow_query_count": 1,
+            "unrelated_query_reused": true
+        }));
+
+        if let Some(path) = std::env::var_os("CODEPACT_PHASE07_HINT_EVIDENCE") {
+            let path = std::path::PathBuf::from(path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(
+                path,
+                serde_json::to_vec_pretty(&json!({
+                    "schema_version": 1,
+                    "analysis": "must-use forwarding review-hint invalidation",
+                    "target_python": "3.11",
+                    "source_execution": false,
+                    "phases": phases
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
     fn unchanged_session_inspection_reuses_the_project_query() {
         let executions = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&executions);

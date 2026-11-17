@@ -2913,6 +2913,12 @@ fn phase07_provider_selection_skips_namespace_portions_and_unrelated_missing_rec
         "--dependency-root",
         installed.to_str().unwrap(),
     ];
+    let reversed_args = [
+        "--dependency-root",
+        installed.to_str().unwrap(),
+        "--dependency-root",
+        earlier.to_str().unwrap(),
+    ];
     let (_, report) = phase07_report(&project, &args);
     assert_eq!(report["execution_status"], "completed", "{report:#}");
     assert!(
@@ -2937,6 +2943,16 @@ fn phase07_provider_selection_skips_namespace_portions_and_unrelated_missing_rec
                 .iter()
                 .any(|item| item["code"] == "TP3001"),
             "{report:#}"
+        );
+        let (_, reversed_report) = phase07_report(&project, &reversed_args);
+        assert!(
+            reversed_report["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["code"] == "TP3001"
+                    && item["related"][0]["file"] == "@dependency/demo@1.0/demo/__init__.py"),
+            "the selected provider follows dependency-root precedence: {reversed_report:#}"
         );
         fs::remove_file(path).unwrap();
     }
