@@ -33,6 +33,70 @@ fn lacks(result: &CheckResult, code: &str) {
     );
 }
 
+fn assert_clean(result: &CheckResult) {
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "a valid ownership control must be analyzed completely: {result:#?}"
+    );
+    assert!(result.coverage.reasons.is_empty(), "{result:#?}");
+    assert!(result.diagnostics.is_empty(), "{result:#?}");
+}
+
+fn assert_moved_use(
+    result: &CheckResult,
+    use_line: usize,
+    move_line: usize,
+    boundary: Option<&str>,
+) {
+    let coverage_reason = boundary.map(|reason| format!("main.py:{use_line}: {reason}"));
+    assert_eq!(
+        result.coverage.status,
+        if boundary.is_some() {
+            "incomplete"
+        } else {
+            "complete-for-supported-subset"
+        },
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.coverage.reasons,
+        coverage_reason.iter().cloned().collect::<Vec<_>>(),
+        "{result:#?}"
+    );
+    assert_eq!(
+        result.diagnostics.len(),
+        1 + usize::from(boundary.is_some()),
+        "{result:#?}"
+    );
+    if let Some(reason) = boundary {
+        let unknown = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code == "TP9001")
+            .expect("failed move result remains explicitly untracked");
+        assert_eq!(unknown.certainty, "unknown");
+        assert_eq!(unknown.trust, "unknown-boundary");
+        assert_eq!(unknown.coverage_reason.as_deref(), Some(reason));
+        assert_eq!(unknown.primary.file, "main.py");
+        assert_eq!(unknown.primary.line, use_line);
+    }
+    let finding = result
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == "TP2002")
+        .expect("the original handle cannot be reused after its move");
+    assert_eq!(finding.code, "TP2002");
+    assert_eq!(finding.certainty, "definite");
+    assert_eq!(finding.trust, "static-source");
+    assert_eq!(finding.completion, None);
+    assert_eq!(finding.coverage_reason, coverage_reason);
+    assert_eq!(finding.primary.file, "main.py");
+    assert_eq!(finding.primary.line, use_line);
+    assert_eq!(finding.related.len(), 1);
+    assert_eq!(finding.related[0].file, "main.py");
+    assert_eq!(finding.related[0].line, move_line);
+}
+
 fn group(body: &str) -> CheckResult {
     let files = [SourceFile::new("main.py", "main", format!("{HEADER}from asyncio import TaskGroup\nasync def read(value: Borrowed[C]):\n    value.read()\n{body}"))];
     check_with_ownership(&files, "3.11", Ownership::AssumeDefaultTaskFactory)
@@ -57,7 +121,7 @@ fn v05_01_default_scope_is_unchanged() {
 #[test]
 fn v05_02_move_preserves_instance_and_duty() {
     let result = check("def run():\n    a = C()\n    b = move(a)\n    b.read()\n    b.close()\n");
-    assert!(result.diagnostics.is_empty(), "{result:#?}");
+    assert_clean(&result);
 }
 
 #[test]
@@ -66,7 +130,9 @@ fn v05_02_reuse_close_copy_and_double_move() {
         let result = check(&format!(
             "def run():\n    a = C()\n    b = move(a)\n    {use_after}\n    b.close()\n"
         ));
-        has(&result, "TP2002");
+        let boundary = (use_after == "other = move(a)")
+            .then_some("resource-valued call result is not tracked");
+        assert_moved_use(&result, 10, 9, boundary);
     }
 }
 
@@ -75,7 +141,7 @@ fn v05_02_rebinding_restores_only_the_new_instance() {
     let result = check(
         "def run():\n    a = C()\n    b = move(a)\n    a = C()\n    a.close()\n    b.close()\n",
     );
-    assert!(result.diagnostics.is_empty(), "{result:#?}");
+    assert_clean(&result);
 }
 
 #[test]
@@ -99,8 +165,7 @@ fn v05_03_argument_evaluation_preserves_committed_move_on_raise() {
 #[test]
 fn v05_03_failure_before_argument_does_not_move() {
     let result = check("def fail():\n    raise ValueError()\ndef take(extra, value: Owned[C]):\n    value.close()\ndef run():\n    a = C()\n    try:\n        take(fail(), move(a))\n    except ValueError:\n        a.close()\n");
-    lacks(&result, "TP2002");
-    lacks(&result, "TP1002");
+    assert_clean(&result);
 }
 
 #[test]
@@ -125,7 +190,7 @@ fn v05_03_later_argument_reads_moved_binding() {
 #[test]
 fn v05_04_owned_callee_receives_the_existing_duty() {
     let result = check("def take(value: Owned[C]):\n    value.close()\ndef run():\n    a = C()\n    take(move(a))\n");
-    assert!(result.diagnostics.is_empty(), "{result:#?}");
+    assert_clean(&result);
 }
 
 #[test]
@@ -156,7 +221,7 @@ fn v05_04_exceptional_close_effects_keep_source_moved() {
 #[test]
 fn v05_05_owned_returns_and_transitive_moves() {
     let result = check("def make() -> Owned[C]:\n    return C()\ndef relay(value: Owned[C]) -> Owned[C]:\n    return move(value)\ndef run():\n    a = make()\n    b = relay(move(a))\n    b.close()\n");
-    assert!(result.diagnostics.is_empty(), "{result:#?}");
+    assert_clean(&result);
 }
 
 #[test]
@@ -170,7 +235,7 @@ fn v05_06_alias_conflict_and_rebinding() {
     let invalid = check("def run():\n    a = C()\n    alias = a\n    b = move(a)\n    a.close()\n");
     has(&invalid, "TP2003");
     let valid = check("def run():\n    a = C()\n    alias = a\n    alias = None\n    b = move(a)\n    b.close()\n");
-    assert!(valid.diagnostics.is_empty(), "{valid:#?}");
+    assert_clean(&valid);
 }
 
 #[test]
@@ -189,7 +254,7 @@ fn v05_06_cleanup_frame_blocks_transfer() {
 #[test]
 fn v05_07_nested_shared_borrow_ends_at_return() {
     let result = check("def read(value: Borrowed[C]):\n    value.read()\ndef nested(value: Borrowed[C]):\n    read(value)\ndef run():\n    a = C()\n    nested(a)\n    b = move(a)\n    b.close()\n");
-    assert!(result.diagnostics.is_empty(), "{result:#?}");
+    assert_clean(&result);
 }
 
 #[test]
@@ -259,7 +324,7 @@ fn v05_09_native_escape_never_restores_uniqueness() {
 #[test]
 fn v05_11_group_completion_precedes_owner_cleanup() {
     let result = group("async def run():\n    a = C()\n    try:\n        async with TaskGroup() as group:\n            group.create_task(read(a))\n    finally:\n        a.close()\n");
-    assert!(result.diagnostics.is_empty(), "{result:#?}");
+    assert_clean(&result);
 }
 
 #[test]
@@ -331,21 +396,13 @@ fn v05_13_session_matches_fresh_after_scope_and_effect_edits() {
 #[test]
 fn v05_10_recursive_fixed_point_applies_base_exit_effect() {
     let result = check("def take(value: Owned[C], again):\n    if again:\n        take(move(value), False)\n    else:\n        value.close()\ndef run():\n    a = C()\n    take(move(a), True)\n");
-    lacks(&result, "TP1002");
-    assert_eq!(
-        result.coverage.status, "complete-for-supported-subset",
-        "{result:#?}"
-    );
+    assert_clean(&result);
 }
 
 #[test]
 fn v05_10_mutual_recursion_and_missing_base_exit() {
     let good = check("def left(value: Owned[C], again):\n    if again:\n        right(move(value), False)\n    else:\n        value.close()\ndef right(value: Owned[C], again):\n    left(move(value), again)\ndef run():\n    a = C()\n    left(move(a), True)\n");
-    lacks(&good, "TP1002");
-    assert_eq!(
-        good.coverage.status, "complete-for-supported-subset",
-        "{good:#?}"
-    );
+    assert_clean(&good);
     let unresolved = check("def recurse(value: Owned[C]):\n    recurse(move(value))\ndef run():\n    a = C()\n    recurse(move(a))\n");
     assert!(
         unresolved
@@ -651,7 +708,7 @@ fn v05_10_capture_limit_preserves_incompleteness_without_affecting_the_next_chec
         );
     }
     let valid = check("def run():\n    a = C()\n    b = move(a)\n    b.close()\n");
-    assert!(valid.diagnostics.is_empty());
+    assert_clean(&valid);
 }
 
 #[test]
@@ -697,10 +754,7 @@ fn v05_12_task_group_wraps_body_exception_after_waiting() {
         "{wrong_handler:#?}"
     );
     let matching_handler = group(&source.replace("HANDLER", "ExceptionGroup"));
-    assert!(
-        matching_handler.diagnostics.is_empty(),
-        "{matching_handler:#?}"
-    );
+    assert_clean(&matching_handler);
 }
 
 #[test]
@@ -736,7 +790,7 @@ fn v05_07_lambda_capture_stays_local_until_the_closure_escapes() {
     let local = check(&format!(
         "{source}def run():\n    a = C()\n    observe(a)\n    a.close()\n"
     ));
-    assert!(local.diagnostics.is_empty(), "{local:#?}");
+    assert_clean(&local);
     let escaped = check(&format!("{source}    return alias\n"));
     has(&escaped, "TP2004");
 }
@@ -746,7 +800,7 @@ fn v05_12_task_capture_checks_apply_at_worker_entry() {
     let result = group(
         "def observe(value): pass\nasync def worker():\n    local = C()\n    observe(local)\n    local.close()\nasync def run():\n    async with TaskGroup() as group:\n        group.create_task(worker())\n",
     );
-    assert!(result.diagnostics.is_empty(), "{result:#?}");
+    assert_clean(&result);
     let capture = group(
         "async def worker(value): pass\nasync def run():\n    a = C()\n    async with TaskGroup() as group:\n        group.create_task(worker(a))\n    a.close()\n",
     );

@@ -1,5 +1,6 @@
 [tool.codepact]
 config-version = 1
-include = ["src/*.py"]
+root = "src"
+include = ["*.py"]
 experimental-ownership = true
 experimental-advanced-contracts = true

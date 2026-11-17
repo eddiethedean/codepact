@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "suites": [
+    {
+      "id": "contextlib",
+      "models": [
+        "TPM-CTX-001",
+        "TPM-CTX-002"
+      ],
+      "python_versions": [
+        "3.11.15",
+        "3.12.13",
+        "3.13.16"
+      ],
+      "module": "test_contextlib_model_conformance",
+      "upstream_modules": [
+        "contextlib"
+      ],
+      "tests": [
+        "test_contextlib_model_conformance.ContextlibModelConformanceTest.test_aclosing_awaits_once_and_does_not_suppress_body_errors",
+        "test_contextlib_model_conformance.ContextlibModelConformanceTest.test_aclosing_failure_propagates_over_body_failure",
+        "test_contextlib_model_conformance.ContextlibModelConformanceTest.test_aclosing_runs_when_the_body_is_cancelled",
+        "test_contextlib_model_conformance.ContextlibModelConformanceTest.test_closing_failure_propagates_over_body_failure",
+        "test_contextlib_model_conformance.ContextlibModelConformanceTest.test_closing_runs_once_and_does_not_suppress_body_errors",
+        "test_contextlib_model_conformance.ContextlibModelConformanceTest.test_repeated_cancellation_can_interrupt_aclosing"
+      ]
+    },
+    {
+      "id": "task-group",
+      "models": [
+        "TPM-TASK-001"
+      ],
+      "python_versions": [
+        "3.11.15",
+        "3.12.13",
+        "3.13.16"
+      ],
+      "module": "test_task_group_model_conformance",
+      "upstream_modules": [
+        "asyncio.taskgroups"
+      ],
+      "tests": [
+        "test_task_group_model_conformance.TaskGroupModelConformance.test_cancellation_can_interrupt_awaited_cleanup",
+        "test_task_group_model_conformance.TaskGroupModelConformance.test_child_failure_waits_for_sibling_cleanup",
+        "test_task_group_model_conformance.TaskGroupModelConformance.test_default_factory_waits_and_does_not_start_eagerly",
+        "test_task_group_model_conformance.TaskGroupModelConformance.test_pre_start_cancellation_skips_body_and_finally",
+        "test_task_group_model_conformance.TaskGroupModelConformance.test_rejected_submission_has_version_specific_coroutine_state",
+        "test_task_group_model_conformance.TaskGroupModelConformance.test_repeated_parent_cancellation_waits_for_child_finally"
+      ]
+    },
+    {
+      "id": "thread-pool-executor",
+      "models": [
+        "TPM-EXECUTOR-001"
+      ],
+      "python_versions": [
+        "3.13.16"
+      ],
+      "module": "test_thread_pool_model_conformance",
+      "upstream_modules": [
+        "concurrent.futures.thread"
+      ],
+      "tests": [
+        "test_thread_pool_model_conformance.ThreadPoolExecutorModelConformance.test_join_failure_after_shutdown_flag_preserves_shutdown_state",
+        "test_thread_pool_model_conformance.ThreadPoolExecutorModelConformance.test_nonwaiting_shutdown_returns_while_worker_is_still_running",
+        "test_thread_pool_model_conformance.ThreadPoolExecutorModelConformance.test_repeated_shutdown_is_accepted_and_submit_after_shutdown_raises",
+        "test_thread_pool_model_conformance.ThreadPoolExecutorModelConformance.test_submit_runs_work_and_waiting_shutdown_joins_workers",
+        "test_thread_pool_model_conformance.ThreadPoolExecutorModelConformance.test_thread_start_failure_can_leave_work_queued_for_later_execution"
+      ]
+    }
+  ]
+}

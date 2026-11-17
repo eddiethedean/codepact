@@ -38,6 +38,27 @@ For a focused change, use the relevant target before the full gate:
 | Python distributions | `uv run --locked make check-python-package` |
 | Rust archive or installation | `make check-rust-package check-inspector` |
 | Public docs | `make check-docs` |
+| Generated semantic cases and edit histories | `cargo test -p codepact --locked --test semantic_properties` |
+| Exact negative typing contracts | `uv run --locked python scripts/check_typing_contracts.py` |
+
+Required runtime model probes have their own exact-version qualification:
+
+```sh
+uv run --no-project --python 3.13.16 python scripts/check_model_conformance.py \
+  --python-version 3.13.16 --receipt target/test-evidence/conformance.json
+```
+
+Repeat for the other runtimes in `tests/conformance/runtime-models.json`. A
+wrong interpreter, missing probe, skip, expected failure, or test failure makes
+qualification fail. The floating interpreter compatibility suite may skip
+inapplicable models; it does not replace these required runs.
+
+For the scheduled edit-history workload, set `CODEPACT_EDIT_HISTORIES=128` and
+`CODEPACT_EDIT_STEPS=64` before the semantic test command. History counts accept
+1–256 and step counts accept 10–256. Failures identify reproducible seeds and
+steps. See the
+[testing strategy](https://github.com/eddiethedean/codepact/blob/main/docs/planning/testing.md)
+for the bounded oracle's scope and future qualification work.
 
 Run the source CLI with `cargo run --locked -- ...` to avoid accidentally using
 an installed published executable. The [lifecycle tutorial](lifecycle.md) contains
