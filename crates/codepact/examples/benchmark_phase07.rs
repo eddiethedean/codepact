@@ -23,9 +23,8 @@ fn input(workload: &str, size: usize, changed: bool, unrelated_edit: bool) -> In
     );
     let mut options = CheckOptions::default();
     let mut files = Vec::new();
-    let discovered_files;
     let mut provider_source_bytes = 0;
-    match workload {
+    let discovered_files = match workload {
         "matches" => {
             options.experimental_finite_matches = true;
             let mut main = String::from("from codepact import Err, Ok, Result\n");
@@ -40,7 +39,7 @@ fn input(workload: &str, size: usize, changed: bool, unrelated_edit: bool) -> In
             }
             files.push(SourceFile::new("main.py", "main", main));
             files.push(unrelated);
-            discovered_files = files.len();
+            files.len()
         }
         "provider" => {
             let mut provider = String::from("from codepact import must_use\n");
@@ -67,10 +66,10 @@ fn input(workload: &str, size: usize, changed: bool, unrelated_edit: bool) -> In
                 )
                 .expect("benchmark provider identity is safe"),
             );
-            discovered_files = files.len() + options.provider_sources.len();
+            files.len() + options.provider_sources.len()
         }
         _ => panic!("workload must be matches or provider"),
-    }
+    };
     let source_bytes =
         files.iter().map(|file| file.source.len()).sum::<usize>() + provider_source_bytes;
     Input {

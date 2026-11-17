@@ -235,7 +235,6 @@ def verify_installed_marked_provider(
                 sys.executable,
                 "-m",
                 "build",
-                "--no-isolation",
                 "--wheel",
                 "--outdir",
                 str(distributions),
