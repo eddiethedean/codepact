@@ -34,6 +34,8 @@ Create a versioned corpus with small modules, large dependency graphs, alias-hea
 
 Proposed engineering budget after baseline: flag over 10% median regression on repeated controlled runs and investigate before release. Set absolute latency targets only after M1 measurements. Benchmark runtime import separately from analyzer execution and optional runtime enforcement.
 
+The [Phase 0.7 capture script](../../scripts/capture_phase07_performance.py) runs ten adjacent baseline/candidate process pairs per comparable workload and alternates which version runs first. Use `CODEPACT_PHASE07_PROCESS_REPEATS` to set the pair count. Each process times seven independent sessions. For each metric, `paired_change` compares the two process medians within each pair and reports the median difference in microseconds, the median percentage change and the number of pairs in which the candidate was slower. Review the paired changes from repeated captures against the investigation threshold. The per-version pooled upper medians remain available for historical comparison. The raw replicates and `pair_order` record how to recompute both summaries.
+
 ## CI and release gates
 
 Pull requests run formatting, static checks, targeted unit/integration tests, documentation links and compatibility fixtures for changed surfaces. Scheduled/release jobs run the full platform matrix, fuzzing budgets, wheel smoke checks and benchmarks.

@@ -8,6 +8,7 @@ import json
 import os
 import platform
 from pathlib import Path
+from statistics import median
 import subprocess
 import sys
 from typing import cast
@@ -16,7 +17,7 @@ BASELINE_COMMIT = "2d638e761a26211e5c98f1792731103dd9856994"
 COMPARABLE_WORKLOADS = ("state", "exclusive", "executor")
 COMPARABLE_SIZE = 250
 NEW_WORKLOADS = (("matches", 64), ("matches", 256), ("provider", 64), ("provider", 256))
-PROCESS_REPEATS = int(os.environ.get("CODEPACT_PHASE07_PROCESS_REPEATS", "3"))
+PROCESS_REPEATS = int(os.environ.get("CODEPACT_PHASE07_PROCESS_REPEATS", "10"))
 if PROCESS_REPEATS < 1:
     raise ValueError("CODEPACT_PHASE07_PROCESS_REPEATS must be positive")
 
@@ -82,14 +83,34 @@ def measure_once(binary: Path, workload: str, size: int) -> dict[str, object]:
     }
 
 
-def median_ms(measurement: dict[str, object], field: str) -> float:
-    replicates = cast(list[dict[str, object]], measurement["replicates"])
-    values = [
-        float(value)
-        for replicate in replicates
-        for value in cast(list[float], cast(dict[str, object], replicate["raw"])[field])
-    ]
-    ordered = sorted(values)
+def trial_times(replicate: dict[str, object], field: str) -> list[float]:
+    raw = cast(dict[str, object], replicate["raw"])
+    return cast(list[float], raw[field])
+
+
+def paired_change(
+    baseline: list[dict[str, object]], candidate: list[dict[str, object]], field: str
+) -> dict[str, object]:
+    changes: list[float] = []
+    percentages: list[float] = []
+    for before, after in zip(baseline, candidate, strict=True):
+        reference = median(trial_times(before, field))
+        delta = median(trial_times(after, field)) - reference
+        changes.append(delta)
+        if reference > 0:
+            percentages.append(100 * delta / reference)
+    return {
+        "median_delta_us": 1000 * median(changes),
+        "median_delta_percent": (
+            median(percentages) if len(percentages) == len(changes) else None
+        ),
+        "candidate_slower_pairs": sum(change > 0 for change in changes),
+    }
+
+
+def median_ms(replicates: list[dict[str, object]], field: str) -> float:
+    # Preserve the historical pooled upper median for comparisons with older captures.
+    ordered = sorted(value for rep in replicates for value in trial_times(rep, field))
     return ordered[len(ordered) // 2]
 
 
@@ -109,15 +130,14 @@ def median_replicate_metric(
     }
 
 
-def measure(binary: Path, workload: str, size: int) -> dict[str, object]:
-    replicates = [measure_once(binary, workload, size) for _ in range(PROCESS_REPEATS)]
+def measurement_record(replicates: list[dict[str, object]]) -> dict[str, object]:
     peak_values = [
         cast(int, item["peak_rss_bytes"])
         for item in replicates
         if item["peak_rss_bytes"] is not None
     ]
     return {
-        "command": [str(binary), workload, str(size)],
+        "command": replicates[0]["command"],
         "peak_rss_bytes": max(peak_values) if peak_values else None,
         "replicates": replicates,
     }
@@ -138,6 +158,44 @@ def rust_version(root: Path) -> str:
     ).stdout.strip()
 
 
+def measure_comparison(
+    baseline_binary: Path, candidate_binary: Path, workload: str
+) -> dict[str, object]:
+    fields = {
+        "cold": "cold_ms",
+        "unchanged_session": "warm_ms",
+        "affected_edit": "affected_edit_ms",
+        "unrelated_edit": "unrelated_edit_ms",
+    }
+    binaries = {"baseline": baseline_binary, "candidate": candidate_binary}
+    samples: dict[str, list[dict[str, object]]] = {arm: [] for arm in binaries}
+    orders: list[list[str]] = []
+    for pair in range(PROCESS_REPEATS):
+        order = list(binaries) if pair % 2 == 0 else list(reversed(binaries))
+        orders.append(order)
+        for arm in order:
+            samples[arm].append(measure_once(binaries[arm], workload, COMPARABLE_SIZE))
+    return {
+        "workload": workload,
+        "size": COMPARABLE_SIZE,
+        "pair_order": orders,
+        "paired_change": {
+            label: paired_change(samples["baseline"], samples["candidate"], field)
+            for label, field in fields.items()
+        },
+        **{
+            arm: {
+                **measurement_record(replicates),
+                "median_ms": {
+                    label: median_ms(replicates, field)
+                    for label, field in fields.items()
+                },
+            }
+            for arm, replicates in samples.items()
+        },
+    }
+
+
 def capture(baseline_root: Path, candidate_root: Path) -> dict[str, object]:
     baseline_binary = baseline_root / "target/release/examples/benchmark_phase06"
     candidate_phase06 = candidate_root / "target/release/examples/benchmark_phase06"
@@ -146,40 +204,19 @@ def capture(baseline_root: Path, candidate_root: Path) -> dict[str, object]:
         if not binary.is_file():
             raise FileNotFoundError(f"build the benchmark example first: {binary}")
 
-    comparable: list[dict[str, object]] = []
-    for workload in COMPARABLE_WORKLOADS:
-        baseline = measure(baseline_binary, workload, COMPARABLE_SIZE)
-        candidate = measure(candidate_phase06, workload, COMPARABLE_SIZE)
-        fields = {
-            "cold": "cold_ms",
-            "unchanged_session": "warm_ms",
-            "affected_edit": "affected_edit_ms",
-            "unrelated_edit": "unrelated_edit_ms",
-        }
-        comparable.append(
-            {
-                "workload": workload,
-                "size": COMPARABLE_SIZE,
-                "baseline": {
-                    **baseline,
-                    "median_ms": {
-                        label: median_ms(baseline, field)
-                        for label, field in fields.items()
-                    },
-                },
-                "candidate": {
-                    **candidate,
-                    "median_ms": {
-                        label: median_ms(candidate, field)
-                        for label, field in fields.items()
-                    },
-                },
-            }
-        )
+    comparable = [
+        measure_comparison(baseline_binary, candidate_phase06, workload)
+        for workload in COMPARABLE_WORKLOADS
+    ]
 
     phase07: list[dict[str, object]] = []
     for workload, size in NEW_WORKLOADS:
-        measurement = measure(candidate_phase07, workload, size)
+        measurement = measurement_record(
+            [
+                measure_once(candidate_phase07, workload, size)
+                for _ in range(PROCESS_REPEATS)
+            ]
+        )
         first_replicate = cast(list[dict[str, object]], measurement["replicates"])[0]
         raw = cast(dict[str, object], first_replicate["raw"])
         phase07.append(
