@@ -1,0 +1,200 @@
+--- a/crates/codepact/src/db.rs
++++ b/crates/codepact/src/db.rs
+@@ -475,6 +475,7 @@
+     ) -> Result<SessionCheckResult, AnalysisCancelled> {
+         let checked =
+             self.check_cancellable_with_options(files, python_version, true, ownership)?;
++        g4_mark();
+         let mut result = crate::CheckResult::from_inspection_with_models(
+             checked.inspection,
+             python_version,
+@@ -528,10 +529,13 @@
+             self.ownership = ownership;
+             self.revision = self.revision.saturating_add(1);
+         }
++        g4_mark();
+         let inspected =
+             self.inspect_cancellable_with_must_use(files, python_version, run_must_use)?;
++        g4_mark();
+         let revision = inspected.revision;
+         let inspection = inspected.inspection;
++        g4_mark();
+         let checked = salsa::Cancelled::catch(|| {
+             check_flow_query(
+                 &self.db,
+@@ -542,6 +546,7 @@
+                 ownership,
+             )
+         });
++        g4_mark();
+         let mut result = checked.map_err(|_| AnalysisCancelled)?.clone();
+         result.diagnostics.sort_by(|left, right| {
+             (
+@@ -4506,3 +4511,21 @@
+         std::fs::remove_dir_all(root).unwrap();
+     }
+ }
++
++thread_local! {
++    static G4_TIMES: std::cell::RefCell<Option<Vec<std::time::Instant>>> = const { std::cell::RefCell::new(None) };
++}
++pub static G4_SKIP_FILTER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++pub fn g4_start() {
++    G4_TIMES.with(|v| *v.borrow_mut() = Some(Vec::with_capacity(7)));
++    g4_mark();
++}
++pub fn g4_mark() {
++    G4_TIMES.with(|v| { if let Some(times) = v.borrow_mut().as_mut() { times.push(std::time::Instant::now()); } });
++}
++pub fn g4_stop() -> Vec<u128> {
++    g4_mark();
++    let times = G4_TIMES.with(|v| v.borrow_mut().take().unwrap());
++    assert_eq!(times.len(), 7);
++    times.windows(2).map(|t| (t[1] - t[0]).as_nanos()).collect()
++}
+--- a/crates/codepact/examples/benchmark_phase06.rs
++++ b/crates/codepact/examples/benchmark_phase06.rs
+@@ -72,127 +72,27 @@
+         "def independent(): return 1\n",
+     );
+     let files = [main.clone(), independent.clone()];
+-    let affected_main = SourceFile::new("main.py", "main", affected_source(workload, &body));
+-    let affected_files = [affected_main.clone(), independent.clone()];
+-    let unrelated_edit = SourceFile::new(
+-        "independent.py",
+-        "independent",
+-        "def independent(): return 2\n",
+-    );
+-    let unrelated_files = [affected_main.clone(), unrelated_edit.clone()];
+-    let located_main = SourceFile::new(
+-        "main.py",
+-        "main",
+-        format!("# location-only edit\n{}", affected_main.source),
+-    );
+-    let located_files = [located_main, unrelated_edit];
+-    let config = EffectiveConfig {
+-        source: None,
+-        root: PathBuf::from("."),
+-        python_version: PYTHON_VERSION.into(),
+-        include: vec!["**/*.py".into()],
+-        exclude: Vec::new(),
+-        enabled_rules: DEFAULT_RULES
+-            .iter()
+-            .chain(OWNERSHIP_RULES)
+-            .chain(ADVANCED_RULES)
+-            .map(|rule| (*rule).into())
+-            .collect::<BTreeSet<_>>(),
+-        mode: "advisory".into(),
+-        ownership: Ownership::Advanced,
+-        fail_on: "error".into(),
+-        baseline: None,
+-        severity: Default::default(),
+-        settings_origins: Default::default(),
+-    };
+-    let mut cold_ms = Vec::new();
+-    let mut warm_ms = Vec::new();
+-    let mut affected_edit_ms = Vec::new();
+-    let mut unrelated_edit_ms = Vec::new();
+-    let mut location_edit_ms = Vec::new();
+-    let mut report_ms = Vec::new();
+-    let milliseconds = |start: Instant| start.elapsed().as_secs_f64() * 1_000.0;
++
++    codepact::db::G4_SKIP_FILTER.store(std::env::var_os("G4_SKIP_FILTER").is_some(), std::sync::atomic::Ordering::Relaxed);
++    let mut rows = Vec::new();
+     for _ in 0..7 {
+         let mut session = AnalysisSession::default();
++        let cold = session.check_with_ownership(&files, PYTHON_VERSION, Ownership::Advanced);
++        assert!(cold.diagnostics.is_empty());
++        assert_eq!(cold.coverage.status, "complete-for-supported-subset");
++        codepact::db::g4_start();
++        let first = session.check_with_ownership(&files, PYTHON_VERSION, Ownership::Advanced);
++        let stages = codepact::db::g4_stop();
++        assert_eq!(cold, first);
+         let start = Instant::now();
+-        let cold = session.check_with_ownership(&files, PYTHON_VERSION, Ownership::Advanced);
+-        cold_ms.push(milliseconds(start));
+-        assert!(
+-            cold.diagnostics.is_empty(),
+-            "{workload}: {:?}",
+-            cold.diagnostics.first()
+-        );
+-        assert_eq!(cold.coverage.status, "complete-for-supported-subset");
+-
+-        let start = Instant::now();
+-        let warm = session.check_with_ownership(&files, PYTHON_VERSION, Ownership::Advanced);
+-        warm_ms.push(milliseconds(start));
+-        assert_eq!(cold, warm);
+-
+-        let start = Instant::now();
+-        let updated =
+-            session.check_with_ownership(&affected_files, PYTHON_VERSION, Ownership::Advanced);
+-        affected_edit_ms.push(milliseconds(start));
+-        assert!(
+-            updated.diagnostics.is_empty(),
+-            "{workload}: {:?}",
+-            updated.diagnostics.first()
+-        );
+-        assert_eq!(updated.coverage.status, "complete-for-supported-subset");
+-        assert_eq!(
+-            updated,
+-            codepact::check_with_ownership(&affected_files, PYTHON_VERSION, Ownership::Advanced)
+-        );
+-
+-        let start = Instant::now();
+-        let unrelated =
+-            session.check_with_ownership(&unrelated_files, PYTHON_VERSION, Ownership::Advanced);
+-        unrelated_edit_ms.push(milliseconds(start));
+-        assert!(unrelated.diagnostics.is_empty());
+-        assert_eq!(unrelated.coverage.status, "complete-for-supported-subset");
+-        assert_eq!(
+-            unrelated,
+-            codepact::check_with_ownership(&unrelated_files, PYTHON_VERSION, Ownership::Advanced)
+-        );
+-
+-        let start = Instant::now();
+-        let located =
+-            session.check_with_ownership(&located_files, PYTHON_VERSION, Ownership::Advanced);
+-        location_edit_ms.push(milliseconds(start));
+-        assert!(
+-            located.diagnostics.is_empty(),
+-            "{workload}: {:?}",
+-            located.diagnostics.first()
+-        );
+-        assert_eq!(located.coverage.status, "complete-for-supported-subset");
+-        assert_eq!(
+-            located,
+-            codepact::check_with_ownership(&located_files, PYTHON_VERSION, Ownership::Advanced)
+-        );
+-
+-        let start = Instant::now();
+-        let report = build_report(located, &located_files, &config, None, None).unwrap();
+-        report_ms.push(milliseconds(start));
+-        assert!(!serialize_report(&report).unwrap().is_empty());
++        for _ in 0..256 {
++            std::hint::black_box(session.check_with_ownership(&files, PYTHON_VERSION, Ownership::Advanced));
++        }
++        rows.push(serde_json::json!({"first_ns":stages, "hot_ns": start.elapsed().as_nanos() as f64 / 256.0,
++            "contracts":first.contracts.len(),"diagnostics":first.diagnostics.len()}));
+     }
+-    println!(
+-        "{}",
+-        serde_json::json!({
+-            "workload": workload,
+-            "size": size,
+-            "ownership": Ownership::Advanced,
+-            "python_version": PYTHON_VERSION,
+-            "source_bytes": files[0].source.len(),
+-            "cold_ms": cold_ms,
+-            "warm_ms": warm_ms,
+-            "affected_edit_ms": affected_edit_ms,
+-            "unrelated_edit_ms": unrelated_edit_ms,
+-            "location_edit_ms": location_edit_ms,
+-            "report_ms": report_ms,
+-        })
+-    );
++    println!("{}", serde_json::to_string(&rows).unwrap());
+ }
+-
+ fn main() {
+     let mut arguments = std::env::args().skip(1);
+     let workload = arguments.next().unwrap_or_else(|| "state".into());
