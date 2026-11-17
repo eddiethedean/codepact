@@ -43,6 +43,7 @@ struct BugOracle {
     code: String,
     function: String,
     certainty: String,
+    trust: String,
     primary_text: String,
     related_text: String,
 }
@@ -105,11 +106,19 @@ fn files(root: &Path) -> BTreeMap<String, Vec<u8>> {
 }
 
 fn install_snapshot(source: &Path, destination: &Path) {
-    for (name, bytes) in files(source) {
+    let snapshot = files(source);
+    // A repair or control is a complete snapshot. Leaving files from the
+    // previous variant would silently analyze a different project.
+    if destination.exists() {
+        fs::remove_dir_all(destination).unwrap();
+    }
+    fs::create_dir_all(destination).unwrap();
+    for (name, bytes) in &snapshot {
         let path = destination.join(name);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, bytes).unwrap();
     }
+    assert_eq!(files(destination), snapshot);
 }
 
 fn binary() -> PathBuf {
@@ -244,6 +253,8 @@ fn assert_bug(feature: &Feature, target: &str, report: &Value, root: &Path) {
         .expect("independently specified bug finding");
     assert_eq!(finding["code"], feature.bug.code, "{report:#}");
     assert_eq!(finding["certainty"], feature.bug.certainty, "{report:#}");
+    assert_eq!(finding["trust"], feature.bug.trust, "{report:#}");
+    assert_eq!(finding["completion"], Value::Null, "{report:#}");
     assert_eq!(finding["disposition"], "active");
     assert!(finding["primary"]["file"]
         .as_str()
@@ -313,7 +324,7 @@ fn phase06_preview_manifest_has_independent_four_way_oracles() {
     assert_eq!(manifest.schema_version, 1);
     assert_eq!(manifest.provenance, "synthetic");
     assert!(!manifest.real_project_pilot_credit);
-    assert_eq!(manifest.oracle_revision, 1);
+    assert_eq!(manifest.oracle_revision, 2);
     assert!(!manifest.oracle.is_empty());
     assert_eq!(manifest.features.len(), 4);
 
@@ -452,7 +463,14 @@ fn source_files(root: &Path) -> Vec<SourceFile> {
     files(&root.join("src"))
         .into_iter()
         .filter(|(path, _)| path.ends_with(".py"))
-        .map(|(path, source)| SourceFile::new(path, "main", String::from_utf8(source).unwrap()))
+        .map(|(path, source)| {
+            let module = path
+                .strip_suffix(".py")
+                .unwrap()
+                .trim_end_matches("/__init__")
+                .replace('/', ".");
+            SourceFile::new(path, module, String::from_utf8(source).unwrap())
+        })
         .collect()
 }
 
@@ -513,18 +531,87 @@ fn phase06_preview_source_repairs_match_fresh_and_reused_analysis() {
                 "{} / {target}",
                 feature.id
             );
+        }
+    }
+}
 
-            let reversed = fixed.iter().rev().cloned().collect::<Vec<_>>();
+#[test]
+fn phase06_preview_multifile_contracts_preserve_oracles_across_every_input_order() {
+    let feature = manifest()
+        .features
+        .into_iter()
+        .find(|feature| feature.id == "typestate")
+        .unwrap();
+    let orders = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    for target in &feature.targets {
+        let mut session = AnalysisSession::default();
+        for variant in ["buggy", "fixed", "buggy"] {
+            let inputs = source_files(&corpus_root().join(&feature.id).join(variant));
             assert_eq!(
-                codepact::check_with_ownership(
-                    &reversed,
-                    target,
-                    Ownership::AdvancedAssumeDefaultTaskFactory
-                ),
-                fresh_fixed,
-                "{} / {target}: input order does not change results",
-                feature.id
+                inputs.len(),
+                3,
+                "the order oracle requires a provider, re-export, and consumer"
             );
+            let modules = inputs
+                .iter()
+                .map(|file| file.module.as_str())
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(
+                modules,
+                std::collections::BTreeSet::from(["facade", "main", "transport"])
+            );
+            let expected = codepact::check_with_ownership(
+                &inputs,
+                target,
+                Ownership::AdvancedAssumeDefaultTaskFactory,
+            );
+            assert_eq!(
+                expected.coverage.status, "complete-for-supported-subset",
+                "{variant} / {target}: {expected:#?}"
+            );
+            assert!(expected.coverage.reasons.is_empty(), "{expected:#?}");
+            if variant == "buggy" {
+                assert_eq!(expected.diagnostics.len(), 1, "{expected:#?}");
+                let diagnostic = &expected.diagnostics[0];
+                assert_eq!(diagnostic.code, feature.bug.code);
+                assert_eq!(diagnostic.certainty, feature.bug.certainty);
+                assert_eq!(diagnostic.trust, feature.bug.trust);
+                assert_eq!(diagnostic.completion, None);
+                assert_eq!(diagnostic.coverage_reason, None);
+                assert_eq!(diagnostic.primary.file, "main.py");
+                assert_eq!(diagnostic.primary.line, 9);
+                assert!(
+                    diagnostic
+                        .related
+                        .iter()
+                        .any(|site| { site.file == "transport.py" && site.line == 13 }),
+                    "provider requirement must survive the re-export: {expected:#?}"
+                );
+            } else {
+                assert!(expected.diagnostics.is_empty(), "{expected:#?}");
+            }
+            for order in orders {
+                let permuted = order.map(|index| inputs[index].clone());
+                let fresh = codepact::check_with_ownership(
+                    &permuted,
+                    target,
+                    Ownership::AdvancedAssumeDefaultTaskFactory,
+                );
+                let reused = session.check_with_ownership(
+                    &permuted,
+                    target,
+                    Ownership::AdvancedAssumeDefaultTaskFactory,
+                );
+                assert_eq!(fresh, expected, "{variant} / {target} / {order:?}");
+                assert_eq!(reused, expected, "{variant} / {target} / {order:?}");
+            }
         }
     }
 }

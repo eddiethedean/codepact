@@ -3,7 +3,7 @@
   "provenance": "synthetic",
   "real_project_pilot_credit": false,
   "oracle": "Independently specified valid, seeded-bug, minimal-repair, and unsupported controls for the four claimed advanced feature areas.",
-  "oracle_revision": 1,
+  "oracle_revision": 2,
   "features": [
     {
       "id": "exclusive",
@@ -13,6 +13,7 @@
         "code": "TP2101",
         "function": "run",
         "certainty": "definite",
+        "trust": "declared-unverified",
         "primary_text": "edit(item, alias)",
         "related_text": "alias: Borrowed[Buffer]"
       },
@@ -26,6 +27,7 @@
         "code": "TP2102",
         "function": "run",
         "certainty": "definite",
+        "trust": "declared-unverified",
         "primary_text": "channel.send()",
         "related_text": "def send(self: State[\"Channel\", Literal[\"ready\"]])"
       },
@@ -39,6 +41,7 @@
         "code": "TP2102",
         "function": "run",
         "certainty": "definite",
+        "trust": "reviewed-model",
         "primary_text": "group.create_task(worker())",
         "related_text": "async with TaskGroup() as group:"
       },
@@ -54,6 +57,7 @@
         "code": "TP2102",
         "function": "run",
         "certainty": "definite",
+        "trust": "experimental-model",
         "primary_text": "pool.submit(worker)",
         "related_text": "pool = ThreadPoolExecutor()"
       },

@@ -32,93 +32,20 @@ def locked_package_version(root: Path, name: str) -> str:
 
 def verify_installed_outcome_typing(interpreter: Path, root: Path, work: Path) -> None:
     work.mkdir(parents=True)
-    python_version = subprocess.run(
+    for name in ("outcomes_valid.py", "outcomes_invalid.py"):
+        shutil.copy2(root / "tests/checkers" / name, work / name)
+    subprocess.run(
         [
+            sys.executable,
+            str(root / "scripts/check_typing_contracts.py"),
+            "--fixtures",
+            str(work),
+            "--installed-python",
             str(interpreter),
-            "-c",
-            "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+            "--outcomes-only",
         ],
+        cwd=work,
         check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    valid = work / "outcomes_valid.py"
-    invalid = work / "outcomes_invalid.py"
-    shutil.copy2(root / "tests/checkers/outcomes_valid.py", valid)
-    shutil.copy2(root / "tests/checkers/outcomes_invalid.py", invalid)
-
-    environment = os.environ.copy()
-    mypy = [
-        "mypy",
-        "--strict",
-        "--python-executable",
-        str(interpreter),
-        "--python-version",
-        python_version,
-    ]
-    subprocess.run([*mypy, str(valid)], cwd=work, env=environment, check=True)
-    mypy_invalid = subprocess.run(
-        [*mypy, str(invalid)],
-        cwd=work,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if mypy_invalid.returncode == 0 or "Incompatible types in assignment" not in (
-        mypy_invalid.stdout + mypy_invalid.stderr
-    ):
-        raise RuntimeError("Mypy did not reject the installed outcome typing controls")
-
-    pyright = [
-        "pyright",
-        "--pythonpath",
-        str(interpreter),
-        "--pythonversion",
-        python_version,
-    ]
-    subprocess.run([*pyright, str(valid)], cwd=work, env=environment, check=True)
-    pyright_invalid = subprocess.run(
-        [*pyright, str(invalid)],
-        cwd=work,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if pyright_invalid.returncode == 0 or "reportAssignmentType" not in (
-        pyright_invalid.stdout + pyright_invalid.stderr
-    ):
-        raise RuntimeError(
-            "Pyright did not reject the installed outcome typing controls"
-        )
-    basedpyright = [
-        "basedpyright",
-        "--project",
-        str(root / "pyproject.toml"),
-        "--pythonpath",
-        str(interpreter),
-        "--pythonversion",
-        python_version,
-    ]
-    subprocess.run([*basedpyright, str(valid)], cwd=work, env=environment, check=True)
-    basedpyright_invalid = subprocess.run(
-        [*basedpyright, str(invalid)],
-        cwd=work,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if basedpyright_invalid.returncode == 0 or "reportAssignmentType" not in (
-        basedpyright_invalid.stdout + basedpyright_invalid.stderr
-    ):
-        raise RuntimeError(
-            "Basedpyright did not reject the installed outcome typing controls"
-        )
-    print(
-        "Installed outcome typing passed Mypy, Pyright and Basedpyright "
-        f"on Python {python_version}"
     )
 
 

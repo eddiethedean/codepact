@@ -2,6 +2,7 @@ name: Quality
 
 on:
   workflow_call:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
@@ -73,6 +74,125 @@ jobs:
           components: rustfmt, clippy
       - name: Run Rust quality checks
         run: make check-rust check-msrv check-rust-package check-inspector
+
+  model-runtime-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.manifest.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read required qualification runtimes
+        id: manifest
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from scripts.check_model_conformance import load_manifest
+          suites = load_manifest(Path('tests/conformance/runtime-models.json'))
+          versions = sorted({version for suite in suites for version in suite.python_versions})
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'versions={json.dumps(versions)}\n')
+          PY
+
+  model-conformance:
+    name: Model conformance (${{ matrix.python-version }})
+    needs: model-runtime-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(needs.model-runtime-matrix.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Execute every required model probe on its exact runtime
+        run: >-
+          uv run --no-project --python '${{ matrix.python-version }}'
+          python scripts/check_model_conformance.py
+          --python-version '${{ matrix.python-version }}'
+          --receipt 'target/test-evidence/model-conformance-${{ matrix.python-version }}.json'
+      - name: Retain executed model qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: model-conformance-${{ matrix.python-version }}
+          path: target/test-evidence/model-conformance-${{ matrix.python-version }}.json
+          if-no-files-found: error
+
+  semantic-robustness:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CODEPACT_EDIT_HISTORIES: '128'
+      CODEPACT_EDIT_STEPS: '64'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Exercise the bounded oracle and extended edit histories
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/test-evidence
+          cargo test -p codepact --locked --test semantic_properties -- --nocapture 2>&1 | tee target/test-evidence/semantic-properties.log
+      - name: Record reproduction inputs
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import platform
+          import subprocess
+          output = Path('target/test-evidence')
+          output.mkdir(parents=True, exist_ok=True)
+          (output / 'semantic-properties-environment.json').write_text(json.dumps({
+              'source_commit': os.environ['GITHUB_SHA'],
+              'platform': platform.platform(),
+              'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
+              'edit_histories': int(os.environ['CODEPACT_EDIT_HISTORIES']),
+              'steps_per_history': int(os.environ['CODEPACT_EDIT_STEPS']),
+              'command': 'cargo test -p codepact --locked --test semantic_properties -- --nocapture',
+          }, indent=2) + '\n')
+          PY
+      - name: Retain semantic robustness results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: semantic-robustness
+          path: target/test-evidence/semantic-properties*
+          if-no-files-found: error
+
+  quality-gate:
+    name: Required quality
+    if: always() && github.event_name != 'schedule'
+    needs: [docs, quality, rust-quality, rust-dependencies, model-runtime-matrix, model-conformance]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every qualification job to succeed
+        env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          results = json.loads(os.environ['CHECK_RESULTS'])
+          failed = {name: job['result'] for name, job in results.items() if job['result'] != 'success'}
+          if failed:
+              raise SystemExit(f'Required quality checks did not pass: {failed}')
+          print('All required quality checks passed, including exact-runtime model conformance.')
+          PY
 
   rust-dependencies:
     runs-on: ubuntu-latest
