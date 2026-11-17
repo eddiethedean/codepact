@@ -1,6 +1,6 @@
 # Publishing CodePact contracts in Python packages
 
-Status **Planned for 0.7 onward**. Scope includes the Python helper, package
+Status **0.7 installed-wheel must-use preview published; resource/ownership, manifests and later adoption work planned across 0.8–0.13**. Scope includes the Python helper, package
 artifacts, the standalone CLI, Rust analysis sessions, and tools that embed
 CodePact. The dependency checking and artifact formats are preview designs.
 
@@ -257,7 +257,7 @@ location-only change refreshes related locations and the report snapshot.
 | Surface | Proposed behavior |
 | --- | --- |
 | Python helper | Existing decorators and aliases supply inline declarations. `move` and `discard` are caller operations and have no publication record of their own. |
-| Author tooling | `codepact contracts export` generates the manifest from staged inputs. `contracts verify` checks an actual built wheel against its publication. `contracts diff` compares public caller obligations and guarantees from two local artifacts. The export can also drive generated API reference tables. These are proposed command names. |
+| Author tooling | Required in 0.8 under E10-A: `codepact contracts export` generates the manifest from staged inputs and `contracts verify` checks an actual built wheel against its publication. Required in 0.9 under E10-B: `contracts diff` compares public caller obligations and guarantees from two local artifacts. These are proposed command names; generation of API reference tables is an optional later use of the export. |
 | Consumer CLI | Start with `codepact check --dependency-root PATH` and a matching configuration setting. Expose selected roots, target, and policy through `--show-settings`. `baseline update` uses the same effective inputs as `check`. A proposed `contracts show` can report the selected rule, source, and applicability for a resolved public symbol. Expose manifest/feature support in `capabilities`. |
 | Rust API | Accept an explicit snapshot of externally supplied, resolved provider data or source and preserve the existing project-source entry points. Filesystem and environment discovery live in the host. Normalize providers to the same contract vocabulary as local modules before call analysis. |
 | Salsa and persistent cache | Cache immutable provider facts by scoped identity, relevant file digests, schema, target, model and normalization versions. Include resolution order, missing providers and policy in applicable invalidation. Recheck dependent calls when facts or provider selection change. Retag locations and suppress stale results across environment changes. Verify incremental and fresh parity. |
@@ -273,6 +273,48 @@ because a package manager can leave the previously installed CLI in place
 after a helper-only upgrade. A manifest-only author workflow can generate
 and verify metadata at build time for a runtime package that needs neither
 distribution. [Packaging decisions](decisions.md) · [0.7 plan](phases/0.7-typed-outcomes.md) · [Python packaging extras](https://packaging.python.org/en/latest/specifications/pyproject-toml/#dependencies-optional-dependencies)
+
+### Author workflow release requirements
+
+**0.8 owns the complete bounded export and verify workflow (E10-A).** Qualify
+the installed CLI, not only internal APIs or hand-written fixture manifests:
+
+1. Export a deterministic manifest from supported staged package inputs,
+   retaining normalized contracts, evidence kinds, distribution/import-scope
+   identity and relevant packaged-file digests.
+2. Build an actual wheel using an explicit author or controlled fixture step.
+   The exporter and verifier do not run the build backend or import or execute
+   the target package.
+3. Verify the built wheel's marker, manifest, distribution identity, relevant
+   files and `RECORD` consistency. Reject stale, malformed, wrong-distribution
+   and mismatched-file metadata. Unsupported schemas or mandatory capabilities
+   retain their declared boundary; they cannot establish verified affected facts.
+4. Install the provider outside its source checkout, then check a downstream
+   caller through the selected dependency environment. Compare matching inline
+   and manifest variants for two independent providers, including cleanup,
+   ownership transfer and exceptional unknowns. Repeat after an upgrade or
+   shadowing change through CLI/Rust and fresh/reused analysis.
+
+Include a runtime package whose useful manifest requires neither the Python
+helper nor the CLI as a runtime dependency. Retain reproducibility and invalid
+artifact controls. Consumer checks must expose unavailable affected facts
+rather than bypass a failed manifest with unchecked inline effects. The same
+archive/path limits and static-reading boundary apply to author commands.
+
+**0.9 owns the bounded artifact comparison workflow (E10-B).** The installed
+CLI compares two actual local wheel publications and reports compatible
+changes, new caller obligations, weakened supplier guarantees and insufficient
+evidence in deterministic human-readable and machine-readable output. Pair
+real downstream callers with compatible, caller-breaking and unknown controls;
+an applicability or evidence loss cannot establish compatibility. This command
+compares library publications independently of the CR source/report change-review
+workflow. Both may reuse normalized facts, but qualification of one does not
+qualify the other.
+
+The [mandatory E10 checkpoints](phases/carry-forward-gates.md#mandatory-e10-checkpoints)
+block their respective releases. E10's overall completion remains in 0.12 for
+supported-editor parity. Command names remain provisional; these end-to-end
+author capabilities and their release owners are required.
 
 ## Contract compatibility and upgrades
 
@@ -304,10 +346,12 @@ can choose which categories fail its CI.
 
 | Stage | Work and acceptance evidence |
 | --- | --- |
-| 0.7 install split and result-use preview | Qualify all three install paths. Build marked and unmarked pure-Python wheels. Install each outside its source checkout. Compare caller diagnostics for a public direct import, a renamed import, an explicit re-export, handled and ignored results, a same-named local symbol, an unmarked shadow, a second environment with a different package version, and target code that would leave a sentinel if executed. Confirm Rust and CLI parity on the same resolved inputs. |
-| 0.8 resource and ownership preview | Use a provider factory, a downstream wrapper, and an independent provider consuming or closing the same resource. Verify a tracked alias, cleanup duty after a failed call, exceptional unknown, no proof from declaration alone, and repair with the same ordinary Python types. Exercise conflicts, strict coverage, and fresh/reused parity. |
-| 0.8 manifests and compatibility tooling | Compare inline and manifest facts on a pair of wheels. Qualify reproducible builds, distribution binding, stale and malformed input recovery, unknown capabilities, and compatible versus caller-breaking changes. Verify a runtime package can ship a useful manifest with no helper or CLI dependency. Qualify cache and editor parity on the selected environment scope. |
-| 0.9 readiness review | Rehearse author and consumer upgrades. Audit manifest evidence, baselines, fallback boundaries, target support, and invalidation after upgrades and shadowing. Measure cold and warm time and memory on a project with a large installed environment and a small reachable dependency set. Decide which preview surfaces qualify for 1.0. |
+| 0.7 published install split and result-use preview | Qualify all three install paths. Build marked and unmarked pure-Python wheels. Install each outside its source checkout. Compare caller diagnostics for a public direct import, a renamed import, an explicit re-export, handled and ignored results, a same-named local symbol, an unmarked shadow, a second environment with a different package version, and target code that would leave a sentinel if executed. Confirm Rust and CLI parity on the same resolved inputs. |
+| 0.8 reviewed resource and ownership foundations | Use a provider factory, a downstream wrapper, and an independent provider consuming or closing the same resource. Verify a tracked alias, cleanup duty after a failed call, exceptional unknown, no proof from declaration alone, and repair with the same ordinary Python types. Exercise conflicts, strict coverage, and fresh/reused parity. |
+| 0.8 author export/verification and manifest integrity — E10-A | Complete the installed-CLI export → explicit wheel build → verification → downstream-consumption workflow. Compare inline and manifest facts for two independently installed providers. Qualify reproducible artifacts, distribution/file binding, stale and invalid metadata rejection, unknown capabilities, exceptional unknowns and CLI/Rust/fresh/reused parity after upgrades or shadowing. A manifest-only runtime package needs no helper or CLI dependency. |
+| 0.9 author artifact comparison — E10-B | Compare two actual local contract artifacts through the installed CLI, retaining deterministic human and machine output. Qualify compatible changes, new caller obligations, weaker guarantees and insufficient evidence, independently of source/report review. |
+| 0.12 cache/editor completion — E10-C | Requalify applicable artifact and author-tool evidence and complete cache/editor parity on the selected environment scope. Close E10 only after all its original clauses and mandatory checkpoints pass. |
+| 0.13 readiness review | Rehearse author and consumer upgrades. Audit manifest evidence, baselines, fallback boundaries, target support, and invalidation after upgrades and shadowing. Measure cold and warm time and memory on a project with a large installed environment and a small reachable dependency set. Decide which preview surfaces qualify for 1.0. |
 | Further qualification | Add selected binary providers, namespace and editable layouts, platform-dependent effects, and external models as each has retained acceptance evidence. Extend the published semantics as async, outcome and value contracts qualify. |
 
 First test two separate projects and an installed wheel. An in-repository
@@ -316,5 +360,10 @@ selection. Retain positive, negative, and incomplete-coverage cases for each
 capability, along with package identities, platform and target support,
 diagnostic evidence, and budget measurements. Establish the normalized
 resource boundary before publishing the manifest format. Persistent caches
-and editor integration build on the ecosystem phase.
-[0.7 plan](phases/0.7-typed-outcomes.md) · [0.8 plan](phases/0.8-ecosystem.md) · [0.9 plan](phases/0.9-stabilization.md) · [Release sequence](../../ROADMAP.md)
+and editor integration complete in 0.12 after provider, obligation and comparison semantics qualify.
+[0.7 plan](phases/0.7-typed-outcomes.md) · [0.8 foundations](phases/0.8-reviewed-concurrency-foundations.md) · [0.9 obligations/review](phases/0.9-obligations-and-change-review.md) · [0.12 integrations](phases/0.12-ecosystem-and-integrations.md) · [0.13 readiness](phases/0.13-stabilization.md) · [Release sequence](../../ROADMAP.md)
+
+
+## Expanded release mapping
+
+The [workstreams](contract-and-portfolio-workstreams.md) retain HTTPX and HTTPX2 as separate providers and SQLModel as an independently qualified adapter over selected SQLAlchemy behavior. Synchronous and separately promoted direct-await profiles enter in 0.9; advanced streaming/cancellation follows in 0.11. Framework, native-provider and first-party wrapper publication follows qualified evidence in 0.12. The [registry](phases/carry-forward-gates.md) retains every E10–E12 and S08–S09 requirement. E10-A blocks 0.8 on artifact integrity and author export/verification; E10-B blocks 0.9 on artifact comparison. Partial evidence cannot close E10 before E10-C editor parity in 0.12.

@@ -127,4 +127,9 @@ The uv workspace contains the root helper project and cli project; workspace sou
 
 ## Concurrent capability release claims
 
-Follow the phase-mapped [CS01–CS07 gates](concurrency.md) and include concurrency evidence in the candidate record when applicable. Release notes must name the qualified async subset and model versions, cancellation/cleanup behavior, known task/process/thread boundaries and opt-in experimental status. Never describe lifetime/protocol checks as race freedom, deadlock freedom or generic multiprocessing safety. Any expansion to serialization, inherited handles or shared-memory semantics needs an accepted model proposal and compatibility evidence before publication.
+Follow the phase-mapped [CS01–CS07 and AS/MP/BR gates](concurrency.md) and include concurrency evidence in the candidate record when applicable. Release notes must name the qualified async subset and model versions, cancellation/cleanup behavior, known task/process/thread boundaries and opt-in experimental status. Never describe lifetime/protocol checks as race freedom, deadlock freedom or generic multiprocessing safety. Any expansion to serialization, inherited handles or shared-memory semantics needs an accepted model proposal and compatibility evidence before publication.
+
+
+## Post-0.7 release assignments
+
+CodePact 0.7.0 is published and verified in its [release evidence](../releases/0.7.0-evidence.md). The [root roadmap](../../ROADMAP.md) assigns new semantics to 0.8–0.11, ecosystem/cache/editor/MCP qualification to 0.12 and stabilization to 0.13. E01–E12 and S01–S09 remain unchanged in the [registry](phases/carry-forward-gates.md). This amendment changes no published tag, artifact, evidence or distribution obligation. Each future publication needs its own exact-candidate approval.

@@ -27,8 +27,8 @@ Ruff AST and Salsa are the accepted analyzer direction. Qualify exact component 
 
 ## Versioned release sequence
 
-The [root ROADMAP](../../ROADMAP.md) is authoritative for 0.x release order and acceptance. M0–M5 above remain feature groupings; the root roadmap maps them to 0.1–0.9 with dedicated phase plans and required gates.
+The [root ROADMAP](../../ROADMAP.md) is authoritative for 0.x release order and acceptance. M0–M5 above remain feature groupings; the root roadmap maps them to 0.1–0.13 with dedicated phase plans and required gates.
 
 ## Concurrent resource safety
 
-Follow [CS01–CS07](concurrency.md) within the existing release sequence: cleanup/cancellation foundations in M2, structured task ownership and borrow escapes in M3, suspension-aware exclusivity and protocol effects in M4, then model/integration qualification and stability in M5. The initial target is bounded `asyncio.TaskGroup` resource lifetimes. Multiprocessing and thread handoffs require conservative escape boundaries; semantic process support needs a separate reviewed model proposal. This does not expand M1 or promise race/deadlock freedom.
+Follow the [concurrency plan](concurrency.md): published CS01–CS05 retain their M2–M5 scopes. The post-0.7 sequence adds reviewed AS/MP/BR semantics in 0.8–0.11, starting both asyncio and explicit-spawn multiprocessing in 0.8. CS06 integration/cache qualification completes in 0.12 and CS07 stability audit in 0.13. Unqualified process/thread handoffs remain conservative boundaries. These assignments do not renumber M0–M5, expand M1 or promise race/deadlock freedom.

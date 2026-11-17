@@ -1,6 +1,6 @@
 # CodePact linting and IDE diagnostics
 
-Status: **Planned**. This is a proposal, not shipped editor support. Owner: maintainer to assign before implementation. Command/reporting foundations belong to [0.4 adoption](phases/0.4-adoption.md); the language server and supported editor integrations belong to [0.8 ecosystem](phases/0.8-ecosystem.md). Prototypes may begin earlier under the [roadmap dependency policy](../../ROADMAP.md#sequence-and-dependencies).
+Status: **Planned**. This is a proposal, not shipped editor support. Owner: maintainer to assign before implementation. Command/reporting foundations belong to [0.4 adoption](phases/0.4-adoption.md); the language server and supported editor integrations belong to [0.12 integrations](phases/0.12-ecosystem-and-integrations.md). Prototypes may begin earlier under the [roadmap dependency policy](../../ROADMAP.md#sequence-and-dependencies).
 
 ## User outcome
 
@@ -15,16 +15,16 @@ The companion [AI-agent integration plan](ai-agent-integration.md) reuses these 
 | Work item | Deliverable | Depends on |
 | --- | --- | --- |
 | LE01 — lint command contract (0.4) | Specify a `codepact check` reporting surface with human-readable and versioned JSON output, plus a location-per-line format for external-tool consumers. Reconcile with the 0.2 check interface rather than adding a duplicate command. | Qualified lifecycle checker and 0.4 reporting/configuration policies |
-| LE02 — diagnostic adapter (0.8) | Convert canonical diagnostics and coverage into editor diagnostics; retain codes, severity, certainty, related locations and links to rule explanations. | LE01, stable candidate diagnostic/schema contract |
-| LE03 — shared language server (0.8) | Add a proposed `codepact lsp` stdio entry point using the existing Salsa session and shared configuration resolver. | LE02, revision/cancellation and project-discovery APIs |
-| LE04 — editor clients (0.8) | Provide a thin VS Code extension, a JetBrains integration and documented Neovim/Emacs LSP configurations. | LE03, supported-client/version qualification |
-| LE05 — distribution and qualification (0.8) | Verify installed commands, client/server version compatibility, clean setup and the validation matrix below on declared platforms. | LE01–LE04, E01–E07 and release artifact gates |
+| LE02 — diagnostic adapter (0.12) | Convert canonical diagnostics and coverage into editor diagnostics; retain codes, severity, certainty, related locations and links to rule explanations. | LE01, stable candidate diagnostic/schema contract |
+| LE03 — shared language server (0.12) | Add a proposed `codepact lsp` stdio entry point using the existing Salsa session and shared configuration resolver. | LE02, revision/cancellation and project-discovery APIs |
+| LE04 — editor clients (0.12) | Provide a thin VS Code extension, a JetBrains integration and documented Neovim/Emacs LSP configurations. | LE03, supported-client/version qualification |
+| LE05 — distribution and qualification (0.12) | Verify installed commands, client/server version compatibility, clean setup and the validation matrix below on declared platforms. | LE01–LE04, E01–E07 and release artifact gates |
 
 Command names and options remain proposals until their API review. The current 0.1 `inspect-contracts` command remains a declaration inspector; this plan does not claim it already performs flow linting or serves LSP.
 
 CodePact 0.4.0 includes configuration, exit policy, checker schema 2, and a
 tab-separated location format. The 0.4 release qualified LE01 and the CLI
-portions of LE-V01 and LE-V02. LSP parity and client setup remain 0.8 work.
+portions of LE-V01 and LE-V02. LSP parity and client setup remain 0.12 work.
 [Validation matrix](phases/0.4/validation.md) ·
 [Release evidence](../releases/0.4.0-evidence.md)
 
@@ -73,8 +73,13 @@ Do not claim automatic compatibility for every LSP-capable editor. Each recipe m
 | LE-V06 — responsiveness | Record cold startup, warm local/dependency edits, cancellation recovery and peak memory on a named corpus. Agree latency/work budgets before implementation and retain measurements. |
 | LE-V07 — artifacts | Installed CLI/server and editor packages work on each declared target; protocol/schema incompatibilities fail clearly with upgrade guidance. |
 
-Attach these results to 0.4 A01/A03/A07 for the command foundations and 0.8 E03/E07/E08 for editor delivery. Keep all gates pending until evidence exists. Rule explanation pages and editor setup/troubleshooting guides must accompany the first supported release. Automatic resource-closing fixes remain deferred until their semantic preconditions are proven.
+Attach these results to 0.4 A01/A03/A07 for the command foundations and 0.12 E03/E07/E08 for editor delivery. Keep all gates pending until evidence exists. Rule explanation pages and editor setup/troubleshooting guides must accompany the first supported release. Automatic resource-closing fixes remain deferred until their semantic preconditions are proven.
 
 ## Concurrent resource diagnostics
 
-As [CS02/CS06](concurrency.md) land, preserve task origin, resource owner, capture/transfer, close, suspension and join/escape related sites where modeled. CLI and editor must agree on certainty, unsupported async/process boundaries, model assumptions and source revision. In 0.4, qualify the inherited 0.3 coroutine/cleanup evidence and unsupported handoffs; do not fabricate task/join sites. After CS03 qualifies task ownership, include a supported structured-task lifetime violation and an unsupported process handoff in 0.8 CLI/LSP parity fixtures. A green editor state must not turn unknown concurrency coverage into a safety claim; fixes that add joins, shielding or cleanup need verified behavioral preconditions.
+As [CS02/CS06](concurrency.md) land, preserve task origin, resource owner, capture/transfer, close, suspension and join/escape related sites where modeled. CLI and editor must agree on certainty, unsupported async/process boundaries, model assumptions and source revision. In 0.4, qualify the inherited 0.3 coroutine/cleanup evidence and unsupported handoffs; do not fabricate task/join sites. After CS03 qualifies task ownership, include a supported structured-task lifetime violation and an unqualified process handoff in 0.12 CLI/LSP parity fixtures. A green editor state must not turn unknown concurrency coverage into a safety claim; fixes that add joins, shielding or cleanup need verified behavioral preconditions.
+
+
+## Updated release dependency
+
+Post-0.7 AS/MP/BR semantics arrive through 0.8–0.11 and feed the same provider/obligation/review evidence into integration surfaces. These models are planned, not implied shipped behavior. E01–E12 retain their [original definitions](phases/carry-forward-gates.md). CS06 completes model/interface/cache parity in 0.12, including supported profiles and unqualified boundaries. A green editor/tool state cannot turn incomplete coverage into a safety claim.

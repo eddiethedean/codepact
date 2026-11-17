@@ -44,8 +44,12 @@ Release blockers include incorrect acceptance within a claimed contract, data lo
 | 0.4 | JSON/schema, modes, baselines and configuration checks |
 | 0.5–0.6 | Transfer, borrowing, escape, typestate and effect regressions |
 | 0.7 | Runtime variants, adapters and finite-match cases |
-| 0.8 | Persistent-cache equivalence/recovery, editor revisions/cancellation, platform and integration matrix |
-| 0.9 | Full candidate qualification and documented recovery rehearsal |
+| 0.8 | Provider/provenance/applicability, installed artifacts, asyncio/process lifecycle and explicit-spawn controls |
+| 0.9 | Persistent outcome/work identity, before/after review, separate HTTP/SQL profiles and strict policy |
+| 0.10 | Queue/IPC accounting, synchronization and process-entry boundaries |
+| 0.11 | Shutdown, async resources, bridges and shared-memory ownership |
+| 0.12 | Persistent-cache recovery/equivalence, editor revisions/cancellation, MCP and integration matrix |
+| 0.13 | Full candidate qualification, provider/policy upgrades and recovery rehearsal |
 
 The current release.yml includes validation, artifact checks and quality-workflow dependencies. Extend the quality suites to cover the new migration gates and retain their required dependency relationship for publication. Manual reports are appropriate for pilot triage and scope review; record them explicitly.
 
@@ -61,4 +65,9 @@ G5 includes eight native `codepact-cli` wheels, a pure `codepact` wheel, two com
 
 ## Concurrent scope evidence
 
-For releases assigned [CS01–CS07](concurrency.md), G1/G2 require the mapped gate's valid, invalid and unknown-boundary corpus and reviewed model semantics; G3 records exact supported library/interpreter and any platform/start-method assumptions. G4 requires task-budget and model-summary invalidation parity. G6/G7 require claims that distinguish resource lifetime/protocol checking from race, deadlock, thread or process safety. Earlier releases retain their original scope; unsupported process boundary fixtures do not qualify multiprocessing semantic support.
+For releases assigned [CS01–CS07 or AS/MP/BR gates](concurrency.md), G1/G2 require the mapped gate's valid, invalid and unknown-boundary corpus and reviewed model semantics; G3 records exact supported library/interpreter and any platform/start-method assumptions. G4 requires task-budget and model-summary invalidation parity. G6/G7 require claims that distinguish resource lifetime/protocol checking from race, deadlock, thread or process safety. Earlier releases retain their original scope; unsupported process boundary fixtures do not qualify multiprocessing semantic support.
+
+
+## Carry-forward gate accounting
+
+The [registry](phases/carry-forward-gates.md) preserves E01–E12 and S01–S09 verbatim across 0.8–0.13. Record staged E10 evidence without closing the composite before supported-editor parity in 0.12. CS06 retains integration/model acceptance; new process semantics require separate MP/BR evidence. S01–S09 and CS07 all remain required for 0.13 readiness.

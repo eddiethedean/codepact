@@ -1,9 +1,17 @@
 # Follow-on phases for CodePact contracts
 
-Status **Proposed**. Resource declarations and related API work are candidates
-for 0.7 and later. Select release versions for the four numbered phases at or
-after the 0.9 readiness decision. Prototypes may start as their prerequisites
-become available. All acceptance gates are pending. [Root roadmap](../../../ROADMAP.md) · [0.9 readiness plan](0.9-stabilization.md)
+Status **Proposed**. CodePact 0.7.0 is released; additional resource declaration
+and related API work are candidates for later releases, subject to explicit
+scope selection. Select release versions for the four numbered phases at or
+after the 0.13 readiness decision. Prototypes may start as their prerequisites
+become available. All acceptance gates in this document remain pending.
+[Root roadmap](../../../ROADMAP.md) · [0.13 readiness plan](0.13-stabilization.md)
+
+The numbered phases below are feature research stages, not release numbers.
+The reviewed-library, persistent-obligation and before-and-after review work
+now has its own [0.8–0.13 allocation](../contract-and-portfolio-workstreams.md).
+The proposed MustHandle acknowledgment semantics extend the released typed
+outcome and must-use baseline; they do not reopen completed 0.7 gates.
 
 ## Resource declarations and cleanup
 
