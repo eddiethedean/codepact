@@ -119,56 +119,60 @@ def verify_installed_outcome_typing(interpreter: Path, root: Path, work: Path) -
 
 
 def verify_documented_upgrade(dist: Path, work: Path) -> None:
-    """Replay the documented 0.5.1-to-0.7 helper/CLI dependency transition."""
-    project = work / "upgrade-project"
-    project.mkdir()
-    (project / "pyproject.toml").write_text(
-        "[project]\n"
-        'name = "codepact-upgrade-qualification"\n'
-        'version = "0.1.0"\n'
-        'requires-python = ">=3.11"\n'
-        'dependencies = ["codepact==0.5.1"]\n'
-        "\n[tool.uv]\n"
-        "package = false\n",
-        encoding="utf-8",
-    )
-
-    def uv(*arguments: str, capture: bool = False) -> str:
-        result = subprocess.run(
-            ["uv", *arguments],
-            cwd=project,
-            check=True,
-            capture_output=capture,
-            text=True,
-        )
-        return result.stdout.strip() if capture else ""
-
-    uv("sync")
-    old_version = uv("run", "--locked", "codepact", "--version", capture=True)
-    if old_version != "codepact 0.5.1":
-        raise RuntimeError(
-            f"the pre-upgrade command has unexpected version: {old_version}"
+    """Replay documented upgrades from 0.5.1 and 0.6.0 to the 0.7 CLI extra."""
+    for previous_version in ("0.5.1", "0.6.0"):
+        project = work / f"upgrade-project-{previous_version}"
+        project.mkdir()
+        (project / "pyproject.toml").write_text(
+            "[project]\n"
+            'name = "codepact-upgrade-qualification"\n'
+            'version = "0.1.0"\n'
+            'requires-python = ">=3.11"\n'
+            f'dependencies = ["codepact=={previous_version}"]\n'
+            "\n[tool.uv]\n"
+            "package = false\n",
+            encoding="utf-8",
         )
 
-    uv(
-        "add",
-        "codepact[cli]==0.7.0",
-        "--find-links",
-        str(dist),
-    )
-    uv("sync", "--locked")
-    version = uv("run", "--locked", "codepact", "--version", capture=True)
-    if version != "codepact 0.7.0":
-        raise RuntimeError(f"the upgraded command has unexpected version: {version}")
-    uv(
-        "run",
-        "--locked",
-        "python",
-        "-c",
-        "from codepact import Ok; from codepact.rust import Ok as RustOk; "
-        "assert Ok is RustOk",
-    )
-    print("Documented 0.5.1-to-0.7.0 helper and CLI upgrade passed")
+        def uv(*arguments: str, capture: bool = False) -> str:
+            result = subprocess.run(
+                ["uv", *arguments],
+                cwd=project,
+                check=True,
+                capture_output=capture,
+                text=True,
+            )
+            return result.stdout.strip() if capture else ""
+
+        uv("sync")
+        old_command = uv("run", "--locked", "codepact", "--version", capture=True)
+        expected_old_command = f"codepact {previous_version}"
+        if old_command != expected_old_command:
+            raise RuntimeError(
+                f"the pre-upgrade command has unexpected version: {old_command}"
+            )
+
+        uv(
+            "add",
+            "codepact[cli]==0.7.0",
+            "--find-links",
+            str(dist),
+        )
+        uv("sync", "--locked")
+        version = uv("run", "--locked", "codepact", "--version", capture=True)
+        if version != "codepact 0.7.0":
+            raise RuntimeError(
+                f"the upgraded command has unexpected version: {version}"
+            )
+        uv(
+            "run",
+            "--locked",
+            "python",
+            "-c",
+            "from codepact import Ok; from codepact.rust import Ok as RustOk; "
+            "assert Ok is RustOk",
+        )
+        print(f"Documented {previous_version}-to-0.7.0 helper and CLI upgrade passed")
 
 
 def main() -> None:
