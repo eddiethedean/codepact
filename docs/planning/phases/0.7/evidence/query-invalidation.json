@@ -1,0 +1,59 @@
+{
+  "analysis": "AnalysisSession::check_with_options",
+  "experimental_finite_matches": true,
+  "phases": [
+    {
+      "coverage": "incomplete",
+      "finite_result_match_complete": true,
+      "flow_query_count": 2,
+      "independent_query_included": true,
+      "phase": "initial-provider-and-outcome-summaries",
+      "provider_must_use_finding": true,
+      "provider_version": "1.0.0"
+    },
+    {
+      "flow_query_count": 0,
+      "phase": "unchanged-session"
+    },
+    {
+      "flow_query_count": 1,
+      "matches_fresh": true,
+      "phase": "must-use-declaration-removed",
+      "provider_must_use_finding_removed": true,
+      "unrelated_query_reused": true
+    },
+    {
+      "flow_query_count": 1,
+      "matches_fresh": true,
+      "phase": "provider-outcome-signature-edit",
+      "unrelated_query_reused": true
+    },
+    {
+      "flow_query_count": 1,
+      "matches_fresh": true,
+      "phase": "provider-version-2.0.0",
+      "unrelated_query_reused": true
+    },
+    {
+      "flow_query_count": 1,
+      "matches_fresh": true,
+      "phase": "unrelated-resource-edit",
+      "provider_and_caller_reused": true
+    },
+    {
+      "cancelled_without_publishing_result": true,
+      "phase": "cancelled-provider-summary-edit",
+      "query_events": 0
+    },
+    {
+      "flow_query_count": 2,
+      "matches_fresh": true,
+      "phase": "successful-retry-after-cancellation",
+      "provider_must_use_finding_removed": true
+    }
+  ],
+  "schema_version": 1,
+  "source_execution": false,
+  "target_python": "3.11",
+  "candidate_commit": "8108f9458b730636eb3e5f192ac9b8801f7a5ddb"
+}

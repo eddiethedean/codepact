@@ -1,0 +1,32 @@
+{
+  "analysis": "must-use forwarding review-hint invalidation",
+  "phases": [
+    {
+      "flow_query_count": 2,
+      "hint_present": false,
+      "phase": "unmarked-callee-has-no-forwarding-hint"
+    },
+    {
+      "flow_query_count": 0,
+      "phase": "unchanged-session"
+    },
+    {
+      "flow_query_count": 1,
+      "hint_present": true,
+      "matches_fresh": true,
+      "phase": "must-use-marker-adds-forwarding-hint",
+      "unrelated_query_reused": true
+    },
+    {
+      "flow_query_count": 1,
+      "hint_removed": true,
+      "matches_fresh": true,
+      "phase": "non-direct-return-removes-forwarding-hint",
+      "unrelated_query_reused": true
+    }
+  ],
+  "schema_version": 1,
+  "source_execution": false,
+  "target_python": "3.11",
+  "candidate_commit": "8108f9458b730636eb3e5f192ac9b8801f7a5ddb"
+}

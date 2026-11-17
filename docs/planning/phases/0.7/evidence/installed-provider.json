@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "qualification": "phase-0.7-installed-provider-wheel",
+  "source_revision": "8108f9458b730636eb3e5f192ac9b8801f7a5ddb",
+  "platform": "macOS-26.5.2-arm64-arm-64bit",
+  "python": "3.11.14 (main, Oct  9 2025, 16:16:55) [Clang 17.0.0 (clang-1700.6.3.2)]",
+  "cli_version": "codepact 0.7.0",
+  "provider_wheels": [
+    {
+      "name": "demo_dist-1.0.0-py3-none-any.whl",
+      "version": "1.0.0",
+      "sha256": "2a8616d0357b036dcbc67d67f65893b9b0aa40b569b06e38310755f4e8da4c18",
+      "installed_outside_source_tree": true
+    },
+    {
+      "name": "demo_dist-2.0.0-py3-none-any.whl",
+      "version": "2.0.0",
+      "sha256": "6153cd73ce54178816633dab302478e7951ec3fbd11c10602093ead847e76080",
+      "installed_outside_source_tree": true
+    }
+  ],
+  "marked_provider": {
+    "coverage": {
+      "status": "incomplete",
+      "reasons": [
+        "main.py:4: unknown call effect for decorated",
+        "main.py:5: unknown call effect for alias_typed",
+        "main.py:6: unknown call effect for public_annotated",
+        "main.py:7: unknown call effect for ordinary",
+        "main.py:7: resource-valued call result is not tracked",
+        "main.py:8: unknown call effect for decorated",
+        "main.py:8: unknown call effect for discard"
+      ],
+      "source_bytes": 772,
+      "declarations": 0
+    },
+    "must_use_findings": [
+      {
+        "line": 4,
+        "provider_evidence": {
+          "public_symbol": "demo.decorated",
+          "canonical_symbol": "demo._impl.decorated",
+          "distribution": "demo-dist",
+          "version": "1.0.0",
+          "origin_kind": "installed-wheel"
+        }
+      },
+      {
+        "line": 5,
+        "provider_evidence": {
+          "public_symbol": "demo.public_typed",
+          "canonical_symbol": "demo._impl.typed",
+          "distribution": "demo-dist",
+          "version": "1.0.0",
+          "origin_kind": "installed-wheel"
+        }
+      },
+      {
+        "line": 6,
+        "provider_evidence": {
+          "public_symbol": "demo.public_annotated",
+          "canonical_symbol": "demo._impl.annotated",
+          "distribution": "demo-dist",
+          "version": "1.0.0",
+          "origin_kind": "installed-wheel"
+        }
+      }
+    ],
+    "no_execution_sentinel_created": true
+  },
+  "disabled_rule": {
+    "TP3001_dispositions": [
+      "rule-disabled",
+      "rule-disabled",
+      "rule-disabled"
+    ]
+  },
+  "baseline": {
+    "coverage_preserved": true,
+    "TP3001_dispositions": [
+      "suppressed-baseline",
+      "suppressed-baseline",
+      "suppressed-baseline"
+    ],
+    "changed_provider_version_is_not_suppressed": true
+  },
+  "unmarked_required_provider": {
+    "coverage": "incomplete",
+    "has_unknown_boundary": true
+  },
+  "local_shadow": {
+    "active_TP3001": 0
+  },
+  "provider_source_execution": false,
+  "commands": [
+    [
+      "codepact",
+      "check",
+      "--root",
+      ".",
+      "--dependency-root",
+      "<installed-site-packages>",
+      "--json"
+    ],
+    [
+      "codepact",
+      "check",
+      "--root",
+      ".",
+      "--dependency-root",
+      "<installed-site-packages>",
+      "--rules",
+      "TP1001",
+      "--json"
+    ],
+    [
+      "codepact",
+      "baseline",
+      "update",
+      "--root",
+      ".",
+      "--dependency-root",
+      "<installed-site-packages>",
+      "--output",
+      "provider-baseline.json",
+      "--reason",
+      "qualification",
+      "--json"
+    ],
+    [
+      "codepact",
+      "check",
+      "--root",
+      ".",
+      "--dependency-root",
+      "<unmarked-site-packages>",
+      "--json"
+    ]
+  ]
+}
