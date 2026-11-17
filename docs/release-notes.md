@@ -1,6 +1,6 @@
 # Release notes
 
-## 0.7.0 — typed outcomes and finite-match candidate
+## 0.7.0 — typed outcomes and finite-match preview
 
 The 0.7.0 implementation adds pure-Python result and optional outcome values,
 explicit nullable and exception adapters, an opt-in finite-match rule, and
@@ -8,18 +8,23 @@ static must-use resolution for marked installed wheel providers. The helper
 package is now independent of the CLI; use the `cli` extra for a matching
 command install. CLI reports use schema 3 and settings reports use schema 2.
 
-This candidate is **not release-qualified**. TP5001 is off by default. The
+TP5001 is off by default. The
 provider preview requires explicit environment roots and a `py.codepact`
-marker. Outcome payloads do not establish ownership or cleanup. See the
+marker. Outcome payloads do not establish ownership or cleanup. Upgrade existing
+CLI installs to `codepact[cli]` or `codepact-cli` and regenerate baselines after
+upgrading. [Migration guide](upgrading.md) · [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.7.0-evidence.md)
+
+See the
 [phase gates](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.7-typed-outcomes.md),
 [specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.7/specification.md), and
 [validation matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.7/validation.md).
 
-## 0.6.0 — unreleased experimental contracts candidate
+## 0.6.0 — experimental contracts preview
 
-The 0.6.0 candidate adds opt-in advanced contracts on top of experimental
-ownership. It is not yet release-qualified. Keep the default and ownership-only
-scopes unchanged while reviewing the [phase 0.6 specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.6/specification.md),
+CodePact 0.6.0 adds opt-in advanced contracts on top of experimental
+ownership. [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.6.0-evidence.md)
+
+See the [phase 0.6 specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.6/specification.md),
 [validation matrix](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.6/validation.md), and [candidate gates](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.6-advanced-contracts.md).
 
 - Add finite protocol declarations with `@state_machine` and `@transition`,

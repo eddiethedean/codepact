@@ -50,9 +50,9 @@ missed cleanup, and discarded results directly in source.
 ::::{container} cp-release-strip
 
 :::{container} cp-release cp-release-published
-**0.7.0 · Candidate, qualification pending**
+**0.7.0 · Typed outcomes and finite-match preview**
 
-[Review the phase gates](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.7-typed-outcomes.md)
+[See what changed in 0.7.0](release-notes.md)
 :::
 
 :::{container} cp-release cp-release-ownership
