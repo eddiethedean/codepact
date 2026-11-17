@@ -45,16 +45,28 @@ class OutcomesTests(unittest.TestCase):
         payload = object()
         result = Ok(payload)
         self.assertIs(result.value, payload)
+        error = object()
+        self.assertIs(Err(error).error, error)
         self.assertEqual(Ok(1), Ok(1))
         self.assertNotEqual(Ok(1), Err(1))
         self.assertEqual(Some("present"), Some("present"))
         self.assertEqual(Nothing(), Nothing())
         self.assertEqual(Ok(payload), Ok(payload))
+        self.assertEqual(repr(Ok(3)), "Ok(value=3)")
+        self.assertEqual(repr(Err("bad")), "Err(error='bad')")
+        self.assertEqual(repr(Some(3)), "Some(value=3)")
+        self.assertEqual(repr(Nothing()), "Nothing()")
         self.assertEqual(hash(Ok(1)), hash(Ok(1)))
         with self.assertRaises(TypeError):
             hash(Ok([]))
-        with self.assertRaises(FrozenInstanceError):
-            result.value = "changed"  # type: ignore[misc]
+        for outcome, field in (
+            (result, "value"),
+            (Err("bad"), "error"),
+            (Some(1), "value"),
+        ):
+            with self.subTest(outcome=type(outcome).__name__):
+                with self.assertRaises(FrozenInstanceError):
+                    setattr(outcome, field, "changed")
 
         positional = None
         match Ok(3):

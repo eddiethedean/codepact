@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, datetime
 import json
+import os
 import platform
 from pathlib import Path
 import subprocess
@@ -15,7 +16,9 @@ BASELINE_COMMIT = "2d638e761a26211e5c98f1792731103dd9856994"
 COMPARABLE_WORKLOADS = ("state", "exclusive", "executor")
 COMPARABLE_SIZE = 250
 NEW_WORKLOADS = (("matches", 64), ("matches", 256), ("provider", 64), ("provider", 256))
-PROCESS_REPEATS = 3
+PROCESS_REPEATS = int(os.environ.get("CODEPACT_PHASE07_PROCESS_REPEATS", "3"))
+if PROCESS_REPEATS < 1:
+    raise ValueError("CODEPACT_PHASE07_PROCESS_REPEATS must be positive")
 
 
 class Arguments(argparse.Namespace):
