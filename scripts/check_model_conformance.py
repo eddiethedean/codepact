@@ -200,7 +200,11 @@ def qualify(root: Path, manifest_path: Path, python_version: str) -> dict[str, o
             module = importlib.util.module_from_spec(spec)
             previous_modules[suite.module] = sys.modules.get(suite.module)
             sys.modules[suite.module] = module
-            exec(compile(snapshot, str(expected_path), "exec"), module.__dict__)
+            # Only future imports in the probe itself may change its semantics.
+            exec(
+                compile(snapshot, str(expected_path), "exec", dont_inherit=True),
+                module.__dict__,
+            )
             loaded = loader.loadTestsFromModule(module)
             discovered.extend(cases(loaded))
             for name in suite.upstream_modules:

@@ -31,6 +31,7 @@ def fixture(
     body: str,
     methods: tuple[str, ...] = ("test_probe",),
     version: str | None = None,
+    preamble: str = "",
 ) -> Iterator[tuple[Path, Path, str]]:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -38,7 +39,7 @@ def fixture(
         test_root.mkdir(parents=True)
         module = f"test_conformance_fixture_{uuid.uuid4().hex}"
         (test_root / f"{module}.py").write_text(
-            "import unittest\n\nclass Probe(unittest.TestCase):\n" + body,
+            preamble + "import unittest\n\nclass Probe(unittest.TestCase):\n" + body,
             encoding="utf-8",
         )
         manifest = root / "manifest.json"
@@ -83,6 +84,42 @@ class ModelConformanceRunnerTests(unittest.TestCase):
         self.assertIn(module, result["test_source_sha256"])
         self.assertIn("contextlib", result["upstream_source_sha256"])
         self.assertEqual(len(result["manifest_sha256"]), 64)
+
+    def test_annotation_behavior_comes_from_the_probe_source(self) -> None:
+        for preamble, expected in (
+            ("", "int"),
+            ("from __future__ import annotations\n", "'int'"),
+        ):
+            with self.subTest(preamble=preamble):
+                with fixture(
+                    "    def annotated(self, value: int):\n"
+                    "        pass\n"
+                    "    def test_probe(self):\n"
+                    "        self.assertEqual(\n"
+                    "            self.annotated.__annotations__['value'], "
+                    f"{expected})\n",
+                    preamble=preamble,
+                ) as (root, manifest, module):
+                    result = qualify(root, manifest, platform.python_version())
+                self.assertEqual(result["status"], "passed", result)
+                self.assertEqual(result["passed"], [f"{module}.Probe.test_probe"])
+
+    def test_unresolved_probe_annotations_fail_qualification(self) -> None:
+        with fixture(
+            "    def annotated(self, value: MissingAnnotation):\n"
+            "        pass\n"
+            # Access annotations so deferred evaluation on Python 3.14 also
+            # raises during import, before any probe can count as executed.
+            "    annotation = annotated.__annotations__\n"
+            "    def test_probe(self):\n"
+            "        pass\n"
+        ) as (root, manifest, _):
+            result = qualify(root, manifest, platform.python_version())
+        self.assertEqual(result["status"], "failed", result)
+        self.assertEqual(result["started"], [])
+        self.assertEqual(result["passed"], [])
+        self.assertIn("NameError", str(result["qualification_errors"]))
+        self.assertIn("MissingAnnotation", str(result["qualification_errors"]))
 
     def test_wrong_runtime_is_rejected_before_importing_probes(self) -> None:
         with fixture(
