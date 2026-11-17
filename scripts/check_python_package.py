@@ -1,6 +1,7 @@
 """Verify the pure helper and native CLI wheels and source distributions."""
 
 import hashlib
+import importlib.util
 import json
 import os
 import platform
@@ -227,14 +228,15 @@ def verify_installed_marked_provider(
     (package / "py.codepact").write_text("", encoding="utf-8")
     environment = os.environ.copy()
     wheels: dict[str, Path] = {}
+    provider_build = [sys.executable, "-m", "build"]
+    if importlib.util.find_spec("setuptools") is not None:
+        provider_build.append("--no-isolation")
     for version in ("1.0.0", "2.0.0"):
         build_environment = environment.copy()
         build_environment["DEMO_PROVIDER_VERSION"] = version
         subprocess.run(
             [
-                sys.executable,
-                "-m",
-                "build",
+                *provider_build,
                 "--wheel",
                 "--outdir",
                 str(distributions),
