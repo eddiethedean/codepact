@@ -1,6 +1,6 @@
 # AI-agent integration
 
-Status: **Planned**. Owner: maintainer to assign before implementation. This proposal extends the shared analyzer and [linting plan](linting-and-editors.md); it does not claim shipped agent tooling. CLI/reporting and workflow foundations belong to [0.4 adoption](phases/0.4-adoption.md); MCP delivery and client qualification belong to [0.8 ecosystem](phases/0.8-ecosystem.md). Earlier prototypes follow the [roadmap dependency policy](../../ROADMAP.md#sequence-and-dependencies).
+Status: **Planned**. Owner: maintainer to assign before implementation. This proposal extends the shared analyzer and [linting plan](linting-and-editors.md); it does not claim shipped agent tooling. CLI/reporting and workflow foundations belong to [0.4 adoption](phases/0.4-adoption.md); MCP delivery and client qualification belong to [0.12 integrations](phases/0.12-ecosystem-and-integrations.md). Earlier prototypes follow the [roadmap dependency policy](../../ROADMAP.md#sequence-and-dependencies).
 
 ## User outcome
 
@@ -15,15 +15,15 @@ CLI agents, IDE agents and MCP clients use one semantic engine and the same proj
 | AI01 — machine contract (0.4) | Publish versioned JSON schemas, capability discovery, canonical diagnostic fields and error/exit behavior for noninteractive consumers. Extend the shared lint reporting surface rather than introducing a separate checker. | LE01 and the qualified lifecycle analysis |
 | AI02 — repair context (0.4) | Provide rule explanations, bounded evidence and repair guidance with semantic preconditions and limitations. | AI01, canonical diagnostics and provenance |
 | AI03 — agent workflow (0.4) | Publish a check–edit–recheck recipe and an opt-in project instruction snippet suitable for AGENTS.md or equivalent configuration; demonstrate both a successful repair and an unresolved boundary. | AI01–AI02, project discovery/configuration policies |
-| AI04 — MCP adapter (0.8) | Provide a local stdio server exposing read-only analysis and explanation tools backed by the same session/configuration APIs as CLI and LSP. | AI01–AI03, session revision/cancellation and distribution qualification |
-| AI05 — integration qualification (0.8) | Verify shell, IDE and MCP workflows with pinned client versions; publish setup, limitations, compatibility and recorded evaluation results. | AI04 and the validation gates below |
+| AI04 — MCP adapter (0.12) | Provide a local stdio server exposing read-only analysis and explanation tools backed by the same session/configuration APIs as CLI and LSP. | AI01–AI03, session revision/cancellation and distribution qualification |
+| AI05 — integration qualification (0.12) | Verify shell, IDE and MCP workflows with pinned client versions; publish setup, limitations, compatibility and recorded evaluation results. | AI04 and the validation gates below |
 
 Names and new fields remain proposals pending API/schema review. Existing `inspect-contracts` JSON and the developing `check` command are the starting point; agent-specific capabilities must be documented separately from released behavior. Protocol support must not delay CLI-based adoption.
 
 CodePact 0.4.0 includes checker schema 2, capability and explanation commands,
 snapshot and finding identities, and bounded CLI output. The 0.4 release
 qualified AI01–AI03 and CLI AI-V01–AI-V04, including the installed CLI repair
-walkthrough. MCP and editor clients remain 0.8 work.
+walkthrough. MCP and editor clients remain 0.12 work.
 [Validation matrix](phases/0.4/validation.md) ·
 [Release evidence](../releases/0.4.0-evidence.md)
 
@@ -81,8 +81,13 @@ Qualification targets are a shell-based agent using JSON, an IDE agent consuming
 | AI-V05 — clients/artifacts | Clean setup recipes pass for every claimed shell/IDE/MCP combination; missing binaries, incompatible schemas/protocols and server restart have documented recovery. |
 | AI-V06 — usefulness | Record a reproducible valid/invalid/unknown corpus, task selection, tool/client/model versions where applicable, repair success, new regressions, false clean claims, remaining boundaries, latency and output size. Keep deterministic contract tests separate from variable live-agent evaluations. |
 
-For 0.4, A08 requires AI01–AI03 and AI-V01–AI-V04 for CLI workflows, plus a recorded CLI repair walkthrough. For 0.8, E09 requires AI04–AI05 and all AI-V01–AI-V06, including parity with released editor behavior. Agree evaluation budgets and acceptance thresholds before running the corpus; missing evidence keeps gates pending. Link results to the candidate [release evidence record](release-evidence-template.md).
+For 0.4, A08 requires AI01–AI03 and AI-V01–AI-V04 for CLI workflows, plus a recorded CLI repair walkthrough. For 0.12, E09 requires AI04–AI05 and all AI-V01–AI-V06, including parity with released editor behavior. Agree evaluation budgets and acceptance thresholds before running the corpus; missing evidence keeps gates pending. Link results to the candidate [release evidence record](release-evidence-template.md).
 
 ## Concurrent repair workflows
 
-Inherit [CS02/CS06](concurrency.md) reporting and model assumptions. Agent tools preserve task/resource origins, capture/close/transfer/join sites, cancellation effects, certainty and unknown process/thread boundaries. In 0.4, demonstrate a supported lifecycle or synchronous must-use repair and an unresolved async/process boundary using inherited 0.3 evidence. Qualify a structured-task repair alongside 0.8 CLI/editor/tool parity only after CS03 establishes that scope. Rechecking must not turn an unsupported boundary into a verified repair. Do not recommend or automatically insert cancellation suppression, shielding, joins, moves or close calls without verified behavioral preconditions; a wrapper or cancellation request alone proves neither completion nor cleanup.
+Inherit [CS02/CS06](concurrency.md) reporting and model assumptions. Agent tools preserve task/resource origins, capture/close/transfer/join sites, cancellation effects, certainty and unknown process/thread boundaries. In 0.4, demonstrate a supported lifecycle or synchronous must-use repair and an unresolved async/process boundary using inherited 0.3 evidence. Qualify a structured-task repair alongside 0.12 CLI/editor/tool parity only after CS03 establishes that scope. Rechecking must not turn an unsupported boundary into a verified repair. Do not recommend or automatically insert cancellation suppression, shielding, joins, moves or close calls without verified behavioral preconditions; a wrapper or cancellation request alone proves neither completion nor cleanup.
+
+
+## Updated release dependency
+
+Post-0.7 AS/MP/BR semantics arrive through 0.8–0.11 and feed the same provider/obligation/review evidence into integration surfaces. These models are planned, not implied shipped behavior. E01–E12 retain their [original definitions](phases/carry-forward-gates.md). CS06 completes model/interface/cache parity in 0.12, including supported profiles and unqualified boundaries. A green editor/tool state cannot turn incomplete coverage into a safety claim.

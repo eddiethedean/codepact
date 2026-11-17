@@ -39,7 +39,7 @@ The [0.5 ownership plan](phases/0.5-ownership.md) orders explicit moves, handle 
 
 ## Phase 4: expand contract expressiveness
 
-The [0.6 advanced contracts plan](phases/0.6-advanced-contracts.md) orders exclusive regions, finite typestate, per-exit effects and model qualification. A preview implementation and user guide exist; the [release specification](phases/0.6/specification.md) and [V06 matrix](phases/0.6/validation.md) keep T01–T07 and CS04 evidence pending. The [0.7 typed outcomes plan](phases/0.7-typed-outcomes.md) covers runtime variants, explicit conversion and finite exhaustiveness.
+The [0.6 advanced contracts plan](phases/0.6-advanced-contracts.md) orders exclusive regions, finite typestate, per-exit effects and model qualification. The published preview passed T01–T07 and CS04, retained in the [0.6.0 record](../releases/0.6.0-evidence.md), [specification](phases/0.6/specification.md) and [V06 matrix](phases/0.6/validation.md). The published [0.7 plan](phases/0.7-typed-outcomes.md) covers runtime variants, explicit conversion and finite exhaustiveness; R01–R10, CS05 and G1–G8 passed in its [release record](../releases/0.7.0-evidence.md).
 
 Completion: feature-specific gates in features.md pass; both frontends produce the same relevant facts and diagnostics.
 
@@ -63,7 +63,7 @@ Do not convert every future idea into a mandatory dependency. Keep each change s
 
 ## Release mapping
 
-These engineering phases group work by subsystem. The [root ROADMAP](../../ROADMAP.md) maps them to versioned 0.x releases and defines the dependency order. Use the linked phase plans and [common gates](release-gates.md) for release acceptance.
+These engineering phases group work by subsystem. The [root ROADMAP](../../ROADMAP.md) maps them to versioned 0.x releases and defines the dependency order. Use linked phase plans and [common gates](release-gates.md) for acceptance. Post-0.7 work spans 0.8–0.13; subsystem Phase 0–5 headings remain unchanged. The [workstream plan](contract-and-portfolio-workstreams.md) maps provider/review/outcome/portfolio work, and the [registry](phases/carry-forward-gates.md) preserves E01–E12 and S01–S09.
 
 ## Python helper and CLI distributions
 
@@ -71,6 +71,6 @@ D015 established the pure-helper to native-CLI dependency model in the original 
 
 ## Concurrent resource safety work stream
 
-Implement [CS01–CS07](concurrency.md) within the mapped releases. Phase 2 adds bounded coroutine/suspension/cancellation cleanup edges and async reporting/pilot evidence; phase 3 adds structured task identities, captures, joins, borrow regions and explicit transfer commit points; phase 4 adds suspension-aware exclusivity and finite task/pool protocol effects. Phase 5 qualifies versioned models, integration/cache parity and stable claims. Keep 0.2 synchronous and implement each semantic extension separately with counterexamples.
+Implement [CS01–CS07](concurrency.md) within the mapped releases. Phase 2 adds bounded coroutine/suspension/cancellation cleanup edges and async reporting/pilot evidence; phase 3 adds structured task identities, captures, joins, borrow regions and explicit transfer commit points; phase 4 adds suspension-aware exclusivity and finite task/pool protocol effects. Phase 5 incorporates reviewed AS/MP/BR extensions across 0.8–0.11, integration/cache parity in 0.12 and stable claims in 0.13. Keep 0.2 synchronous and implement each semantic extension separately with counterexamples.
 
-Model process/thread submission as an escape boundary unless explicitly qualified. Do not treat moving a Python handle as serialization, isolation or safe process delivery. Multiprocessing model design remains separate evidence-gated work, not a dependency on proving general cross-process ownership.
+Model process/thread submission as an escape boundary unless explicitly qualified. Do not treat moving a Python handle as serialization, isolation or safe process delivery. Multiprocessing model design is separate evidence-gated work beginning with explicit-spawn Process/Pool lifecycle profiles in 0.8. It does not depend on or establish general cross-process ownership.
