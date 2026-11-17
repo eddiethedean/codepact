@@ -2465,6 +2465,238 @@ fn phase07_outcome_constructors_preserve_plain_and_resource_payload_boundaries()
 }
 
 #[test]
+fn phase07_resource_outcome_payload_boundaries_survive_assignment_match_return_and_forwarding() {
+    let root = fixture_root().with_extension("phase07-outcome-resource-flows");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import Err, Ok, resource\nfrom codepact.rust import Some\n@resource(closed_by='close')\nclass Resource:\n    def close(self): pass\n    def read(self): pass\ndef sink(value): pass\ndef assigned_ok():\n    item = Resource()\n    outcome = Ok(item)\n    item.close()\ndef extracted_err():\n    item = Resource()\n    outcome = Err(item)\n    match outcome:\n        case Err(payload): payload.read()\n        case _: pass\ndef returned_some():\n    item = Resource()\n    return Some(item)\ndef forwarded_ok():\n    item = Resource()\n    sink(Ok(item))\n    item.close()\ndef discarded_err():\n    item = Resource()\n    Err(item)\n    item.close()\ndef ordinary_payloads():\n    Ok(1)\n    Err('bad')\n    Some(False)\n",
+    )
+    .unwrap();
+
+    let (_, report) = phase07_report(&root, &[]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    let payload_boundaries = diagnostics
+        .iter()
+        .filter(|item| {
+            item["code"] == "TP9001"
+                && item["message"] == "outcome payload ownership is not tracked"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(payload_boundaries.len(), 5, "{report:#}");
+    assert!(
+        payload_boundaries
+            .iter()
+            .all(|item| item["certainty"] == "unknown"),
+        "{report:#}"
+    );
+    assert!(
+        diagnostics.iter().any(|item| {
+            item["code"] == "TP1002"
+                && item["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("remains open on return"))
+        }),
+        "a Some payload returned without an ownership contract keeps its cleanup duty: {report:#}"
+    );
+    assert!(
+        diagnostics.iter().any(|item| {
+            item["code"] == "TP9001"
+                && item["message"] == "unresolved method receiver may affect tracked resources"
+        }),
+        "extracted payload use remains a visible boundary: {report:#}"
+    );
+    assert!(
+        !diagnostics.iter().any(|item| {
+            item["code"] == "TP9001"
+                && item["message"] == "outcome payload ownership is not tracked"
+                && item["primary"]["line"].as_u64().unwrap() >= 30
+        }),
+        "ordinary payloads must not trigger resource payload coverage: {report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_finite_matches_keep_open_and_unsupported_scrutinees_incomplete() {
+    let root = fixture_root().with_extension("phase07-finite-open-and-unsupported");
+    fs::create_dir_all(&root).unwrap();
+    let cases = [
+        (
+            "open-scrutinee",
+            "from codepact import Err, Ok\ndef inspect(value):\n    match value:\n        case Ok(_): pass\n        case Err(_): pass\n",
+            Some("finite outcome match has an unresolved or open scrutinee"),
+            None,
+        ),
+        (
+            "unsupported-payload-required",
+            "from codepact import Err, Ok, Result\ndef inspect(value: Result[int, str]):\n    match value:\n        case Ok(1): pass\n",
+            Some("outcome match pattern is unresolved or tests unsupported payload structure"),
+            Some("outcome match leaves Err uncovered"),
+        ),
+        (
+            "unsupported-payload-after-covered-variant",
+            "from codepact import Err, Ok, Result\ndef inspect(value: Result[int, str]):\n    match value:\n        case Ok(_): pass\n        case Ok(1): pass\n        case Err(_): pass\n",
+            None,
+            None,
+        ),
+    ];
+    for (name, source, boundary, missing_variant) in cases {
+        fs::write(root.join("main.py"), source).unwrap();
+        let (status, report) = phase07_report(&root, &["--experimental-finite-matches"]);
+        let diagnostics = report["diagnostics"].as_array().unwrap();
+        assert_eq!(
+            status, 0,
+            "coverage-only cases are advisory: {name}: {report:#}"
+        );
+        assert_eq!(
+            report["coverage"]["status"], "incomplete",
+            "{name}: {report:#}"
+        );
+        if let Some(boundary) = boundary {
+            assert!(
+                diagnostics
+                    .iter()
+                    .any(|item| item["code"] == "TP9001" && item["message"] == boundary),
+                "{name}: {report:#}"
+            );
+        } else {
+            assert!(!diagnostics.iter().any(|item| {
+                item["code"] == "TP9001"
+                    && item["message"]
+                        == "outcome match pattern is unresolved or tests unsupported payload structure"
+            }), "an unsupported pattern after exhaustive coverage is unreachable: {report:#}");
+        }
+        let missing = diagnostics
+            .iter()
+            .filter(|item| item["code"] == "TP5001")
+            .map(|item| item["message"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            missing,
+            missing_variant.into_iter().collect::<Vec<_>>(),
+            "{name}: {report:#}"
+        );
+
+        let (strict_status, strict_report) = phase07_report(
+            &root,
+            &["--experimental-finite-matches", "--mode", "strict"],
+        );
+        assert_eq!(
+            strict_status, 1,
+            "strict mode exposes incomplete coverage: {name}: {strict_report:#}"
+        );
+        assert_eq!(strict_report["coverage"]["status"], "incomplete");
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_marked_result_scrutinee_is_handled_but_bare_call_is_discarded() {
+    let root = fixture_root().with_extension("phase07-marked-result-scrutinee");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import Err, Ok, Result, must_use\n@must_use\ndef get() -> Result[int, str]: return Ok(1)\ndef handled():\n    match get():\n        case Ok(value): pass\n        case Err(error=_): pass\ndef discarded():\n    get()\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(&root, &["--experimental-finite-matches"]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert!(
+        !diagnostics.iter().any(|item| item["code"] == "TP5001"),
+        "the direct marked Result scrutinee covers both variants: {report:#}"
+    );
+    assert!(
+        diagnostics.iter().any(|item| {
+            item["code"] == "TP3001"
+                && item["primary"]["line"] == 9
+                && item["message"] == "must-use result from get is discarded"
+        }),
+        "the independent bare call remains a must-use finding: {report:#}"
+    );
+    assert!(
+        !diagnostics
+            .iter()
+            .any(|item| { item["code"] == "TP3001" && item["primary"]["line"] == 5 }),
+        "the match expression consumes its marked scrutinee: {report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_owned_return_guidance_distinguishes_uniform_borrowed_and_cleanup_paths() {
+    let root = fixture_root().with_extension("phase07-owned-return-guidance");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import resource\nfrom codepact.rust import Borrowed, Owned\n@resource(closed_by='close')\nclass Resource:\n    def close(self): pass\n    def read(self): pass\ndef uniform(item_flag):\n    item = Resource()\n    if item_flag:\n        return item\n    item = Resource()\n    return item\ndef borrowed(item: Borrowed[Resource]):\n    return item\ndef closed():\n    item = Resource()\n    item.close()\n    return item\ndef mixed(item_flag):\n    item = Resource()\n    if item_flag:\n        return item\n    item.close()\n    return None\ndef unresolved() -> Resource:\n    return factory()\ndef cleaned_in_finally():\n    item = Resource()\n    try:\n        return item\n    finally:\n        item.close()\ndef transferred(item: Owned[Resource]) -> Owned[Resource]:\n    return item\n",
+    )
+    .unwrap();
+    let (_, report) = phase07_report(&root, &[]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    let handoffs = diagnostics
+        .iter()
+        .filter(|item| item["code"] == "TP1002" && item["primary"]["column"] == 1)
+        .collect::<Vec<_>>();
+    let message_for = |line: u64| {
+        handoffs
+            .iter()
+            .find(|item| item["primary"]["line"] == line)
+            .map(|item| item["message"].as_str().unwrap())
+    };
+    assert!(
+        message_for(7).is_some_and(
+            |message| message.contains("Owned[T] for this uniform open-resource handoff")
+        ),
+        "{report:#}"
+    );
+    assert!(
+        message_for(13).is_some_and(|message| message.contains("returned resource is borrowed")),
+        "{report:#}"
+    );
+    assert!(
+        message_for(19)
+            .is_some_and(|message| message.contains("review every return and cleanup path")),
+        "{report:#}"
+    );
+    assert!(
+        message_for(27)
+            .is_some_and(|message| message.contains("review every return and cleanup path")),
+        "{report:#}"
+    );
+    assert!(
+        diagnostics.iter().any(|item| {
+            item["code"] == "TP1002"
+                && item["primary"]["line"] == 15
+                && item["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("resource return has no verified ownership handoff")
+        }),
+        "closed handoff control retains its ownership finding: {report:#}"
+    );
+    let uniform = handoffs
+        .iter()
+        .find(|item| item["primary"]["line"] == 7)
+        .unwrap();
+    assert!(
+        uniform["related"].as_array().unwrap().len() >= 3,
+        "return, both acquisitions, and resource declaration are retained: {report:#}"
+    );
+    assert!(
+        diagnostics.iter().any(|item| {
+            item["code"] == "TP9001" && item["message"] == "unknown call effect for factory"
+        }),
+        "unresolved return is a distinct coverage boundary: {report:#}"
+    );
+    assert!(
+        !handoffs.iter().any(|item| item["primary"]["line"] == 33),
+        "a declared Owned handoff is accepted: {report:#}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn phase07_finite_match_does_not_trust_contradictory_or_async_annotations() {
     let root = fixture_root().with_extension("phase07-finite-match-boundaries");
     fs::create_dir_all(&root).unwrap();
@@ -2780,6 +3012,131 @@ fn phase07_provider_alias_reports_public_canonical_and_distribution_identity() {
 }
 
 #[test]
+fn phase07_provider_cli_and_rust_api_preserve_findings_and_provenance() {
+    let root = fixture_root().with_extension("phase07-provider-api-parity");
+    let project = root.join("project");
+    let installed = root.join("installed");
+    let package = installed.join("demo");
+    let info = installed.join("demo_dist-1.0.dist-info");
+    fs::create_dir_all(&project).unwrap();
+    fs::create_dir_all(&package).unwrap();
+    fs::create_dir_all(&info).unwrap();
+    let caller = "from demo import public as alias\nfrom demo._impl import value as direct\nalias()\ndirect()\n";
+    let public_source = "from ._impl import value as public\n";
+    let implementation_source =
+        "from codepact import must_use\n@must_use\ndef value() -> int: return 1\n";
+    fs::write(project.join("main.py"), caller).unwrap();
+    fs::write(package.join("__init__.py"), public_source).unwrap();
+    fs::write(package.join("_impl.py"), implementation_source).unwrap();
+    fs::write(package.join("py.codepact"), "").unwrap();
+    fs::write(
+        info.join("WHEEL"),
+        "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+    )
+    .unwrap();
+    fs::write(info.join("METADATA"), "Name: demo-dist\nVersion: 1.0\n").unwrap();
+    fs::write(
+        info.join("RECORD"),
+        "demo/__init__.py,,\ndemo/_impl.py,,\ndemo/py.codepact,,\n",
+    )
+    .unwrap();
+
+    let (_, report) = phase07_report(
+        &project,
+        &["--dependency-root", installed.to_str().unwrap()],
+    );
+    let api = codepact::check_with_options(
+        &[codepact::SourceFile::new("main.py", "main", caller)],
+        "3.11",
+        codepact::CheckOptions {
+            provider_sources: vec![
+                codepact::ProviderSource::new(
+                    "demo-dist",
+                    "1.0",
+                    codepact::SourceFile::new("demo/__init__.py", "demo", public_source),
+                )
+                .unwrap(),
+                codepact::ProviderSource::new(
+                    "demo-dist",
+                    "1.0",
+                    codepact::SourceFile::new("demo/_impl.py", "demo._impl", implementation_source),
+                )
+                .unwrap(),
+            ],
+            ..Default::default()
+        },
+    );
+    let cli_findings = report["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP3001")
+        .collect::<Vec<_>>();
+    let api_findings = api
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code == "TP3001")
+        .collect::<Vec<_>>();
+    assert_eq!(cli_findings.len(), 2, "{report:#}");
+    assert_eq!(api_findings.len(), 2, "{api:#?}");
+    for (cli, api) in cli_findings.iter().zip(api_findings) {
+        assert_eq!(api.code, cli["code"]);
+        assert_eq!(api.message, cli["message"]);
+        assert_eq!(api.certainty, cli["certainty"]);
+        assert_eq!(
+            api.primary,
+            serde_json::from_value::<codepact::Span>(cli["primary"].clone()).unwrap()
+        );
+        assert_eq!(
+            api.related,
+            serde_json::from_value::<Vec<codepact::Span>>(cli["related"].clone()).unwrap()
+        );
+        let cli_evidence = &cli["provider_evidence"];
+        let api_evidence = api.provider_evidence.as_ref().unwrap();
+        assert_eq!(api_evidence.public_symbol, cli_evidence["public_symbol"]);
+        assert_eq!(
+            api_evidence.canonical_symbol,
+            cli_evidence["canonical_symbol"]
+        );
+        assert_eq!(api_evidence.distribution, cli_evidence["distribution"]);
+        assert_eq!(api_evidence.version, cli_evidence["version"]);
+    }
+    assert_eq!(api.coverage.status, report["coverage"]["status"]);
+    assert_eq!(
+        api.coverage.reasons,
+        serde_json::from_value::<Vec<String>>(report["coverage"]["reasons"].clone()).unwrap()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn phase07_strict_ownership_keeps_findings_with_incomplete_coverage() {
+    let root = fixture_root().with_extension("phase07-strict-ownership-incomplete");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by='close')\nclass Resource:\n    def close(self): pass\ndef consume(value: Owned[Resource]):\n    value.close()\ndef transfer():\n    value = Resource()\n    consume(value)\ndef incomplete():\n    unknown_call()\n",
+    )
+    .unwrap();
+    let (status, report) = phase07_report(&root, &["--experimental-ownership", "--mode", "strict"]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert_eq!(
+        status, 1,
+        "strict ownership and incomplete coverage fail: {report:#}"
+    );
+    assert_eq!(report["coverage"]["status"], "incomplete");
+    assert!(diagnostics.iter().any(|item| item["code"] == "TP2005"));
+    assert!(diagnostics.iter().any(|item| item["code"] == "TP9001"
+        && item["message"] == "unknown call effect for unknown_call"));
+    assert!(report["policy_failures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|failure| { failure == "analysis coverage is incomplete" }));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn phase07_unimported_marked_provider_with_invalid_record_does_not_fail_check() {
     let root = fixture_root().with_extension("phase07-unrelated-provider");
     let project = root.join("project");
@@ -2995,4 +3352,56 @@ fn phase07_finite_match_session_matches_fresh_results_after_edits() {
             );
         }
     }
+}
+
+#[test]
+fn phase07_text_and_json_reports_agree_on_finite_match_findings() {
+    let root = fixture_root().with_extension("phase07-text-json-match-parity");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import Err, Ok, Result\ndef inspect(value: Result[int, str]):\n    match value:\n        case Ok(_): pass\n",
+    )
+    .unwrap();
+
+    let json = phase07_report(&root, &["--experimental-finite-matches"]);
+    assert_eq!(
+        json.0, 0,
+        "advisory mode should preserve the default exit policy"
+    );
+    let json_findings = json.1["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|diagnostic| diagnostic["code"] == "TP5001")
+        .collect::<Vec<_>>();
+    assert_eq!(json_findings.len(), 1, "{:#}", json.1);
+    assert_eq!(json_findings[0]["primary"]["file"], "main.py");
+    assert_eq!(json_findings[0]["primary"]["line"], 3);
+    assert_eq!(
+        json_findings[0]["message"],
+        "outcome match leaves Err uncovered"
+    );
+
+    let text = Command::new(env!("CARGO_BIN_EXE_codepact"))
+        .current_dir(&root)
+        .args([
+            "check",
+            "--no-config",
+            "--experimental-finite-matches",
+            "--root",
+        ])
+        .arg(&root)
+        .output()
+        .expect("CLI starts");
+    assert_eq!(text.status.code(), Some(0));
+    assert!(text.stderr.is_empty());
+    let text = String::from_utf8(text.stdout).unwrap();
+    assert!(text.contains("main.py:3:"), "{text}");
+    assert!(
+        text.contains("warning TP5001: outcome match leaves Err uncovered"),
+        "{text}"
+    );
+    fs::remove_dir_all(root).unwrap();
 }

@@ -1184,6 +1184,255 @@ mod tests {
     }
 
     #[test]
+    fn phase07_provider_summary_edits_refresh_consumers_and_reuse_unrelated_queries() {
+        use serde_json::json;
+
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured = Arc::clone(&events);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                captured.lock().unwrap().push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            ..AnalysisSession::default()
+        };
+        let provider = |version: &str, marked: bool, outcome: &str| {
+            let marker = if marked { "@must_use\n" } else { "" };
+            crate::ProviderSource::new(
+                "demo-dist",
+                version,
+                crate::SourceFile::new(
+                    "demo/_impl.py",
+                    "demo._impl",
+                    format!(
+                        "from codepact import Err, Ok, Option, Result, Some, Nothing, must_use\n{marker}def value() -> int: return 1\ndef outcome() -> {outcome}: return Ok(1)\n"
+                    ),
+                ),
+            )
+            .unwrap()
+        };
+        let main = SourceFile::new(
+            "main.py",
+            "main",
+            "from codepact import Err, Ok\nfrom demo._impl import outcome, value\ndef inspect():\n    value()\n    current = outcome()\n    match current:\n        case Ok(_): pass\n        case Err(_): pass\n",
+        );
+        let independent_source = |value: usize| {
+            format!(
+                "from codepact import resource\n@resource(closed_by='close')\nclass Local:\n    def close(self): pass\ndef independent():\n    item = Local()\n    item.close()\n    return {value}\n"
+            )
+        };
+        let independent = SourceFile::new("independent.py", "independent", independent_source(1));
+        let project = |unrelated_source: &str| {
+            vec![
+                main.clone(),
+                SourceFile::new("independent.py", "independent", unrelated_source),
+            ]
+        };
+        let options = |source| crate::CheckOptions {
+            experimental_finite_matches: true,
+            provider_sources: vec![source],
+            ..Default::default()
+        };
+        let flow_executions = || {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|key| key.contains("check_flow_file_query"))
+                .count()
+        };
+        let mut phases = Vec::new();
+        let files = project(&independent.source);
+
+        let first_provider = provider("1.0.0", true, "Result[int, str]");
+        let first = session.check_with_options(&files, "3.11", options(first_provider.clone()));
+        assert!(first
+            .diagnostics
+            .iter()
+            .any(|finding| { finding.code == "TP3001" && finding.provider_evidence.is_some() }));
+        assert!(!first.diagnostics.iter().any(|finding| {
+            finding.code == "TP5001" || finding.message.contains("outcome match pattern")
+        }));
+        assert_eq!(flow_executions(), 2);
+        phases.push(json!({
+            "phase": "initial-provider-and-outcome-summaries",
+            "provider_version": "1.0.0",
+            "coverage": first.coverage.status,
+            "provider_must_use_finding": first.diagnostics.iter().any(|finding| {
+                finding.code == "TP3001" && finding.provider_evidence.is_some()
+            }),
+            "finite_result_match_complete": !first.diagnostics.iter().any(|finding| finding.code == "TP5001"),
+            "flow_query_count": 2,
+            "independent_query_included": true
+        }));
+
+        events.lock().unwrap().clear();
+        assert_eq!(
+            session.check_with_options(&files, "3.11", options(first_provider.clone())),
+            first,
+            "unchanged provider, caller, and independent source reuse their summaries"
+        );
+        assert_eq!(flow_executions(), 0);
+        phases.push(json!({"phase":"unchanged-session","flow_query_count":0}));
+
+        events.lock().unwrap().clear();
+        let unmarked_provider = provider("1.0.0", false, "Result[int, str]");
+        let unmarked =
+            session.check_with_options(&files, "3.11", options(unmarked_provider.clone()));
+        assert!(!unmarked
+            .diagnostics
+            .iter()
+            .any(|finding| { finding.code == "TP3001" && finding.provider_evidence.is_some() }));
+        assert_eq!(
+            unmarked,
+            crate::check_with_options(&files, "3.11", options(unmarked_provider))
+        );
+        assert_eq!(
+            flow_executions(),
+            1,
+            "provider summary refreshes its caller; independent resource query is reused"
+        );
+        phases.push(json!({
+            "phase": "must-use-declaration-removed",
+            "provider_must_use_finding_removed": !unmarked.diagnostics.iter().any(|finding| {
+                finding.code == "TP3001" && finding.provider_evidence.is_some()
+            }),
+            "matches_fresh": true,
+            "flow_query_count": 1,
+            "unrelated_query_reused": true
+        }));
+
+        events.lock().unwrap().clear();
+        let changed_signature = provider("1.0.0", true, "Option[int]");
+        let signature_result =
+            session.check_with_options(&files, "3.11", options(changed_signature.clone()));
+        assert_eq!(
+            signature_result,
+            crate::check_with_options(&files, "3.11", options(changed_signature))
+        );
+        assert_eq!(
+            flow_executions(),
+            1,
+            "signature changes refresh provider and consumer"
+        );
+        phases.push(json!({
+            "phase": "provider-outcome-signature-edit",
+            "matches_fresh": true,
+            "flow_query_count": 1,
+            "unrelated_query_reused": true
+        }));
+
+        events.lock().unwrap().clear();
+        let new_version = provider("2.0.0", true, "Result[int, str]");
+        let versioned = session.check_with_options(&files, "3.11", options(new_version.clone()));
+        assert_eq!(
+            versioned,
+            crate::check_with_options(&files, "3.11", options(new_version))
+        );
+        assert_eq!(
+            flow_executions(),
+            1,
+            "provider identity/version changes refresh the consumer"
+        );
+        phases.push(json!({
+            "phase": "provider-version-2.0.0",
+            "matches_fresh": true,
+            "flow_query_count": 1,
+            "unrelated_query_reused": true
+        }));
+
+        events.lock().unwrap().clear();
+        let edited_independent = project(&independent_source(2));
+        let unrelated = session.check_with_options(
+            &edited_independent,
+            "3.11",
+            options(provider("2.0.0", true, "Result[int, str]")),
+        );
+        assert_eq!(
+            unrelated,
+            crate::check_with_options(
+                &edited_independent,
+                "3.11",
+                options(provider("2.0.0", true, "Result[int, str]"))
+            )
+        );
+        assert_eq!(
+            flow_executions(),
+            1,
+            "unrelated edit does not recheck provider or caller"
+        );
+        phases.push(json!({
+            "phase": "unrelated-resource-edit",
+            "matches_fresh": true,
+            "flow_query_count": 1,
+            "provider_and_caller_reused": true
+        }));
+
+        let cancelled_files = project(&independent_source(3));
+        session.cancellation_token().cancel();
+        events.lock().unwrap().clear();
+        assert!(matches!(
+            session.check_with_options_cancellable(
+                &cancelled_files,
+                "3.11",
+                options(provider("2.0.0", false, "Result[int, str]"))
+            ),
+            Err(AnalysisCancelled)
+        ));
+        phases.push(json!({
+            "phase": "cancelled-provider-summary-edit",
+            "cancelled_without_publishing_result": true,
+            "query_events": events.lock().unwrap().len()
+        }));
+        events.lock().unwrap().clear();
+        let recovered = session
+            .check_with_options_cancellable(
+                &cancelled_files,
+                "3.11",
+                options(provider("2.0.0", false, "Result[int, str]")),
+            )
+            .expect("the session recomputes fully after cancellation");
+        assert_eq!(
+            recovered.result,
+            crate::check_with_options(
+                &cancelled_files,
+                "3.11",
+                options(provider("2.0.0", false, "Result[int, str]"))
+            )
+        );
+        phases.push(json!({
+            "phase": "successful-retry-after-cancellation",
+            "matches_fresh": true,
+            "provider_must_use_finding_removed": !recovered.result.diagnostics.iter().any(|finding| {
+                finding.code == "TP3001" && finding.provider_evidence.is_some()
+            }),
+            "flow_query_count": flow_executions()
+        }));
+
+        if let Some(path) = std::env::var_os("CODEPACT_PHASE07_QUERY_EVIDENCE") {
+            let path = std::path::PathBuf::from(path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(
+                path,
+                serde_json::to_vec_pretty(&json!({
+                    "schema_version": 1,
+                    "analysis": "AnalysisSession::check_with_options",
+                    "target_python": "3.11",
+                    "experimental_finite_matches": true,
+                    "source_execution": false,
+                    "phases": phases
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
     fn unchanged_session_inspection_reuses_the_project_query() {
         let executions = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&executions);
