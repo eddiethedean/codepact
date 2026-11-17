@@ -121,9 +121,9 @@ Install Git, uv, Python 3.11 or later, Rust 1.96 or later, and a platform linker
 ```sh
 git clone --branch v0.7.0 https://github.com/eddiethedean/codepact.git
 cd codepact
-uv sync --locked
-uv run --locked codepact --version
-uv run --locked codepact capabilities --json
+uv sync --locked --extra cli
+uv run --locked --extra cli codepact --version
+uv run --locked --extra cli codepact capabilities --json
 git rev-parse HEAD
 ```
 

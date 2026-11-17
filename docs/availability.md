@@ -55,9 +55,9 @@ Build the selected repository checkout with Python 3.11+ and Rust 1.96+:
 ```sh
 git clone --branch v0.7.0 https://github.com/eddiethedean/codepact.git
 cd codepact
-uv sync --locked
-uv run --locked codepact --version
-uv run --locked codepact check --root examples
+uv sync --locked --extra cli
+uv run --locked --extra cli codepact --version
+uv run --locked --extra cli codepact check --root examples
 ```
 
 The example check intentionally exits `1` with TP1001. Record the full Git

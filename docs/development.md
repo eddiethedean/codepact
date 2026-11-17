@@ -14,7 +14,7 @@ and supports analyzer and packaging work.
 ```sh
 git clone https://github.com/eddiethedean/codepact.git
 cd codepact
-uv sync --locked
+uv sync --locked --extra cli
 ```
 
 The full repository checks also use `cargo-audit`, `cargo-deny`, rustfmt, Clippy, Make, and the pinned Python checkers. Install the two Cargo auditors, then run:

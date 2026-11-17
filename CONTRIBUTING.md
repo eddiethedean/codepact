@@ -32,7 +32,7 @@ change a documented command or its output, run
 ## Work on the analyzer or helpers
 
 Use Python 3.11 or later, Rust 1.96 or later, uv, Make, and a linker.
-`uv sync --locked` installs the workspace and builds the CLI. Analyzer code
+`uv sync --locked --extra cli` installs the workspace and builds the CLI. Analyzer code
 lives in `crates/codepact/src`, typed helpers in `python/codepact`, and analyzer
 fixtures in `crates/codepact/tests`.
 

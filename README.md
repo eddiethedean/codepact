@@ -115,7 +115,7 @@ source requires Rust 1.96 or later and a linker.
 
 ## Contribute
 
-Run `uv sync --locked` and `uv run --locked make check` after installing the
+Run `uv sync --locked --extra cli` and `uv run --locked make check` after installing the
 repository's pinned Cargo audit tools. The contributor guide lists the setup
 and focused check targets.
 [Contributing](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) ·
