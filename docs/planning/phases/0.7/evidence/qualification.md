@@ -53,8 +53,9 @@ maintainer reviews and records them in the
   by setuptools, installed into the repository virtual environment, and
   analyzed by the release CLI. Its exact output is `installed-provider.json`.
 - Schema and documentation checks passed directly: 12 schemas, 17
-  valid/invalid fixtures, 23 CLI JSON outputs, 131 documentation links, and a
-  strict Sphinx HTML build. The `make check-docs` wrapper could not fetch its
+  valid/invalid fixtures, 23 CLI JSON outputs, relative-link checks across 131
+  documentation files, and a strict Sphinx HTML build. The `make check-docs`
+  wrapper could not fetch its
   pinned documentation dependency in this network-restricted local
   environment; hosted Quality repeats the documentation build and replay.
 - The complete local package wrapper could not be replayed after its latest
