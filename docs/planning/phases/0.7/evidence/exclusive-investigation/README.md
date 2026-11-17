@@ -52,6 +52,10 @@ The balanced comparison did not reproduce a 23% increase. It placed the paired m
 
 Recommend treating this performance finding as non-blocking for 0.7.0 and retaining the original captures alongside the follow-up. G4 acceptance and pre-tag approval belong to the accountable maintainer.
 
+## Release harness replay
+
+The default release capture on `41e07ae` ran all seven workload configurations with ten processes per version or candidate-only workload. The paired median for the first unchanged exclusive check was +0.438 µs (+6.5%). Six of the ten candidate processes were slower than their adjacent baseline. Across all comparable metrics, the largest relative increase was +6.5%. The compiled benchmark inputs were unchanged in the subsequent documentation-only revision. [Raw release harness capture](paired-harness-replay.json)
+
 ## Replay
 
 Run the following commands from the investigation checkout with Python 3.11+, Cargo, patch and a new scratch directory. The first command summarizes the committed samples. The second builds both revisions, applies instrumentation to scratch copies and repeats the captures. The raw stock times are milliseconds. Probe stage and batch-average times are nanoseconds.
