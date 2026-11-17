@@ -2,7 +2,7 @@
 
 Status **Pending**. Technical results are consolidated in the [qualification
 record](evidence/qualification.md) and [performance review](evidence/performance.md)
-for candidate `8108f9458b730636eb3e5f192ac9b8801f7a5ddb`. Gate statuses remain
+for implementation revision `be8691f08a48e43abac726ecd648b827f7cb3f1a`. Gate statuses remain
 Pending until the accountable maintainer reviews and records acceptance. Use
 the published [0.6.0 evidence](../../../releases/0.6.0-evidence.md) for inherited
 settings, fixtures and performance comparisons. The [phase plan](../0.7-typed-outcomes.md)

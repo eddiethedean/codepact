@@ -55,5 +55,5 @@
   "schema_version": 1,
   "source_execution": false,
   "target_python": "3.11",
-  "candidate_commit": "8108f9458b730636eb3e5f192ac9b8801f7a5ddb"
+  "candidate_commit": "be8691f08a48e43abac726ecd648b827f7cb3f1a"
 }

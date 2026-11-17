@@ -9,6 +9,11 @@ the maximum across the 20 isolated processes. Both raw files are retained as
 [`performance.json`](performance.json) and
 [`performance-repeat2.json`](performance-repeat2.json).
 
+These measurements were captured on implementation revision
+`8108f9458b730636eb3e5f192ac9b8801f7a5ddb`. Follow-up revision
+`be8691f08a48e43abac726ecd648b827f7cb3f1a` adds qualification tests only;
+the optimized runtime and analyzer code are unchanged.
+
 The environment was macOS 26.5.2 arm64, CPython 3.11.14, and Rust 1.96.0. The
 baseline and candidate use the same phase 0.6 workloads at size 250. Time is
 milliseconds; memory is MiB.
