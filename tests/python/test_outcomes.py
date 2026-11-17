@@ -124,6 +124,20 @@ class OutcomesTests(unittest.TestCase):
         self.assertIs(captured.error, error)
         self.assertEqual(len(calls), 2)
 
+    def test_sync_capture_wraps_an_awaitable_without_running_or_joining_it(self) -> None:
+        ran = False
+
+        async def operation() -> int:
+            nonlocal ran
+            ran = True
+            return 1
+
+        result = capture(lambda: operation(), (ValueError,))
+        self.assertIsInstance(result, Ok)
+        self.assertFalse(ran)
+        result.value.close()
+        self.assertFalse(ran)
+
     def test_sync_capture_rejects_invalid_declarations_and_preserves_unselected_errors(self) -> None:
         called = False
 

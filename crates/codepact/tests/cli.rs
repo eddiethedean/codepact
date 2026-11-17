@@ -2518,6 +2518,34 @@ fn phase07_resource_outcome_payload_boundaries_survive_assignment_match_return_a
 }
 
 #[test]
+fn phase07_async_capture_keeps_unresolved_effects_and_independent_resource_findings() {
+    let root = fixture_root().with_extension("phase07-capture-boundary");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(
+        root.join("main.py"),
+        "from codepact import capture_async, resource\nfrom codepact.rust import Borrowed\n@resource(closed_by='close')\nclass Resource:\n    def close(self): pass\n    def read(self): pass\nasync def operation(value: Borrowed[Resource]):\n    value.read()\nasync def run():\n    value = Resource()\n    await capture_async(operation, (Exception,), value)\n    control = Resource()\n    control.close()\n    control.read()\n",
+    )
+    .unwrap();
+
+    let (_, report) = phase07_report(&root, &[]);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert!(
+        diagnostics.iter().any(|item| {
+            item["code"] == "TP9001" && item["message"] == "unknown call effect for capture_async"
+        }),
+        "the adapter must not supply a modeled join or cleanup effect: {report:#}"
+    );
+    assert!(
+        diagnostics.iter().any(|item| {
+            item["code"] == "TP1001" && item["message"] == "use of a resource that may be closed"
+        }),
+        "an unrelated known resource violation must remain visible: {report:#}"
+    );
+    assert_eq!(report["coverage"]["status"], "incomplete", "{report:#}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn phase07_finite_matches_keep_open_and_unsupported_scrutinees_incomplete() {
     let root = fixture_root().with_extension("phase07-finite-open-and-unsupported");
     fs::create_dir_all(&root).unwrap();
