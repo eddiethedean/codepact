@@ -1,3 +1,4 @@
+use super::contexts::execute_with;
 use super::*;
 
 #[allow(clippy::too_many_arguments)]
@@ -189,7 +190,10 @@ pub(super) fn execute(
             range,
         } = statement
         {
-            consume_expr(test, env, file, contracts, functions, result, 0);
+            let termination = process::termination_test(test, env, file, result);
+            if termination.is_none() {
+                consume_expr(test, env, file, contracts, functions, result, 0);
+            }
             outcomes.raises.extend(take_pending_raises(env));
             if !env.alive {
                 continue;
@@ -236,6 +240,10 @@ pub(super) fn execute(
             let mut right = Box::new((*before).clone());
             right.control_depth = right.control_depth.saturating_add(1);
             right.alive = true;
+            if let Some(test) = &termination {
+                process::refine_test(&mut left, test, true);
+                process::refine_test(&mut right, test, false);
+            }
             let left_outcomes = execute(
                 body,
                 &mut left,
@@ -410,7 +418,7 @@ pub(super) fn execute(
                         };
                         match exit.kind {
                             CompletionKind::Raise(_) => outcomes.raises.push(exit),
-                            CompletionKind::Cancelled => outcomes.raises.push(exit),
+                            CompletionKind::Cancelled(_) => outcomes.raises.push(exit),
                             CompletionKind::Break => outcomes.breaks.push(exit),
                             CompletionKind::Continue => outcomes.continues.push(exit),
                             CompletionKind::Fallthrough | CompletionKind::Return(_) => {
@@ -441,12 +449,12 @@ fn pattern_is_irrefutable(pattern: &crate::frontend::AstPattern) -> bool {
 
 const MAX_LOOP_ITERATIONS: usize = 16;
 
-fn push_exit(outcomes: &mut FlowResult, exit: FlowExit) {
+pub(super) fn push_exit(outcomes: &mut FlowResult, exit: FlowExit) {
     match &exit.kind {
         CompletionKind::Fallthrough => unreachable!("fallthrough is reported at function exit"),
         CompletionKind::Return(_) => outcomes.returns.push(exit),
         CompletionKind::Raise(_) => outcomes.raises.push(exit),
-        CompletionKind::Cancelled => outcomes.raises.push(exit),
+        CompletionKind::Cancelled(_) => outcomes.raises.push(exit),
         CompletionKind::Break => outcomes.breaks.push(exit),
         CompletionKind::Continue => outcomes.continues.push(exit),
     }
@@ -502,12 +510,26 @@ pub(super) enum ExceptionMatch {
     Definite,
 }
 
-fn expression_exception_names(expression: &AstExpr) -> Option<Vec<&str>> {
+fn resolved_exception_name<'a>(expression: &'a AstExpr, state: &State) -> Option<&'a str> {
+    if ownership::external_identity(expression, state).as_deref()
+        == Some("external:asyncio.CancelledError")
+    {
+        return Some("CancelledError");
+    }
+    expr_name(expression).filter(|name| is_unshadowed_exception_handler_name(name, state))
+}
+
+fn expression_exception_names<'a>(
+    expression: &'a AstExpr,
+    state: &State,
+) -> Option<Vec<Option<&'a str>>> {
     match &expression.kind {
-        AstExprKind::Name(name) => Some(vec![name]),
+        AstExprKind::Name(_) | AstExprKind::Attribute(..) => {
+            Some(vec![resolved_exception_name(expression, state)])
+        }
         AstExprKind::Tuple(items) => items
             .iter()
-            .map(expression_exception_names)
+            .map(|item| expression_exception_names(item, state))
             .collect::<Option<Vec<_>>>()
             .map(|items| items.into_iter().flatten().collect()),
         _ => None,
@@ -522,17 +544,16 @@ pub(super) fn completion_exception_name<'a>(
     kind: &'a CompletionKind,
     state: &State,
 ) -> Option<&'a str> {
-    if matches!(kind, CompletionKind::Cancelled) {
+    if matches!(kind, CompletionKind::Cancelled(_)) {
         return Some("CancelledError");
     }
     let CompletionKind::Raise(Some(expression)) = kind else {
         return None;
     };
-    let name = match &expression.kind {
-        AstExprKind::Call { function, .. } => expr_name(function),
-        _ => expr_name(expression),
-    }?;
-    is_unshadowed_exception_handler_name(name, state).then_some(name)
+    match &expression.kind {
+        AstExprKind::Call { function, .. } => resolved_exception_name(function, state),
+        _ => resolved_exception_name(expression, state),
+    }
 }
 
 fn known_builtin_exception(name: &str) -> bool {
@@ -653,17 +674,17 @@ pub(super) fn exception_handler_match(
     let Some(handler) = handler else {
         return ExceptionMatch::Definite;
     };
-    let Some(caught) = expression_exception_names(handler) else {
+    let Some(caught) = expression_exception_names(handler, state) else {
         return ExceptionMatch::Possible;
     };
     let mut possible = false;
     for caught in caught {
-        if caught == "BaseException" && is_unshadowed_exception_handler_name(caught, state) {
+        if caught == Some("BaseException") {
             return ExceptionMatch::Definite;
         }
-        let matching = is_unshadowed_exception_handler_name(caught, state)
-            .then(|| exception.and_then(|exception| builtin_exception_match(exception, caught)))
-            .flatten();
+        let matching = exception
+            .zip(caught)
+            .and_then(|(exception, caught)| builtin_exception_match(exception, caught));
         match matching {
             Some(true) => return ExceptionMatch::Definite,
             Some(false) => {}
@@ -1340,653 +1361,7 @@ fn execute_static_for_loop(
     outcomes
 }
 
-#[allow(clippy::too_many_arguments)]
-fn execute_with(
-    items: &[FlowWithItem],
-    body: &[FlowStatement],
-    asynchronous: bool,
-    range: SourceRange,
-    env: &mut State,
-    file: &SourceFile,
-    contracts: &[Contract],
-    functions: &FunctionMap,
-    result: &mut Inspection,
-    depth: usize,
-) -> FlowResult {
-    if asynchronous
-        && env
-            .ownership
-            .as_ref()
-            .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
-        && !env.exclusive.is_empty()
-    {
-        boundary(
-            result,
-            file,
-            range,
-            "exclusive borrow remains active across async context entry or exit",
-        );
-        for object in &env.exclusive {
-            *env.objects.entry(object.clone()).or_default() |= UNKNOWN;
-            if env
-                .resources
-                .get(object)
-                .is_some_and(|resource| env.protocol_machines.contains_key(&resource.base_symbol))
-            {
-                env.protocol_unknown.insert(object.clone());
-            }
-        }
-    }
-    #[derive(Clone)]
-    struct Path {
-        state: State,
-        completion: Option<(CompletionKind, SourceRange)>,
-    }
-
-    fn partition_kind(path: &Path) -> u8 {
-        match path.completion.as_ref().map(|(kind, _)| kind) {
-            None | Some(CompletionKind::Fallthrough) => 0,
-            Some(CompletionKind::Return(_)) => 1,
-            Some(CompletionKind::Raise(_)) => 2,
-            Some(CompletionKind::Cancelled) => 3,
-            Some(CompletionKind::Break) => 4,
-            Some(CompletionKind::Continue) => 5,
-        }
-    }
-
-    fn merge_overflow_path(previous: &mut Path, incoming: Path) {
-        previous.state = merge(&previous.state, &incoming.state).0;
-        previous.state.alive = true;
-        match (&mut previous.completion, incoming.completion) {
-            (
-                Some((CompletionKind::Raise(previous), _)),
-                Some((CompletionKind::Raise(incoming), _)),
-            ) if previous != &incoming => {
-                *previous = None;
-            }
-            (
-                Some((CompletionKind::Return(previous), _)),
-                Some((CompletionKind::Return(incoming), _)),
-            ) if previous != &incoming => {
-                *previous = None;
-            }
-            _ => {}
-        }
-    }
-
-    fn schedule_path(
-        pending: &mut Vec<(Path, usize)>,
-        generated_partitions: &mut usize,
-        overflow: &mut BTreeMap<u8, Path>,
-        path: Path,
-        remaining: usize,
-        file: &SourceFile,
-        result: &mut Inspection,
-        range: SourceRange,
-    ) {
-        if *generated_partitions < MAX_EXIT_PARTITIONS {
-            *generated_partitions += 1;
-            pending.push((path, remaining));
-            return;
-        }
-
-        boundary(
-            result,
-            file,
-            range,
-            "context-manager exit partition budget exceeded; remaining cleanup outcomes are unknown",
-        );
-        let kind = partition_kind(&path);
-        if let Some(previous) = overflow.get_mut(&kind) {
-            merge_overflow_path(previous, path);
-        } else {
-            overflow.insert(kind, path);
-        }
-    }
-
-    fn unwind(
-        path: Path,
-        cleanups: &[ContextCleanupFrame],
-        remaining: usize,
-        file: &SourceFile,
-        contracts: &[Contract],
-        functions: &FunctionMap,
-        result: &mut Inspection,
-        generated_partitions: &mut usize,
-        overflow: &mut BTreeMap<u8, Path>,
-    ) -> Vec<Path> {
-        let mut pending = Vec::new();
-        let mut completed = Vec::new();
-        if remaining == 0 {
-            return vec![path];
-        }
-        let initial_cleanup_range = match &cleanups[remaining - 1] {
-            ContextCleanupFrame::Modeled(cleanup) => cleanup.range,
-            ContextCleanupFrame::Unknown { range, .. } => *range,
-        };
-        schedule_path(
-            &mut pending,
-            generated_partitions,
-            overflow,
-            path,
-            remaining,
-            file,
-            result,
-            initial_cleanup_range,
-        );
-        while let Some((mut path, remaining)) = pending.pop() {
-            if remaining == 0 {
-                completed.push(path);
-                continue;
-            }
-            let cleanup = cleanups[remaining - 1].clone();
-            let cleanup_range = match &cleanup {
-                ContextCleanupFrame::Modeled(cleanup) => cleanup.range,
-                ContextCleanupFrame::Unknown { range, .. } => *range,
-            };
-            if !take_flow_step(&mut path.state, file, cleanup_range, result) {
-                completed.push(path);
-                continue;
-            }
-            match cleanup {
-                ContextCleanupFrame::Modeled(cleanup) => {
-                    path.state.alive = true;
-                    path.state.pending_raises.clear();
-                    run_context_cleanup(
-                        &cleanup,
-                        path.completion.as_ref().map(|(kind, _)| kind),
-                        &mut path.state,
-                        file,
-                        contracts,
-                        functions,
-                        result,
-                    );
-                    let raises = take_pending_raises(&mut path.state);
-                    let had_raises = !raises.is_empty();
-                    for raised in raises {
-                        schedule_path(
-                            &mut pending,
-                            generated_partitions,
-                            overflow,
-                            Path {
-                                state: raised.state,
-                                completion: Some((raised.kind, raised.range)),
-                            },
-                            remaining - 1,
-                            file,
-                            result,
-                            cleanup_range,
-                        );
-                    }
-                    if path.state.alive {
-                        schedule_path(
-                            &mut pending,
-                            generated_partitions,
-                            overflow,
-                            path,
-                            remaining - 1,
-                            file,
-                            result,
-                            cleanup_range,
-                        );
-                    } else if !had_raises {
-                        schedule_path(
-                            &mut pending,
-                            generated_partitions,
-                            overflow,
-                            Path {
-                                state: path.state,
-                                completion: Some((CompletionKind::Raise(None), cleanup.range)),
-                            },
-                            remaining - 1,
-                            file,
-                            result,
-                            cleanup_range,
-                        );
-                    }
-                }
-                ContextCleanupFrame::Unknown {
-                    asynchronous,
-                    range,
-                } => {
-                    path.state.alive = true;
-                    path.state.pending_raises.clear();
-                    if matches!(
-                        path.completion.as_ref().map(|(kind, _)| kind),
-                        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled)
-                    ) {
-                        let mut suppressed = path.clone();
-                        suppressed.completion = None;
-                        schedule_path(
-                            &mut pending,
-                            generated_partitions,
-                            overflow,
-                            suppressed,
-                            remaining - 1,
-                            file,
-                            result,
-                            cleanup_range,
-                        );
-                    }
-                    schedule_path(
-                        &mut pending,
-                        generated_partitions,
-                        overflow,
-                        Path {
-                            state: path.state.clone(),
-                            completion: Some((CompletionKind::Raise(None), range)),
-                        },
-                        remaining - 1,
-                        file,
-                        result,
-                        cleanup_range,
-                    );
-                    if asynchronous {
-                        schedule_path(
-                            &mut pending,
-                            generated_partitions,
-                            overflow,
-                            Path {
-                                state: path.state.clone(),
-                                completion: Some((CompletionKind::Cancelled, range)),
-                            },
-                            remaining - 1,
-                            file,
-                            result,
-                            cleanup_range,
-                        );
-                    }
-                    schedule_path(
-                        &mut pending,
-                        generated_partitions,
-                        overflow,
-                        path,
-                        remaining - 1,
-                        file,
-                        result,
-                        cleanup_range,
-                    );
-                }
-            }
-        }
-        completed
-    }
-
-    let mut cleanups = Vec::new();
-    let mut uncertain = BTreeSet::new();
-    let mut entry_raises = Vec::new();
-    for (index, item) in items.iter().enumerate() {
-        if !env.alive {
-            entry_raises.extend(
-                take_pending_raises(env)
-                    .into_iter()
-                    .map(|exit| (exit, cleanups.len())),
-            );
-            break;
-        }
-        if asynchronous && env.ownership.is_some() && tasks::is_group_context(&item.context, env) {
-            if let Some(id) = tasks::enter_group(item, env, file, result) {
-                cleanups.push(ContextCleanupFrame::Modeled(ContextCleanup {
-                    receiver: id,
-                    method: ":task-group-exit",
-                    asynchronous: false,
-                    range: item.range,
-                }));
-                continue;
-            }
-        }
-        let Some(method) = contextlib_cleanup_method(&item.context, env).filter(|method| {
-            (asynchronous && *method == "aclose") || (!asynchronous && *method == "close")
-        }) else {
-            consume_expr(&item.context, env, file, contracts, functions, result, 0);
-            entry_raises.extend(
-                take_pending_raises(env)
-                    .into_iter()
-                    .map(|exit| (exit, cleanups.len())),
-            );
-            uncertain.extend(env.places.values().flatten().cloned());
-            if let Some(target) = &item.target {
-                if let Some(ownership) = env.ownership.as_mut() {
-                    ownership.rebind(target);
-                }
-                env.possibly_unbound_places.remove(target);
-                env.definitely_bound_names.insert(target.clone());
-                env.places.remove(target);
-                env.unknown_places.insert(target.clone());
-                env.shadowed_functions.insert(target.clone());
-                env.shadowed_classes.insert(target.clone());
-            }
-            boundary(
-                result,
-                file,
-                item.range,
-                if asynchronous {
-                    "asynchronous context-manager cleanup has no qualified model"
-                } else {
-                    "context-manager cleanup has no qualified model"
-                },
-            );
-            if env.alive {
-                entry_raises.push((
-                    FlowExit {
-                        state: env.clone(),
-                        range: item.range,
-                        kind: CompletionKind::Raise(None),
-                    },
-                    cleanups.len(),
-                ));
-                if asynchronous {
-                    entry_raises.push((
-                        FlowExit {
-                            state: env.clone(),
-                            range: item.range,
-                            kind: CompletionKind::Cancelled,
-                        },
-                        cleanups.len(),
-                    ));
-                }
-                cleanups.push(ContextCleanupFrame::Unknown {
-                    asynchronous,
-                    range: item.range,
-                });
-            }
-            continue;
-        };
-
-        let AstExprKind::Call {
-            arguments,
-            keywords,
-            ..
-        } = &item.context.kind
-        else {
-            unreachable!("contextlib cleanup recognition requires a call")
-        };
-        let object = match (arguments.as_slice(), keywords.as_slice()) {
-            ([object], []) => Some(object),
-            ([], [(Some(name), object)]) if name == "thing" => Some(object),
-            _ => None,
-        };
-        let Some(object) = object else {
-            for argument in arguments {
-                consume_expr(argument, env, file, contracts, functions, result, 0);
-            }
-            for (_, argument) in keywords {
-                consume_expr(argument, env, file, contracts, functions, result, 0);
-            }
-            entry_raises.extend(
-                take_pending_raises(env)
-                    .into_iter()
-                    .map(|exit| (exit, cleanups.len())),
-            );
-            uncertain.extend(env.places.values().flatten().cloned());
-            boundary(
-                result,
-                file,
-                item.range,
-                "contextlib cleanup call has unsupported arguments",
-            );
-            queue_raise(
-                env,
-                item.range,
-                Some(AstExpr {
-                    range: item.range,
-                    kind: AstExprKind::Name("TypeError".into()),
-                }),
-            );
-            entry_raises.extend(
-                take_pending_raises(env)
-                    .into_iter()
-                    .map(|exit| (exit, cleanups.len())),
-            );
-            env.alive = false;
-            break;
-        };
-        let receiver = synthetic_name(env, "with", item.range, index);
-        execute_non_if_statement(
-            &FlowStatement::Assign {
-                name: receiver.clone(),
-                annotation: None,
-                value: object.clone(),
-                range: object.range,
-            },
-            env,
-            file,
-            contracts,
-            functions,
-            result,
-        );
-        entry_raises.extend(
-            take_pending_raises(env)
-                .into_iter()
-                .map(|exit| (exit, cleanups.len())),
-        );
-        if !env.alive {
-            entry_raises.extend(
-                take_pending_raises(env)
-                    .into_iter()
-                    .map(|exit| (exit, cleanups.len())),
-            );
-            break;
-        }
-        if !env.places.contains_key(&receiver) || env.unknown_places.contains(&receiver) {
-            uncertain.extend(env.places.values().flatten().cloned());
-            boundary(
-                result,
-                file,
-                item.range,
-                "contextlib cleanup receiver is not a resolved tracked resource",
-            );
-        } else {
-            if item.unsupported_target {
-                boundary(
-                    result,
-                    file,
-                    item.range,
-                    "context-manager target destructuring is not modeled",
-                );
-            }
-            if let Some(target) = &item.target {
-                env.possibly_unbound_places.remove(target);
-                env.definitely_bound_names.insert(target.to_owned());
-                if let Some(targets) = env.places.get(&receiver).cloned() {
-                    env.places.insert(target.clone(), targets);
-                    ownership::assign_handle(target, None, false, env, file, item.range, result);
-                    env.unknown_places.remove(target);
-                    env.shadowed_functions.insert(target.clone());
-                    env.shadowed_classes.insert(target.clone());
-                }
-            }
-            cleanups.push(ContextCleanupFrame::Modeled(ContextCleanup {
-                receiver,
-                method,
-                asynchronous: method == "aclose",
-                range: item.range,
-            }));
-        }
-    }
-
-    let mut body_outcomes = if env.alive {
-        execute(body, env, file, contracts, functions, result, depth + 1)
-    } else {
-        FlowResult::default()
-    };
-    let mut paths = Vec::new();
-    if env.alive {
-        paths.push((
-            Path {
-                state: env.clone(),
-                completion: None,
-            },
-            cleanups.len(),
-        ));
-    }
-    for exit in body_outcomes.all_abrupt().cloned() {
-        paths.push((
-            Path {
-                state: exit.state,
-                completion: Some((exit.kind, exit.range)),
-            },
-            cleanups.len(),
-        ));
-    }
-    for (exit, entered) in entry_raises {
-        paths.push((
-            Path {
-                state: exit.state,
-                completion: Some((exit.kind, exit.range)),
-            },
-            entered,
-        ));
-    }
-
-    let mut outcomes = FlowResult::default();
-    let mut normal_states = Vec::new();
-    let mut unwound_paths = Vec::new();
-    let mut generated_partitions = 0;
-    let mut overflow_paths = BTreeMap::new();
-    for (path, remaining) in paths {
-        unwound_paths.extend(unwind(
-            path,
-            &cleanups,
-            remaining,
-            file,
-            contracts,
-            functions,
-            result,
-            &mut generated_partitions,
-            &mut overflow_paths,
-        ));
-    }
-    for (_, mut path) in overflow_paths {
-        let affected = path.state.objects.keys().cloned().collect::<Vec<_>>();
-        weaken(&mut path.state, affected.into_iter());
-        path.state.alive = true;
-        unwound_paths.push(path);
-    }
-    for mut path in unwound_paths {
-        if !uncertain.is_empty() {
-            let mut affected = uncertain.clone();
-            affected.extend(path.state.places.values().flatten().cloned());
-            weaken(&mut path.state, affected.into_iter());
-        }
-        path.state.alive = true;
-        match path.completion {
-            None => normal_states.push(path.state),
-            Some((kind, range)) => {
-                let exit = FlowExit {
-                    state: path.state,
-                    range,
-                    kind,
-                };
-                push_exit(&mut outcomes, exit);
-            }
-        }
-    }
-
-    if let Some(mut normal) = join_states(normal_states) {
-        normal.alive = true;
-        *env = normal;
-    } else {
-        env.alive = false;
-    }
-    body_outcomes.returns.clear();
-    body_outcomes.raises.clear();
-    body_outcomes.breaks.clear();
-    body_outcomes.continues.clear();
-    let _ = range;
-    outcomes
-}
-
-fn contextlib_cleanup_method(expression: &AstExpr, env: &State) -> Option<&'static str> {
-    if !matches!(env.target_python_version.as_str(), "3.11" | "3.12" | "3.13") {
-        return None;
-    }
-    let AstExprKind::Call { function, .. } = &expression.kind else {
-        return None;
-    };
-    match &function.kind {
-        AstExprKind::Name(name) if !env.shadowed_functions.contains(name) => {
-            match env.function_bindings.get(name).map(String::as_str) {
-                Some("external:contextlib.closing") => Some("close"),
-                Some("external:contextlib.aclosing") => Some("aclose"),
-                _ => None,
-            }
-        }
-        AstExprKind::Attribute(module, name) => {
-            let module_binding = expr_name(module)
-                .filter(|module| !env.shadowed_functions.contains(*module))
-                .and_then(|module| env.function_bindings.get(module))
-                .map(String::as_str);
-            match (module_binding, name.as_str()) {
-                (Some("external:contextlib"), "closing") => Some("close"),
-                (Some("external:contextlib"), "aclosing") => Some("aclose"),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-fn run_context_cleanup(
-    cleanup: &ContextCleanup,
-    incoming: Option<&CompletionKind>,
-    env: &mut State,
-    file: &SourceFile,
-    contracts: &[Contract],
-    functions: &FunctionMap,
-    result: &mut Inspection,
-) {
-    if cleanup.method == ":task-group-exit" {
-        tasks::join_group(
-            &cleanup.receiver,
-            cleanup.range,
-            incoming,
-            env,
-            file,
-            contracts,
-            functions,
-            result,
-        );
-        return;
-    }
-    let receiver = &cleanup.receiver;
-    let method = cleanup.method;
-    let asynchronous = cleanup.asynchronous;
-    let range = cleanup.range;
-    let receiver_expr = AstExpr {
-        range,
-        kind: AstExprKind::Name(receiver.to_owned()),
-    };
-    let call = AstExpr {
-        range,
-        kind: AstExprKind::Call {
-            function: Box::new(AstExpr {
-                range,
-                kind: AstExprKind::Attribute(Box::new(receiver_expr), method.to_owned()),
-            }),
-            arguments: Vec::new(),
-            keywords: Vec::new(),
-        },
-    };
-    if asynchronous {
-        consume_expr(
-            &AstExpr {
-                range,
-                kind: AstExprKind::Await(Box::new(call)),
-            },
-            env,
-            file,
-            contracts,
-            functions,
-            result,
-            0,
-        );
-    } else {
-        consume_expr(&call, env, file, contracts, functions, result, 0);
-    }
-}
-
-fn execute_non_if_statement(
+pub(super) fn execute_non_if_statement(
     statement: &FlowStatement,
     env: &mut State,
     file: &SourceFile,
@@ -2001,7 +1376,10 @@ fn execute_non_if_statement(
         | FlowStatement::EscapingAssign {
             name, value, range, ..
         } => {
-            if tasks::initialize_executor_handle(name, value, env, file, result) {
+            if process::initialize(name, value, env, file, functions, result) {
+                return None;
+            }
+            if executor::initialize_handle(name, value, env, file, result) {
                 return None;
             }
             if tasks::initialize_group_handle(name, value, env, file, result) {
@@ -2056,7 +1434,17 @@ fn execute_non_if_statement(
             let source_function_binding = env
                 .ownership
                 .as_ref()
-                .and_then(|_| ownership::external_identity(value, env));
+                .and_then(|_| ownership::external_identity(value, env))
+                .or_else(|| {
+                    providers::public_name(value, env)
+                        .filter(|name| {
+                            env.models
+                                .foundations
+                                .as_ref()
+                                .is_some_and(|inputs| inputs.module(name).is_some())
+                        })
+                        .map(|name| format!("provider:{name}"))
+                });
             let source_class_binding = expr_name(value)
                 .filter(|source| {
                     !env.places.contains_key(*source) && !env.unknown_places.contains(*source)
@@ -2082,7 +1470,7 @@ fn execute_non_if_statement(
                     };
                     if resource_contract.is_some() && !env.shadowed_classes.contains(class) {
                         let prepared = if env.ownership.is_some() {
-                            Some(ownership::prepare_call(
+                            Some(calls::prepare_call(
                                 value, env, file, contracts, functions, result, 0,
                             ))
                         } else {

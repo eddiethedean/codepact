@@ -1,4 +1,50 @@
-use super::*;
+use super::discovery;
+use codepact::adoption::EffectiveConfig;
+
+pub(super) fn settings_json(c: &EffectiveConfig) -> Result<String, String> {
+    let root = discovery::resolve_project_root(&c.root)?;
+    let mut settings = serde_json::json!({
+        "execution_status": "settings-resolved",
+        "settings_schema_version": 2,
+        "root": root,
+        "config_file": c.source,
+        "python_version": c.python_version,
+        "include": c.include,
+        "exclude": c.exclude,
+        "enabled_rules": c.enabled_rules,
+        "mode": c.mode,
+        "experimental_ownership": c.ownership.is_enabled(),
+        "experimental_advanced_contracts": c.ownership.includes_advanced_contracts(),
+        "experimental_finite_matches": c.finite_matches,
+        "dependency_roots": c.dependency_roots,
+        "required_providers": c.required_providers,
+        "assume_default_task_factory": c.ownership.assumes_default_task_factory(),
+        "fail_on": c.fail_on,
+        "baseline": c.baseline,
+        "severity": c.severity,
+        "settings_origins": c.settings_origins
+    });
+    if let Some(profile) = &c.runtime_profile {
+        settings["runtime_profile"] = serde_json::to_value(profile).unwrap();
+    }
+    if c.experimental_foundations {
+        settings["experimental_foundations"] = serde_json::Value::Bool(true);
+    }
+    if !c.project_contracts.is_empty() {
+        settings["project_contracts"] = serde_json::to_value(&c.project_contracts).unwrap();
+    }
+    if let Some(lock) = &c.uv_lock {
+        settings["uv_lock"] = serde_json::to_value(lock).unwrap();
+    }
+    if c.experimental_foundations
+        || c.runtime_profile.is_some()
+        || !c.project_contracts.is_empty()
+        || c.uv_lock.is_some()
+    {
+        settings["settings_schema_version"] = serde_json::Value::from(3);
+    }
+    Ok(serde_json::to_string_pretty(&settings).unwrap())
+}
 
 pub(super) fn capabilities_json() -> String {
     let mut capabilities = serde_json::json!({
@@ -23,7 +69,7 @@ pub(super) fn capabilities_json() -> String {
             {"code":"TP9002","semantic_version":1,"tier":"mandatory","enabled_by_default":true,"explanation_id":"TP9002.R001"}
         ],
         "formats": ["text", "json", "concise"],
-        "settings": ["root", "python-version", "include", "exclude", "enabled-rules", "mode", "fail-on", "baseline", "severity", "experimental-ownership", "experimental-advanced-contracts", "experimental-finite-matches", "dependency-roots", "required-providers", "assume-default-task-factory"],
+        "settings": ["root", "python-version", "include", "exclude", "enabled-rules", "mode", "fail-on", "baseline", "severity", "experimental-ownership", "experimental-advanced-contracts", "experimental-finite-matches", "dependency-roots", "required-providers", "assume-default-task-factory", "experimental-foundations", "runtime-profile", "project-contracts", "uv-lock"],
         "limits": {
             "config_bytes": 65536,
             "baseline_bytes": 16777216,

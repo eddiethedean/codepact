@@ -2,7 +2,7 @@
 
 ## Which version can I install now?
 
-Install CodePact 0.5.1 from PyPI or crates.io. Its default scope includes
+Install CodePact 0.8.0 from PyPI or crates.io. Its default scope includes
 project policy, baselines, and synchronous must-use checks. Enable experimental
 ownership to try moves, lexical borrows, and TaskGroup checks. [Install CodePact](install.md) ·
 [Experimental ownership](ownership.md)
@@ -43,19 +43,20 @@ Check that the provider files are included and that their module names match
 the imports. Then read `coverage.reasons` for the specific boundary, such as a
 cycle, string annotation, or unsupported dynamic expression. The inspector
 and checker resolve different subsets of syntax.
-[Multi-file example](project-guide.md) · [Supported syntax](supported-syntax.md)
+For an installed package, check the configured dependency roots and selected
+provider in the report. [Multi-file example](project-guide.md) ·
+[Installed contracts](reviewed-contracts.md)
 
 ## Will I need Rust to install the CodePact command?
 
 The CLI distribution provides native CLI wheels for supported platforms, which do
-not need Rust at installation. The published wheels and source archives passed
-release checks described in the [availability guide](availability.md).
-Building from source requires Rust 1.96 or newer and a linker. See
-[installation](install.md).
+do not need Rust at installation. Building from source requires Rust 1.96 or
+newer and a linker. [Installation](install.md) ·
+[Supported platforms](availability.md#platform-and-runtime-evidence)
 
 ## What does TP3001 mean?
 
-The 0.5.0 CLI emits TP3001 when a resolved synchronous function or method
+The CLI emits TP3001 when a resolved synchronous function or method
 declared with `@must_use`, `MustUse[T]`, or `Annotated[..., MustUseResult()]`
 has its result discarded as a bare expression. Assignment and passing the
 result count as immediate handling, not proof of eventual use. Async/dynamic
@@ -66,4 +67,5 @@ consumption and unsupported nested expressions remain boundaries. See
 
 The analyzer currently accepts source targets 3.11, 3.12, and 3.13. This is
 separate from the interpreter running the command, and the default target is
-3.11. Helper runtime support begins at Python 3.11.
+3.11. Helper runtime support begins at Python 3.11. The 0.8 standard library
+models use the explicitly selected [runtime profile](reviewed-contracts.md#select-the-runtime-profile).

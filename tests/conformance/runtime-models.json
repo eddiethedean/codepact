@@ -67,6 +67,49 @@
         "test_thread_pool_model_conformance.ThreadPoolExecutorModelConformance.test_submit_runs_work_and_waiting_shutdown_joins_workers",
         "test_thread_pool_model_conformance.ThreadPoolExecutorModelConformance.test_thread_start_failure_can_leave_work_queued_for_later_execution"
       ]
+    },
+    {
+      "id": "phase08-linux",
+      "models": [
+        "TPM-FILE-001",
+        "TPM-ASYNCIO-001",
+        "TPM-PROCESS-001",
+        "TPM-POOL-001"
+      ],
+      "python_versions": [
+        "3.13.16"
+      ],
+      "platform": "linux",
+      "machine": "x86_64",
+      "module": "test_phase08_model_conformance",
+      "upstream_modules": [
+        "io",
+        "asyncio.tasks",
+        "asyncio.timeouts",
+        "asyncio.base_events",
+        "multiprocessing.process",
+        "multiprocessing.pool",
+        "multiprocessing.popen_spawn_posix",
+        "multiprocessing.popen_fork"
+      ],
+      "tests": [
+        "test_phase08_model_conformance.Phase08AsyncConformance.test_cancelled_child_stays_cancelled_after_task_group_exit",
+        "test_phase08_model_conformance.Phase08AsyncConformance.test_chained_eager_factory_call_runs_worker_before_cancel",
+        "test_phase08_model_conformance.Phase08AsyncConformance.test_direct_timeout_waits_for_cancellation_and_can_be_suppressed",
+        "test_phase08_model_conformance.Phase08AsyncConformance.test_pre_cancelled_child_does_not_expire_the_timeout",
+        "test_phase08_model_conformance.Phase08AsyncConformance.test_prestart_cancellation_skips_body_and_cleanup",
+        "test_phase08_model_conformance.Phase08AsyncConformance.test_rejected_scheduling_leaves_the_created_coroutine_pending",
+        "test_phase08_model_conformance.Phase08AsyncConformance.test_repeated_cancellation_can_interrupt_awaited_cleanup",
+        "test_phase08_model_conformance.Phase08AsyncConformance.test_shield_timeout_keeps_task_running",
+        "test_phase08_model_conformance.Phase08FileConformance.test_context_closes_the_same_file_on_body_exception",
+        "test_phase08_model_conformance.Phase08FileConformance.test_open_failure_and_aliased_close",
+        "test_phase08_model_conformance.Phase08SpawnConformance.test_pool_context_forces_shutdown_on_exception",
+        "test_phase08_model_conformance.Phase08SpawnConformance.test_pool_submission_drain_and_failed_result_delivery",
+        "test_phase08_model_conformance.Phase08SpawnConformance.test_spawn_rejects_a_local_lambda_before_launch",
+        "test_phase08_model_conformance.Phase08SpawnConformance.test_start_join_close_with_worker_local_file_and_plain_arguments",
+        "test_phase08_model_conformance.Phase08SpawnConformance.test_timed_and_interrupted_untimed_join_can_leave_the_child_live",
+        "test_phase08_model_conformance.Phase08SpawnConformance.test_worker_failure_can_terminate_a_process"
+      ]
     }
   ]
 }

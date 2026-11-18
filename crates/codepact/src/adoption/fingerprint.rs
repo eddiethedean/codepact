@@ -1,9 +1,11 @@
-use super::*;
+use super::{FINGERPRINT_ALGORITHM_VERSION, RULE_SEMANTIC_VERSION};
+use crate::{CheckDiagnostic, Span};
 use ruff_python_ast::token::TokenKind;
 use ruff_python_ast::PythonVersion;
 use ruff_python_parser::{Mode, ParseOptions};
 use ruff_text_size::Ranged;
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn hash(data: &[u8]) -> String {
     let d = Sha256::digest(data);

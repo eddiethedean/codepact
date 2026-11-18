@@ -315,6 +315,15 @@ class ModelConformanceRunnerTests(unittest.TestCase):
                 "contextlib": (("TPM-CTX-001", "TPM-CTX-002"), versions),
                 "task-group": (("TPM-TASK-001",), versions),
                 "thread-pool-executor": (("TPM-EXECUTOR-001",), ("3.13.16",)),
+                "phase08-linux": (
+                    (
+                        "TPM-FILE-001",
+                        "TPM-ASYNCIO-001",
+                        "TPM-PROCESS-001",
+                        "TPM-POOL-001",
+                    ),
+                    ("3.13.16",),
+                ),
             },
         )
 

@@ -1,12 +1,21 @@
-use super::ownership::{
-    escape_task_handles, external_identity, ExecutorState, ScheduledTask, TaskGroup,
-    EXECUTOR_ACCEPTING, EXECUTOR_SHUTDOWN, EXECUTOR_UNKNOWN, TASK_GROUP,
-};
+use super::ownership::{escape_task_handles, external_identity, TASK_GROUP};
 use super::*;
 
-const THREAD_POOL_EXECUTOR: &str = "external:concurrent.futures.ThreadPoolExecutor";
-const THREAD_POOL_MODEL: &str = "TPM-EXECUTOR-001@v3.13.16";
-const MAX_EXECUTORS: usize = 32;
+#[derive(Clone, Default, PartialEq, Eq)]
+pub(super) struct TaskGroup {
+    pub(super) tasks: BTreeMap<String, ScheduledTask>,
+    pub(super) incomplete: bool,
+    pub(super) active_possible: bool,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(super) struct ScheduledTask {
+    pub(super) site: Span,
+    pub(super) possible: bool,
+    pub(super) cancel_requested: bool,
+    pub(super) may_have_started: bool,
+    pub(super) cancelled_before_start: bool,
+}
 
 fn task_group_model_identity(env: &State) -> String {
     format!(
@@ -32,404 +41,6 @@ pub(super) fn is_group_context(expression: &AstExpr, env: &State) -> bool {
             .is_some_and(|ownership| ownership.group_names.contains_key(name)),
         _ => false,
     }
-}
-
-pub(super) fn initialize_executor_handle(
-    name: &str,
-    expression: &AstExpr,
-    env: &mut State,
-    file: &SourceFile,
-    result: &mut Inspection,
-) -> bool {
-    let AstExprKind::Call {
-        function,
-        arguments,
-        keywords,
-    } = &expression.kind
-    else {
-        return false;
-    };
-    if external_identity(function, env).as_deref() != Some(THREAD_POOL_EXECUTOR)
-        || !env
-            .ownership
-            .as_ref()
-            .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
-    {
-        return false;
-    }
-    if !arguments.is_empty() || !keywords.is_empty() {
-        return false;
-    }
-    if env
-        .ownership
-        .as_ref()
-        .is_some_and(|ownership| ownership.executors.len() >= MAX_EXECUTORS)
-    {
-        boundary(
-            result,
-            file,
-            expression.range,
-            "ThreadPoolExecutor handle budget exceeded; local protocol state is unknown",
-        );
-        let ownership = env.ownership.as_mut().expect("advanced executor handle");
-        ownership.rebind(name);
-        env.places.remove(name);
-        env.unknown_places.insert(name.to_owned());
-        env.possibly_unbound_places.remove(name);
-        env.definitely_bound_names.insert(name.to_owned());
-        env.shadowed_functions.insert(name.to_owned());
-        env.shadowed_classes.insert(name.to_owned());
-        return true;
-    }
-    let id = format!(
-        "{}:{}:{}",
-        file.path,
-        expression.range.start,
-        env.allocation_context.join("/")
-    );
-    let supported_pin = env.target_python_version.starts_with("3.13");
-    let initial = if supported_pin {
-        EXECUTOR_ACCEPTING
-    } else {
-        boundary(
-            result,
-            file,
-            expression.range,
-            "ThreadPoolExecutor model is qualified only for CPython 3.13.16",
-        );
-        EXECUTOR_UNKNOWN
-    };
-    let origin = span(file, expression.range);
-    let mut exceptional = env.clone();
-    exceptional.alive = true;
-    exceptional.pending_raises.clear();
-    exceptional.places.remove(name);
-    exceptional.unknown_places.remove(name);
-    exceptional.definitely_bound_names.remove(name);
-    exceptional.possibly_unbound_places.remove(name);
-    if let Some(ownership) = exceptional.ownership.as_mut() {
-        ownership.rebind(name);
-    }
-    env.pending_raises.push(FlowExit {
-        state: exceptional,
-        range: expression.range,
-        kind: CompletionKind::Raise(None),
-    });
-    let ownership = env.ownership.as_mut().expect("advanced executor handle");
-    ownership.rebind(name);
-    ownership.executors.insert(
-        id.clone(),
-        ExecutorState {
-            states: initial,
-            origin,
-            has_submissions: false,
-        },
-    );
-    ownership.executor_names.insert(name.to_owned(), id);
-    env.places.remove(name);
-    env.unknown_places.remove(name);
-    env.coroutine_aliases.remove(name);
-    env.unknown_coroutine_aliases.remove(name);
-    env.possibly_unbound_places.remove(name);
-    env.definitely_bound_names.insert(name.to_owned());
-    env.shadowed_functions.insert(name.to_owned());
-    env.shadowed_classes.insert(name.to_owned());
-    true
-}
-
-pub(super) fn executor_call(
-    expression: &AstExpr,
-    env: &mut State,
-    file: &SourceFile,
-    functions: &FunctionMap,
-    result: &mut Inspection,
-) -> bool {
-    let Some((receiver, method, arguments, keywords)) = called_method(expression) else {
-        return false;
-    };
-    let Some(name) = expr_name(receiver) else {
-        return false;
-    };
-    let Some(id) = env
-        .ownership
-        .as_ref()
-        .and_then(|ownership| ownership.executor_names.get(name))
-        .cloned()
-    else {
-        return false;
-    };
-    let Some(snapshot) = env
-        .ownership
-        .as_ref()
-        .and_then(|ownership| ownership.executors.get(&id))
-        .cloned()
-    else {
-        boundary(
-            result,
-            file,
-            expression.range,
-            "ThreadPoolExecutor protocol state is missing",
-        );
-        queue_raise(env, expression.range, None);
-        return true;
-    };
-    if !env.target_python_version.starts_with("3.13") {
-        if let Some(executor) = env
-            .ownership
-            .as_mut()
-            .and_then(|ownership| ownership.executors.get_mut(&id))
-        {
-            executor.states |= EXECUTOR_UNKNOWN;
-        }
-        boundary(
-            result,
-            file,
-            expression.range,
-            "ThreadPoolExecutor model is qualified only for CPython 3.13.16",
-        );
-        queue_raise(env, expression.range, None);
-        return true;
-    }
-    match method {
-        "submit" => {
-            let has_accepting = snapshot.states & EXECUTOR_ACCEPTING != 0;
-            let has_shutdown = snapshot.states & EXECUTOR_SHUTDOWN != 0;
-            let has_unknown = snapshot.states & EXECUTOR_UNKNOWN != 0;
-            if has_shutdown {
-                report(
-                    result,
-                    "TP2102",
-                    "ThreadPoolExecutor.submit requires the Accepting state",
-                    span(file, expression.range),
-                    vec![snapshot.origin.clone()],
-                    if has_accepting || has_unknown {
-                        "possible"
-                    } else {
-                        "definite"
-                    },
-                    vec![THREAD_POOL_MODEL.into()],
-                );
-            }
-            let supported = if has_accepting {
-                supported_submit(arguments, keywords, env, functions)
-            } else {
-                false
-            };
-            if has_unknown || has_accepting && !supported {
-                boundary(
-                    result,
-                    file,
-                    expression.range,
-                    if has_unknown {
-                        "ThreadPoolExecutor state is unknown at submit"
-                    } else {
-                        "ThreadPoolExecutor submit requires a resolved worker without tracked captures or resources"
-                    },
-                );
-            }
-            if has_shutdown && !has_accepting && !has_unknown {
-                queue_raise(
-                    env,
-                    expression.range,
-                    Some(AstExpr {
-                        range: expression.range,
-                        kind: AstExprKind::Name("RuntimeError".into()),
-                    }),
-                );
-                env.alive = false;
-                return true;
-            }
-            if let Some(ownership) = env.ownership.as_mut() {
-                if let Some(executor) = ownership.executors.get_mut(&id) {
-                    if supported && has_accepting {
-                        executor.has_submissions = true;
-                        executor.states &= !EXECUTOR_SHUTDOWN;
-                        if has_unknown {
-                            executor.states |= EXECUTOR_UNKNOWN;
-                        } else {
-                            executor.states = EXECUTOR_ACCEPTING;
-                        }
-                    } else {
-                        executor.states |= EXECUTOR_UNKNOWN;
-                    }
-                }
-            }
-            if supported && has_accepting {
-                let mut exceptional = env.clone();
-                exceptional.alive = true;
-                exceptional.pending_raises.clear();
-                if let Some(executor) = exceptional
-                    .ownership
-                    .as_mut()
-                    .and_then(|ownership| ownership.executors.get_mut(&id))
-                {
-                    executor.states |= EXECUTOR_UNKNOWN;
-                }
-                env.pending_raises.push(FlowExit {
-                    state: exceptional,
-                    range: expression.range,
-                    kind: CompletionKind::Raise(None),
-                });
-            } else {
-                queue_raise(env, expression.range, None);
-            }
-            true
-        }
-        "shutdown" => {
-            let Some(wait) = shutdown_wait(arguments, keywords) else {
-                if let Some(executor) = env
-                    .ownership
-                    .as_mut()
-                    .and_then(|ownership| ownership.executors.get_mut(&id))
-                {
-                    executor.states |= EXECUTOR_UNKNOWN;
-                }
-                boundary(
-                    result,
-                    file,
-                    expression.range,
-                    "ThreadPoolExecutor shutdown arguments are outside the qualified literal subset",
-                );
-                queue_raise(env, expression.range, None);
-                return true;
-            };
-            let mut next_states = if snapshot.states & EXECUTOR_UNKNOWN != 0 {
-                EXECUTOR_UNKNOWN
-            } else {
-                0
-            };
-            if snapshot.states & (EXECUTOR_ACCEPTING | EXECUTOR_SHUTDOWN) != 0 {
-                next_states |= EXECUTOR_SHUTDOWN;
-            }
-            if next_states & EXECUTOR_UNKNOWN != 0 {
-                boundary(
-                    result,
-                    file,
-                    expression.range,
-                    "ThreadPoolExecutor shutdown outcome includes an unknown entry state",
-                );
-            }
-            if snapshot.has_submissions && !wait {
-                boundary(
-                    result,
-                    file,
-                    expression.range,
-                    "shutdown(wait=False) does not establish worker completion",
-                );
-            }
-            if let Some(executor) = env
-                .ownership
-                .as_mut()
-                .and_then(|ownership| ownership.executors.get_mut(&id))
-            {
-                executor.states = next_states;
-            }
-            let mut exceptional = env.clone();
-            exceptional.alive = true;
-            exceptional.pending_raises.clear();
-            env.pending_raises.push(FlowExit {
-                state: exceptional,
-                range: expression.range,
-                kind: CompletionKind::Raise(None),
-            });
-            true
-        }
-        _ => {
-            if let Some(executor) = env
-                .ownership
-                .as_mut()
-                .and_then(|ownership| ownership.executors.get_mut(&id))
-            {
-                executor.states |= EXECUTOR_UNKNOWN;
-            }
-            boundary(
-                result,
-                file,
-                expression.range,
-                "ThreadPoolExecutor operation is outside the qualified local subset",
-            );
-            queue_raise(env, expression.range, None);
-            true
-        }
-    }
-}
-
-fn supported_submit(
-    arguments: &[AstExpr],
-    keywords: &[CallKeyword],
-    env: &State,
-    functions: &FunctionMap,
-) -> bool {
-    let Some(callee) = arguments.first().and_then(expr_name) else {
-        return false;
-    };
-    if env.shadowed_functions.contains(callee) {
-        return false;
-    }
-    let Some(definition) = env
-        .function_bindings
-        .get(callee)
-        .and_then(|binding| functions.get(binding))
-    else {
-        return false;
-    };
-    if env.ownership.as_ref().is_some_and(|ownership| {
-        ownership
-            .closure_captures(callee)
-            .any(|capture| env.places.contains_key(capture) || env.unknown_places.contains(capture))
-    }) {
-        return false;
-    }
-    let worker_arguments = &arguments[1..];
-    let Ok(bindings) = bind_arguments(&definition.signature, worker_arguments, keywords, false)
-    else {
-        return false;
-    };
-    bindings.values().all(|argument| {
-        expr_name(argument)
-            .is_none_or(|name| !env.places.contains_key(name) && !env.unknown_places.contains(name))
-    })
-}
-
-fn shutdown_wait(arguments: &[AstExpr], keywords: &[CallKeyword]) -> Option<bool> {
-    if arguments.len() > 1
-        || keywords
-            .iter()
-            .any(|(name, _)| !matches!(name.as_deref(), Some("wait" | "cancel_futures")))
-    {
-        return None;
-    }
-    let mut wait = true;
-    if let Some(argument) = arguments.first() {
-        let AstExprKind::Boolean(value) = argument.kind else {
-            return None;
-        };
-        wait = value;
-    }
-    let mut saw_wait = false;
-    let mut saw_cancel = false;
-    for (name, value) in keywords {
-        match name.as_deref()? {
-            "wait" => {
-                if saw_wait {
-                    return None;
-                }
-                let AstExprKind::Boolean(value) = value.kind else {
-                    return None;
-                };
-                wait = value;
-                saw_wait = true;
-            }
-            "cancel_futures" => {
-                if saw_cancel || !matches!(value.kind, AstExprKind::Boolean(_)) {
-                    return None;
-                }
-                saw_cancel = true;
-            }
-            _ => return None,
-        }
-    }
-    Some(wait)
 }
 
 pub(super) fn initialize_group_handle(
@@ -467,22 +78,13 @@ pub(super) fn initialize_group_handle(
         expression.range.start,
         env.allocation_context.join("/")
     );
-    let ownership = env.ownership.as_mut().expect("advanced TaskGroup handle");
-    ownership.rebind(name);
+    let ownership = env.bind_runtime_handle(name);
     ownership.group_names.insert(name.to_owned(), id.clone());
     ownership
         .group_origins
         .insert(id.clone(), span(file, expression.range));
     ownership.fresh_groups.insert(id.clone());
     ownership.possibly_fresh_groups.insert(id);
-    env.places.remove(name);
-    env.unknown_places.remove(name);
-    env.coroutine_aliases.remove(name);
-    env.unknown_coroutine_aliases.remove(name);
-    env.possibly_unbound_places.remove(name);
-    env.definitely_bound_names.insert(name.to_owned());
-    env.shadowed_functions.insert(name.to_owned());
-    env.shadowed_classes.insert(name.to_owned());
     true
 }
 
@@ -595,6 +197,39 @@ pub(super) fn enter_group(
     Some(id)
 }
 
+pub(super) fn sets_task_factory_on_loop(expression: &AstExpr, env: &State) -> bool {
+    let Some((receiver, "set_task_factory", _, _)) = called_method(expression) else {
+        return false;
+    };
+    call_parts(receiver).is_some_and(|(callee, args, keywords)| {
+        args.is_empty()
+            && keywords.is_empty()
+            && matches!(
+                ownership::external_identity(callee, env).as_deref(),
+                Some("external:asyncio.get_running_loop" | "external:asyncio.get_event_loop")
+            )
+    })
+}
+
+pub(super) fn invalidate_task_factory(
+    env: &mut State,
+    file: &SourceFile,
+    range: SourceRange,
+    result: &mut Inspection,
+) {
+    let ownership = env.ownership.as_mut().expect("runtime configuration");
+    ownership.incompatible_task_factory = true;
+    for group in ownership.groups.values_mut() {
+        group.incomplete = true;
+    }
+    boundary(
+        result,
+        file,
+        range,
+        "task factory mutation invalidates the declared default-factory model",
+    );
+}
+
 pub(super) fn task_call(
     expression: &AstExpr,
     env: &mut State,
@@ -604,26 +239,15 @@ pub(super) fn task_call(
     let Some((receiver, method, arguments, keywords)) = called_method(expression) else {
         return false;
     };
-    let Some(name) = expr_name(receiver) else {
-        return false;
-    };
     let Some(ownership) = env.ownership.as_ref() else {
         return false;
     };
-    if method == "set_task_factory" {
-        let ownership = env.ownership.as_mut().expect("runtime configuration");
-        ownership.incompatible_task_factory = true;
-        for group in ownership.groups.values_mut() {
-            group.incomplete = true;
-        }
-        boundary(
-            result,
-            file,
-            expression.range,
-            "task factory mutation invalidates the declared default-factory model",
-        );
+    let name = expr_name(receiver);
+    if method == "set_task_factory" && name.is_some() {
+        invalidate_task_factory(env, file, expression.range, result);
         return false;
     }
+    let Some(name) = name else { return false };
     if let Some((group, id)) = ownership.task_names.get(name).cloned() {
         if method == "cancel" && arguments.is_empty() && keywords.is_empty() {
             if let Some(task) = env
@@ -868,6 +492,59 @@ pub(super) fn clear_captures(record: &CoroutineRecord, env: &mut State) {
     }
 }
 
+pub(super) fn execute_scheduled_coroutine(
+    task_id: &str,
+    record: &CoroutineRecord,
+    env: &State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+) -> State {
+    let mut execution = env.clone();
+    execution.pending_raises.clear();
+    execution.pending_return_targets = None;
+    execution.alive = true;
+    execution
+        .ownership
+        .as_mut()
+        .expect("task execution")
+        .entering_task = true;
+    restore_captures(record, &mut execution);
+    // The parent may already have violated the borrow. The worker's
+    // contracted entry is open; TP2006 retains the parent-side witness.
+    for object in record
+        .captures
+        .values()
+        .filter(|place| !place.transferred)
+        .flat_map(|place| &place.targets)
+    {
+        if execution
+            .objects
+            .get(object)
+            .is_some_and(|mask| mask & CLOSED != 0)
+        {
+            execution.objects.insert(object.clone(), OPEN);
+        }
+    }
+    execution
+        .coroutines
+        .get_mut(task_id)
+        .expect("running coroutine is retained")
+        .consumed = true;
+    execution.awaited_call = Some((record.file_path.clone(), record.invocation.range));
+    consume_expr(
+        &record.invocation,
+        &mut execution,
+        file,
+        contracts,
+        functions,
+        result,
+        0,
+    );
+    execution
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn join_group(
     id: &str,
@@ -895,7 +572,7 @@ pub(super) fn join_group(
     };
     let aborting = matches!(
         incoming,
-        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled)
+        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled(_))
     );
     let body_exception = incoming.and_then(|kind| completion_exception_name(kind, env));
     let mut interrupted = env.clone();
@@ -912,62 +589,53 @@ pub(super) fn join_group(
             );
             continue;
         };
+        if record.consumed {
+            child_errors.extend(
+                record
+                    .task_completion
+                    .iter()
+                    .flat_map(|completion| &completion.errors)
+                    .filter(|name| name.as_deref() != Some("CancelledError"))
+                    .cloned(),
+            );
+            continue;
+        }
         if (task.cancelled_before_start || (aborting && !task.may_have_started))
             && !task.possible
             && !group.incomplete
         {
             for continuation in [&mut *env, &mut interrupted] {
                 if let Some(coroutine) = continuation.coroutines.get_mut(task_id) {
-                    coroutine.consumed = true;
+                    coroutine.complete_task(TaskCompletion {
+                        normal: false,
+                        errors: BTreeSet::from([Some("CancelledError".into())]),
+                    });
                 }
             }
             continue;
         }
-        let mut execution = env.clone();
-        execution.pending_raises.clear();
-        execution.pending_return_targets = None;
-        execution.alive = true;
-        execution
-            .ownership
-            .as_mut()
-            .expect("task execution")
-            .entering_task = true;
-        restore_captures(&record, &mut execution);
-        // The parent may already have violated the borrow. The worker's
-        // contracted entry is open; TP2006 retains the parent-side witness.
-        for object in record
-            .captures
-            .values()
-            .filter(|place| !place.transferred)
-            .flat_map(|place| &place.targets)
-        {
-            if execution
-                .objects
-                .get(object)
-                .is_some_and(|mask| mask & CLOSED != 0)
-            {
-                execution.objects.insert(object.clone(), OPEN);
-            }
-        }
-        execution
-            .coroutines
-            .get_mut(task_id)
-            .expect("running coroutine is retained")
-            .consumed = true;
-        execution.awaited_call = Some((record.file_path.clone(), record.invocation.range));
-        consume_expr(
-            &record.invocation,
-            &mut execution,
-            file,
-            contracts,
-            functions,
-            result,
-            0,
-        );
+        let mut execution =
+            execute_scheduled_coroutine(task_id, &record, env, file, contracts, functions, result);
         let exits = take_pending_raises(&mut execution);
         let cancelled = |exit: &FlowExit| {
-            matches!(exit.kind, CompletionKind::Cancelled)
+            matches!(exit.kind, CompletionKind::Cancelled(_))
                 || raised_exception_name(exit) == Some("CancelledError")
+        };
+        let completed_normally = execution.alive;
+        let stopped = Some("CancelledError".into());
+        let could_be_cancelled = task.cancel_requested || exits.iter().any(cancelled);
+        let mut interrupted_completion = TaskCompletion {
+            normal: completed_normally,
+            errors: exits
+                .iter()
+                .filter(|exit| !cancelled(exit))
+                .map(|exit| raised_exception_name(exit).map(str::to_owned))
+                .collect(),
+        };
+        interrupted_completion.errors.insert(stopped.clone());
+        let normal_completion = TaskCompletion {
+            normal: completed_normally,
+            errors: could_be_cancelled.then_some(stopped).into_iter().collect(),
         };
         child_errors.extend(
             exits
@@ -1062,10 +730,11 @@ pub(super) fn join_group(
                 "TaskGroup exit leaves escaped or unresolved capture lifetimes",
             );
         } else {
-            for continuation in [&mut *env, &mut interrupted] {
-                if let Some(coroutine) = continuation.coroutines.get_mut(task_id) {
-                    coroutine.consumed = true;
-                }
+            if let Some(coroutine) = env.coroutines.get_mut(task_id) {
+                coroutine.complete_task(normal_completion);
+            }
+            if let Some(coroutine) = interrupted.coroutines.get_mut(task_id) {
+                coroutine.complete_task(interrupted_completion);
             }
         }
     }
@@ -1096,7 +765,7 @@ pub(super) fn join_group(
         *env = interrupted;
         match (incoming, body_exception) {
             (_, Some("KeyboardInterrupt" | "SystemExit")) => {}
-            (Some(CompletionKind::Cancelled), _) | (_, Some("CancelledError")) => {
+            (Some(CompletionKind::Cancelled(_)), _) | (_, Some("CancelledError")) => {
                 if !child_errors.is_empty() {
                     queue_group_error(env, range, None, &child_errors);
                 }
@@ -1113,10 +782,11 @@ pub(super) fn join_group(
         return;
     }
     if !group.tasks.is_empty() {
+        asyncio::queue_deadline_cancellations(env, range, &interrupted, false);
         env.pending_raises.push(FlowExit {
             state: interrupted.clone(),
             range,
-            kind: CompletionKind::Cancelled,
+            kind: CompletionKind::Cancelled(None),
         });
     }
     if !child_errors.is_empty() {
@@ -1164,7 +834,7 @@ fn queue_group_error(
     );
 }
 
-fn apply_worker_cleanup(
+pub(super) fn apply_worker_cleanup(
     state: &mut State,
     object: &str,
     effects: Option<&State>,
@@ -1187,7 +857,7 @@ fn apply_worker_cleanup(
     }
 }
 
-fn apply_worker_protocol_state(
+pub(super) fn apply_worker_protocol_state(
     state: &mut State,
     object: &str,
     effects: Option<&State>,

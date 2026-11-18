@@ -1,10 +1,11 @@
 # Rust API reference
 
-The published `codepact` crate exposes the same inspector and lifecycle checker used by the command-line program. Use CodePact 0.5.1 for the API shown here.
+The published `codepact` crate exposes the same inspector and lifecycle checker
+used by the command-line program. This reference uses CodePact 0.8.0.
 
 ## Install
 
-Add the released crate to a Cargo project with `cargo add codepact@=0.5.1`. To
+Add the released crate to a Cargo project with `cargo add codepact@=0.8.0`. To
 build the workspace crate from source, run this from the repository root:
 
 ```sh
@@ -65,7 +66,7 @@ The crate also exposes `check_report(files, target)` and
 `check_schema_version: 1`. Its checker diagnostics add completion kind, trust,
 coverage reason and repair guidance while declaration inspection remains schema
 version 0. The result includes the selected Python target and versioned built-in
-model catalog. The [`codepact` 0.5.1 rustdoc](https://docs.rs/codepact/0.5.1/codepact/)
+model catalog. The [`codepact` 0.8.0 rustdoc](https://docs.rs/codepact/0.8.0/codepact/)
 documents the published API. `AnalysisSession::check_report_cancellable` returns a
 revision-tagged `SessionCheckResult`. `check` continues returning `Inspection`
 for source compatibility. The 0.x API remains provisional and may change in a
@@ -80,7 +81,7 @@ existing `check` and `check_report` APIs retain their released rule set.
 results with the public `codepact::adoption` resolver and report builder. This
 preview API is covered by synthetic controls; real-world usefulness is unqualified.
 
-For the 0.5.1 adoption report, use `check_with_ownership` with the ownership
+For a source-only adoption report, use `check_with_ownership` with the ownership
 scope from the effective policy. `Ownership::Disabled` still checks lifecycle
 and TP3001. `build_report` and `write_baseline` reject cancelled and
 inspection-only results. They also reject a lifecycle-only `check_report`
@@ -89,8 +90,8 @@ analyzed scope and contributes to snapshot identity.
 
 ## Build an adoption report
 
-Use the adoption resolver and report builder when your host needs CLI policy
-and schema 2. In a Rust project with `codepact = "=0.5.1"`, save the
+Use the adoption resolver and report builder when your host needs CLI policy.
+In a Rust project with `codepact = "=0.8.0"`, save the
 {download}`complete example <../crates/codepact/examples/adoption_report.rs>`
 as `src/main.rs`, then run `cargo run --locked` after generating a lockfile.
 
@@ -98,7 +99,7 @@ as `src/main.rs`, then run `cargo run --locked` after generating a lockfile.
 :language: rust
 ```
 
-Expect a completed report with `report_schema_version = 2`, a definite
+Expect a completed report with `report_schema_version = 3`, a definite
 TP3001 warning, and exit `0` under the default error-only threshold.
 The example disables project configuration so its policy is reproducible.
 For a host that loads policy, pass the same logical file paths, source
@@ -109,6 +110,22 @@ as execution failures. Use the report's `exit_code` for the completed policy
 result and read coverage before acting on the findings. A long-running host
 can retain the session and pass the next full snapshot to it.
 [Report fields](output.md) · [Policy and exits](cli.md#policy-and-exits)
+
+## Check with reviewed models
+
+Use `check_with_foundations(files, python_version, options, inputs)` to
+analyze selected provider artifacts, project contracts, or a runtime profile.
+Pass ordinary source files and `CheckOptions` as for `check_with_options`.
+Use `foundation::FoundationInputs` to supply provider artifacts and discovery
+issues, project models and lockfile text, or the analyzed program's
+`RuntimeProfile`.
+
+The result uses check schema 2 and includes `foundations` evidence. The same
+inputs work with `AnalysisSession::check_with_foundations` for repeated
+snapshots and `AnalysisSession::check_with_foundations_cancellable` for a
+revision-tagged result. Pass the `CheckResult` to `build_report` to produce
+adoption report schema 4.
+[Model selection and assumptions](reviewed-contracts.md) · [Schema reference](schemas.md)
 
 ## Incremental analysis session
 
@@ -168,7 +185,7 @@ An `Ok` return does not establish successful declaration analysis. Check the ret
 ## Public types and limits
 
 The crate root exports the following result and input types. The 0.x API is
-provisional. [CodePact 0.5.1 rustdoc](https://docs.rs/codepact/0.5.1/codepact/) ·
+provisional. [CodePact 0.8.0 rustdoc](https://docs.rs/codepact/0.8.0/codepact/) ·
 [Historical TypePact 0.2.0 rustdoc](https://docs.rs/typepact/0.2.0/typepact/)
 
 | Type or function | Purpose |

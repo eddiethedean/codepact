@@ -580,6 +580,37 @@ fn class_body_issue(statement: &Stmt) -> Option<&'static str> {
     }
 }
 
+fn bound_class_methods(body: &[Stmt]) -> BTreeSet<String> {
+    let mut methods = BTreeSet::new();
+    for statement in body {
+        let targets = match statement {
+            Stmt::FunctionDef(method) => {
+                methods.insert(method.name.to_string());
+                continue;
+            }
+            Stmt::Assign(assignment) => assignment.targets.as_slice(),
+            Stmt::Delete(deletion) => deletion.targets.as_slice(),
+            Stmt::AugAssign(assignment) => std::slice::from_ref(assignment.target.as_ref()),
+            Stmt::AnnAssign(assignment) if assignment.value.is_some() => {
+                std::slice::from_ref(assignment.target.as_ref())
+            }
+            Stmt::AnnAssign(_) | Stmt::Pass(_) => continue,
+            Stmt::Expr(expression)
+                if matches!(expression.value.as_ref(), Expr::StringLiteral(_)) =>
+            {
+                continue
+            }
+            _ => return BTreeSet::new(),
+        };
+        let mut rebound = BTreeSet::new();
+        for target in targets {
+            assignment_roots(target, &mut rebound);
+        }
+        methods.retain(|method| !rebound.contains(method));
+    }
+    methods
+}
+
 fn absolute_import_module(
     module_name: &str,
     source_path: &str,
@@ -608,6 +639,47 @@ fn absolute_import_module(
         package.extend(imported_module.split('.').map(str::to_owned));
     }
     (!package.is_empty()).then(|| package.join("."))
+}
+
+/// Lower a string annotation as data. Keep its public evidence anchored to
+/// the original literal because offsets inside an escaped string are local
+/// to the decoded text.
+pub(crate) fn quoted_annotation(text: &str, range: SourceRange) -> Option<AstExpr> {
+    if text.len() > 4096 {
+        return None;
+    }
+    let parsed = ruff_python_parser::parse_expression(text)
+        .ok()?
+        .into_syntax();
+    let mut budget = ExpressionBudget {
+        nodes: 0,
+        exceeded: false,
+    };
+    fn reanchor(expression: &mut AstExpr, range: SourceRange) -> bool {
+        expression.range = range;
+        match &mut expression.kind {
+            AstExprKind::Name(_) | AstExprKind::NoneLiteral | AstExprKind::String(_) => true,
+            AstExprKind::Attribute(base, _) => reanchor(base, range),
+            AstExprKind::Subscript(base, arguments) => {
+                reanchor(base, range) && arguments.iter_mut().all(|value| reanchor(value, range))
+            }
+            AstExprKind::Call {
+                function,
+                arguments,
+                keywords,
+            } => {
+                reanchor(function, range)
+                    && arguments.iter_mut().all(|value| reanchor(value, range))
+                    && keywords.iter_mut().all(|(_, value)| reanchor(value, range))
+            }
+            _ => false,
+        }
+    }
+    let mut value = expression(&parsed.body, &mut budget, 0);
+    (!budget.exceeded
+        && !matches!(value.kind, AstExprKind::String(_))
+        && reanchor(&mut value, range))
+    .then_some(value)
 }
 
 pub(crate) fn parse_frontend(
@@ -737,6 +809,11 @@ pub(crate) fn parse_frontend(
                     .bases()
                     .iter()
                     .any(|base| !matches!(base, Expr::Name(name) if name.id.as_str() == "object")),
+                bound_methods: if source_path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
+                    bound_class_methods(&class.body)
+                } else {
+                    BTreeSet::new()
+                },
                 methods: class
                     .body
                     .iter()

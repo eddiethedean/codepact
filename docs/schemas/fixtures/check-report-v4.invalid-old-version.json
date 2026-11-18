@@ -1,0 +1,131 @@
+{
+  "actionable_diagnostics": 0,
+  "assurance": "lifecycle-and-must-use-checking-for-supported-exit-flow",
+  "audit_diagnostics": 1,
+  "available_models": [],
+  "baseline": {
+    "compatible": null,
+    "configured": false,
+    "entries": 0,
+    "matched": 0,
+    "unmatched": 0,
+    "update_reason": null
+  },
+  "check_schema_version": 2,
+  "config_file": null,
+  "contracts": [],
+  "counts": {
+    "TP3001": 1
+  },
+  "counts_by_certainty": {
+    "definite": 1
+  },
+  "counts_by_disposition": {
+    "active": 1
+  },
+  "coverage": {
+    "declarations": 0,
+    "reasons": [],
+    "source_bytes": 0,
+    "status": "complete-for-supported-subset"
+  },
+  "details_truncated": false,
+  "diagnostics": [
+    {
+      "actionable": false,
+      "base_severity": "warning",
+      "certainty": "definite",
+      "code": "TP3001",
+      "completion": null,
+      "coverage_reason": null,
+      "disposition": "active",
+      "disposition_reason": null,
+      "effective_severity": "warning",
+      "explanation_id": "TP3001.R001",
+      "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "message": "must-use result from demo.public is discarded",
+      "message_omitted_bytes": 0,
+      "primary": {
+        "column": 1,
+        "end_column": 5,
+        "end_line": 1,
+        "file": "main.py",
+        "line": 1
+      },
+      "provider_evidence": {
+        "public_symbol": "demo.public",
+        "canonical_symbol": "demo._impl.value",
+        "distribution": "demo-dist",
+        "version": "1.0",
+        "origin_kind": "installed-wheel"
+      },
+      "related": [],
+      "related_sites_omitted": 0,
+      "repair": null,
+      "repair_omitted_bytes": 0,
+      "severity": "warning",
+      "trust": "installed-wheel"
+    }
+  ],
+  "disabled_rules": [],
+  "engine_version": "0.7.0",
+  "exclude": [],
+  "execution_status": "completed",
+  "exit_code": 0,
+  "fail_on": "error",
+  "include": [
+    "**/*.py"
+  ],
+  "logical_root": ".",
+  "mode": "advisory",
+  "model_catalog_version": 2,
+  "model_fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "policy_failures": [],
+  "policy_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "policy_warnings": [],
+  "project_root": "/project",
+  "report_schema_version": 3,
+  "returned_diagnostics": 1,
+  "selected_files": [],
+  "selected_rules": [
+    "TP1001",
+    "TP1002",
+    "TP1003",
+    "TP2001",
+    "TP3001"
+  ],
+  "semantic_fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "settings_origins": {},
+  "snapshot_algorithm_version": 2,
+  "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshot_manifest": [],
+  "target_python_version": "3.11",
+  "total_diagnostics": 1,
+  "unused_suppressions": [],
+  "dependency_roots": [],
+  "required_providers": [],
+  "experimental_finite_matches": false,
+  "foundations": {
+    "runtime": null,
+    "catalog_revision": "cpython-3.13.16-linux-x86_64-v1",
+    "model_uses": [],
+    "providers": [],
+    "provider_issues": [],
+    "scope": [],
+    "exhausted_limits": [],
+    "lock_sha256": null,
+    "project_models_sha256": null,
+    "comparison": {
+      "schema_version": 1,
+      "engine_version": "0.8.0",
+      "rule_semantic_revision": 4,
+      "finding_identity_revision": 5,
+      "source_target": "3.13",
+      "ownership": "advanced-assume-default-task-factory",
+      "finite_matches": false,
+      "catalog_revision": "cpython-3.13.16-linux-x86_64-v1",
+      "normalization_revision": 1,
+      "preservation_policy_revision": 1
+    }
+  }
+}

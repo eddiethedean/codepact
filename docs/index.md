@@ -50,15 +50,15 @@ missed cleanup, and discarded results directly in source.
 ::::{container} cp-release-strip
 
 :::{container} cp-release cp-release-published
-**0.7.0 · Typed outcomes and finite-match preview**
+**0.8.0 · Reviewed contracts and concurrency**
 
-[See what changed in 0.7.0](release-notes.md)
+[See what changed in 0.8.0](release-notes.md)
 :::
 
 :::{container} cp-release cp-release-ownership
-**Experimental ownership**
+**Installed contracts and runtime models**
 
-[Try opt-in ownership checking](ownership.md)
+[Publish a provider or configure a model](reviewed-contracts.md)
 :::
 
 ::::
@@ -158,6 +158,7 @@ faq
 :caption: Reference
 
 cli
+reviewed-contracts
 rules
 supported-syntax
 limitations

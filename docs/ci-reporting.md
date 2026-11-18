@@ -9,7 +9,8 @@ both.
 For a custom POSIX-shell job with Python 3.11 or later, download
 {download}`check-report.sh <_examples/check-report.sh>`. Pass the complete
 command that runs your check. The script adds `--json`, saves the output,
-validates the completed schema and status, and returns the check status.
+checks the completed report's schema version and status, and returns the check
+status. It accepts schema versions 2, 3, and 4, including 0.8 foundations reports.
 
 <!-- smoke: ci-report -->
 ```sh
@@ -43,6 +44,8 @@ Adoption reports can include absolute checkout and configuration paths
 (`project_root` and `config_file`), logical paths, symbol names, source spans,
 diagnostic text, and SHA-256 source hashes in `snapshot_manifest`. Set
 artifact access and retention for the repository before uploading reports.
+Foundations reports also carry dependency identities, artifact digests, and
+model provenance.
 Share a minimized reproduction or a reviewed excerpt outside that audience.
 Keep the original report private when consumers need its complete identity
 and audit metadata. [Security and data handling](security.md)

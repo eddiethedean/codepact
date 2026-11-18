@@ -1,10 +1,10 @@
 # Installation
 
-Install CodePact 0.7.0. The Python installer requires Python 3.11 or later,
+Install CodePact 0.8.0. The Python installer requires Python 3.11 or later,
 including when installing only the CLI wheel. The analyzer accepts Python
 3.11, 3.12, and 3.13 source targets and defaults to 3.11. Choose your target
 with `--python-version` or `python-version` in project configuration.
-[Verified platforms and release artifacts](availability.md#platform-and-runtime-evidence)
+[Supported platforms and release artifacts](availability.md#platform-and-runtime-evidence)
 
 | Goal | Install route |
 | --- | --- |
@@ -21,12 +21,12 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/). In an
 existing uv project, add the pinned dependency.
 
 ```sh
-uv add 'codepact[cli]==0.7.0'
+uv add 'codepact[cli]==0.8.0'
 uv run --locked codepact --version
 uv run --locked python -c "from codepact import resource"
 ```
 
-Expect `codepact 0.7.0` and a successful import. The `cli` extra pins the matching native CLI. Installing `codepact==0.7.0`
+Expect `codepact 0.8.0` and a successful import. The `cli` extra pins the matching native CLI. Installing `codepact==0.8.0`
 alone gives you the pure-Python helpers without the command. Follow the [quick start](quickstart.md) for an empty directory.
 
 ## Helper-only installation
@@ -34,7 +34,7 @@ alone gives you the pure-Python helpers without the command. Follow the [quick s
 To install annotations and outcome helpers without the native command, use:
 
 ```sh
-uv add codepact==0.7.0
+uv add codepact==0.8.0
 uv run --locked python -c "from codepact import Result, Option"
 ```
 
@@ -49,7 +49,7 @@ On macOS and Linux, activate the environment before installing.
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install 'codepact[cli]==0.7.0'
+python -m pip install 'codepact[cli]==0.8.0'
 codepact --version
 python -c "from codepact import resource"
 ```
@@ -58,12 +58,12 @@ In Windows PowerShell, call the virtual environment's executables directly.
 
 ```powershell
 py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install 'codepact[cli]==0.7.0'
+.\.venv\Scripts\python.exe -m pip install 'codepact[cli]==0.8.0'
 .\.venv\Scripts\codepact.exe --version
 .\.venv\Scripts\python.exe -c "from codepact import resource"
 ```
 
-Expect `codepact 0.7.0`. Save the [quick-start sample](quickstart.md#save-the-example)
+Expect `codepact 0.8.0`. Save the [quick-start sample](quickstart.md#save-the-example)
 as `src/connection.py`, then run `codepact check --root src` in the active
 environment or use the direct PowerShell executable path. Follow the
 [repair steps](quickstart.md#find-and-fix-the-bug) with that same executable.
@@ -73,22 +73,22 @@ environment or use the direct PowerShell executable path. Follow the
 Use uv to run the pinned native CLI without changing the project.
 
 ```sh
-uv tool run --from codepact-cli==0.7.0 codepact --version
+uv tool run --from codepact-cli==0.8.0 codepact --version
 ```
 
-Expect `codepact 0.7.0`. To try the analyzer, save the
+Expect `codepact 0.8.0`. To try the analyzer, save the
 [quick-start sample](quickstart.md#save-the-example) as `src/connection.py` and
 run the check.
 
 ```sh
-uv tool run --from codepact-cli==0.7.0 codepact check --root src
+uv tool run --from codepact-cli==0.8.0 codepact check --root src
 ```
 
 Expect TP1001 and exit `1` before the [repair](quickstart.md#find-and-fix-the-bug).
 The analyzer parses the imports in the sample as text. Install the helper in
 your project's Python environment if your application imports it at runtime.
 
-For a command on your PATH, use `uv tool install codepact-cli==0.7.0` followed
+For a command on your PATH, use `uv tool install codepact-cli==0.8.0` followed
 by `codepact --version`. If the shell cannot find it, run
 `uv tool update-shell` and open a new shell.
 [Installation recovery](troubleshooting.md#the-command-is-unavailable-after-installation)
@@ -99,7 +99,7 @@ by `codepact --version`. If the shell cannot find it, run
 With Rust 1.96 or later and a linker, add an exact library dependency.
 
 ```sh
-cargo add codepact@=0.7.0
+cargo add codepact@=0.8.0
 cargo check --locked
 ```
 
@@ -107,11 +107,11 @@ Continue with the [Rust API reference](rust-api.md). To install the CLI from
 crates.io, use Cargo.
 
 ```sh
-cargo install codepact --version 0.7.0 --locked
+cargo install codepact --version 0.8.0 --locked
 codepact --version
 ```
 
-Expect `codepact 0.7.0`. Use the same source sample and repair in the
+Expect `codepact 0.8.0`. Use the same source sample and repair in the
 [quick start](quickstart.md), invoking `codepact` directly.
 
 ## Build from source
@@ -119,7 +119,7 @@ Expect `codepact 0.7.0`. Use the same source sample and repair in the
 Install Git, uv, Python 3.11 or later, Rust 1.96 or later, and a platform linker.
 
 ```sh
-git clone --branch v0.7.0 https://github.com/eddiethedean/codepact.git
+git clone --branch v0.8.0 https://github.com/eddiethedean/codepact.git
 cd codepact
 uv sync --locked --extra cli
 uv run --locked --extra cli codepact --version
@@ -128,7 +128,7 @@ git rev-parse HEAD
 ```
 
 Record the revision when sharing reports. The first version check should
-print `codepact 0.7.0`. To build just the Rust command from the checkout,
+print `codepact 0.8.0`. To build just the Rust command from the checkout,
 run `cargo build --release --locked` and verify
 `./target/release/codepact --version` (or
 `.\target\release\codepact.exe --version` in PowerShell).

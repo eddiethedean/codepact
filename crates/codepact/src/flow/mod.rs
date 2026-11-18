@@ -12,14 +12,22 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+mod asyncio;
+mod calls;
+mod contexts;
 mod execution;
+mod executor;
 mod expressions;
 mod ownership;
+mod process;
+mod providers;
 mod recursion;
 mod reporting;
 mod resolution;
+mod runtime;
 mod state;
 mod tasks;
+use calls::{bind_arguments, binding_failure, evaluate_call_arguments, BindingFailure};
 use execution::{
     builtin_exception_match, completion_exception_name, execute, is_unshadowed_builtin_exception,
     join_states, raised_exception_name,
@@ -34,9 +42,9 @@ use reporting::{
     report_module_scope_lifetimes, span, suggests_owned_handoff, take_flow_step,
 };
 use resolution::{
-    await_call_captures, contracts_for_module, evaluate_call_arguments, external_module_bindings,
-    final_class_bindings, final_function_bindings, register_pending_coroutine,
-    resolve_imported_contracts, resolve_imported_function, resolved_await_call,
+    await_call_captures, contracts_for_module, external_module_bindings, final_class_bindings,
+    final_function_bindings, register_pending_coroutine, resolve_imported_contracts,
+    resolve_imported_function, resolved_await_call,
 };
 use state::*;
 
@@ -620,121 +628,6 @@ fn contract_inside_range(contract: &Contract, file: &SourceFile, range: SourceRa
             <= (container.end_line, container.end_column)
 }
 
-#[derive(Debug)]
-enum BindingFailure {
-    Invalid,
-    Unknown,
-}
-
-fn bind_arguments<'a>(
-    signature: &CallSignature,
-    arguments: &'a [AstExpr],
-    keywords: &'a [CallKeyword],
-    receiver: bool,
-) -> Result<BTreeMap<String, &'a AstExpr>, BindingFailure> {
-    if keywords.iter().any(|(name, _)| name.is_none())
-        || arguments.iter().any(|arg| {
-            matches!(
-                arg.kind,
-                AstExprKind::Other
-                    | AstExprKind::OtherCalls(..)
-                    | AstExprKind::Yield(_)
-                    | AstExprKind::Starred(_)
-                    | AstExprKind::DepthLimit
-            )
-        })
-    {
-        return Err(BindingFailure::Unknown);
-    }
-    let positional: Vec<_> = signature
-        .positional_only
-        .iter()
-        .chain(&signature.positional_or_keyword)
-        .collect();
-    if receiver && positional.is_empty() {
-        return Err(if signature.vararg.is_some() {
-            BindingFailure::Unknown
-        } else {
-            BindingFailure::Invalid
-        });
-    }
-    let mut supplied = BTreeSet::new();
-    if receiver {
-        supplied.insert(positional[0].clone());
-    }
-    let mut bindings = BTreeMap::new();
-    let mut unknown = false;
-    for (index, argument) in arguments.iter().enumerate() {
-        if let Some(parameter) = positional.get(index + usize::from(receiver)) {
-            supplied.insert((*parameter).clone());
-            bindings.insert((*parameter).clone(), argument);
-        } else if signature.vararg.is_some() {
-            unknown = true;
-        } else {
-            return Err(BindingFailure::Invalid);
-        }
-    }
-    for (name, argument) in keywords {
-        let name = name.as_ref().expect("expanded keywords handled above");
-        if signature.positional_or_keyword.contains(name) || signature.keyword_only.contains(name) {
-            if !supplied.insert(name.clone()) {
-                return Err(BindingFailure::Invalid);
-            }
-            bindings.insert(name.clone(), argument);
-        } else if signature.kwarg.is_some() {
-            unknown = true;
-        } else {
-            return Err(BindingFailure::Invalid);
-        }
-    }
-    for parameter in positional.into_iter().chain(signature.keyword_only.iter()) {
-        if !supplied.contains(parameter) {
-            if signature.optional.contains(parameter) {
-                // Default objects and variadic containers do not have tracked aliases.
-                unknown |= signature.unknown_defaults.contains(parameter);
-            } else {
-                return Err(BindingFailure::Invalid);
-            }
-        }
-    }
-    if unknown {
-        Err(BindingFailure::Unknown)
-    } else {
-        Ok(bindings)
-    }
-}
-
-fn binding_failure(
-    failure: BindingFailure,
-    env: &mut State,
-    file: &SourceFile,
-    range: SourceRange,
-    result: &mut Inspection,
-) {
-    let message = match failure {
-        BindingFailure::Invalid => {
-            env.alive = false;
-            queue_raise(
-                env,
-                range,
-                Some(AstExpr {
-                    range,
-                    kind: AstExprKind::Name("TypeError".into()),
-                }),
-            );
-            "invalid call argument binding ends normal lifecycle flow"
-        }
-        BindingFailure::Unknown => {
-            let affected: Vec<_> = env.places.values().flatten().cloned().collect();
-            weaken(env, affected.into_iter());
-            env.escaped.extend(env.places.values().flatten().cloned());
-            queue_raise(env, range, None);
-            "call argument binding is not modeled"
-        }
-    };
-    boundary(result, file, range, message);
-}
-
 fn expression_may_return_resource(expression: &AstExpr) -> bool {
     match &expression.kind {
         AstExprKind::NoneLiteral
@@ -797,7 +690,10 @@ fn call_may_return_resource(
     file: &SourceFile,
     functions: &FunctionMap,
 ) -> bool {
-    if tasks::returns_task_handle_or_status(expression, env) {
+    if tasks::returns_task_handle_or_status(expression, env)
+        || asyncio::returns_task(expression, env)
+        || process::returns_status(expression, env)
+    {
         return false;
     }
     if let Some((receiver, method, _, _)) = called_method(expression) {
@@ -1311,7 +1207,7 @@ fn apply_protocol_completion(
             Some(transition.normal_state.as_str())
         }
         CompletionKind::Raise(_) => transition.exceptional_state.as_deref(),
-        CompletionKind::Cancelled => transition.cancelled_state.as_deref(),
+        CompletionKind::Cancelled(_) => transition.cancelled_state.as_deref(),
         CompletionKind::Break | CompletionKind::Continue => None,
     };
     let mut outcomes = BTreeSet::new();
@@ -1383,6 +1279,7 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
         target_python_version: parent.target_python_version.clone(),
         models: parent.models.clone(),
         scope_module: definition.file.module.clone(),
+        async_context: definition.is_async || parent.async_context,
         ..State::default()
     };
     child.call_stack.insert(call_key);
@@ -1624,7 +1521,12 @@ pub(crate) fn check_file_bodies(
     let mut historical_functions = FunctionMap::new();
     let mut class_generations = BTreeMap::<(String, String), usize>::new();
     for file in files {
-        if file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
+        if file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+            && models
+                .foundations
+                .as_ref()
+                .is_none_or(|inputs| !inputs.providers.contains_key(&file.module))
+        {
             continue;
         }
         let Some(declarations) = summaries
@@ -1633,8 +1535,14 @@ pub(crate) fn check_file_bodies(
         else {
             continue;
         };
-        let module_contracts: Arc<[Contract]> =
-            contracts_for_module(file, files, summaries, result).into();
+        let module_contracts: Arc<[Contract]> = contracts_for_module(
+            file,
+            files,
+            summaries,
+            result,
+            models.foundations.as_deref(),
+        )
+        .into();
         for declaration in declarations {
             match declaration {
                 Declaration::Function {
@@ -1686,6 +1594,8 @@ pub(crate) fn check_file_bodies(
                         protocol_precondition_origin: None,
                         binding_key: Some(binding_key.clone()),
                         module_bindings: Arc::new(ModuleBindings::default()),
+                        publication: Vec::new(),
+                        modeled_factory: None,
                     };
                     historical_functions.insert(binding_key, function.clone());
                     project_functions.insert((file.module.clone(), name.clone()), function);
@@ -1746,6 +1656,8 @@ pub(crate) fn check_file_bodies(
                                 file.module, method_key, range.start, method.range.start
                             )),
                             module_bindings: Arc::new(ModuleBindings::default()),
+                            publication: Vec::new(),
+                            modeled_factory: None,
                         };
                         historical_functions
                             .insert(definition.binding_key.clone().unwrap(), definition.clone());
@@ -1761,8 +1673,14 @@ pub(crate) fn check_file_bodies(
         .map(|((module, name), body)| (format!("{module}::{name}"), body.clone()))
         .collect();
     qualified_functions.extend(historical_functions);
+    let published = providers::public_functions(models, &project_functions);
     for provider in files {
-        if provider.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
+        if provider.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+            && models
+                .foundations
+                .as_ref()
+                .is_none_or(|inputs| !inputs.providers.contains_key(&provider.module))
+        {
             continue;
         }
         let Some(declarations) = summaries
@@ -1786,11 +1704,16 @@ pub(crate) fn check_file_bodies(
                 if let Some(function) = resolve_imported_function(
                     module,
                     &import.name,
-                    files,
-                    summaries,
-                    &project_functions,
-                    cyclic_modules,
                     &mut BTreeSet::new(),
+                    &resolution::FunctionLookup {
+                        files,
+                        summaries,
+                        functions: &project_functions,
+                        cyclic_modules,
+                        published: &published,
+                        requester: &provider.module,
+                        foundations: models.foundations.as_deref(),
+                    },
                 ) {
                     let binding = format!("import:{}:{}:{}", provider.module, range.start, local);
                     qualified_functions.insert(binding, function.clone());
@@ -1903,6 +1826,18 @@ pub(crate) fn check_file_bodies(
             }
         }
     }
+    if let Some(inputs) = &models.foundations {
+        qualified_functions.retain(|key, _| {
+            let Some((module, name)) = key.split_once("::") else {
+                return true;
+            };
+            !inputs.providers.contains_key(module) || name.starts_with('@') || name.contains(':')
+        });
+        for ((module, name), definition) in &published {
+            qualified_functions.insert(format!("{module}::{name}"), definition.clone());
+            qualified_functions.insert(format!("provider:{module}.{name}"), definition.clone());
+        }
+    }
     let mut external_exports = BTreeMap::<String, BTreeMap<String, String>>::new();
     for _ in 0..=files.len() {
         let mut changed = false;
@@ -1918,6 +1853,14 @@ pub(crate) fn check_file_bodies(
             };
             let mut bindings =
                 external_module_bindings(declarations, &external_exports, &supplied_modules);
+            if let Some(inputs) = &models.foundations {
+                providers::register_external_bindings(
+                    provider,
+                    declarations,
+                    &mut bindings,
+                    inputs,
+                );
+            }
             if ownership.is_enabled() {
                 bindings.retain(|_, binding| {
                     !binding
@@ -1962,7 +1905,14 @@ pub(crate) fn check_file_bodies(
             file.path.clone(),
             Arc::new(ModuleBindings {
                 functions: function_bindings,
-                classes: final_class_bindings(file, declarations, files, summaries, result),
+                classes: final_class_bindings(
+                    file,
+                    declarations,
+                    files,
+                    summaries,
+                    result,
+                    models.foundations.as_deref(),
+                ),
             }),
         );
     }
@@ -2252,11 +2202,26 @@ pub(crate) fn check_file_bodies(
         else {
             continue;
         };
-        let contracts = contracts_for_module(file, files, summaries, result);
+        let contracts = contracts_for_module(
+            file,
+            files,
+            summaries,
+            result,
+            models.foundations.as_deref(),
+        );
         let final_classes = module_bindings
             .get(&file.path)
             .map(|bindings| bindings.classes.clone())
-            .unwrap_or_else(|| final_class_bindings(file, declarations, files, summaries, result));
+            .unwrap_or_else(|| {
+                final_class_bindings(
+                    file,
+                    declarations,
+                    files,
+                    summaries,
+                    result,
+                    models.foundations.as_deref(),
+                )
+            });
         let mut final_functions =
             final_function_bindings(&file.module, functions, declarations, &supplied_modules);
         if let Some(external) = external_exports.get(&file.module) {
@@ -2269,6 +2234,11 @@ pub(crate) fn check_file_bodies(
                     .is_some_and(|module| cyclic_modules.contains(module))
             });
         }
+        let (custom_loop, custom_wait) = if models.foundations.is_some() {
+            runtime::module_runtime_mutations(declarations, &final_functions)
+        } else {
+            (false, false)
+        };
         for declaration in declarations {
             let Declaration::Function {
                 name,
@@ -2276,6 +2246,7 @@ pub(crate) fn check_file_bodies(
                 returns,
                 body,
                 range,
+                is_async,
                 ..
             } = declaration
             else {
@@ -2291,6 +2262,7 @@ pub(crate) fn check_file_bodies(
                     }),
                 ),
                 alive: true,
+                async_context: *is_async,
                 scope_module: file.module.clone(),
                 target_python_version: python_version.to_owned(),
                 models: Arc::new(models.clone()),
@@ -2303,6 +2275,10 @@ pub(crate) fn check_file_bodies(
                 module_class_bindings: final_classes.clone(),
                 ..State::default()
             };
+            if let Some(ownership) = env.ownership.as_mut() {
+                ownership.incompatible_task_factory = custom_loop;
+                ownership.processes.custom_wait = custom_wait;
+            }
             env.shadowed_functions
                 .extend(parameters.iter().map(|parameter| parameter.name.clone()));
             env.definitely_bound_names
@@ -2378,7 +2354,7 @@ pub(crate) fn check_file_bodies(
                 match &exit.kind {
                     CompletionKind::Return(_)
                     | CompletionKind::Raise(_)
-                    | CompletionKind::Cancelled => {
+                    | CompletionKind::Cancelled(_) => {
                         report_cleanup_exit(
                             result,
                             file,
@@ -2451,6 +2427,7 @@ pub(crate) fn check_file_bodies(
                 let mut env = State {
                     ownership: OwnershipState::new(ownership, false),
                     alive: true,
+                    async_context: method.is_async,
                     scope_module: file.module.clone(),
                     target_python_version: python_version.to_owned(),
                     models: Arc::new(models.clone()),
@@ -2463,6 +2440,10 @@ pub(crate) fn check_file_bodies(
                     module_class_bindings: final_classes.clone(),
                     ..State::default()
                 };
+                if let Some(ownership) = env.ownership.as_mut() {
+                    ownership.incompatible_task_factory = custom_loop;
+                    ownership.processes.custom_wait = custom_wait;
+                }
                 env.shadowed_functions
                     .extend(method.parameters.iter().cloned());
                 env.definitely_bound_names
@@ -2507,7 +2488,7 @@ pub(crate) fn check_file_bodies(
                     match &exit.kind {
                         CompletionKind::Return(_)
                         | CompletionKind::Raise(_)
-                        | CompletionKind::Cancelled => {
+                        | CompletionKind::Cancelled(_) => {
                             report_cleanup_exit(
                                 result,
                                 file,
@@ -2596,15 +2577,23 @@ pub(crate) fn check_file_bodies(
                 let local = import.alias.as_deref().unwrap_or(&import.name);
                 let binding_key = format!("import:{}:{}:{}", file.module, range.start, local);
                 if let Some(ownership) = module.ownership.as_mut().filter(|_| *level == 0) {
-                    let external = ownership::external_member(source_module, &import.name)
-                        .filter(|_| !supplied_modules.contains(source_module))
-                        .map(str::to_owned)
-                        .or_else(|| {
-                            external_exports
-                                .get(source_module)
-                                .and_then(|bindings| bindings.get(&import.name))
-                                .cloned()
-                        });
+                    let external = providers::binding_for_import(
+                        models.foundations.as_deref(),
+                        &file.module,
+                        source_module,
+                        &import.name,
+                    )
+                    .or_else(|| {
+                        ownership::external_member(source_module, &import.name)
+                            .filter(|_| !supplied_modules.contains(source_module))
+                            .map(str::to_owned)
+                    })
+                    .or_else(|| {
+                        external_exports
+                            .get(source_module)
+                            .and_then(|bindings| bindings.get(&import.name))
+                            .cloned()
+                    });
                     if let Some(external) = external {
                         ownership
                             .imported_callables
@@ -2619,6 +2608,7 @@ pub(crate) fn check_file_bodies(
                         summaries,
                         result,
                         &mut BTreeSet::new(),
+                        (&file.module, models.foundations.as_deref()),
                     )
                     .into_iter()
                     .next()
@@ -3362,7 +3352,7 @@ mod tests {
             let cancelled = state
                 .pending_raises
                 .iter()
-                .find(|exit| exit.kind == CompletionKind::Cancelled)
+                .find(|exit| exit.kind == CompletionKind::Cancelled(None))
                 .expect("the model declares a cancellation outcome");
             assert_eq!(cancelled.state.objects.get("object"), Some(&expected_mask));
             assert_eq!(result.coverage.status == "incomplete", is_incomplete);

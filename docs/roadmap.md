@@ -11,27 +11,34 @@ CodePact 0.x grows from declaration inspection toward broader resource lifecycle
 | 0.5.x | Release with opt-in ownership transfer, lexical borrowing, and structured task lifetimes |
 | 0.6.x | Suspension-aware exclusive access, typestate, and effects |
 | 0.7.x | Typed outcomes, helper and CLI install split, and an installed-wheel must-use preview |
-| 0.8.x | Editor integration, cross-package resource contracts, and wheel manifest tooling |
-| 0.9.x | Stabilization, published-contract compatibility, and a 1.0 readiness decision |
+| 0.8.x | Reviewed resource contracts across packages, wheel manifests, and bounded standard library models |
+| 0.9.x | Persistent duties, before-and-after review, and independently qualified HTTP and SQL profiles |
+| 0.10–0.11 | Queues, IPC, synchronization, shutdown, and executor bridges |
+| 0.12.x | Broader model coverage, persistent caching, and editor and agent integrations |
+| 0.13.x | Stabilization and a 1.0 readiness decision |
 
-Starting in 0.7, the planned install paths are `pip install codepact` for
-Python helpers, `pip install 'codepact[cli]'` for the helpers and matching
-CLI, and `pip install codepact-cli` for the command. The `py.codepact` preview
-starts with checking discarded results across installed wheels. Later phases
-extend it to resources, package manifests, and upgrade checks.
+CodePact 0.8.0 extends the marked installed-wheel support introduced in 0.7
+with resource contracts, manifest export and verification, and project models
+for exact dependency versions. Artifact comparison and before-and-after
+review follow in 0.9. [Reviewed contracts](reviewed-contracts.md) ·
 [Published contracts design](https://github.com/eddiethedean/codepact/blob/main/docs/planning/published-contracts.md)
 
 The roadmap describes direction, not arbitrary Python ownership proofs or memory-safety guarantees. CodePact 0.5.0 adds experimental ownership to the 0.4 adoption preview. Qualification is synthetic and field usefulness remains unqualified. Read [availability](availability.md) for the current package boundary and [release notes](release-notes.md) for published behavior. Each phase must define its supported subset and evidence before a release claim is made.
 
-The published 0.4.0 release includes CLI reporting foundations. The shared language server, inline CodePact diagnostics and problem-list entries remain planned for 0.8. Target editors are VS Code, PyCharm/IntelliJ, Neovim and Emacs; support depends on verified client/version combinations.
+The shared language server, inline diagnostics, read-only MCP tools, and
+verified client workflows are planned for 0.12. Target editors are VS Code,
+PyCharm/IntelliJ, Neovim, and Emacs. Editor and agent consumers need to preserve
+certainty, source identity, and incomplete coverage.
 
-The published 0.4.0 release includes structured reports, rule explanations and an opt-in check–edit–recheck recipe. Local read-only MCP tools and verified agent client workflows remain planned for 0.8. Any agent consumer must preserve certainty, source identity and incomplete-coverage signals.
-
-An optional `codepact-pyrefly-cli` prototype is also planned, with its own `codepact-pyrefly` command combining Pyrefly's ordinary Python type checking and CodePact's resource checks. It will have independent prereleases and qualification gates alongside the main roadmap; no combined package or command is available yet.
+The repository roadmap tracks a separate TypePact prototype that combines
+Pyrefly type checking with CodePact resource checks.
 
 Follow-on proposals cover validated values, relationships between values,
 state-dependent field guarantees, and declared dependency boundaries.
 [Follow-on phase plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/contract-extensions.md) ·
 [Repository roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md)
 
-Planned concurrent resource safety starts with bounded async cleanup/cancellation in 0.3, structured task ownership and borrow escapes in 0.5, and suspension-aware exclusivity and protocol states in 0.6. Reporting, outcome adapters, integrations and stabilization inherit explicit cancellation and coverage requirements. Initial task models target `asyncio.TaskGroup`; multiprocessing and thread handoffs remain unsupported escape boundaries until separately qualified. This adds no race-freedom or deadlock-freedom guarantee and does not change the synchronous behavior of the historical TypePact 0.2.0 release. See the [concurrency plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/concurrency.md) for scope and acceptance gates.
+The 0.8 runtime profiles cover selected local asyncio tasks and explicit-spawn
+Process and Pool lifecycles. Later phases extend the modeled operations while
+keeping completion, result observation, and cleanup separate.
+[Concurrency plan](https://github.com/eddiethedean/codepact/blob/main/docs/planning/concurrency.md)

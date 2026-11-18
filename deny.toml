@@ -7,6 +7,7 @@ yanked = "deny"
 multiple-versions = "deny"
 wildcards = "deny"
 skip = [
+  { crate = "getrandom@0.4.3", reason = "Wheel verification uses zip 9, while the Python parser's build-time name generator uses rand 0.8 and getrandom 0.2." },
   { crate = "syn@2.0.119", reason = "The locked transitive proc-macro graph requires both syn 2 and syn 3, whose major-version requirements cannot be unified." },
   { crate = "winnow@0.7.15", reason = "The locked TOML parser graph requires both winnow 0.7 and winnow 1, whose major-version requirements cannot be unified." },
 ]

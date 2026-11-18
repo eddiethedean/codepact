@@ -1,7 +1,8 @@
-use codepact::inspect;
+#[cfg(test)]
+use std::fs;
 #[cfg(test)]
 use std::path::PathBuf;
-use std::{env, fs, io::Write, path::Path, process::ExitCode};
+use std::{env, io::Write, process::ExitCode};
 
 macro_rules! stderr_line {
     ($($arguments:tt)*) => {{
@@ -17,6 +18,7 @@ fn write_stderr(value: &str) -> Result<(), String> {
 
 fn usage() {
     stderr_line!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--dependency-root DIR] [--config PYPROJECT|--no-config] [--python-version VERSION] [--experimental-ownership|--no-experimental-ownership] [--experimental-advanced-contracts|--no-experimental-advanced-contracts] [--experimental-finite-matches|--no-experimental-finite-matches] [--mode advisory|strict] [--fail-on error|warning] [--rules CODE[,CODE...]] [--severity CODE=LEVEL] [--json|--output-format text|json|concise] [--baseline FILE] [--max-diagnostics N] [FILE...]\n       codepact baseline update --output FILE --reason TEXT [--replace] [--json] [check options]\n       codepact capabilities --json\n       codepact explain RULE --json\n       codepact --version");
+    stderr_line!("       codepact contracts export --root DIR --distribution NAME --version VERSION --import-scope PACKAGE [--python-version VERSION]\n       codepact contracts verify WHEEL [--python-version VERSION]");
 }
 
 fn emit_failure(format: &str, message: String) -> ExitCode {
@@ -55,18 +57,50 @@ fn write_stdout(value: &str) -> Result<(), String> {
 }
 
 mod args;
+mod artifacts;
+mod commands;
 mod discovery;
 mod input;
 mod metadata;
 mod output;
-use discovery::resolve_project_root;
+mod providers;
+mod publications;
 #[cfg(test)]
 use discovery::{discover_python_files, discover_python_files_with_limits, DiscoveryLimits};
 #[cfg(test)]
 use output::{concise_record, framed_stdout_bytes, BoundedText};
 
+struct CommandOutput {
+    stdout: String,
+    stderr: String,
+    status: u8,
+}
+
+impl CommandOutput {
+    fn stdout(stdout: String, status: u8) -> Self {
+        Self {
+            stdout,
+            stderr: String::new(),
+            status,
+        }
+    }
+}
+
+fn emit(output: Result<CommandOutput, String>, failure_format: &str) -> ExitCode {
+    let output = match output {
+        Ok(output) => output,
+        Err(message) => return emit_failure(failure_format, message),
+    };
+    if let Err(error) = write_stdout(&output.stdout) {
+        return emit_failure("text", error);
+    }
+    if !output.stderr.is_empty() && write_stderr(&output.stderr).is_err() {
+        return ExitCode::from(2);
+    }
+    ExitCode::from(output.status)
+}
+
 pub(super) fn run() -> ExitCode {
-    use codepact::adoption::{self, EffectiveConfig};
     let raw_args: Vec<_> = env::args_os().skip(1).collect();
     if let Some(index) = raw_args.iter().position(|arg| arg.to_str().is_none()) {
         return emit_failure(
@@ -82,54 +116,68 @@ pub(super) fn run() -> ExitCode {
         usage();
         return ExitCode::from(2);
     };
-    if command == "--version" || command == "-V" {
-        if let Err(error) = write_stdout(concat!("codepact ", env!("CARGO_PKG_VERSION"))) {
-            return emit_failure("text", error);
+    match command.as_str() {
+        "--version" | "-V" => emit(
+            Ok(CommandOutput::stdout(
+                concat!("codepact ", env!("CARGO_PKG_VERSION")).into(),
+                0,
+            )),
+            "text",
+        ),
+        "--help" | "-h" => {
+            usage();
+            ExitCode::SUCCESS
         }
-        return ExitCode::SUCCESS;
-    }
-    if command == "--help" || command == "-h" {
-        usage();
-        return ExitCode::SUCCESS;
-    }
-    if command == "capabilities" {
-        if args.next().as_deref() != Some("--json") || args.next().is_some() {
-            return emit_failure("json", "capabilities requires exactly --json".into());
+        "capabilities" => {
+            if args.next().as_deref() != Some("--json") || args.next().is_some() {
+                return emit_failure("json", "capabilities requires exactly --json".into());
+            }
+            emit(
+                Ok(CommandOutput::stdout(metadata::capabilities_json(), 0)),
+                "json",
+            )
         }
-        if let Err(error) = write_stdout(&metadata::capabilities_json()) {
-            stderr_line!("codepact: {error}");
-            return ExitCode::from(2);
+        "explain" => {
+            let Some(rule) = args.next() else {
+                return emit_failure("json", "explain requires a rule code".into());
+            };
+            if args.next().as_deref() != Some("--json") || args.next().is_some() {
+                return emit_failure("json", "explain requires RULE --json".into());
+            }
+            let result = metadata::explanation_json(&rule)
+                .map(|output| CommandOutput::stdout(output, 0))
+                .ok_or_else(|| format!("unknown rule identifier {rule}"));
+            emit(result, "json")
         }
-        return ExitCode::SUCCESS;
-    }
-    if command == "explain" {
-        let Some(rule) = args.next() else {
-            return emit_failure("json", "explain requires a rule code".into());
-        };
-        if args.next().as_deref() != Some("--json") || args.next().is_some() {
-            return emit_failure("json", "explain requires RULE --json".into());
+        "contracts" => emit(
+            publications::run(args).map(|output| CommandOutput::stdout(output, 0)),
+            "text",
+        ),
+        "inspect-contracts" => run_project(args, ProjectCommand::Inspect),
+        "check" => run_project(args, ProjectCommand::Check),
+        "baseline" if args.next().as_deref() == Some("update") => {
+            run_project(args, ProjectCommand::UpdateBaseline)
         }
-        let Some(output) = metadata::explanation_json(&rule) else {
-            return emit_failure("json", format!("unknown rule identifier {rule}"));
-        };
-        if let Err(error) = write_stdout(&output) {
-            stderr_line!("codepact: {error}");
-            return ExitCode::from(2);
+        "baseline" => emit_failure("text", "baseline supports only the update operation".into()),
+        _ => {
+            usage();
+            emit_failure("text", format!("unknown command: {command}"))
         }
-        return ExitCode::SUCCESS;
     }
-    let inspecting = command == "inspect-contracts";
-    let baseline_update = command == "baseline";
-    let checking = command == "check" || baseline_update;
-    if !inspecting && !checking {
-        usage();
-        return emit_failure("text", format!("unknown command: {command}"));
-    }
-    if baseline_update && args.next().as_deref() != Some("update") {
-        return emit_failure("text", "baseline supports only the update operation".into());
-    }
+}
 
-    let parsed = match args::parse(args, inspecting, baseline_update) {
+enum ProjectCommand {
+    Inspect,
+    Check,
+    UpdateBaseline,
+}
+
+fn run_project(args: impl Iterator<Item = String>, command: ProjectCommand) -> ExitCode {
+    let parsed = match args::parse(
+        args,
+        matches!(command, ProjectCommand::Inspect),
+        matches!(command, ProjectCommand::UpdateBaseline),
+    ) {
         Ok(args::ParseOutcome::Parsed(parsed)) => *parsed,
         Ok(args::ParseOutcome::Help) => {
             usage();
@@ -137,304 +185,26 @@ pub(super) fn run() -> ExitCode {
         }
         Err(error) => return emit_failure(&error.format, error.message),
     };
-    let args::ParsedArgs {
-        overrides,
-        explicit_root,
-        paths,
-        output_format,
-        max_diagnostics,
-        output_baseline,
-        update_reason,
-        replace_baseline,
-        show_settings,
-    } = parsed;
-
     let cwd = match env::current_dir() {
-        Ok(p) => p,
-        Err(e) => {
+        Ok(path) => path,
+        Err(error) => {
             return emit_failure(
-                &output_format,
-                format!("cannot determine current directory: {e}"),
+                &parsed.output_format,
+                format!("cannot determine current directory: {error}"),
             )
         }
     };
-    let effective = if checking {
-        match adoption::resolve_config(&cwd, &overrides) {
-            Ok(c) => Some(c),
-            Err(e) => return emit_failure(&output_format, e),
-        }
-    } else {
-        None
-    };
-    if show_settings {
-        let Some(c) = effective.as_ref() else {
-            return emit_failure(
-                &output_format,
-                "--show-settings applies only to check".into(),
-            );
-        };
-        let root = match resolve_project_root(&c.root) {
-            Ok(root) => root,
-            Err(error) => return emit_failure(&output_format, error),
-        };
-        let output = serde_json::to_string_pretty(&serde_json::json!({
-            "execution_status": "settings-resolved",
-            "settings_schema_version": 2,
-            "root": root,
-            "config_file": c.source,
-            "python_version": c.python_version,
-            "include": c.include,
-            "exclude": c.exclude,
-            "enabled_rules": c.enabled_rules,
-            "mode": c.mode,
-            "experimental_ownership": c.ownership.is_enabled(),
-            "experimental_advanced_contracts": c.ownership.includes_advanced_contracts(),
-            "experimental_finite_matches": c.finite_matches,
-            "dependency_roots": c.dependency_roots,
-            "required_providers": c.required_providers,
-            "assume_default_task_factory": c.ownership.assumes_default_task_factory(),
-            "fail_on": c.fail_on,
-            "baseline": c.baseline,
-            "severity": c.severity,
-            "settings_origins": c.settings_origins
-        }))
-        .unwrap();
-        if let Err(error) = write_stdout(&output) {
-            stderr_line!("codepact: {error}");
-            return ExitCode::from(2);
-        }
-        return ExitCode::SUCCESS;
-    }
-    let baseline_destination = if baseline_update {
-        let requested = output_baseline.as_deref().unwrap();
-        let destination = if requested.is_absolute() {
-            requested.to_path_buf()
-        } else {
-            cwd.join(requested)
-        };
-        if let Err(error) =
-            adoption::reject_symlink_components(&destination, "baseline destination")
-        {
-            return emit_failure(&output_format, error);
-        }
-        match fs::symlink_metadata(&destination) {
-            Ok(_) if !replace_baseline => {
-                return emit_failure(
-                    &output_format,
-                    "baseline destination exists; pass --replace to replace it".into(),
-                );
-            }
-            Ok(metadata) if !metadata.file_type().is_file() => {
-                return emit_failure(
-                    &output_format,
-                    "baseline destination must be a regular file".into(),
-                );
-            }
-            Ok(_) => {
-                if let Err(error) = adoption::validate_baseline_file(&destination) {
-                    return emit_failure(&output_format, error);
-                }
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return emit_failure(
-                    &output_format,
-                    format!(
-                        "cannot inspect baseline destination {}: {error}",
-                        destination.display()
-                    ),
-                )
-            }
-        }
-        Some(destination)
-    } else {
-        if checking {
-            if let Some(baseline) = effective
-                .as_ref()
-                .and_then(|config| config.baseline.as_deref())
-            {
-                if let Err(error) = adoption::validate_baseline_file(baseline) {
-                    return emit_failure(&output_format, error);
-                }
-            }
-        }
-        None
-    };
-    let root = match input::resolve_root(effective.as_ref(), explicit_root, inspecting, &cwd) {
-        Ok(root) => root,
-        Err(error) => return emit_failure(&output_format, error),
-    };
-    let python_version = effective
-        .as_ref()
-        .map(|c| c.python_version.as_str())
-        .or(overrides.python_version.as_deref())
-        .unwrap_or("3.11")
-        .to_string();
-    let loaded = match input::collect_files(
-        paths,
-        root.as_deref(),
-        &python_version,
-        checking,
-        inspecting,
-        effective.as_ref(),
-        &cwd,
-    ) {
-        Ok(loaded) => loaded,
-        Err(error) => return emit_failure(&output_format, error),
-    };
-    let files = loaded.files;
-    let physical_files = loaded.physical_files;
-    let provider_distributions = loaded.provider_distributions;
-    if let Some(destination) = baseline_destination.as_deref() {
-        let canonical_destination = fs::canonicalize(destination).or_else(|_| {
-            let parent = destination.parent().unwrap_or(Path::new("."));
-            fs::canonicalize(parent)
-                .map(|parent| parent.join(destination.file_name().unwrap_or_default()))
-        });
-        if let Ok(canonical_destination) = canonical_destination {
-            if physical_files.contains(&canonical_destination)
-                || effective
-                    .as_ref()
-                    .and_then(|config| config.source.as_ref())
-                    .and_then(|path| fs::canonicalize(path).ok())
-                    .is_some_and(|config_path| config_path == canonical_destination)
-            {
-                return emit_failure(
-                    &output_format,
-                    "baseline output must not replace a selected source or configuration file"
-                        .into(),
-                );
-            }
-        }
-    }
-    if inspecting {
-        let inspection = inspect(&files, &python_version);
-        let value = serde_json::to_string_pretty(&inspection);
-        match value {
-            Ok(v) => {
-                if let Err(error) = write_stdout(&v) {
-                    stderr_line!("codepact: {error}");
-                    return ExitCode::from(2);
-                }
-            }
-            Err(e) => return emit_failure("text", format!("serialization failure: {e}")),
-        }
-        return if inspection.diagnostics.iter().any(|d| d.severity == "error")
-            || inspection.coverage.status != "complete-for-supported-subset"
-        {
-            ExitCode::from(1)
-        } else {
-            ExitCode::SUCCESS
-        };
-    }
-    let config: EffectiveConfig = effective.expect("checking resolves effective configuration");
-    let mut result = codepact::check_with_options(
-        &files,
-        &python_version,
-        codepact::CheckOptions {
-            ownership: config.ownership,
-            experimental_finite_matches: config.finite_matches,
-            ..codepact::CheckOptions::default()
+    let failure_format = parsed.output_format.clone();
+    match command {
+        ProjectCommand::Inspect => match commands::inspect(parsed, &cwd) {
+            Ok(inspection) => emit(commands::render_inspection(&inspection), "text"),
+            Err(error) => emit_failure(&failure_format, error),
         },
-    );
-    for provider in &config.required_providers {
-        let expected = input::normalized_distribution(provider).unwrap_or_default();
-        if provider_distributions.contains(&expected) {
-            continue;
+        ProjectCommand::Check => emit(commands::check(parsed, &cwd), &failure_format),
+        ProjectCommand::UpdateBaseline => {
+            emit(commands::update_baseline(parsed, &cwd), &failure_format)
         }
-        let message = format!("required CodePact provider {provider} was not resolved from the selected dependency roots");
-        let path = files.first().map_or("<input>", |file| file.path.as_str());
-        result.coverage.status = "incomplete".into();
-        result.coverage.reasons.push(format!("{path}:1: {message}"));
-        result.diagnostics.push(codepact::CheckDiagnostic {
-            semantic_identity: vec![provider.clone()],
-            provider_evidence: None,
-            code: "TP9001".into(),
-            severity: "warning".into(),
-            message: message.clone(),
-            primary: codepact::Span {
-                file: path.into(),
-                line: 1,
-                column: 1,
-                end_line: 1,
-                end_column: 1,
-            },
-            related: Vec::new(),
-            certainty: "unknown".into(),
-            completion: None,
-            trust: "unresolved-provider".into(),
-            coverage_reason: Some(message),
-            repair: Some(
-                "Add a dependency root containing the marked installed distribution.".into(),
-            ),
-        });
     }
-    if baseline_update {
-        let destination = baseline_destination
-            .as_deref()
-            .expect("baseline update destination was preflighted");
-        let summary = match adoption::write_baseline(
-            destination,
-            &result,
-            &files,
-            &config,
-            replace_baseline,
-            &update_reason.unwrap(),
-        ) {
-            Ok(summary) => summary,
-            Err(error) => return emit_failure(&output_format, error),
-        };
-        if output_format == "json" {
-            let output = serde_json::to_string_pretty(&summary).unwrap();
-            if let Err(error) = write_stdout(&output) {
-                stderr_line!("codepact: {error}");
-                return ExitCode::from(2);
-            }
-        } else {
-            let output = format!(
-                "baseline updated: {} entries ({} added, {} removed, {} unchanged, {} ambiguous skipped); snapshot {}",
-                summary.entries,
-                summary.added,
-                summary.removed,
-                summary.unchanged,
-                summary.skipped_ambiguous,
-                summary.snapshot_id,
-            );
-            if let Err(error) = write_stdout(&output) {
-                stderr_line!("codepact: {error}");
-                return ExitCode::from(2);
-            }
-            if summary.coverage_status != "complete-for-supported-subset"
-                && write_stderr(&format!(
-                    "baseline records incomplete coverage: {}\n",
-                    summary.coverage_status
-                ))
-                .is_err()
-            {
-                return ExitCode::from(2);
-            }
-        }
-        return ExitCode::SUCCESS;
-    }
-    let baseline = config.baseline.as_deref();
-    let report = match adoption::build_report(result, &files, &config, baseline, max_diagnostics) {
-        Ok(r) => r,
-        Err(e) => return emit_failure(&output_format, e),
-    };
-    let rendered = match output::render_report(&report, &output_format) {
-        Ok(rendered) => rendered,
-        Err(error) => return emit_failure(&output_format, error),
-    };
-    let stdout_text = rendered.stdout_text;
-    let stderr_text = rendered.stderr_text;
-    if let Err(error) = write_stdout(&stdout_text) {
-        stderr_line!("codepact: {error}");
-        return ExitCode::from(2);
-    }
-    if !stderr_text.is_empty() && write_stderr(&stderr_text).is_err() {
-        return ExitCode::from(2);
-    }
-    ExitCode::from(report.exit_code)
 }
 
 #[cfg(test)]

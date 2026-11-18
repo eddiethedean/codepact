@@ -46,6 +46,20 @@ pub(crate) struct ImportName {
     pub range: SourceRange,
 }
 
+impl ImportName {
+    /// The name introduced by `import package.child [as name]`.
+    pub(crate) fn import_binding(&self) -> &str {
+        self.alias
+            .as_deref()
+            .unwrap_or_else(|| self.name.split('.').next().unwrap_or(&self.name))
+    }
+
+    /// The name introduced by `from package import member [as name]`.
+    pub(crate) fn member_binding(&self) -> &str {
+        self.alias.as_deref().unwrap_or(&self.name)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Parameter {
     pub name: String,
@@ -289,6 +303,7 @@ pub(crate) enum Declaration {
         class_annotations: Vec<AstExpr>,
         has_unresolved_base_classes: bool,
         methods: Vec<MethodBody>,
+        bound_methods: BTreeSet<String>,
         unsupported: bool,
         range: SourceRange,
     },

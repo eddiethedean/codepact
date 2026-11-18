@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 pub(super) struct ParsedArgs {
     pub(super) overrides: Overrides,
-    pub(super) explicit_root: Option<PathBuf>,
     pub(super) paths: Vec<PathBuf>,
     pub(super) output_format: String,
     pub(super) max_diagnostics: Option<usize>,
@@ -82,7 +81,6 @@ pub(super) fn parse(
     baseline_update: bool,
 ) -> Result<ParseOutcome, ParseError> {
     let mut overrides = Overrides::default();
-    let mut explicit_root = None;
     let mut paths = Vec::new();
     let mut output_format = if inspecting { "json" } else { "text" }.to_owned();
     let mut requested_output_format: Option<String> = None;
@@ -108,11 +106,7 @@ pub(super) fn parse(
                 Err(error) => return Err(failure(&output_format, error)),
             },
             "--root" => match take() {
-                Ok(value) => {
-                    let path = PathBuf::from(value);
-                    explicit_root = Some(path.clone());
-                    overrides.root = Some(path);
-                }
+                Ok(value) => overrides.root = Some(PathBuf::from(value)),
                 Err(error) => return Err(failure(&output_format, error)),
             },
             "--dependency-root" => match take() {
@@ -324,7 +318,6 @@ pub(super) fn parse(
 
     Ok(ParseOutcome::Parsed(Box::new(ParsedArgs {
         overrides,
-        explicit_root,
         paths,
         output_format,
         max_diagnostics,

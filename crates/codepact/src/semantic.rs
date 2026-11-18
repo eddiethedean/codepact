@@ -150,6 +150,7 @@ fn inspect_inner(
             continue;
         };
         let mut state = FileState::new(python_version);
+        let installed_provider = file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX);
         let mut pending_must_use_bodies = Vec::<(
             Vec<crate::frontend::FlowStatement>,
             Option<(String, Option<String>)>,
@@ -193,12 +194,14 @@ fn inspect_inner(
                         && module == "__future__"
                         && names.iter().any(|name| name.name == "annotations")
                     {
-                        unsupported(
-                            &mut result,
-                            file,
-                            *range,
-                            "future annotations are not resolved",
-                        );
+                        if !installed_provider {
+                            unsupported(
+                                &mut result,
+                                file,
+                                *range,
+                                "future annotations are not resolved",
+                            );
+                        }
                     } else {
                         process_import_from(
                             &mut result,
@@ -220,18 +223,31 @@ fn inspect_inner(
                 }
                 Declaration::Import { names, .. } => {
                     for item in names {
-                        let local = item
-                            .alias
-                            .as_deref()
-                            .unwrap_or_else(|| item.name.split('.').next().unwrap_or(&item.name));
+                        let local = item.import_binding();
                         state.clear_name(local, &file.module, &mut bindings);
-                        if item.name == "contextlib"
+                        if module_context
+                            .is_some_and(|context| context.provider_modules.contains(&item.name))
+                        {
+                            let prefix = item.alias.as_deref().unwrap_or(&item.name);
+                            if let Some(exports) = module_must_use_callables.get(&item.name) {
+                                for (member, declaration) in exports {
+                                    state
+                                        .must_use_callables
+                                        .insert(format!("{prefix}.{member}"), declaration.clone());
+                                }
+                            }
+                        } else if item.name == "contextlib"
                             && !supplied_modules.contains(&item.name)
                             && !ambiguous_modules.contains(&item.name)
                         {
                             state
                                 .imports
                                 .insert(local.to_owned(), "external:contextlib".into());
+                        } else if installed_provider
+                            && item.name == "typing"
+                            && !supplied_modules.contains("typing")
+                        {
+                            state.imports.insert(local.to_owned(), "typing".into());
                         } else if item.name == "codepact" || item.name.starts_with("codepact.") {
                             let identity = if item.alias.is_some() {
                                 item.name.replace('.', "::")
@@ -483,7 +499,14 @@ fn inspect_inner(
                     is_generator,
                     ..
                 } => {
-                    let marked = function_is_must_use(decorators, returns.as_ref(), &state.imports);
+                    let quoted = returns
+                        .as_ref()
+                        .and_then(|annotation| provider_string_annotation(file, annotation));
+                    let marked = function_is_must_use(
+                        decorators,
+                        quoted.as_ref().or(returns.as_ref()),
+                        &state.imports,
+                    );
                     if run_must_use {
                         for parameter in parameters {
                             if let Some(annotation) = &parameter.annotation {
@@ -548,13 +571,14 @@ fn inspect_inner(
                         );
                         state.clear_module(&file.module, &mut bindings);
                     } else {
-                        if !state.future_annotations {
+                        if !state.future_annotations || installed_provider {
                             for parameter in parameters {
                                 if let Some(annotation) = &parameter.annotation {
+                                    let quoted = provider_string_annotation(file, annotation);
                                     lower_function_annotation(
                                         &mut result,
                                         file,
-                                        annotation,
+                                        quoted.as_ref().unwrap_or(annotation),
                                         &format!("{name}.{}", parameter.name),
                                         &state,
                                         &symbols,
@@ -563,10 +587,11 @@ fn inspect_inner(
                                 }
                             }
                             if let Some(annotation) = returns {
+                                let quoted = provider_string_annotation(file, annotation);
                                 lower_function_annotation(
                                     &mut result,
                                     file,
-                                    annotation,
+                                    quoted.as_ref().unwrap_or(annotation),
                                     &format!("{name}.return"),
                                     &state,
                                     &symbols,
@@ -754,6 +779,77 @@ fn inspect_inner(
     }
 }
 
+fn provider_string_annotation(file: &SourceFile, annotation: &AstExpr) -> Option<AstExpr> {
+    let AstExprKind::String(text) = &annotation.kind else {
+        return None;
+    };
+    file.path
+        .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+        .then(|| crate::frontend::quoted_annotation(text, annotation.range))
+        .flatten()
+}
+
+pub(crate) struct PublicationInspection {
+    pub inspection: Inspection,
+    pub must_use: BTreeMap<String, Span>,
+    pub declarations: BTreeMap<String, Vec<Declaration>>,
+}
+
+pub(crate) fn publication_inspection(
+    files: &[SourceFile],
+    target: &str,
+) -> Result<PublicationInspection, String> {
+    let mut parsed = BTreeMap::new();
+    let mut declarations = 0usize;
+    for file in files {
+        let frontend =
+            crate::frontend::parse_frontend(&file.source, &file.path, &file.module, target)
+                .map_err(|(error, _)| format!("cannot parse {}: {error}", file.module))?;
+        declarations = declarations.saturating_add(frontend.declarations.len());
+        if declarations > crate::DEFAULT_MAX_TOTAL_AST_DECLARATIONS {
+            return Err("provider declaration budget exhausted".into());
+        }
+        parsed.insert(
+            file.path.clone(),
+            ParseSummary {
+                ok: true,
+                error: None,
+                error_offset: None,
+                declarations: Some(frontend.declarations),
+                module_body: frontend.module_body,
+                absolute_imports: frontend.absolute_imports,
+            },
+        );
+    }
+    let inspected =
+        crate::source::with_indexed_sources(files.iter().map(|file| file.source.as_str()), || {
+            inspect_inner(files, target, &parsed, None, false, false, || {})
+        });
+    let must_use = inspected
+        .module_must_use_callables
+        .into_values()
+        .flat_map(|items| items.into_values())
+        .map(|value| (value.canonical_symbol, value.span))
+        .collect();
+    let declarations = files
+        .iter()
+        .map(|file| {
+            (
+                file.module.clone(),
+                parsed
+                    .remove(&file.path)
+                    .and_then(|parse| parse.declarations)
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    Ok(PublicationInspection {
+        inspection: inspected.inspection,
+        must_use,
+        declarations,
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ExportedView {
     symbol: String,
@@ -770,6 +866,7 @@ pub(crate) struct MustUseCallable {
     pub canonical_symbol: String,
     pub distribution: Option<String>,
     pub version: Option<String>,
+    pub manifest: bool,
 }
 
 fn must_use_evidence(file: &SourceFile, symbol: &str, span: Span) -> MustUseCallable {
@@ -787,6 +884,7 @@ fn must_use_evidence(file: &SourceFile, symbol: &str, span: Span) -> MustUseCall
         canonical_symbol: format!("{}.{symbol}", file.module),
         distribution,
         version,
+        manifest: false,
     }
 }
 
@@ -809,6 +907,7 @@ pub(crate) struct ModuleContext {
     dependency_exports: BTreeMap<String, SemanticExports>,
     supplied_modules: BTreeSet<String>,
     ambiguous_modules: BTreeSet<String>,
+    provider_modules: BTreeSet<String>,
 }
 
 pub(crate) struct ProjectPlan {
@@ -906,23 +1005,20 @@ fn summary_uses_contract_wrapper(summary: &ParseSummary) -> bool {
                 ..
             } => {
                 for name in names {
-                    let local = name.alias.as_deref().unwrap_or(&name.name);
+                    let local = name.member_binding();
                     state.clear_name(local, "", &mut bindings);
                     register_import(&name.name, local, module, &mut state);
                 }
             }
             Declaration::ImportFrom { names, .. } => {
                 for name in names {
-                    let local = name.alias.as_deref().unwrap_or(&name.name);
+                    let local = name.member_binding();
                     state.clear_name(local, "", &mut bindings);
                 }
             }
             Declaration::Import { names, .. } => {
                 for name in names {
-                    let local = name
-                        .alias
-                        .as_deref()
-                        .unwrap_or_else(|| name.name.split('.').next().unwrap_or(&name.name));
+                    let local = name.import_binding();
                     state.clear_name(local, "", &mut bindings);
                 }
             }
@@ -1295,7 +1391,7 @@ fn process_import_from(
 ) {
     if level != 0 {
         for item in names {
-            let local = item.alias.as_deref().unwrap_or(&item.name);
+            let local = item.member_binding();
             state.clear_name(local, &file.module, bindings);
         }
         unsupported(
@@ -1312,7 +1408,7 @@ fn process_import_from(
         return;
     }
     for item in names {
-        let local = item.alias.as_deref().unwrap_or(&item.name);
+        let local = item.member_binding();
         state.clear_name(local, &file.module, bindings);
         register_import(&item.name, local, module, state);
         register_supplied_module_import(
@@ -1480,7 +1576,7 @@ fn register_supplied_module_import(
     bindings.insert(format!("{}.{local}", file.module), view.symbol);
 }
 
-fn is_known_external_module(module: &str) -> bool {
+pub(crate) fn is_known_external_module(module: &str) -> bool {
     matches!(
         module,
         "typing"

@@ -1,5 +1,40 @@
 # Upgrade CodePact
 
+## Upgrade to 0.8.0
+
+Update the helper and CLI together and commit the refreshed lockfile.
+
+```sh
+uv add 'codepact[cli]==0.8.0'
+uv run --locked codepact --version
+```
+
+Use `uv add codepact==0.8.0` for a helper-only project,
+`uv tool install codepact-cli==0.8.0` for a standalone command, or
+`cargo add codepact@=0.8.0` for a Rust host. [Install options](install.md)
+
+- **Source-only checks.** CLI reports still use schema 3 and settings use
+  schema 2 under the default configuration. Existing Rust source-only
+  entry points retain their result versions.
+- **Installed dependencies.** Explicit dependency roots now select
+  foundations checks and CLI report schema 4. Existing marked inline
+  providers still work. Review the selected provider and coverage after
+  upgrading. A recorded but missing manifest or a stale manifest leaves
+  its published facts unavailable.
+- **New opt-ins.** Add project models or an explicit runtime profile when
+  you need their effects. Update consumers for CLI report schema 4, Rust
+  result schema 2, and settings schema 3 as applicable. JSON execution
+  failures retain the schema 3 envelope.
+- **Baselines.** CodePact 0.8.0 can read a 0.7.0 baseline, but the engine
+  version change makes it incompatible. Its entries stay unmatched even
+  with identical source and settings. Findings previously suppressed by the
+  baseline can fail CI again. Review a fresh 0.8.0 report, then regenerate
+  the baseline under the intended settings before switching CI.
+  [Create or update a baseline](adopting.md#record-the-initial-findings)
+
+[Reviewed contracts and runtime models](reviewed-contracts.md) ·
+[Report schemas](schemas.md) · [Release notes](release-notes.md)
+
 ## Upgrade from 0.5 or 0.6 to 0.7
 
 CodePact 0.7 separates the pure-Python helper from the native command. A

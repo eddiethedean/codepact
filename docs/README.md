@@ -4,7 +4,7 @@
 
 Start with the [quick start](quickstart.md) to run a check, read a finding,
 and repair a resource lifecycle bug. [Installation](install.md) covers the
-0.5.0 packages and source builds.
+0.8.0 packages and source builds.
 
 | I want to | Read |
 | --- | --- |
@@ -13,6 +13,7 @@ and repair a resource lifecycle bug. [Installation](install.md) covers the
 | Analyze a project with local imports | [Multi-file tutorial](project-guide.md) |
 | Add CodePact to CI | [Adoption](adopting.md), [automation](automation.md), and [CI report handling](ci-reporting.md) |
 | Try explicit moves or TaskGroup checks | [Experimental ownership](ownership.md) |
+| Publish wheel contracts or configure reviewed models | [Reviewed contracts and runtime models](reviewed-contracts.md) |
 | Integrate the analyzer | [CLI](cli.md), [Rust API](rust-api.md), and [JSON schemas](schemas.md) |
 | Review analysis boundaries | [Supported syntax](supported-syntax.md), [limitations](limitations.md), and [troubleshooting](troubleshooting.md) |
 | Evaluate for a team | [Evaluation guide](evaluation.md), [platform support](availability.md), and [release notes](release-notes.md) |

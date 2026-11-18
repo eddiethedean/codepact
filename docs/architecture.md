@@ -27,6 +27,13 @@ Logical module names come from paths under the selected root. Declaration
 inspection receives only the named files. Both modes parse source locally.
 Helper imports and resource declarations are interpreted from source syntax.
 
+When dependency roots are configured, the CLI resolves the winning import
+and reads bounded installed artifact inputs. The analyzer selects contract
+facts from those inputs, keeping their public names, canonical identities,
+and provenance. Wheel verification and installed discovery share metadata
+parsing and digest verification, with checks for their respective layouts.
+[Reviewed contracts](reviewed-contracts.md)
+
 Pinned Ruff components parse the selected source grammar and preserve
 diagnostic spans. Semantic queries resolve supported class and alias
 identities, imported helpers, lifecycle metadata, and access markers.
@@ -40,10 +47,11 @@ borrows. Its separate TaskGroup assumption enables a bounded model of child
 task lifetimes. [Analysis boundaries](limitations.md) ·
 [Experimental ownership](ownership.md)
 
-After analysis, the CLI applies rule selection, severity, suppressions, and
-baseline matching. Its report retains coverage and audit entries and records
-the status used by the selected policy. Rust callers can use canonical
-analysis results or opt into the adoption report builder.
+After analysis, the adoption layer applies rule selection, severity,
+suppressions, and baseline matching. It combines those decisions with the
+snapshot and model identities in the report. CLI rendering uses the report
+to produce JSON, text, or concise output and the corresponding exit status.
+Rust callers can use canonical results or the adoption report builder.
 [Report reference](output.md) · [Rust integration](rust-api.md)
 
 ## Incremental sessions

@@ -9,20 +9,23 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import TypeAlias, cast
+from typing import cast
 
 from jsonschema import Draft202012Validator
 from jsonschema.protocols import Validator
-from referencing import Registry, Resource
-from referencing.jsonschema import Schema, SchemaRegistry
+
+if __package__:
+    from .report_schema import JsonObject, JsonValue, schema_registry
+else:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        from report_schema import JsonObject, JsonValue, schema_registry
+    finally:
+        _ = sys.path.pop(0)
 
 
 SCHEMA_ROOT = Path("docs/schemas")
 FIXTURE_ROOT = SCHEMA_ROOT / "fixtures"
-JsonValue: TypeAlias = (
-    None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
-)
-JsonObject = dict[str, JsonValue]
 
 
 def read_object(path: Path) -> JsonObject:
@@ -73,16 +76,11 @@ def main() -> int:
         return 1
 
     schemas: dict[str, JsonObject] = {}
-    resources: list[tuple[str, Resource[Schema]]] = []
     for path in schema_paths:
         schema = read_object(path)
         Draft202012Validator.check_schema(schema)
-        identifier = schema.get("$id")
-        if not isinstance(identifier, str):
-            raise ValueError(f"{path} has no string $id")
         schemas[path.name] = schema
-        resources.append((identifier, Resource.from_contents(schema)))
-    registry: SchemaRegistry = Registry[Schema]().with_resources(resources)
+    registry = schema_registry((str(path), schemas[path.name]) for path in schema_paths)
 
     checked = 0
     for filename, schema in schemas.items():
@@ -279,6 +277,31 @@ def main() -> int:
             "advanced settings",
             "settings-v2.schema.json",
             cli_output([*advanced_args, "--show-settings"]),
+        )
+        foundations_config = project / "foundations.toml"
+        _ = foundations_config.write_text(
+            "[tool.codepact]\nconfig-version = 1\n"
+            'experimental-foundations = true\npython-version = "3.13"\n'
+            "[tool.codepact.runtime-profile]\n"
+            'implementation = "cpython"\npython-version = "3.13.16"\n'
+            'os = "linux"\narchitecture = "x86_64"\n',
+            encoding="utf-8",
+        )
+        foundations_args = [
+            "check",
+            "--root",
+            str(project),
+            "--config",
+            str(foundations_config),
+            "--json",
+        ]
+        validate_emitted(
+            "0.8 check", "check-report-v4.schema.json", cli_output(foundations_args)
+        )
+        validate_emitted(
+            "0.8 settings",
+            "settings-v3.schema.json",
+            cli_output([*foundations_args, "--show-settings"]),
         )
         _ = cli_output(
             [

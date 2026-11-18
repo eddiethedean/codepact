@@ -1,0 +1,328 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/foundations-evidence-v1.schema.json",
+  "title": "CodePact Phase 0.8 analysis evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "runtime",
+    "catalog_revision",
+    "model_uses",
+    "providers",
+    "provider_issues",
+    "scope",
+    "exhausted_limits",
+    "lock_sha256",
+    "project_models_sha256",
+    "comparison"
+  ],
+  "properties": {
+    "runtime": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/runtime"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "catalog_revision": {
+      "type": "string"
+    },
+    "model_uses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/model_use"
+      }
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "import_scope",
+          "distribution",
+          "version",
+          "artifact_sha256",
+          "origin"
+        ],
+        "properties": {
+          "import_scope": {
+            "type": "string"
+          },
+          "distribution": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "artifact_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "provider_issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "import_scope",
+          "reason"
+        ],
+        "properties": {
+          "import_scope": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "module",
+          "sha256",
+          "supplied_imports",
+          "recognized_imports",
+          "unresolved_imports"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "module": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "supplied_imports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recognized_imports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unresolved_imports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "exhausted_limits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "lock_sha256": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project_models_sha256": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "engine_version",
+        "rule_semantic_revision",
+        "finding_identity_revision",
+        "source_target",
+        "ownership",
+        "finite_matches",
+        "catalog_revision",
+        "normalization_revision",
+        "preservation_policy_revision"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "rule_semantic_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "finding_identity_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_target": {
+          "type": "string"
+        },
+        "ownership": {
+          "enum": [
+            "disabled",
+            "enabled",
+            "assume-default-task-factory",
+            "advanced",
+            "advanced-assume-default-task-factory"
+          ]
+        },
+        "finite_matches": {
+          "type": "boolean"
+        },
+        "catalog_revision": {
+          "type": "string"
+        },
+        "normalization_revision": {
+          "const": 1
+        },
+        "preservation_policy_revision": {
+          "const": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "implementation",
+        "python-version",
+        "os",
+        "architecture",
+        "assume-standard-process-wait"
+      ],
+      "properties": {
+        "implementation": {
+          "type": "string"
+        },
+        "python-version": {
+          "type": "string"
+        },
+        "os": {
+          "type": "string"
+        },
+        "architecture": {
+          "type": "string"
+        },
+        "assume-standard-process-wait": {
+          "type": "boolean"
+        },
+        "event-loop": {
+          "type": "string"
+        },
+        "start-method": {
+          "type": "string"
+        }
+      }
+    },
+    "provider_origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "public_symbol",
+        "canonical_symbol",
+        "distribution",
+        "version",
+        "artifact_sha256"
+      ],
+      "properties": {
+        "public_symbol": {
+          "type": "string"
+        },
+        "canonical_symbol": {
+          "type": "string"
+        },
+        "distribution": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "artifact_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "location": {
+          "$ref": "inspection-v0.schema.json#/$defs/span"
+        },
+        "replaced_origin": {
+          "type": "string"
+        }
+      }
+    },
+    "model_use": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "effect",
+        "origin",
+        "applicable",
+        "site"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string"
+        },
+        "effect": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "applicable": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "site": {
+          "$ref": "inspection-v0.schema.json#/$defs/span"
+        },
+        "provider": {
+          "$ref": "#/$defs/provider_origin"
+        }
+      }
+    }
+  }
+}

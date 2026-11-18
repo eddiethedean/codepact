@@ -6,6 +6,7 @@ pub use db::{
     SessionInspection,
 };
 mod flow;
+pub mod foundation;
 mod frontend;
 mod identifiers;
 pub use identifiers::is_python_identifier;
@@ -175,7 +176,7 @@ pub(crate) fn cancelled_inspection(files: &[SourceFile]) -> Inspection {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SourceFile {
     pub path: String,
     pub module: String,
@@ -249,6 +250,16 @@ pub fn check_with_options(
     options: CheckOptions,
 ) -> CheckResult {
     AnalysisSession::default().check_with_options(files, python_version, options)
+}
+
+/// Check with explicit 0.8 runtime and reviewed contract inputs.
+pub fn check_with_foundations(
+    files: &[SourceFile],
+    python_version: &str,
+    options: CheckOptions,
+    inputs: foundation::FoundationInputs,
+) -> CheckResult {
+    AnalysisSession::default().check_with_foundations(files, python_version, options, inputs)
 }
 
 /// Check resource cleanup duties and return the versioned checker-specific

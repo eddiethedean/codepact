@@ -191,9 +191,7 @@ resolved `submit` workers with no tracked resource arguments or captures, and
 worker-side effects, and cleanup are not inferred. The report lists the
 experimental model and pin.
 
-Examples can run with `--mode strict` to fail on unsupported coverage. The
-preview is not release-qualified yet: retained conformance, incremental
-invalidation, compatibility, and performance gates remain pending.
+Run examples with `--mode strict` to fail on incomplete coverage.
 
 ## Scope and report migration
 
@@ -202,8 +200,11 @@ invalidation, compatibility, and performance gates remain pending.
 - The TaskGroup model covers direct calls to a tracked group's `create_task`
   with one resolved coroutine function. Its source pins are CPython 3.11.15,
   3.12.13 and 3.13.16. The project assumption covers the running default
-  CPython loop and its non-eager task factory. Custom factories, detached tasks,
-  direct task joins, and escaping group or task handles remain boundaries.
+  CPython loop and its non-eager task factory. With the 0.8 runtime profile
+  selected, the checker can also model scoped task creation, direct task
+  awaits, shielding, and timeouts. Custom factories, detached tasks, and
+  escaping group or task handles can leave coverage incomplete.
+  [Reviewed asyncio profile](reviewed-contracts.md#select-the-runtime-profile)
 - The report's `assurance` identifies the ownership scope. `available_models`
   gives each selected TaskGroup or advanced executor model pin and assumption.
 - Baselines record the ownership scope, model catalog, and selected concurrent

@@ -1,3 +1,5 @@
+use super::executor::{ExecutorState, EXECUTOR_UNKNOWN};
+use super::tasks::TaskGroup;
 use super::*;
 
 pub(super) const MOVE: &str = "external:codepact.move";
@@ -26,8 +28,10 @@ pub(super) struct OwnershipState {
     pub(super) possibly_fresh_groups: BTreeSet<String>,
     pub(super) executor_names: BTreeMap<String, String>,
     pub(super) executors: BTreeMap<String, ExecutorState>,
+    pub(super) processes: process::LocalProcesses,
     pub(super) task_names: BTreeMap<String, (String, String)>,
     pub(super) pending_task: Option<(String, String)>,
+    pub(super) active_timeouts: BTreeMap<String, bool>,
     pub(super) incompatible_task_factory: bool,
     pub(super) entering_task: bool,
     inherited_captures: BTreeMap<String, Vec<CaptureSite>>,
@@ -42,34 +46,17 @@ struct MovedHandle {
     possible: bool,
 }
 
-#[derive(Clone, Default, PartialEq, Eq)]
-pub(super) struct TaskGroup {
-    pub(super) tasks: BTreeMap<String, ScheduledTask>,
-    pub(super) incomplete: bool,
-    pub(super) active_possible: bool,
-}
-
-pub(super) const EXECUTOR_ACCEPTING: u8 = 1;
-pub(super) const EXECUTOR_SHUTDOWN: u8 = 2;
-pub(super) const EXECUTOR_UNKNOWN: u8 = 4;
-
-#[derive(Clone, PartialEq, Eq)]
-pub(super) struct ExecutorState {
-    pub(super) states: u8,
-    pub(super) origin: Span,
-    pub(super) has_submissions: bool,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub(super) struct ScheduledTask {
-    pub(super) site: Span,
-    pub(super) possible: bool,
-    pub(super) cancel_requested: bool,
-    pub(super) may_have_started: bool,
-    pub(super) cancelled_before_start: bool,
-}
-
 impl OwnershipState {
+    pub(super) fn has_closure(&self, name: &str) -> bool {
+        self.closures.contains_key(name)
+    }
+
+    pub(super) fn bind_closure_snapshot(&mut self, source: &str, temporary: &str) {
+        if let Some(captures) = self.closures.get(source).cloned() {
+            self.closures.insert(temporary.to_owned(), captures);
+        }
+    }
+
     pub(super) fn new(mode: crate::Ownership, return_owned: bool) -> Option<Box<Self>> {
         mode.is_enabled().then(|| {
             Box::new(Self {
@@ -84,6 +71,10 @@ impl OwnershipState {
         let parent = parent.ownership.as_deref()?;
         let mut child = Self::new(parent.mode, return_owned)?;
         child.incompatible_task_factory = parent.incompatible_task_factory;
+        if !parent.entering_task {
+            child.active_timeouts = parent.active_timeouts.clone();
+        }
+        child.processes.custom_wait = parent.processes.custom_wait;
         child.invalidated_modules = parent.invalidated_modules.clone();
         Some(child)
     }
@@ -117,6 +108,10 @@ impl OwnershipState {
         joined.pending_move &= right.pending_move;
         joined.overflowed |= right.overflowed;
         joined.incompatible_task_factory |= right.incompatible_task_factory;
+        joined
+            .active_timeouts
+            .retain(|id, immediate| right.active_timeouts.get(id) == Some(immediate));
+        joined.processes.join(&right.processes);
         joined
             .invalidated_modules
             .extend(right.invalidated_modules.iter().cloned());
@@ -232,6 +227,7 @@ impl OwnershipState {
 
     pub(super) fn apply_runtime_effects(&mut self, other: &Self) {
         self.incompatible_task_factory |= other.incompatible_task_factory;
+        self.processes.custom_wait |= other.processes.custom_wait;
         self.invalidated_modules
             .extend(other.invalidated_modules.iter().cloned());
     }
@@ -248,6 +244,7 @@ impl OwnershipState {
         self.group_names.remove(name);
         self.task_names.remove(name);
         self.executor_names.remove(name);
+        self.processes.rebind(name);
     }
 
     pub(super) fn own(&mut self, name: &str, targets: &BTreeSet<String>) {
@@ -298,9 +295,13 @@ impl OwnershipState {
         let executor = source
             .and_then(|source| self.executor_names.get(source))
             .cloned();
+        // Save the process alias before the other binding domains are cleared.
+        let mut processes = std::mem::take(&mut self.processes);
+        processes.bind_alias(name, source);
         if source != Some(name) {
             self.rebind(name);
         }
+        self.processes = processes;
         if let Some(moved) = moved {
             self.moved.insert(name.to_owned(), moved);
         }
@@ -359,6 +360,20 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
             Some("external:concurrent.futures.ThreadPoolExecutor")
         }
         ("asyncio", "TaskGroup") => Some(TASK_GROUP),
+        ("builtins", "open") => Some("external:builtins.open"),
+        ("asyncio", "create_task") => Some("external:asyncio.create_task"),
+        ("asyncio", "shield") => Some("external:asyncio.shield"),
+        ("asyncio", "timeout") => Some("external:asyncio.timeout"),
+        ("asyncio", "sleep") => Some("external:asyncio.sleep"),
+        ("asyncio", "get_running_loop") => Some("external:asyncio.get_running_loop"),
+        ("asyncio", "get_event_loop") => Some("external:asyncio.get_event_loop"),
+        ("asyncio", "set_event_loop") => Some("external:asyncio.set_event_loop"),
+        ("asyncio", "CancelledError") => Some("external:asyncio.CancelledError"),
+        ("asyncio", "set_event_loop_policy") => Some("external:asyncio.set_event_loop_policy"),
+        ("multiprocessing", "get_context") => Some("external:multiprocessing.get_context"),
+        ("multiprocessing", "Process") => Some("external:multiprocessing.Process"),
+        ("multiprocessing", "Pool") => Some("external:multiprocessing.Pool"),
+        ("signal", "signal") => Some("external:signal.signal"),
         _ => None,
     }
 }
@@ -501,6 +516,7 @@ pub(super) fn escape_task_handles(
     let Some(ownership) = env.ownership.as_mut() else {
         return;
     };
+    ownership.processes.escape(names, file, range, result);
     let groups = names
         .iter()
         .filter_map(|name| {
@@ -844,220 +860,6 @@ pub(super) fn qualified_function_key(name: &str, member: &str, env: &State) -> O
     Some(format!("{module}::{member}"))
 }
 
-pub(super) struct PreparedCall {
-    pub(super) expression: AstExpr,
-    temporaries: Vec<String>,
-    pub(super) invalid_receiver: bool,
-}
-
-impl PreparedCall {
-    pub(super) fn release(self, env: &mut State) {
-        fn clear(env: &mut State, names: &[String]) {
-            let ownership = env.ownership.as_mut().expect("prepared ownership call");
-            for name in names {
-                env.places.remove(name);
-                env.unknown_places.remove(name);
-                env.coroutine_aliases.remove(name);
-                env.unknown_coroutine_aliases.remove(name);
-                env.function_bindings.remove(name);
-                ownership.rebind(name);
-                ownership.transfer_arguments.remove(name);
-                ownership.argument_origins.remove(name);
-            }
-        }
-        clear(env, &self.temporaries);
-        for exit in &mut env.pending_raises {
-            clear(&mut exit.state, &self.temporaries);
-        }
-    }
-}
-
-pub(super) fn prepare_call(
-    original: &AstExpr,
-    env: &mut State,
-    file: &SourceFile,
-    contracts: &[Contract],
-    functions: &FunctionMap,
-    result: &mut Inspection,
-    depth: usize,
-) -> PreparedCall {
-    let mut prepared = PreparedCall {
-        expression: original.clone(),
-        temporaries: Vec::new(),
-        invalid_receiver: false,
-    };
-    let AstExprKind::Call {
-        function,
-        arguments,
-        keywords,
-    } = &mut prepared.expression.kind
-    else {
-        unreachable!("prepare_call requires a call");
-    };
-    if let AstExprKind::Attribute(receiver, method) = &mut function.kind {
-        if let Some(name) = expr_name(receiver).map(str::to_owned) {
-            report_possibly_unbound_alias(&name, receiver.range, env, file, result);
-            prepared.invalid_receiver = check_moved(&name, env, file, receiver.range, result);
-            let qualified = qualified_function_key(&name, method, env)
-                .filter(|key| functions.contains_key(key));
-            if let Some(qualified) = qualified {
-                let name = format!(":callable:{}", original.range.start);
-                env.function_bindings.insert(name.clone(), qualified);
-                prepared.temporaries.push(name.clone());
-                function.kind = AstExprKind::Name(name);
-            } else {
-                let known_receiver = env.places.contains_key(&name)
-                    || env.ownership.as_ref().is_some_and(|ownership| {
-                        ownership.group_names.contains_key(&name)
-                            || ownership.task_names.contains_key(&name)
-                            || ownership.executor_names.contains_key(&name)
-                    })
-                    || env
-                        .function_bindings
-                        .get(&name)
-                        .is_some_and(|binding| binding.starts_with("external:"));
-                if !known_receiver && (!arguments.is_empty() || !keywords.is_empty()) {
-                    queue_raise(env, function.range, None);
-                }
-                if !arguments.is_empty() || !keywords.is_empty() {
-                    snapshot_name(receiver, &name, env, file, &mut prepared.temporaries);
-                }
-            }
-        } else {
-            consume_expr(receiver, env, file, contracts, functions, result, depth + 1);
-            snapshot_result(receiver, env, file, &mut prepared.temporaries);
-        }
-    } else if let Some(name) = expr_name(function) {
-        prepared.invalid_receiver = check_moved(name, env, file, function.range, result);
-    } else {
-        consume_expr(function, env, file, contracts, functions, result, depth + 1);
-    }
-
-    for argument in arguments
-        .iter_mut()
-        .chain(keywords.iter_mut().map(|(_, value)| value))
-    {
-        if !env.alive {
-            break;
-        }
-        if let Some(name) = expr_name(argument).map(str::to_owned) {
-            report_possibly_unbound_alias(&name, argument.range, env, file, result);
-            check_moved(&name, env, file, argument.range, result);
-            snapshot_name(argument, &name, env, file, &mut prepared.temporaries);
-        } else if !matches!(
-            argument.kind,
-            AstExprKind::String(_)
-                | AstExprKind::Boolean(_)
-                | AstExprKind::NoneLiteral
-                | AstExprKind::Primitive
-        ) {
-            consume_expr(argument, env, file, contracts, functions, result, depth + 1);
-            snapshot_result(argument, env, file, &mut prepared.temporaries);
-        }
-    }
-    cap_handles(env, file, original.range, result);
-    prepared
-}
-
-fn argument_name(expression: &AstExpr, temporary_count: usize) -> String {
-    // The leading colon keeps these bindings disjoint from Python names.
-    format!(":argument:{}:{temporary_count}", expression.range.start)
-}
-
-fn snapshot_name(
-    expression: &mut AstExpr,
-    source: &str,
-    env: &mut State,
-    file: &SourceFile,
-    temporaries: &mut Vec<String>,
-) {
-    let ownership = env.ownership.as_mut().expect("ownership call");
-    let targets = env.places.get(source).cloned();
-    let unknown = env.unknown_places.contains(source);
-    let coroutine = env.coroutine_aliases.get(source).cloned();
-    let closure = ownership.closures.get(source).cloned();
-    let group = ownership.group_names.get(source).cloned();
-    let task = ownership.task_names.get(source).cloned();
-    let executor = ownership.executor_names.get(source).cloned();
-    // Captures restored by the coroutine executor already have value identity.
-    if ownership.transfer_arguments.contains(source)
-        || targets.is_none()
-            && !unknown
-            && coroutine.is_none()
-            && closure.is_none()
-            && group.is_none()
-            && task.is_none()
-            && executor.is_none()
-    {
-        return;
-    }
-    let temporary = argument_name(expression, temporaries.len());
-    if let Some(targets) = targets {
-        env.places.insert(temporary.clone(), targets);
-        ownership
-            .argument_origins
-            .insert(temporary.clone(), span(file, expression.range));
-    }
-    if unknown {
-        env.unknown_places.insert(temporary.clone());
-    }
-    if let Some(coroutine) = coroutine {
-        env.coroutine_aliases.insert(temporary.clone(), coroutine);
-    }
-    if let Some(closure) = closure {
-        ownership.closures.insert(temporary.clone(), closure);
-    }
-    if let Some(group) = group {
-        ownership.group_names.insert(temporary.clone(), group);
-    }
-    if let Some(task) = task {
-        ownership.task_names.insert(temporary.clone(), task);
-    }
-    if let Some(executor) = executor {
-        ownership.executor_names.insert(temporary.clone(), executor);
-    }
-    expression.kind = AstExprKind::Name(temporary.clone());
-    temporaries.push(temporary);
-}
-
-fn snapshot_result(
-    expression: &mut AstExpr,
-    env: &mut State,
-    file: &SourceFile,
-    temporaries: &mut Vec<String>,
-) {
-    let ownership = env.ownership.as_mut().expect("ownership call");
-    let temporary = argument_name(expression, temporaries.len());
-    let targets = env.pending_return_targets.take();
-    let coroutine = env.pending_coroutine_result.take();
-    let task = ownership.pending_task.take();
-    let moved = std::mem::take(&mut ownership.pending_move);
-    if let Some(targets) = targets {
-        env.places.insert(temporary.clone(), targets);
-        ownership
-            .argument_origins
-            .insert(temporary.clone(), span(file, expression.range));
-        if moved {
-            ownership.transfer_arguments.insert(temporary.clone());
-        }
-    } else if let Some(coroutine) = coroutine {
-        env.coroutine_aliases.insert(temporary.clone(), coroutine);
-    } else if let Some(task) = task {
-        ownership.task_names.insert(temporary.clone(), task);
-    } else {
-        // Keep unsupported argument shapes visible to the existing signature binder.
-        if matches!(
-            expression.kind,
-            AstExprKind::Call { .. } | AstExprKind::Await(_)
-        ) {
-            expression.kind = AstExprKind::Primitive;
-        }
-        return;
-    }
-    expression.kind = AstExprKind::Name(temporary.clone());
-    temporaries.push(temporary);
-}
-
 pub(super) fn move_call(
     expression: &AstExpr,
     env: &mut State,
@@ -1096,7 +898,8 @@ pub(super) fn move_call(
             );
         }
     } else {
-        let prepared = prepare_call(expression, env, file, contracts, functions, result, depth);
+        let prepared =
+            calls::prepare_call(expression, env, file, contracts, functions, result, depth);
         if env.alive {
             binding_failure(BindingFailure::Invalid, env, file, expression.range, result);
         }

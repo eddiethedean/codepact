@@ -12,18 +12,23 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path, PurePosixPath
-from typing import TypeAlias, cast
+from typing import cast
 
 from jsonschema import Draft202012Validator
 from jsonschema.protocols import Validator
-from referencing import Registry, Resource
-from referencing.jsonschema import Schema
 
-JsonValue: TypeAlias = (
-    None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
-)
-JsonObject = dict[str, JsonValue]
+if __package__:
+    from .report_schema import JsonObject, JsonValue, schema_registry
+else:
+    # Isolated Python omits the script directory from its import path.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        from report_schema import JsonObject, JsonValue, schema_registry
+    finally:
+        _ = sys.path.pop(0)
+
 SCHEMAS = Path(__file__).resolve().parents[1] / "docs/schemas"
 
 
@@ -50,14 +55,9 @@ def read_object(path: Path, maximum: int = 32 * 1024 * 1024) -> JsonObject:
 
 
 def validate_document(document: JsonObject, schema: str) -> None:
-    resources: list[tuple[str, Resource[Schema]]] = []
-    for path in sorted(SCHEMAS.glob("*.schema.json")):
-        contents = read_object(path)
-        identifier = contents.get("$id")
-        if not isinstance(identifier, str):
-            raise ValueError("schema has no identifier")
-        resources.append((identifier, Resource.from_contents(contents)))
-    registry = Registry[Schema]().with_resources(resources)
+    registry = schema_registry(
+        (str(path), read_object(path)) for path in sorted(SCHEMAS.glob("*.schema.json"))
+    )
     validator = cast(
         Validator,
         Draft202012Validator(read_object(SCHEMAS / schema), registry=registry),
