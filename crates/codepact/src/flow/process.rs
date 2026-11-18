@@ -362,16 +362,17 @@ fn spawn_keywords(value: &AstExpr, file: &SourceFile) -> Option<Vec<CallKeyword>
     let AstExprKind::Collection(values) = &value.kind else {
         return None;
     };
-    if values.len() % 2 != 0 {
+    let (pairs, remainder) = values.as_chunks::<2>();
+    if !remainder.is_empty() {
         return None;
     }
-    values
-        .chunks_exact(2)
-        .map(|pair| {
-            let AstExprKind::String(name) = &pair[0].kind else {
+    pairs
+        .iter()
+        .map(|[key, value]| {
+            let AstExprKind::String(name) = &key.kind else {
                 return None;
             };
-            Some((Some(name.clone()), pair[1].clone()))
+            Some((Some(name.clone()), value.clone()))
         })
         .collect()
 }
