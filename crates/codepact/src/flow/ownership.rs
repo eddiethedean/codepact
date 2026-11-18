@@ -29,6 +29,7 @@ pub(super) struct OwnershipState {
     pub(super) executor_names: BTreeMap<String, String>,
     pub(super) executors: BTreeMap<String, ExecutorState>,
     pub(super) processes: process::LocalProcesses,
+    pub(super) async_protocols: async_protocols::Protocols,
     pub(super) work: work::WorkState,
     pub(super) task_names: BTreeMap<String, (String, String)>,
     pub(super) pending_task: Option<(String, String)>,
@@ -69,6 +70,7 @@ impl OwnershipState {
     }
 
     pub(super) fn for_child(parent: &State, return_owned: bool) -> Option<Box<Self>> {
+        let parent_is_module_scope = parent.module_scope;
         let parent = parent.ownership.as_deref()?;
         let mut child = Self::new(parent.mode, return_owned)?;
         child.incompatible_task_factory = parent.incompatible_task_factory;
@@ -76,6 +78,10 @@ impl OwnershipState {
             child.active_timeouts = parent.active_timeouts.clone();
         }
         child.processes.custom_wait = parent.processes.custom_wait;
+        child
+            .processes
+            .inherit_entry(&parent.processes, parent_is_module_scope);
+        child.async_protocols.inherit_actor(&parent.async_protocols);
         child.invalidated_modules = parent.invalidated_modules.clone();
         Some(child)
     }
@@ -114,6 +120,7 @@ impl OwnershipState {
             .active_timeouts
             .retain(|id, immediate| right.active_timeouts.get(id) == Some(immediate));
         joined.processes.join(&right.processes);
+        joined.async_protocols.join(&right.async_protocols);
         joined
             .invalidated_modules
             .extend(right.invalidated_modules.iter().cloned());
@@ -163,6 +170,10 @@ impl OwnershipState {
                 left_group.active_possible |= right_group.active_possible;
                 for (id, task) in &mut left_group.tasks {
                     task.possible |= right_group.tasks.get(id).is_none_or(|other| other.possible);
+                    task.possible |= right_group
+                        .tasks
+                        .get(id)
+                        .is_some_and(|other| other.ordinal != task.ordinal);
                     task.cancel_requested |= right_group
                         .tasks
                         .get(id)
@@ -369,6 +380,19 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
             Some("external:concurrent.futures.ThreadPoolExecutor")
         }
         ("asyncio", "TaskGroup") => Some(TASK_GROUP),
+        ("asyncio" | "asyncio.queues", "Queue") => Some("external:asyncio.Queue"),
+        ("asyncio" | "asyncio.queues", "QueueEmpty") => Some("external:asyncio.QueueEmpty"),
+        ("asyncio" | "asyncio.queues", "QueueFull") => Some("external:asyncio.QueueFull"),
+        ("asyncio" | "asyncio.queues", "QueueShutDown") => Some("external:asyncio.QueueShutDown"),
+        ("queue" | "multiprocessing.queues", "Empty") => Some("external:queue.Empty"),
+        ("queue" | "multiprocessing.queues", "Full") => Some("external:queue.Full"),
+        ("asyncio" | "asyncio.locks", "Lock") => Some("external:asyncio.Lock"),
+        ("asyncio" | "asyncio.locks", "Semaphore") => Some("external:asyncio.Semaphore"),
+        ("asyncio" | "asyncio.locks", "BoundedSemaphore") => {
+            Some("external:asyncio.BoundedSemaphore")
+        }
+        ("asyncio" | "asyncio.locks", "Condition") => Some("external:asyncio.Condition"),
+        ("asyncio" | "asyncio.locks", "Event") => Some("external:asyncio.Event"),
         ("builtins", "open") => Some("external:builtins.open"),
         ("asyncio", "create_task") => Some("external:asyncio.create_task"),
         ("asyncio", "gather") => Some("external:asyncio.gather"),
@@ -393,6 +417,18 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
         ("multiprocessing", "get_context") => Some("external:multiprocessing.get_context"),
         ("multiprocessing", "Process") => Some("external:multiprocessing.Process"),
         ("multiprocessing", "Pool") => Some("external:multiprocessing.Pool"),
+        ("multiprocessing", "Queue") => Some("external:multiprocessing.Queue"),
+        ("multiprocessing", "JoinableQueue") => Some("external:multiprocessing.JoinableQueue"),
+        ("multiprocessing", "SimpleQueue") => Some("external:multiprocessing.SimpleQueue"),
+        ("multiprocessing", "Pipe") => Some("external:multiprocessing.Pipe"),
+        ("multiprocessing", "Lock") => Some("external:multiprocessing.Lock"),
+        ("multiprocessing", "RLock") => Some("external:multiprocessing.RLock"),
+        ("multiprocessing", "Semaphore") => Some("external:multiprocessing.Semaphore"),
+        ("multiprocessing", "BoundedSemaphore") => {
+            Some("external:multiprocessing.BoundedSemaphore")
+        }
+        ("multiprocessing", "Value") => Some("external:multiprocessing.Value"),
+        ("multiprocessing", "Array") => Some("external:multiprocessing.Array"),
         ("signal", "signal") => Some("external:signal.signal"),
         _ => None,
     }
@@ -1001,6 +1037,18 @@ pub(super) fn verify_call_binding(
     };
     let explicit = ownership.transfer_arguments.contains(name);
     let expected = definition.parameter_contracts.get(parameter);
+    if !explicit
+        && expected.is_none()
+        && targets.len() == 1
+        && !parent.unknown_places.contains(name)
+        && targets
+            .iter()
+            .all(|id| ownership.async_protocols.has_handle(id))
+    {
+        // This handle is governed by the asyncio protocol and its actor-specific
+        // duties. It has no resource ownership contract to transfer or borrow.
+        return false;
+    }
     let Some(contract) = expected.filter(|contract| contract.access == "owned") else {
         // A checked function without an Owned parameter may use the view,
         // but its effects cannot acquire the duty.

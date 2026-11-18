@@ -1603,6 +1603,107 @@ mod tests {
     }
 
     #[test]
+    fn phase10_queue_reuses_unaffected_flow_and_invalidates_on_profile_change() {
+        use crate::foundation::{FoundationInputs, RuntimeProfile};
+
+        let executions = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&executions);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                if format!("{database_key:?}").contains("check_flow_file_query") {
+                    observed.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            ..AnalysisSession::default()
+        };
+        let mut runtime = RuntimeProfile {
+            implementation: "cpython".into(),
+            python_version: "3.13.16".into(),
+            os: "linux".into(),
+            architecture: "x86_64".into(),
+            event_loop: Some("default".into()),
+            start_method: None,
+            spawn_main_script: None,
+            assume_standard_process_wait: false,
+        };
+        let options = crate::CheckOptions {
+            ownership: crate::Ownership::AdvancedAssumeDefaultTaskFactory,
+            ..Default::default()
+        };
+        let source = "from asyncio import Queue\nasync def consume():\n    queue = Queue()\n    queue.put_nowait(7)\n    queue.get_nowait()\n    queue.task_done()\n    await queue.join()\n";
+        let mut files = [
+            SourceFile::new("main.py", "main", source),
+            SourceFile::new("independent.py", "independent", "value = 1\n"),
+        ];
+        let check =
+            |session: &mut AnalysisSession, files: &[SourceFile], runtime: &RuntimeProfile| {
+                session.check_with_foundations(
+                    files,
+                    "3.13",
+                    options.clone(),
+                    FoundationInputs {
+                        runtime: Some(runtime.clone()),
+                        ..Default::default()
+                    },
+                )
+            };
+        let model_effect = |checked: &crate::CheckResult, effect: &str, applicable: bool| {
+            checked
+                .foundations
+                .as_ref()
+                .unwrap()
+                .model_uses
+                .iter()
+                .any(|site| {
+                    site.origin.starts_with("TPM-QUEUE-001@")
+                        && site.effect == effect
+                        && site.applicable == applicable
+                })
+        };
+        let take_executions = || executions.swap(0, Ordering::Relaxed);
+
+        let initial = check(&mut session, &files, &runtime);
+        assert!(model_effect(&initial, "task_done", true));
+        assert_eq!(take_executions(), 2);
+        assert_eq!(check(&mut session, &files, &runtime), initial);
+        assert_eq!(take_executions(), 0);
+
+        files[1].source = "value = 2\n".into();
+        let unrelated = check(&mut session, &files, &runtime);
+        assert!(model_effect(&unrelated, "task_done", true));
+        assert_eq!(take_executions(), 1);
+        assert_eq!(
+            unrelated,
+            check(&mut AnalysisSession::default(), &files, &runtime)
+        );
+
+        files[0].source = source.replace("    queue.task_done()\n", "");
+        let changed = check(&mut session, &files, &runtime);
+        assert!(!model_effect(&changed, "task_done", true));
+        assert_eq!(take_executions(), 1);
+        assert_eq!(
+            changed,
+            check(&mut AnalysisSession::default(), &files, &runtime)
+        );
+
+        runtime.event_loop = Some("custom".into());
+        let invalidated = check(&mut session, &files, &runtime);
+        assert!(model_effect(&invalidated, "construct", false));
+        assert!(take_executions() > 0);
+        assert_eq!(
+            invalidated,
+            check(&mut AnalysisSession::default(), &files, &runtime)
+        );
+
+        runtime.event_loop = Some("default".into());
+        assert_eq!(check(&mut session, &files, &runtime), changed);
+        assert_eq!(check(&mut session, &files, &runtime), changed);
+    }
+
+    #[test]
     fn unchanged_session_inspection_reuses_the_project_query() {
         let executions = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&executions);

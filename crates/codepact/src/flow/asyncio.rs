@@ -122,6 +122,7 @@ pub(super) fn call(
                         id.clone(),
                         ScheduledTask {
                             site: span(file, expression.range),
+                            ordinal: 0,
                             possible: false,
                             cancel_requested: false,
                             may_have_started: false,
@@ -560,6 +561,13 @@ pub(super) fn deliver_task(
     let mut worker =
         tasks::execute_scheduled_coroutine(&id, &record, env, file, contracts, functions, result);
     let exits = take_pending_raises(&mut worker);
+    let worker_paths: Vec<_> = worker
+        .alive
+        .then_some(&worker)
+        .into_iter()
+        .chain(exits.iter().map(|exit| &exit.state))
+        .collect();
+    async_protocols::report_worker(&worker_paths, &id, file, range, result);
     let previous = env.clone();
     let mut normal = Vec::new();
     let mut failures = Vec::new();

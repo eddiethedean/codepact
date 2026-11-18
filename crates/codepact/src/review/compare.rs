@@ -1,4 +1,6 @@
-use super::{ReviewFinding, ReviewOperation, ReviewSnapshot, REVIEW_SCHEMA_VERSION};
+use super::{
+    ReviewFinding, ReviewOperation, ReviewProtocolContract, ReviewSnapshot, REVIEW_SCHEMA_VERSION,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -74,6 +76,75 @@ fn reason(
         .entry(reason)
         .and_modify(|current| *current = (*current).max(level))
         .or_insert(level);
+}
+
+fn protocol_index(
+    contracts: &[ReviewProtocolContract],
+) -> BTreeMap<&str, Vec<&ReviewProtocolContract>> {
+    let mut index = BTreeMap::<_, Vec<_>>::new();
+    for contract in contracts {
+        index
+            .entry(contract.identity.as_str())
+            .or_default()
+            .push(contract);
+    }
+    index
+}
+
+fn compare_protocol_contracts(
+    before: &[ReviewProtocolContract],
+    after: &[ReviewProtocolContract],
+    reasons: &mut BTreeMap<ReviewReason, Blocking>,
+) -> bool {
+    let before = protocol_index(before);
+    let after = protocol_index(after);
+    let keys = before
+        .keys()
+        .chain(after.keys())
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let mut changed = false;
+    for key in keys {
+        let previous = before.get(key).map(Vec::as_slice).unwrap_or(&[]);
+        let current = after.get(key).map(Vec::as_slice).unwrap_or(&[]);
+        let site = previous
+            .first()
+            .or_else(|| current.first())
+            .expect("indexed site");
+        let location = format!("{}:{}: {}", site.origin.file, site.origin.line, site.family);
+        match (previous, current) {
+            ([old], [new]) if old.contract == new.contract => continue,
+            ([old], [new]) => reason(
+                reasons,
+                Blocking::Review,
+                "contracts",
+                format!(
+                    "{location} changed from {:?} to {:?}",
+                    old.contract, new.contract
+                ),
+            ),
+            ([old], []) => reason(
+                reasons,
+                Blocking::Review,
+                "contracts",
+                format!("{location} removed protocol contract {:?}", old.contract),
+            ),
+            ([], [new]) => reason(
+                reasons,
+                Blocking::Review,
+                "contracts",
+                format!("{location} added protocol contract {:?}", new.contract),
+            ),
+            _ => reason(
+                reasons,
+                Blocking::Incomplete,
+                "contracts",
+                format!("{location} has ambiguous protocol contract correspondence"),
+            ),
+        }
+        changed = true;
+    }
+    changed
 }
 
 fn complete(snapshot: &ReviewSnapshot) -> bool {
@@ -345,6 +416,13 @@ pub fn compare(
             "contracts",
             "normalized source contracts changed",
         );
+    }
+    if compare_protocol_contracts(
+        &before.protocol_contracts,
+        &after.protocol_contracts,
+        &mut reasons,
+    ) {
+        changed_sections.insert("contracts".into());
     }
     let assumptions_changed = before.models != after.models
         || match (&before.foundations, &after.foundations) {

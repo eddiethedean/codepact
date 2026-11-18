@@ -1,5 +1,24 @@
 # Upgrade CodePact
 
+(upgrade-010)=
+## Upgrade to 0.10.0
+
+Use matching 0.10.0 helper and CLI versions when qualifying the candidate.
+Regenerate baselines and capture both review revisions with the same checker.
+
+- Enable the reviewed runtime profile for queues and synchronization. Declare
+  `spawn-main-script` relative to the analysis root to select direct-script
+  spawn entry and worker effects.
+- Use `async-guards` to select an exact asyncio lock for a supported resource
+  method. Effective settings include those declarations.
+- Rust callers building `RuntimeProfile` and `FoundationInputs` as struct
+  literals can set `spawn_main_script` to `None` and `async_guards` to an
+  empty vector for requests that use earlier profiles.
+- Review readers can use the optional `protocol_contracts` array in snapshot
+  schema 1 to inspect matched operation keys and the applicable protocol facts.
+
+[Configure the new profiles](reviewed-contracts.md#queues-ipc-and-guards)
+
 (upgrade-09)=
 ## Upgrade to 0.9.0
 

@@ -21,8 +21,8 @@ use config::{glob_match, read_configuration, MAX_CONFIG_BYTES};
 pub use config::{
     included, reject_symlink_components, resolve_config, DeclarationKind, DeclarationMode,
     DeclarationRequirement, DependenciesConfig, EffectiveConfig, Overrides, ProjectConfig,
-    ADVANCED_RULES, DECLARATION_RULES, DEFAULT_RULES, FINITE_MATCH_RULES, OUTCOME_RULES,
-    OWNERSHIP_RULES,
+    ADVANCED_RULES, ASYNC_PROTOCOL_RULES, DECLARATION_RULES, DEFAULT_RULES, FINITE_MATCH_RULES,
+    OUTCOME_RULES, OWNERSHIP_RULES, PROCESS_PROTOCOL_RULES,
 };
 #[cfg(test)]
 use render::serialize_pretty_limited;

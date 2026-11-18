@@ -29,7 +29,7 @@ pub(crate) use runtime::stdlib_catalog;
 pub use runtime::{RuntimeProfile, CATALOG_REVISION};
 
 pub const CHECK_SCHEMA_VERSION: u8 = 2;
-pub const MODEL_CATALOG_VERSION: u8 = 5;
+pub const MODEL_CATALOG_VERSION: u8 = 6;
 
 /// Absolute imports available to the bounded source analysis.
 pub fn static_imports(file: &crate::SourceFile, target: &str) -> Vec<String> {
@@ -45,8 +45,53 @@ pub struct FoundationInputs {
     pub runtime: Option<RuntimeProfile>,
     pub providers: Vec<ProviderPackage>,
     pub project_models: Vec<ProjectResourceModel>,
+    pub async_guards: Vec<AsyncGuardModel>,
     pub uv_lock: Option<String>,
     pub provider_issues: Vec<ProviderIssue>,
+}
+
+/// A local asynchronous resource method that requires an exact asyncio lock.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct AsyncGuardModel {
+    pub module: String,
+    pub coroutine: String,
+    pub resource: String,
+    pub lock: String,
+    pub method: String,
+}
+
+pub fn validate_async_guards(models: &[AsyncGuardModel], target: &str) -> Result<(), String> {
+    let mut subjects = BTreeSet::new();
+    for model in models {
+        if !model
+            .module
+            .split('.')
+            .all(|part| crate::is_python_identifier(part, target))
+            || [
+                &model.coroutine,
+                &model.resource,
+                &model.lock,
+                &model.method,
+            ]
+            .into_iter()
+            .any(|part| !crate::is_python_identifier(part, target))
+            || model.resource == model.lock
+        {
+            return Err(
+                "async-guards requires a dotted module and distinct valid local bindings".into(),
+            );
+        }
+        if !subjects.insert((
+            &model.module,
+            &model.coroutine,
+            &model.resource,
+            &model.method,
+        )) {
+            return Err("multiple async-guards entries select the same resource method".into());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

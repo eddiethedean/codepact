@@ -101,6 +101,7 @@ pub(super) struct State {
     pub(super) module_scope: bool,
     pub(super) async_context: bool,
     pub(super) scope_module: String,
+    pub(super) async_guard_models: Vec<crate::foundation::AsyncGuardModel>,
     pub(super) target_python_version: String,
     pub(super) models: Arc<FlowModelCatalog>,
     pub(super) coroutines: BTreeMap<String, CoroutineRecord>,

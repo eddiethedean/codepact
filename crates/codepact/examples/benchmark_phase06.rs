@@ -108,6 +108,7 @@ fn measure(workload: &str, size: usize) {
         runtime_profile: None,
         experimental_foundations: false,
         project_contracts: Vec::new(),
+        async_guards: Vec::new(),
         uv_lock: None,
         severity: Default::default(),
         settings_origins: Default::default(),

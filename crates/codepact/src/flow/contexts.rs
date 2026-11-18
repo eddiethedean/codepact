@@ -1,6 +1,6 @@
 //! Entry, exit partitions, and cleanup for context managers.
 use super::{
-    asyncio, boundary, call_parts, consume_expr, execute,
+    async_protocols, asyncio, boundary, call_parts, consume_expr, execute,
     execution::{execute_non_if_statement, push_exit},
     expr_name, join_states, library, merge, ownership, process, queue_raise, runtime,
     synthetic_name, take_flow_step, take_pending_raises, tasks, weaken, AstExpr, AstExprKind,
@@ -64,6 +64,8 @@ enum ContextCleanup {
     Pool(String),
     Executor(String),
     Timeout(String),
+    AsyncProtocol(String),
+    ProcessGuard(String),
     Library {
         receiver: String,
         context: library::Context,
@@ -120,6 +122,12 @@ impl ModeledCleanup {
                 super::executor::leave_context(receiver, range, env, file, functions, result)
             }
             ContextCleanup::Timeout(id) => asyncio::leave_timeout(id, env, range, incoming),
+            ContextCleanup::AsyncProtocol(id) => {
+                async_protocols::leave(id, env, file, range, result)
+            }
+            ContextCleanup::ProcessGuard(receiver) => {
+                process::leave_guard(receiver, env, file, range, result)
+            }
             ContextCleanup::Library { receiver, context } => {
                 context.exit(receiver, incoming, env, file, range, result);
             }
@@ -465,7 +473,108 @@ pub(super) fn execute_with(
                 continue;
             }
         }
-        if !asynchronous {
+        if asynchronous {
+            let inline = async_protocols::is_constructor(&item.context, env).then(|| {
+                let receiver = synthetic_name(env, "async-guard", item.range, index);
+                execute_non_if_statement(
+                    &FlowStatement::Assign {
+                        name: receiver.clone(),
+                        annotation: None,
+                        value: item.context.clone(),
+                        range: item.context.range,
+                    },
+                    env,
+                    file,
+                    contracts,
+                    functions,
+                    result,
+                );
+                AstExpr {
+                    range: item.context.range,
+                    kind: AstExprKind::Name(receiver),
+                }
+            });
+            if !env.alive {
+                entry_raises.extend(
+                    take_pending_raises(env)
+                        .into_iter()
+                        .map(|exit| (exit, cleanups.len())),
+                );
+                break;
+            }
+            let manager = inline.as_ref().unwrap_or(&item.context);
+            if let Some(id) = async_protocols::enter(manager, true, env, file, result) {
+                entry_raises.extend(
+                    take_pending_raises(env)
+                        .into_iter()
+                        .map(|exit| (exit, cleanups.len())),
+                );
+                if env.alive {
+                    if let Some(target) = &item.target {
+                        env.bind_runtime_handle(target);
+                    }
+                    if item.unsupported_target {
+                        boundary(
+                            result,
+                            file,
+                            item.range,
+                            "async guard context target is outside the local subset",
+                        );
+                    }
+                    cleanups.push(ContextCleanupFrame::modeled(
+                        ContextCleanup::AsyncProtocol(id),
+                        item.range,
+                    ));
+                }
+                continue;
+            }
+            if inline.is_some() {
+                boundary(
+                    result,
+                    file,
+                    item.range,
+                    "the asyncio context entry or cleanup effect is unresolved",
+                );
+                entry_raises.extend(
+                    take_pending_raises(env)
+                        .into_iter()
+                        .map(|exit| (exit, cleanups.len())),
+                );
+                cleanups.push(ContextCleanupFrame::Unknown {
+                    asynchronous,
+                    range: item.range,
+                });
+                continue;
+            }
+        } else {
+            let receiver = synthetic_name(env, "process-guard", item.range, index);
+            if let Some(active) =
+                process::enter_guard(&receiver, &item.context, env, file, item.range, result)
+            {
+                entry_raises.extend(
+                    take_pending_raises(env)
+                        .into_iter()
+                        .map(|exit| (exit, cleanups.len())),
+                );
+                if active {
+                    if let Some(target) = &item.target {
+                        env.bind_runtime_handle(target);
+                    }
+                    if item.unsupported_target {
+                        boundary(
+                            result,
+                            file,
+                            item.range,
+                            "process guard context target is outside the local subset",
+                        );
+                    }
+                    cleanups.push(ContextCleanupFrame::modeled(
+                        ContextCleanup::ProcessGuard(receiver),
+                        item.range,
+                    ));
+                }
+                continue;
+            }
             let executor = synthetic_name(env, "executor-context", item.range, index);
             if runtime::runtime_profile(env)
                 .is_ok_and(|profile| profile.applicability(&env.target_python_version).is_ok())

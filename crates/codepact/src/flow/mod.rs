@@ -12,12 +12,14 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+mod async_protocols;
 mod asyncio;
 mod calls;
 mod contexts;
 mod execution;
 mod executor;
 mod expressions;
+mod guarded_access;
 mod library;
 pub(crate) mod outcomes;
 mod ownership;
@@ -701,6 +703,12 @@ fn call_may_return_resource(
     {
         return false;
     }
+    if async_protocols::is_constructor(expression, env) {
+        return true;
+    }
+    if async_protocols::is_method(expression, env) {
+        return false;
+    }
     if let Some((receiver, method, _, _)) = called_method(expression) {
         return expr_name(receiver)
             .and_then(|name| env.places.get(name))
@@ -863,11 +871,30 @@ fn synthetic_name(state: &State, role: &str, range: SourceRange, index: usize) -
     candidate
 }
 
+fn protocol_guard_identity(file: &SourceFile, origin: &Span) -> String {
+    if origin.file != file.path {
+        return format!(
+            "{}:{}:{}:{}:{}",
+            origin.file, origin.line, origin.column, origin.end_line, origin.end_column
+        );
+    }
+    crate::adoption::review_site_anchor(
+        &file.source,
+        origin,
+        &mut crate::adoption::ReviewAnchorCache::default(),
+    )
+}
+
 fn collect_assigned_names(statements: &[FlowStatement], names: &mut BTreeSet<String>) {
     for statement in statements {
         match statement {
             FlowStatement::Assign { name, .. } | FlowStatement::EscapingAssign { name, .. } => {
                 names.insert(name.clone());
+            }
+            FlowStatement::AugmentedStore { target, .. } => {
+                if let Some(name) = expr_name(target) {
+                    names.insert(name.to_owned());
+                }
             }
             FlowStatement::If {
                 body, alternate, ..
@@ -960,6 +987,11 @@ fn collect_pattern_names(pattern: &crate::frontend::AstPattern, names: &mut BTre
 
 fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<String>) {
     child.protocol_machines = parent.protocol_machines.clone();
+    if let (Some(child), Some(parent)) = (child.ownership.as_mut(), parent.ownership.as_ref()) {
+        child
+            .async_protocols
+            .copy_from(&parent.async_protocols, objects);
+    }
     for object in objects {
         if let (Some(child), Some(parent)) = (child.ownership.as_mut(), parent.ownership.as_ref()) {
             child.copy_transfers(parent, object);
@@ -1422,6 +1454,9 @@ fn apply_call_object_effects(
 fn apply_call_effects(parent: &mut State, child: &State, extra_objects: &BTreeSet<String>) {
     if let (Some(parent), Some(child)) = (parent.ownership.as_mut(), child.ownership.as_ref()) {
         parent.apply_runtime_effects(child);
+        parent
+            .async_protocols
+            .apply(&child.async_protocols, extra_objects);
     }
     // A call child contains the caller-reachable arguments and escaped objects,
     // plus resources created locally by that function. Transfer only keys that
@@ -1474,6 +1509,7 @@ fn statement_range(statement: &FlowStatement) -> SourceRange {
         | FlowStatement::Continue { range }
         | FlowStatement::BindFunction { range, .. }
         | FlowStatement::Store { range, .. }
+        | FlowStatement::AugmentedStore { range, .. }
         | FlowStatement::ClosureDefinition { range, .. }
         | FlowStatement::DeleteLocal { range, .. }
         | FlowStatement::Unsupported { range } => *range,
@@ -2218,6 +2254,14 @@ pub(crate) fn check_file_bodies(
         else {
             continue;
         };
+        if let Some(foundations) = &models.foundations {
+            guarded_access::validate_coroutines(
+                &foundations.async_guards,
+                declarations,
+                file,
+                result,
+            );
+        }
         let contracts = contracts_for_module(
             file,
             files,
@@ -2299,6 +2343,8 @@ pub(crate) fn check_file_bodies(
                 .extend(parameters.iter().map(|parameter| parameter.name.clone()));
             env.definitely_bound_names
                 .extend(parameters.iter().map(|parameter| parameter.name.clone()));
+            env.async_guard_models =
+                guarded_access::prepare(&env, name, body, file, *range, result);
             env.shadowed_functions.extend(assigned_names(body));
             env.shadowed_classes
                 .extend(parameters.iter().map(|parameter| parameter.name.clone()));
@@ -2376,6 +2422,7 @@ pub(crate) fn check_file_bodies(
                 &outcomes::Values::new(),
             );
             work::report_scope(&env, &flow_outcomes, file, *range, result);
+            async_protocols::report_scope(&env, &flow_outcomes, file, *range, result);
             let suggest_owned =
                 suggests_owned_handoff(&flow_outcomes.returns, env.alive, return_access);
             let exits = flow_outcomes.all_abrupt().cloned().collect::<Vec<_>>();
@@ -2524,6 +2571,7 @@ pub(crate) fn check_file_bodies(
                     &self::outcomes::Values::new(),
                 );
                 work::report_scope(&env, &outcomes, file, method.range, result);
+                async_protocols::report_scope(&env, &outcomes, file, method.range, result);
                 let suggest_owned = suggests_owned_handoff(&outcomes.returns, env.alive, None);
                 let exits = outcomes.all_abrupt().cloned().collect::<Vec<_>>();
                 for exit in grouped_exits(&exits) {
@@ -2677,6 +2725,14 @@ pub(crate) fn check_file_bodies(
             report_module_scope_lifetimes(result, &module, &outcomes);
             report_unawaited_coroutines(&module, file, result);
             if let Some(last) = summary.module_body.last() {
+                let range = statement_range(last);
+                async_protocols::report_scope(&module, &outcomes, file, range, result);
+                if module.alive {
+                    process::report_protocol_scope(&module, file, range, result);
+                }
+                for exit in outcomes.all_abrupt() {
+                    process::report_protocol_scope(&exit.state, file, exit.range, result);
+                }
                 self::outcomes::report_scope(
                     &module,
                     &outcomes,

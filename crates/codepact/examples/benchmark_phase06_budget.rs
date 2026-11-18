@@ -48,6 +48,7 @@ fn config() -> EffectiveConfig {
         severity: Default::default(),
         settings_origins: Default::default(),
         declaration_policy: Vec::new(),
+        async_guards: Vec::new(),
     }
 }
 

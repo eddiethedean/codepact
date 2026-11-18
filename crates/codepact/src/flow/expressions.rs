@@ -228,7 +228,6 @@ pub(super) fn consume_expr_impl(
         return;
     }
     if let AstExprKind::Await(awaited) = &expr.kind {
-        tasks::allow_tasks_to_start(env);
         if env
             .ownership
             .as_ref()
@@ -250,6 +249,12 @@ pub(super) fn consume_expr_impl(
                 }
             }
         }
+        if async_protocols::await_call(
+            awaited, expr.range, env, file, contracts, functions, result, depth,
+        ) {
+            return;
+        }
+        tasks::allow_tasks_to_start(env);
         if asyncio::await_combination(
             awaited, expr.range, None, env, file, contracts, functions, result,
         ) {

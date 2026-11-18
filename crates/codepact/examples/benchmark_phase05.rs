@@ -77,6 +77,7 @@ fn measure(workload: &str, size: usize, mode: Ownership) {
         severity: Default::default(),
         settings_origins: Default::default(),
         declaration_policy: Vec::new(),
+        async_guards: Vec::new(),
     };
     let mut cold_ms = Vec::new();
     let mut warm_ms = Vec::new();

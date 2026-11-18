@@ -328,6 +328,17 @@ class ModelConformanceRunnerTests(unittest.TestCase):
                     ("TPM-ASYNCIO-001", "TPM-POOL-001", "TPM-EXECUTOR-001"),
                     ("3.13.16",),
                 ),
+                "phase10-linux": (
+                    (
+                        "TPM-QUEUE-001",
+                        "TPM-SYNC-001",
+                        "TPM-IPC-001",
+                        "TPM-IPC-002",
+                        "TPM-SYNC-002",
+                        "TPM-SPAWN-001",
+                    ),
+                    ("3.13.16",),
+                ),
             },
         )
 

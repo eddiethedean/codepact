@@ -1,5 +1,20 @@
 # Release notes
 
+## 0.10.0 candidate — queues, IPC and synchronization
+
+- Reviewed asyncio models track queue admission, receipt, accounting and
+  shutdown. The synchronization checks cover local locks, semaphore permits,
+  condition waits, event signals, and configured guarded resource methods.
+- Reviewed multiprocessing models track Queue, JoinableQueue, SimpleQueue and
+  Pipe operations, local feeder and endpoint cleanup, and selected guards for
+  compound Value and Array updates. A declared direct script selects the new
+  explicit-spawn worker entry checks.
+- Source review reports changed protocol requirements at matched sites,
+  including guard changes between two clean checks.
+
+[Configure the queue and guard models](reviewed-contracts.md#queues-ipc-and-guards) ·
+{ref}`Upgrade to 0.10.0 <upgrade-010>`
+
 ## 0.9.0 — persistent obligations and change review
 
 - `MustHandle` tracks explicit acknowledgment after assignment, aliases and

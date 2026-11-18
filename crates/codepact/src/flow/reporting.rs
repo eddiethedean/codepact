@@ -131,6 +131,7 @@ pub(super) fn report_cleanup_exit(
     classes_with_unresolved_bases: &BTreeSet<String>,
 ) {
     report_unawaited_coroutines(&exit.state, file, result);
+    process::report_protocol_scope(&exit.state, file, exit.range, result);
     let exit_span = span(file, exit.range);
     let mut returned_owned = BTreeSet::new();
     let mut escaped_return = BTreeSet::new();

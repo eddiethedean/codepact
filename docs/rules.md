@@ -97,6 +97,20 @@ Handle the outcome with a supported variant match, forward it through a marked
 return, or record a deliberate discard. The informational TP5005 finding keeps
 the reason visible during review. [Example](contracts.md#acknowledge-a-persistent-outcome)
 
+## Queue, IPC and synchronization rules
+
+These experimental rules apply under the selected runtime profile.
+
+| Code | Protocol |
+| --- | --- |
+| `TP7001` | Asyncio queue accounting and shutdown |
+| `TP7002` | Asyncio guard, semaphore, condition and event operations |
+| `TP7003` | Multiprocessing queue and connection operations, accounting and cleanup |
+| `TP7004` | Multiprocessing acquisition, release and guarded compound updates |
+| `TP7005` | Explicit-spawn entry and worker argument checks |
+
+[Model selection and examples](reviewed-contracts.md#queues-ipc-and-guards)
+
 ## Informational review hints
 
 TP6001 suggests a `@resource(closed_by="close")` declaration for a local

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codepact"
-version = "0.9.0"
+version = "0.10.0"
 description = "Lightweight Python contract annotations for CodePact"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,7 +23,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-cli = ["codepact-cli==0.9.0"]
+cli = ["codepact-cli==0.10.0"]
 
 [dependency-groups]
 dev = [

@@ -224,6 +224,7 @@ fn collect_scoped_imports(
             | FlowStatement::Raise { .. }
             | FlowStatement::Break { .. }
             | FlowStatement::Continue { .. }
+            | FlowStatement::AugmentedStore { .. }
             | FlowStatement::Unsupported { .. } => {}
             FlowStatement::Store { target, .. } => {
                 if let Some(AstExpr {

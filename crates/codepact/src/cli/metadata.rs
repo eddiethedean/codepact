@@ -39,11 +39,15 @@ pub(super) fn settings_json(c: &EffectiveConfig) -> Result<String, String> {
     if !c.declaration_policy.is_empty() {
         settings["declaration_policy"] = serde_json::to_value(&c.declaration_policy).unwrap();
     }
+    if !c.async_guards.is_empty() {
+        settings["async_guards"] = serde_json::to_value(&c.async_guards).unwrap();
+    }
     if c.experimental_foundations
         || c.runtime_profile.is_some()
         || !c.project_contracts.is_empty()
         || c.uv_lock.is_some()
         || !c.declaration_policy.is_empty()
+        || !c.async_guards.is_empty()
     {
         settings["settings_schema_version"] = serde_json::Value::from(3);
     }
@@ -74,11 +78,16 @@ pub(super) fn capabilities_json() -> String {
             {"code":"TP4101","semantic_version":1,"tier":"experimental","enabled_by_default":false,"explanation_id":"TP4101.R001"},
             {"code":"TP4102","semantic_version":1,"tier":"experimental","enabled_by_default":false,"explanation_id":"TP4102.R001"},
             {"code":"TP4103","semantic_version":1,"tier":"experimental","enabled_by_default":false,"explanation_id":"TP4103.R001"},
+            {"code":"TP7001","semantic_version":1,"tier":"experimental","enabled_by_default":false,"explanation_id":"TP7001.R001"},
+            {"code":"TP7002","semantic_version":1,"tier":"experimental","enabled_by_default":false,"explanation_id":"TP7002.R001"},
+            {"code":"TP7003","semantic_version":1,"tier":"experimental","enabled_by_default":false,"explanation_id":"TP7003.R001"},
+            {"code":"TP7004","semantic_version":1,"tier":"experimental","enabled_by_default":false,"explanation_id":"TP7004.R001"},
+            {"code":"TP7005","semantic_version":1,"tier":"experimental","enabled_by_default":false,"explanation_id":"TP7005.R001"},
             {"code":"TP9001","semantic_version":1,"tier":"mandatory","enabled_by_default":true,"explanation_id":"TP9001.R001"},
             {"code":"TP9002","semantic_version":1,"tier":"mandatory","enabled_by_default":true,"explanation_id":"TP9002.R001"}
         ],
         "formats": ["text", "json", "concise"],
-        "settings": ["root", "python-version", "include", "exclude", "enabled-rules", "mode", "fail-on", "baseline", "severity", "experimental-ownership", "experimental-advanced-contracts", "experimental-finite-matches", "dependency-roots", "required-providers", "assume-default-task-factory", "experimental-foundations", "runtime-profile", "project-contracts", "uv-lock", "declaration-policy"],
+        "settings": ["root", "python-version", "include", "exclude", "enabled-rules", "mode", "fail-on", "baseline", "severity", "experimental-ownership", "experimental-advanced-contracts", "experimental-finite-matches", "dependency-roots", "required-providers", "assume-default-task-factory", "experimental-foundations", "runtime-profile", "project-contracts", "uv-lock", "declaration-policy", "async-guards"],
         "limits": {
             "config_bytes": 65536,
             "baseline_bytes": 16777216,
@@ -140,6 +149,11 @@ pub(super) fn explanation_json(rule: &str) -> Option<String> {
             "TP4103" => ("Missing immediate-use declaration", "A selected synchronous API requires an immediate-use declaration.", "Mark the selected return when its result requires immediate use.", "The project opts into must-use policy for the selected signature.", "Persistent outcome acknowledgment has an independent contract.", "@must_use\ndef fetch(): ...", "def fetch(): ...", "a decorator obscures the selected function", "Declare @must_use or annotate the return with MustUse."),
             "TP9001" => ("Analysis boundary", "A construct or effect is outside the qualified analysis subset.", "Review the unsupported construct; a clean supported-subset result is not a general safety proof.", "The source is valid enough for the frontend to identify the construct.", "This is not a confirmed violation; boundary reporting never proves safety or execution behavior.", "simple local open/use/close", "dynamic dispatch treated as a proven close", "task ownership or framework behavior outside the model", "Resolve the boundary or record it as a limitation; do not change policy to call it repaired."),
             "TP9002" => ("Analysis cancelled", "The requested analysis did not complete.", "Retry the check; do not treat this result as a clean report.", "The analyzer request was cancelled before a completed report was produced.", "Cancellation of analyzed Python code is distinct from cancellation of the analyzer request.", "completed check", "partial report treated as complete", "the caller cancels while work remains", "Retry and verify a completed report with the current snapshot."),
+            "TP7001" => ("Asyncio queue protocol", "A queue operation violates the local accounting or shutdown protocol.", "Pair each successful receive with its own task_done on every path.", "The queue and operation resolve to the selected asyncio model.", "Queue accounting, delivery and completion have independent effects.", "item = await queue.get()\ntry: use(item)\nfinally: queue.task_done()", "item = await queue.get()\nuse(item)", "the queue or consumer is unresolved", "Review cancellation and account for each received item."),
+            "TP7002" => ("Asyncio synchronization protocol", "A guard, permit or signal protocol is violated.", "Acquire the required lock before accessing the guarded operation.", "The guard belongs to the selected asyncio model.", "The check covers the modeled scope and acquisition identity.", "async with lock: resource.update()", "resource.update()", "the guard or effect is unresolved", "Use the exact lock with a supported acquisition and release pair."),
+            "TP7003" => ("Multiprocessing IPC protocol", "A queue or connection protocol is violated.", "Check the endpoint lifecycle, accounting and feeder cleanup.", "The primitive resolves to the selected multiprocessing model.", "Admission, receipt, accounting and cleanup have independent evidence.", "queue.close()\nqueue.join_thread()", "queue.join_thread()", "the peer copy or delivery is unresolved", "Follow the cleanup order for the specific primitive."),
+            "TP7004" => ("Multiprocessing synchronization protocol", "An acquisition, release or shared update violates the selected process protocol.", "Hold the exact recursive wrapper lock for the shared update.", "The primitive resolves to the reviewed synchronization model.", "Synchronized properties guard their individual accesses.", "with value.get_lock(): value.value += 1", "value.value += 1", "the wrapper or guard is unresolved", "Acquire the modeled guard and unwind each established acquisition."),
+            "TP7005" => ("Multiprocessing spawn entry", "A direct-script launch violates the reviewed spawn entry protocol.", "Use a main guard, an importable top-level worker and applicable arguments.", "The direct script and explicit spawn context match the analyzed runtime.", "Start and child bootstrap are separate effects.", "if __name__ == '__main__': process.start()", "process.start()", "the entry mode or worker is unresolved", "Review the launch evidence and worker arguments."),
             _ => return None,
         };
     let id = format!("{rule}.R001");

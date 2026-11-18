@@ -168,6 +168,50 @@ exception, the result still needs to be observed. A delivered `MustHandle`
 outcome has a separate acknowledgment duty.
 [Rule catalog](rules.md) · [Persistent outcomes](contracts.md#acknowledge-a-persistent-outcome)
 
+## Queues, IPC and guards
+
+The 0.10 runtime models use the CPython 3.13.16 Linux x86_64 profile above.
+Enable experimental ownership and the default task factory for asyncio.
+Enable experimental advanced contracts for the multiprocessing models.
+Declare the exact direct-entry script for new worker effects with
+`spawn-main-script = "main.py"` in `[tool.codepact.runtime-profile]`. The
+path is relative to the analysis root. Launch that file with Python and use
+an explicit `multiprocessing.get_context("spawn")` with a main guard.
+
+Asyncio queue checks distinguish `put` admission, `get` receipt and the
+`task_done` duty. Use `finally` after a successful receive when accounting
+must also run on a cancelled exit. A join covers the admissions up to the
+accounting event that releases its waiter. Immediate shutdown can abandon
+buffered entries. Work result observation remains a separate check.
+
+Multiprocessing checks distinguish feeder completion from delivery and
+receipt. Queue and JoinableQueue have a feeder after the first accepted put.
+SimpleQueue and Pipe serialize in the calling process. Shared Value and Array
+compound updates require the exact recursive wrapper lock for the full
+read, modify and write.
+
+A project guard identifies two uniquely allocated local bindings in a
+top-level coroutine and a resolved method on the resource. For example, if
+`main.update` allocates `counter` and `lock`, this configuration requires
+the exact `asyncio.Lock` at `counter.increment()` and its resolved aliases.
+For a coroutine method, the guard check runs on a supported await.
+
+```toml
+[[tool.codepact.async-guards]]
+module = "main"
+coroutine = "update"
+resource = "counter"
+lock = "lock"
+method = "increment"
+```
+
+Reports retain incomplete coverage for unresolved identities, escaped
+handles, unsupported launch modes, and effects outside the selected profile.
+The checker can establish protocol effects at a resolved worker invocation.
+Independent analysis of a worker declaration can still report unbound
+parameters as a coverage boundary.
+[Protocol diagnostics](rules.md#queue-ipc-and-synchronization-rules)
+
 ## Reviewed HTTP and SQL profiles
 
 The profiles target CPython 3.13.16 on Linux x86-64 with Python 3.13 source.

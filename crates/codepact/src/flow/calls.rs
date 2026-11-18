@@ -439,12 +439,14 @@ pub(super) fn dispatch_runtime_call(
     functions: &FunctionMap,
     result: &mut Inspection,
 ) -> bool {
+    super::guarded_access::check(expr, env, file, functions, result);
     // Preserve the order of operations: some recognized calls queue failures,
     // and a signal-handler update may invalidate later waits before generic
     // call evaluation continues.
     runtime::open_resource(expr, env, file, result).claimed()
         || super::library::call(expr, env, file, result)
         || super::asyncio::call(expr, env, file, result).claimed()
+        || super::async_protocols::call(expr, env, file, result)
         || super::work::call(expr, env, file, result)
         || builtin_exception_call(expr, env, file, result)
         || (env.ownership.is_some() && tasks::task_call(expr, env, file, result))

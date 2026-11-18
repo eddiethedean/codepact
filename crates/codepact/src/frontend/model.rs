@@ -167,6 +167,11 @@ pub(crate) enum FlowStatement {
         annotation: Option<AstExpr>,
         range: SourceRange,
     },
+    AugmentedStore {
+        target: AstExpr,
+        value: AstExpr,
+        range: SourceRange,
+    },
     ClosureDefinition {
         name: String,
         captures: BTreeSet<String>,

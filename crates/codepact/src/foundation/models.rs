@@ -134,6 +134,7 @@ pub struct ProviderSelection {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PreparedFoundations {
     pub runtime: Option<RuntimeProfile>,
+    pub async_guards: Vec<super::AsyncGuardModel>,
     pub providers: BTreeMap<String, ProviderSelection>,
     importable_children: BTreeSet<String>,
     pub exports: BTreeMap<String, publication::PublishedSymbol>,
@@ -167,8 +168,23 @@ impl PreparedFoundations {
     }
 
     pub(crate) fn new(inputs: &FoundationInputs) -> Self {
+        let mut async_guards = inputs.async_guards.clone();
+        async_guards.sort();
+        let project_models_digest = if !async_guards.is_empty() {
+            Some(publication::sha256(
+                &serde_json::to_vec(&(&inputs.project_models, &async_guards))
+                    .expect("project model JSON"),
+            ))
+        } else {
+            (!inputs.project_models.is_empty()).then(|| {
+                publication::sha256(
+                    &serde_json::to_vec(&inputs.project_models).expect("project model JSON"),
+                )
+            })
+        };
         Self {
             runtime: inputs.runtime.clone(),
+            async_guards,
             providers: BTreeMap::new(),
             importable_children: BTreeSet::new(),
             exports: BTreeMap::new(),
@@ -179,11 +195,7 @@ impl PreparedFoundations {
                 .uv_lock
                 .as_ref()
                 .map(|lock| publication::sha256(lock.as_bytes())),
-            project_models_digest: (!inputs.project_models.is_empty()).then(|| {
-                publication::sha256(
-                    &serde_json::to_vec(&inputs.project_models).expect("project model JSON"),
-                )
-            }),
+            project_models_digest,
         }
     }
 
@@ -270,6 +282,12 @@ impl PreparedFoundations {
         };
         Self {
             runtime: self.runtime.clone(),
+            async_guards: self
+                .async_guards
+                .iter()
+                .filter(|guard| modules.contains(&guard.module))
+                .cloned()
+                .collect(),
             importable_children: self
                 .importable_children
                 .iter()

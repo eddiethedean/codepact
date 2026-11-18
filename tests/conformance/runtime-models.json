@@ -140,6 +140,64 @@
         "test_phase09_work_model_conformance.Phase09ThreadWorkConformance.test_thread_timeout_cancel_rejection_and_context_join",
         "test_phase09_work_model_conformance.Phase09ThreadWorkConformance.test_thread_worker_error_retains_identity"
       ]
+    },
+    {
+      "id": "phase10-linux",
+      "models": [
+        "TPM-QUEUE-001",
+        "TPM-SYNC-001",
+        "TPM-IPC-001",
+        "TPM-IPC-002",
+        "TPM-SYNC-002",
+        "TPM-SPAWN-001"
+      ],
+      "python_versions": [
+        "3.13.16"
+      ],
+      "platform": "linux",
+      "machine": "x86_64",
+      "module": "test_phase10_model_conformance",
+      "upstream_modules": [
+        "asyncio.queues",
+        "asyncio.locks",
+        "asyncio.taskgroups",
+        "multiprocessing.queues",
+        "multiprocessing.connection",
+        "multiprocessing.synchronize",
+        "multiprocessing.sharedctypes",
+        "multiprocessing.spawn",
+        "multiprocessing.popen_spawn_posix",
+        "multiprocessing.reduction",
+        "_multiprocessing"
+      ],
+      "tests": [
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_condition_reacquires_before_cancelled_exit",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_event_waiter_observes_signal_and_clear_is_separate",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_immediate_shutdown_keeps_checked_out_item_pending",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_lock_cancellation_and_synchronous_exit",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_queue_cancel_after_receipt_needs_actual_cleanup",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_queue_cancelled_waits_preserve_admission_and_receipt",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_queue_counter_allows_early_ack_and_rejects_excess",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_queue_join_returns_after_readmission",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_queue_shutdown_graceful_and_immediate",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_semaphore_and_bounded_semaphore_release_limits",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_semaphore_cancellation_before_and_after_reservation",
+        "test_phase10_model_conformance.Phase10AsyncConformance.test_task_group_queue_accounting_and_worker_result_are_distinct",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_cancel_join_thread_can_return_while_feeder_is_live",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_joinable_queue_failed_serialization_keeps_unfinished_count",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_joinable_queue_join_returns_after_readmission",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_partial_lock_acquisition_and_recursive_owner",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_pipe_direction_serialization_close_and_broken_write",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_pipe_poll_reports_eof_only_after_last_writer_closes",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_process_semaphore_bounds",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_queue_feeder_can_finish_before_child_receipt",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_queue_feeder_failure_and_completion_are_distinct",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_queue_flush_and_accounting_are_distinct_from_receipt_and_exit",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_simple_queue_serialization_reconstruction_and_close",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_spawn_direct_script_and_package_main_are_distinct",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_spawn_rejects_local_target_and_incompatible_context_before_launch",
+        "test_phase10_model_conformance.Phase10ProcessConformance.test_value_and_array_require_a_guard_across_compound_work"
+      ]
     }
   ]
 }
