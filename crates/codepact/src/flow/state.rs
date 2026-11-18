@@ -18,6 +18,8 @@ pub(super) struct FunctionBody {
     pub(super) protocol_precondition_origin: Option<Span>,
     pub(super) binding_key: Option<String>,
     pub(super) module_bindings: Arc<ModuleBindings>,
+    pub(super) publication: Vec<super::providers::BoundFact>,
+    pub(super) modeled_factory: Option<crate::foundation::ApplicableFactory>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -95,6 +97,7 @@ pub(super) struct State {
     pub(super) imported_classes: BTreeMap<String, Option<Contract>>,
     pub(super) class_bindings_complete: bool,
     pub(super) module_scope: bool,
+    pub(super) async_context: bool,
     pub(super) scope_module: String,
     pub(super) target_python_version: String,
     pub(super) models: Arc<FlowModelCatalog>,
@@ -121,6 +124,20 @@ pub(super) struct CoroutineRecord {
     pub(super) origin: Span,
     pub(super) consumed: bool,
     pub(super) ambiguous: bool,
+    pub(super) task_completion: Option<TaskCompletion>,
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+pub(super) struct TaskCompletion {
+    pub(super) normal: bool,
+    pub(super) errors: BTreeSet<Option<String>>,
+}
+
+impl CoroutineRecord {
+    pub(super) fn complete_task(&mut self, completion: TaskCompletion) {
+        self.consumed = true;
+        self.task_completion = Some(completion);
+    }
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -135,7 +152,7 @@ pub(super) enum CompletionKind {
     Fallthrough,
     Return(Option<AstExpr>),
     Raise(Option<AstExpr>),
-    Cancelled,
+    Cancelled(Option<String>),
     Break,
     Continue,
 }
@@ -262,6 +279,14 @@ pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
                 }
                 record.ambiguous |= right_record.ambiguous;
                 record.consumed &= right_record.consumed;
+                record.task_completion = left_record
+                    .task_completion
+                    .as_ref()
+                    .zip(right_record.task_completion.as_ref())
+                    .map(|(left, right)| TaskCompletion {
+                        normal: left.normal || right.normal,
+                        errors: left.errors.union(&right.errors).cloned().collect(),
+                    });
                 for (capture, right_place) in &right_record.captures {
                     let place = record.captures.entry(capture.clone()).or_default();
                     place.targets.extend(right_place.targets.iter().cloned());
@@ -487,7 +512,7 @@ fn completion_tag(kind: &CompletionKind) -> u8 {
         CompletionKind::Fallthrough => 0,
         CompletionKind::Return(_) => 1,
         CompletionKind::Raise(_) => 2,
-        CompletionKind::Cancelled => 3,
+        CompletionKind::Cancelled(_) => 3,
         CompletionKind::Break => 4,
         CompletionKind::Continue => 5,
     }
@@ -503,6 +528,12 @@ pub(super) fn merge_pending_raises(left: &[FlowExit], right: &[FlowExit]) -> Vec
                 previous.range.end,
                 completion_tag(&previous.kind),
             ) == key
+                && match (&previous.kind, &exit.kind) {
+                    (CompletionKind::Cancelled(left), CompletionKind::Cancelled(right)) => {
+                        left == right
+                    }
+                    _ => true,
+                }
         }) {
             previous.state = merge(&previous.state, &exit.state).0;
             match (&previous.kind, &exit.kind) {

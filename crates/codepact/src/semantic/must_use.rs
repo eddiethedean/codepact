@@ -182,7 +182,9 @@ pub(super) fn check_must_use_body(
     let mut imports = state.imports.clone();
     let mut instances = state.instances.clone();
     for name in locals {
-        marked.remove(&name);
+        marked.retain(|candidate, _| {
+            candidate != &name && !candidate.starts_with(&format!("{name}."))
+        });
         imports.remove(&name);
         instances.remove(&name);
     }
@@ -1021,14 +1023,18 @@ fn walk_must_use_body(
                         ),
                         _ => String::new(),
                     };
+                    let mut identity = vec![
+                        resolved.clone(),
+                        declaration.public_symbol.clone(),
+                        declaration.canonical_symbol.clone(),
+                        declaration.distribution.clone().unwrap_or_default(),
+                        declaration.version.clone().unwrap_or_default(),
+                    ];
+                    if declaration.manifest {
+                        identity.push("manifest".into());
+                    }
                     result.diagnostics.push(Diagnostic {
-                        semantic_identity: vec![
-                            resolved.clone(),
-                            declaration.public_symbol.clone(),
-                            declaration.canonical_symbol.clone(),
-                            declaration.distribution.clone().unwrap_or_default(),
-                            declaration.version.clone().unwrap_or_default(),
-                        ],
+                        semantic_identity: identity,
                         code: "TP3001".into(),
                         severity: "warning".into(),
                         message: format!(

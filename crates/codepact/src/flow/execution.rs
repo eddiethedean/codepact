@@ -189,7 +189,10 @@ pub(super) fn execute(
             range,
         } = statement
         {
-            consume_expr(test, env, file, contracts, functions, result, 0);
+            let termination = process::termination_test(test, env, file, result);
+            if termination.is_none() {
+                consume_expr(test, env, file, contracts, functions, result, 0);
+            }
             outcomes.raises.extend(take_pending_raises(env));
             if !env.alive {
                 continue;
@@ -236,6 +239,10 @@ pub(super) fn execute(
             let mut right = Box::new((*before).clone());
             right.control_depth = right.control_depth.saturating_add(1);
             right.alive = true;
+            if let Some(test) = &termination {
+                process::refine_test(&mut left, test, true);
+                process::refine_test(&mut right, test, false);
+            }
             let left_outcomes = execute(
                 body,
                 &mut left,
@@ -410,7 +417,7 @@ pub(super) fn execute(
                         };
                         match exit.kind {
                             CompletionKind::Raise(_) => outcomes.raises.push(exit),
-                            CompletionKind::Cancelled => outcomes.raises.push(exit),
+                            CompletionKind::Cancelled(_) => outcomes.raises.push(exit),
                             CompletionKind::Break => outcomes.breaks.push(exit),
                             CompletionKind::Continue => outcomes.continues.push(exit),
                             CompletionKind::Fallthrough | CompletionKind::Return(_) => {
@@ -446,7 +453,7 @@ fn push_exit(outcomes: &mut FlowResult, exit: FlowExit) {
         CompletionKind::Fallthrough => unreachable!("fallthrough is reported at function exit"),
         CompletionKind::Return(_) => outcomes.returns.push(exit),
         CompletionKind::Raise(_) => outcomes.raises.push(exit),
-        CompletionKind::Cancelled => outcomes.raises.push(exit),
+        CompletionKind::Cancelled(_) => outcomes.raises.push(exit),
         CompletionKind::Break => outcomes.breaks.push(exit),
         CompletionKind::Continue => outcomes.continues.push(exit),
     }
@@ -502,12 +509,26 @@ pub(super) enum ExceptionMatch {
     Definite,
 }
 
-fn expression_exception_names(expression: &AstExpr) -> Option<Vec<&str>> {
+fn resolved_exception_name<'a>(expression: &'a AstExpr, state: &State) -> Option<&'a str> {
+    if ownership::external_identity(expression, state).as_deref()
+        == Some("external:asyncio.CancelledError")
+    {
+        return Some("CancelledError");
+    }
+    expr_name(expression).filter(|name| is_unshadowed_exception_handler_name(name, state))
+}
+
+fn expression_exception_names<'a>(
+    expression: &'a AstExpr,
+    state: &State,
+) -> Option<Vec<Option<&'a str>>> {
     match &expression.kind {
-        AstExprKind::Name(name) => Some(vec![name]),
+        AstExprKind::Name(_) | AstExprKind::Attribute(..) => {
+            Some(vec![resolved_exception_name(expression, state)])
+        }
         AstExprKind::Tuple(items) => items
             .iter()
-            .map(expression_exception_names)
+            .map(|item| expression_exception_names(item, state))
             .collect::<Option<Vec<_>>>()
             .map(|items| items.into_iter().flatten().collect()),
         _ => None,
@@ -522,17 +543,16 @@ pub(super) fn completion_exception_name<'a>(
     kind: &'a CompletionKind,
     state: &State,
 ) -> Option<&'a str> {
-    if matches!(kind, CompletionKind::Cancelled) {
+    if matches!(kind, CompletionKind::Cancelled(_)) {
         return Some("CancelledError");
     }
     let CompletionKind::Raise(Some(expression)) = kind else {
         return None;
     };
-    let name = match &expression.kind {
-        AstExprKind::Call { function, .. } => expr_name(function),
-        _ => expr_name(expression),
-    }?;
-    is_unshadowed_exception_handler_name(name, state).then_some(name)
+    match &expression.kind {
+        AstExprKind::Call { function, .. } => resolved_exception_name(function, state),
+        _ => resolved_exception_name(expression, state),
+    }
 }
 
 fn known_builtin_exception(name: &str) -> bool {
@@ -653,17 +673,17 @@ pub(super) fn exception_handler_match(
     let Some(handler) = handler else {
         return ExceptionMatch::Definite;
     };
-    let Some(caught) = expression_exception_names(handler) else {
+    let Some(caught) = expression_exception_names(handler, state) else {
         return ExceptionMatch::Possible;
     };
     let mut possible = false;
     for caught in caught {
-        if caught == "BaseException" && is_unshadowed_exception_handler_name(caught, state) {
+        if caught == Some("BaseException") {
             return ExceptionMatch::Definite;
         }
-        let matching = is_unshadowed_exception_handler_name(caught, state)
-            .then(|| exception.and_then(|exception| builtin_exception_match(exception, caught)))
-            .flatten();
+        let matching = exception
+            .zip(caught)
+            .and_then(|(exception, caught)| builtin_exception_match(exception, caught));
         match matching {
             Some(true) => return ExceptionMatch::Definite,
             Some(false) => {}
@@ -1388,7 +1408,7 @@ fn execute_with(
             None | Some(CompletionKind::Fallthrough) => 0,
             Some(CompletionKind::Return(_)) => 1,
             Some(CompletionKind::Raise(_)) => 2,
-            Some(CompletionKind::Cancelled) => 3,
+            Some(CompletionKind::Cancelled(_)) => 3,
             Some(CompletionKind::Break) => 4,
             Some(CompletionKind::Continue) => 5,
         }
@@ -1408,6 +1428,12 @@ fn execute_with(
                 Some((CompletionKind::Return(previous), _)),
                 Some((CompletionKind::Return(incoming), _)),
             ) if previous != &incoming => {
+                *previous = None;
+            }
+            (
+                Some((CompletionKind::Cancelled(previous), _)),
+                Some((CompletionKind::Cancelled(incoming), _)),
+            ) if *previous != incoming => {
                 *previous = None;
             }
             _ => {}
@@ -1553,7 +1579,7 @@ fn execute_with(
                     path.state.pending_raises.clear();
                     if matches!(
                         path.completion.as_ref().map(|(kind, _)| kind),
-                        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled)
+                        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled(_))
                     ) {
                         let mut suppressed = path.clone();
                         suppressed.completion = None;
@@ -1588,7 +1614,7 @@ fn execute_with(
                             overflow,
                             Path {
                                 state: path.state.clone(),
-                                completion: Some((CompletionKind::Cancelled, range)),
+                                completion: Some((CompletionKind::Cancelled(None), range)),
                             },
                             remaining - 1,
                             file,
@@ -1624,6 +1650,20 @@ fn execute_with(
             );
             break;
         }
+        if asynchronous {
+            let deadline = format!("{}:{}:{index}", file.path, item.range.start);
+            if let Some(active) = asyncio::enter_timeout(item, &deadline, env, file, result) {
+                if active {
+                    cleanups.push(ContextCleanupFrame::Modeled(ContextCleanup {
+                        receiver: deadline,
+                        method: ":timeout-exit",
+                        asynchronous: false,
+                        range: item.range,
+                    }));
+                }
+                continue;
+            }
+        }
         if asynchronous && env.ownership.is_some() && tasks::is_group_context(&item.context, env) {
             if let Some(id) = tasks::enter_group(item, env, file, result) {
                 cleanups.push(ContextCleanupFrame::Modeled(ContextCleanup {
@@ -1635,9 +1675,58 @@ fn execute_with(
                 continue;
             }
         }
-        let Some(method) = contextlib_cleanup_method(&item.context, env).filter(|method| {
-            (asynchronous && *method == "aclose") || (!asynchronous && *method == "close")
-        }) else {
+        if !asynchronous && process::pool_context(&item.context, env) {
+            let from_expression = expr_name(&item.context).is_none();
+            let receiver = synthetic_name(env, "pool-context", item.range, index);
+            let initialized = if let Some(source) = expr_name(&item.context) {
+                process::alias_pool(env, &receiver, source);
+                true
+            } else {
+                process::initialize(&receiver, &item.context, env, file, functions, result)
+            };
+            if initialized {
+                let active =
+                    from_expression || process::live_pool(env, &receiver, file, item.range, result);
+                entry_raises.extend(
+                    take_pending_raises(env)
+                        .into_iter()
+                        .map(|exit| (exit, cleanups.len())),
+                );
+                if active {
+                    if item.unsupported_target {
+                        boundary(
+                            result,
+                            file,
+                            item.range,
+                            "Pool context target destructuring is not modeled",
+                        );
+                    }
+                    if let Some(target) = &item.target {
+                        process::alias_pool(env, target, &receiver);
+                    }
+                    cleanups.push(ContextCleanupFrame::Modeled(ContextCleanup {
+                        receiver,
+                        method: ":pool-exit",
+                        asynchronous: false,
+                        range: item.range,
+                    }));
+                }
+                continue;
+            }
+        }
+        let entered_file = if asynchronous {
+            None
+        } else {
+            runtime::tracked_text_file(&item.context, env).map(str::to_owned)
+        };
+        let file_context = !asynchronous
+            && (entered_file.is_some() || runtime::is_builtin_open(&item.context, env));
+        let Some(method) = contextlib_cleanup_method(&item.context, env)
+            .filter(|method| {
+                (asynchronous && *method == "aclose") || (!asynchronous && *method == "close")
+            })
+            .or(file_context.then_some("close"))
+        else {
             consume_expr(&item.context, env, file, contracts, functions, result, 0);
             entry_raises.extend(
                 take_pending_raises(env)
@@ -1680,7 +1769,7 @@ fn execute_with(
                         FlowExit {
                             state: env.clone(),
                             range: item.range,
-                            kind: CompletionKind::Cancelled,
+                            kind: CompletionKind::Cancelled(None),
                         },
                         cleanups.len(),
                     ));
@@ -1693,18 +1782,16 @@ fn execute_with(
             continue;
         };
 
-        let AstExprKind::Call {
-            arguments,
-            keywords,
-            ..
-        } = &item.context.kind
-        else {
-            unreachable!("contextlib cleanup recognition requires a call")
-        };
-        let object = match (arguments.as_slice(), keywords.as_slice()) {
-            ([object], []) => Some(object),
-            ([], [(Some(name), object)]) if name == "thing" => Some(object),
-            _ => None,
+        let (arguments, keywords) = call_parts(&item.context)
+            .map_or((&[][..], &[][..]), |(_, args, keywords)| (args, keywords));
+        let object = if file_context {
+            Some(&item.context)
+        } else {
+            match (arguments, keywords) {
+                ([object], []) => Some(object),
+                ([], [(Some(name), object)]) if name == "thing" => Some(object),
+                _ => None,
+            }
         };
         let Some(object) = object else {
             for argument in arguments {
@@ -1768,13 +1855,42 @@ fn execute_with(
             );
             break;
         }
+        if let Some(object) = entered_file {
+            if let Some(mask) = env
+                .objects
+                .get(&object)
+                .copied()
+                .filter(|mask| mask & CLOSED != 0)
+            {
+                env.objects
+                    .insert(object.clone(), CLOSED | (mask & UNKNOWN));
+                queue_raise(
+                    env,
+                    item.range,
+                    Some(AstExpr {
+                        range: item.range,
+                        kind: AstExprKind::Name("ValueError".into()),
+                    }),
+                );
+                entry_raises.extend(
+                    take_pending_raises(env)
+                        .into_iter()
+                        .map(|exit| (exit, cleanups.len())),
+                );
+                if mask == CLOSED {
+                    env.alive = false;
+                    break;
+                }
+                env.objects.insert(object, mask & !CLOSED);
+            }
+        }
         if !env.places.contains_key(&receiver) || env.unknown_places.contains(&receiver) {
             uncertain.extend(env.places.values().flatten().cloned());
             boundary(
                 result,
                 file,
                 item.range,
-                "contextlib cleanup receiver is not a resolved tracked resource",
+                "context cleanup receiver is not a resolved tracked resource",
             );
         } else {
             if item.unsupported_target {
@@ -1949,6 +2065,14 @@ fn run_context_cleanup(
         );
         return;
     }
+    if cleanup.method == ":pool-exit" {
+        process::finish_pool(&cleanup.receiver, env, file, cleanup.range, result);
+        return;
+    }
+    if cleanup.method == ":timeout-exit" {
+        asyncio::leave_timeout(&cleanup.receiver, env, cleanup.range, incoming);
+        return;
+    }
     let receiver = &cleanup.receiver;
     let method = cleanup.method;
     let asynchronous = cleanup.asynchronous;
@@ -2001,6 +2125,9 @@ fn execute_non_if_statement(
         | FlowStatement::EscapingAssign {
             name, value, range, ..
         } => {
+            if process::initialize(name, value, env, file, functions, result) {
+                return None;
+            }
             if tasks::initialize_executor_handle(name, value, env, file, result) {
                 return None;
             }
@@ -2056,7 +2183,17 @@ fn execute_non_if_statement(
             let source_function_binding = env
                 .ownership
                 .as_ref()
-                .and_then(|_| ownership::external_identity(value, env));
+                .and_then(|_| ownership::external_identity(value, env))
+                .or_else(|| {
+                    providers::public_name(value, env)
+                        .filter(|name| {
+                            env.models
+                                .foundations
+                                .as_ref()
+                                .is_some_and(|inputs| inputs.module(name).is_some())
+                        })
+                        .map(|name| format!("provider:{name}"))
+                });
             let source_class_binding = expr_name(value)
                 .filter(|source| {
                     !env.places.contains_key(*source) && !env.unknown_places.contains(*source)

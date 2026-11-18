@@ -51,6 +51,10 @@ pub struct ProjectConfig {
     pub baseline: Option<PathBuf>,
     #[serde(default)]
     pub dependencies: Option<DependenciesConfig>,
+    #[serde(rename = "runtime-profile", default)]
+    pub runtime_profile: Option<crate::foundation::RuntimeProfile>,
+    #[serde(rename = "experimental-foundations", default)]
+    pub experimental_foundations: bool,
     #[serde(default)]
     pub severity: BTreeMap<String, String>,
 }
@@ -62,6 +66,10 @@ pub struct DependenciesConfig {
     pub roots: Option<Vec<PathBuf>>,
     #[serde(default, rename = "required-providers")]
     pub required_providers: Option<Vec<String>>,
+    #[serde(default, rename = "project-contracts")]
+    pub project_contracts: Vec<PathBuf>,
+    #[serde(default, rename = "uv-lock")]
+    pub uv_lock: Option<PathBuf>,
 }
 
 fn default_include() -> Vec<String> {
@@ -83,6 +91,10 @@ pub struct EffectiveConfig {
     pub baseline: Option<PathBuf>,
     pub dependency_roots: Vec<PathBuf>,
     pub required_providers: Vec<String>,
+    pub runtime_profile: Option<crate::foundation::RuntimeProfile>,
+    pub experimental_foundations: bool,
+    pub project_contracts: Vec<PathBuf>,
+    pub uv_lock: Option<PathBuf>,
     pub severity: BTreeMap<String, String>,
     pub settings_origins: BTreeMap<String, String>,
 }
@@ -395,6 +407,19 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         .as_ref()
         .and_then(|c| c.dependencies.as_ref()?.required_providers.clone())
         .unwrap_or_default();
+    let runtime_profile = c.as_ref().and_then(|c| c.runtime_profile.clone());
+    let experimental_foundations = c.as_ref().is_some_and(|c| c.experimental_foundations);
+    let project_contracts = c
+        .as_ref()
+        .and_then(|c| c.dependencies.as_ref())
+        .into_iter()
+        .flat_map(|dependencies| &dependencies.project_contracts)
+        .map(|path| normalize_path(config_dir, path))
+        .collect::<Vec<_>>();
+    let uv_lock = c
+        .as_ref()
+        .and_then(|c| c.dependencies.as_ref()?.uv_lock.as_ref())
+        .map(|path| normalize_path(config_dir, path));
     let include = c
         .as_ref()
         .and_then(|c| c.include.clone())
@@ -407,6 +432,18 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         validate_pattern(pattern)?;
     }
     let mut settings_origins = BTreeMap::new();
+    if runtime_profile.is_some() {
+        settings_origins.insert("runtime-profile".into(), "pyproject.toml".into());
+    }
+    for (setting, configured) in [
+        ("experimental-foundations", experimental_foundations),
+        ("project-contracts", !project_contracts.is_empty()),
+        ("uv-lock", uv_lock.is_some()),
+    ] {
+        if configured {
+            settings_origins.insert(setting.into(), "pyproject.toml".into());
+        }
+    }
     let origin = |cli: bool, configured: bool| {
         if cli {
             "command-line"
@@ -587,6 +624,10 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         baseline,
         dependency_roots,
         required_providers,
+        runtime_profile,
+        experimental_foundations,
+        project_contracts,
+        uv_lock,
         severity,
         settings_origins,
     })

@@ -289,7 +289,7 @@ pub(super) fn report_cleanup_exit(
         CompletionKind::Fallthrough => "fallthrough",
         CompletionKind::Return(_) => "return",
         CompletionKind::Raise(_) => "raise",
-        CompletionKind::Cancelled => "cancelled",
+        CompletionKind::Cancelled(_) => "cancelled",
         CompletionKind::Break => "break",
         CompletionKind::Continue => "continue",
     };
@@ -412,7 +412,7 @@ pub(super) fn grouped_exits(exits: &[FlowExit]) -> Vec<FlowExit> {
             CompletionKind::Fallthrough => 0,
             CompletionKind::Return(_) => 1,
             CompletionKind::Raise(_) => 2,
-            CompletionKind::Cancelled => 3,
+            CompletionKind::Cancelled(_) => 3,
             CompletionKind::Break => 4,
             CompletionKind::Continue => 5,
         };

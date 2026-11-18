@@ -289,6 +289,7 @@ pub(crate) enum Declaration {
         class_annotations: Vec<AstExpr>,
         has_unresolved_base_classes: bool,
         methods: Vec<MethodBody>,
+        bound_methods: BTreeSet<String>,
         unsupported: bool,
         range: SourceRange,
     },

@@ -58,17 +58,17 @@ pub(super) fn report_unawaited_coroutines(
             "pending coroutine budget exceeded; captured resource effects are unknown",
         );
     }
-    for coroutine in state
+    for (id, coroutine) in state
         .coroutines
-        .values()
-        .filter(|coroutine| !coroutine.consumed)
+        .iter()
+        .filter(|(_, coroutine)| !coroutine.consumed)
     {
-        boundary(
-            result,
-            file,
-            coroutine.range,
-            "created coroutine is not awaited before this scope exit; captured resource effects remain unresolved",
-        );
+        let message = if asyncio::is_scheduled(state, id) {
+            "scheduled task can outlive this scope without established completion"
+        } else {
+            "created coroutine is not awaited before this scope exit; captured resource effects remain unresolved"
+        };
+        boundary(result, file, coroutine.range, message);
     }
 }
 
@@ -84,6 +84,32 @@ pub(super) fn consume_expr(
     if let Some(name) = expr_name(expr) {
         report_possibly_unbound_alias(name, expr.range, env, file, result);
     }
+    if env.ownership.is_none() {
+        if let AstExprKind::Call { function, .. } = &expr.kind {
+            if matches!(function.kind, AstExprKind::Attribute(..)) {
+                if let Some(public) = providers::public_name(function, env) {
+                    let binding = format!("provider:{public}");
+                    if functions.contains_key(&binding) {
+                        let callee = format!(":provider-call:{}", expr.range.start);
+                        let mut rewritten = expr.clone();
+                        let AstExprKind::Call { function, .. } = &mut rewritten.kind else {
+                            unreachable!()
+                        };
+                        function.kind = AstExprKind::Name(callee.clone());
+                        env.function_bindings.insert(callee.clone(), binding);
+                        consume_expr_impl(
+                            &rewritten, env, file, contracts, functions, result, depth,
+                        );
+                        env.function_bindings.remove(&callee);
+                        for exit in &mut env.pending_raises {
+                            exit.state.function_bindings.remove(&callee);
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+    }
     if let Some(ownership) = env.ownership.as_mut() {
         ownership.pending_move = false;
         ownership.pending_task = None;
@@ -97,9 +123,14 @@ pub(super) fn consume_expr(
                     }
                     return;
                 }
+                // Call preparation can replace the receiver after evaluating it.
+                let changes_task_factory = tasks::sets_task_factory_on_loop(expr, env);
                 let prepared =
                     ownership::prepare_call(expr, env, file, contracts, functions, result, depth);
                 if env.alive && !prepared.invalid_receiver {
+                    if changes_task_factory {
+                        tasks::invalidate_task_factory(env, file, expr.range, result);
+                    }
                     consume_expr_impl(
                         &prepared.expression,
                         env,
@@ -215,6 +246,9 @@ pub(super) fn consume_expr_impl(
                     env.protocol_unknown.insert(object.clone());
                 }
             }
+        }
+        if asyncio::await_local(awaited, expr.range, env, file, contracts, functions, result) {
+            return;
         }
         if env.ownership.is_some()
             && matches!(awaited.kind, AstExprKind::Call { .. })
@@ -458,10 +492,11 @@ pub(super) fn consume_expr_impl(
                 cancelled.places.remove(capture);
                 cancelled.unknown_places.remove(capture);
             }
+            asyncio::queue_deadline_cancellations(env, expr.range, &cancelled, false);
             env.pending_raises.push(FlowExit {
                 state: cancelled,
                 range: expr.range,
-                kind: CompletionKind::Cancelled,
+                kind: CompletionKind::Cancelled(None),
             });
             if !has_modeled_cancellation {
                 boundary(
@@ -518,6 +553,13 @@ pub(super) fn consume_expr_impl(
     if !env.alive {
         return;
     }
+    providers::record_call(expr, env, file, result);
+    if runtime::open_resource(expr, env, file, result) {
+        return;
+    }
+    if asyncio::call(expr, env, file, result) {
+        return;
+    }
     if let AstExprKind::Call {
         function,
         arguments,
@@ -553,6 +595,9 @@ pub(super) fn consume_expr_impl(
     if env.ownership.is_some() && tasks::executor_call(expr, env, file, functions, result) {
         return;
     }
+    if process::call(expr, env, file, functions, result) {
+        return;
+    }
     if let AstExprKind::Call {
         arguments,
         keywords,
@@ -563,6 +608,7 @@ pub(super) fn consume_expr_impl(
             !ownership.group_names.is_empty()
                 || !ownership.task_names.is_empty()
                 || !ownership.executor_names.is_empty()
+                || ownership.processes.has_aliases()
         }) {
             let names = arguments
                 .iter()
@@ -676,6 +722,9 @@ pub(super) fn consume_expr_impl(
                             .and_then(|resource| resource.lifecycle.as_ref())
                             .is_some_and(|lifecycle| lifecycle.closed_by == method);
                         let effect_model = resource.as_ref().and_then(|resource| {
+                            if let Some(model) = providers::project_close(resource, env) {
+                                return Some(model);
+                            }
                             let close_method = resource.lifecycle.as_ref()?.closed_by.as_str();
                             env.models
                                 .resolve(
@@ -696,6 +745,12 @@ pub(super) fn consume_expr_impl(
                             .unwrap_or_else(|| method.to_owned());
                         let definition = resource
                             .as_ref()
+                            .filter(|resource| {
+                                !resource
+                                    .provenance
+                                    .iter()
+                                    .any(|entry| entry.origin.starts_with("project-model:"))
+                            })
                             .and_then(|resource| resource_method(resource, method, functions));
                         if definition.is_some_and(|definition| !definition.supported_binding) {
                             let mut affected = vec![object.clone()];
@@ -783,6 +838,43 @@ pub(super) fn consume_expr_impl(
                             );
                         }
                         if is_close {
+                            if resource
+                                .as_ref()
+                                .is_some_and(|value| value.base_symbol == runtime::FILE_RESOURCE)
+                            {
+                                runtime::file_close_use(file, expr.range);
+                                if !arguments.is_empty() || !keywords.is_empty() {
+                                    binding_failure(
+                                        BindingFailure::Invalid,
+                                        env,
+                                        file,
+                                        expr.range,
+                                        result,
+                                    );
+                                    return;
+                                }
+                            }
+                            if close_model
+                                .as_ref()
+                                .is_some_and(|model| model.id.starts_with("project-model:"))
+                            {
+                                providers::record_close(
+                                    resource.as_ref().unwrap(),
+                                    env,
+                                    file,
+                                    expr.range,
+                                );
+                                if !arguments.is_empty() || !keywords.is_empty() {
+                                    binding_failure(
+                                        BindingFailure::Invalid,
+                                        env,
+                                        file,
+                                        expr.range,
+                                        result,
+                                    );
+                                    return;
+                                }
+                            }
                             ownership::check_close(
                                 env,
                                 object,
@@ -1024,6 +1116,19 @@ pub(super) fn consume_expr_impl(
                                     }
                                 } else if close_model.is_some() {
                                     env.alive = false;
+                                } else if resource.as_ref().is_some_and(|resource| {
+                                    resource
+                                        .source
+                                        .file
+                                        .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+                                }) && (child.escaped.contains(object)
+                                    || child
+                                        .objects
+                                        .get(object)
+                                        .is_none_or(|state| state & UNKNOWN != 0))
+                                {
+                                    *env.objects.entry(object.clone()).or_default() |= UNKNOWN;
+                                    boundary(result, file, expr.range, "installed close body does not establish the receiver cleanup effect");
                                 } else {
                                     env.close_origins
                                         .insert(object.clone(), span(file, expr.range));
@@ -1083,6 +1188,21 @@ pub(super) fn consume_expr_impl(
                                         );
                                     }
                                 }
+                            } else if resource.as_ref().is_some_and(|resource| {
+                                resource
+                                    .source
+                                    .file
+                                    .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+                            }) && env.models.foundations.is_some()
+                            {
+                                *env.objects.entry(object.clone()).or_default() |= UNKNOWN;
+                                queue_raise(env, expr.range, None);
+                                boundary(
+                                    result,
+                                    file,
+                                    expr.range,
+                                    "installed cleanup declaration has no verified source method",
+                                );
                             } else {
                                 env.close_origins
                                     .insert(object.clone(), span(file, expr.range));
@@ -1105,6 +1225,16 @@ pub(super) fn consume_expr_impl(
                                     expr.range,
                                     "close exceptional postcondition is not modeled",
                                 );
+                            }
+                        } else if runtime::text_file_io(
+                            resource.as_ref(),
+                            method,
+                            arguments,
+                            keywords,
+                        ) {
+                            queue_raise(env, expr.range, None);
+                            if mask == CLOSED {
+                                env.alive = false;
                             }
                         } else {
                             let mut affected = vec![object.clone()];
@@ -1310,6 +1440,11 @@ pub(super) fn consume_expr_impl(
                             return;
                         }
                     };
+                if let Some(factory) = &definition.modeled_factory {
+                    providers::project_factory(factory, &bindings, env, file, expr.range, result);
+                    return;
+                }
+                providers::checked_call(definition, file, expr.range);
                 if definition.is_async && !is_awaited_call(expr, file, env) {
                     if env.ownership.is_some() {
                         ownership::check_coroutine_arguments(
@@ -1398,6 +1533,7 @@ pub(super) fn consume_expr_impl(
                     target_python_version: env.target_python_version.clone(),
                     models: env.models.clone(),
                     scope_module: definition.file.module.clone(),
+                    async_context: definition.is_async || env.async_context,
                     ..State::default()
                 };
                 child.call_stack.insert(callee.to_string());
@@ -1669,6 +1805,10 @@ pub(super) fn consume_expr_impl(
                             .filter(|object| {
                                 exit.state.objects.get(*object).copied().unwrap_or(UNKNOWN) == OPEN
                                     && !exit.state.borrowed.contains(*object)
+                                    && providers::result_matches(
+                                        definition,
+                                        exit.state.resources.get(*object),
+                                    )
                             })
                             .cloned()
                             .collect::<BTreeSet<_>>();
@@ -1708,6 +1848,13 @@ pub(super) fn consume_expr_impl(
                         "a normal exit does not establish the declared Owned result",
                     );
                 }
+                if !definition.publication.is_empty() && !unresolved_owned_return {
+                    for object in &owned_return_targets {
+                        if let Some(resource) = child.resources.get_mut(object) {
+                            providers::mark_source_verified(resource);
+                        }
+                    }
+                }
                 child.pending_return_targets =
                     (!owned_return_targets.is_empty()).then(|| owned_return_targets.clone());
                 for object in &owned_entry_objects {
@@ -1719,6 +1866,18 @@ pub(super) fn consume_expr_impl(
                     }
                 }
                 let body_diagnostics = result.diagnostics.split_off(diagnostic_start);
+                if !definition.publication.is_empty()
+                    && body_diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.code == "TP9001")
+                {
+                    boundary(
+                        result,
+                        file,
+                        expr.range,
+                        "installed contract body has unresolved effects on a feasible path",
+                    );
+                }
                 for mut diagnostic in body_diagnostics {
                     if diagnostic.code == "TP1001" {
                         diagnostic.primary = call_site.clone();

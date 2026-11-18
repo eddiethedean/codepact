@@ -62,14 +62,22 @@ def required_phase_gates(root: Path, version: str) -> list[str]:
     if not match:
         return []
     minor = match.group(1)
-    plans = sorted((root / "docs/planning/phases").glob(f"0.{minor}-*.md"))
+    plans = [
+        path.read_text(encoding="utf-8")
+        for path in sorted((root / "docs/planning/phases").glob(f"0.{minor}-*.md"))
+    ]
+    plans = [
+        plan
+        for plan in plans
+        if "Superseded as a release assignment" not in plan.split("\n## ", 1)[0]
+    ]
     if len(plans) != 1:
         return []
     gate_pattern = re.compile(
-        r"^\s*-\s*\[[ xX]\]\s*\*\*([A-Z]+\d{2})(?:\*\*\s*|[ \t]+)[—-]",
+        r"^\s*-\s*\[[ xX]\]\s*\*\*([A-Z]+\d{2}(?:-[A-Z])?)(?:\*\*\s*|[ \t]+)[—-]",
         re.M,
     )
-    return gate_pattern.findall(plans[0].read_text(encoding="utf-8"))
+    return gate_pattern.findall(plans[0])
 
 
 def release_evidence_errors(

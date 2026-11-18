@@ -101,7 +101,43 @@ pub(super) fn resolve_imported_contracts(
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &Inspection,
     visited: &mut BTreeSet<(String, String)>,
+    scope: (&str, Option<&crate::foundation::PreparedFoundations>),
 ) -> Vec<Contract> {
+    let (requester, foundations) = scope;
+    if let Some((inputs, provider)) = foundations.and_then(|inputs| {
+        inputs
+            .providers
+            .get(module)
+            .map(|provider| (inputs, provider))
+    }) {
+        if inputs.providers.get(requester) != Some(provider) {
+            let selected = inputs
+                .exports
+                .get(&format!("{module}.{name}"))
+                .and_then(|symbol| symbol.contracts.iter().find(|fact| fact.kind == "resource"));
+            return selected
+                .into_iter()
+                .flat_map(|fact| {
+                    let path = format!(
+                        "@dependency/{}@{}/{}",
+                        provider.distribution, provider.version, fact.evidence.path
+                    );
+                    result
+                        .contracts
+                        .iter()
+                        .filter(move |contract| {
+                            contract.source.file == path
+                                && contract.source.line == fact.evidence.line
+                                && fact.resource.as_ref() == Some(&contract.base_symbol)
+                                && contract.lifecycle.as_ref().is_some_and(|value| {
+                                    Some(&value.closed_by) == fact.close_method.as_ref()
+                                })
+                        })
+                        .cloned()
+                })
+                .collect();
+        }
+    }
     let key = (module.to_owned(), name.to_owned());
     if !visited.insert(key.clone()) {
         return Vec::new();
@@ -167,6 +203,7 @@ pub(super) fn resolve_imported_contracts(
                                 summaries,
                                 result,
                                 visited,
+                                scope,
                             )
                         } else {
                             Vec::new()
@@ -202,6 +239,7 @@ pub(super) fn contracts_for_module(
     files: &[Arc<SourceFile>],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &Inspection,
+    foundations: Option<&crate::foundation::PreparedFoundations>,
 ) -> Vec<Contract> {
     let mut contracts: Vec<_> = result
         .contracts
@@ -234,6 +272,7 @@ pub(super) fn contracts_for_module(
                         summaries,
                         result,
                         &mut BTreeSet::new(),
+                        (&file.module, foundations),
                     ) {
                         contract.display_name =
                             import.alias.as_deref().unwrap_or(&import.name).to_owned();
@@ -260,6 +299,7 @@ pub(super) fn final_class_bindings(
     files: &[Arc<SourceFile>],
     summaries: &BTreeMap<String, crate::db::ParseSummary>,
     result: &Inspection,
+    foundations: Option<&crate::foundation::PreparedFoundations>,
 ) -> BTreeMap<String, Option<Contract>> {
     let mut bindings = BTreeMap::new();
     for declaration in declarations {
@@ -323,6 +363,7 @@ pub(super) fn final_class_bindings(
                                 summaries,
                                 result,
                                 &mut BTreeSet::new(),
+                                (&file.module, foundations),
                             )
                             .into_iter()
                             .next()
@@ -550,6 +591,9 @@ pub(super) fn external_module_bindings(
                         "contextlib"
                             | "codepact"
                             | "asyncio"
+                            | "builtins"
+                            | "multiprocessing"
+                            | "signal"
                             | "typing"
                             | "typing_extensions"
                             | "concurrent"
@@ -613,15 +657,31 @@ pub(super) fn external_module_bindings(
     bindings
 }
 
+pub(super) struct FunctionLookup<'a> {
+    pub files: &'a [Arc<SourceFile>],
+    pub summaries: &'a BTreeMap<String, crate::db::ParseSummary>,
+    pub functions: &'a ProjectFunctionMap,
+    pub cyclic_modules: &'a BTreeSet<String>,
+    pub published: &'a ProjectFunctionMap,
+    pub requester: &'a str,
+    pub foundations: Option<&'a crate::foundation::PreparedFoundations>,
+}
+
 pub(super) fn resolve_imported_function(
     module: &str,
     name: &str,
-    files: &[Arc<SourceFile>],
-    summaries: &BTreeMap<String, crate::db::ParseSummary>,
-    functions: &ProjectFunctionMap,
-    cyclic_modules: &BTreeSet<String>,
     visited: &mut BTreeSet<(String, String)>,
+    lookup: &FunctionLookup<'_>,
 ) -> Option<FunctionBody> {
+    let FunctionLookup {
+        files,
+        summaries,
+        functions,
+        cyclic_modules,
+        published,
+        requester,
+        foundations,
+    } = *lookup;
     // A resolvable body does not make a cyclic import safe to assume at runtime.
     if cyclic_modules.contains(module) {
         return None;
@@ -630,6 +690,19 @@ pub(super) fn resolve_imported_function(
         return None;
     }
     let provider = files.iter().find(|file| file.module == module)?;
+    if provider.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+        && !foundations.is_some_and(|inputs| {
+            inputs
+                .providers
+                .get(requester)
+                .zip(inputs.providers.get(module))
+                .is_some_and(|(left, right)| left == right)
+        })
+    {
+        return published
+            .get(&(module.to_owned(), name.to_owned()))
+            .cloned();
+    }
     let declarations = summaries.get(&provider.path)?.declarations.as_ref()?;
     for declaration in declarations.iter().rev() {
         match declaration {
@@ -675,15 +748,7 @@ pub(super) fn resolve_imported_function(
                     .find(|import| import.alias.as_deref().unwrap_or(&import.name) == name)
                 {
                     return if *level == 0 {
-                        resolve_imported_function(
-                            source,
-                            &import.name,
-                            files,
-                            summaries,
-                            functions,
-                            cyclic_modules,
-                            visited,
-                        )
+                        resolve_imported_function(source, &import.name, visited, lookup)
                     } else {
                         None
                     };
@@ -888,6 +953,7 @@ pub(super) fn register_pending_coroutine(
         range: expression.range,
         origin: span(file, expression.range),
         consumed: false,
+        task_completion: None,
         ambiguous: false,
     };
     if let Some(existing) = env.coroutines.get_mut(&id) {

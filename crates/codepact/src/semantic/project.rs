@@ -55,12 +55,17 @@ pub(crate) fn context_for_module(
     summary: &ParseSummary,
     plan: &ProjectPlan,
     computed_exports: &BTreeMap<String, SemanticExports>,
+    foundations: Option<&crate::foundation::PreparedFoundations>,
 ) -> ModuleContext {
     let mut context = ModuleContext::default();
     let retain_origins = summary_uses_contract_wrapper(summary);
     let mut imported_names = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut wildcard_modules = BTreeSet::new();
     if let Some(declarations) = summary.declarations.as_ref() {
         for declaration in declarations {
+            if let Declaration::Import { names, .. } = declaration {
+                wildcard_modules.extend(names.iter().map(|name| name.name.clone()));
+            }
             let Declaration::ImportFrom {
                 module,
                 level: 0,
@@ -83,15 +88,100 @@ pub(crate) fn context_for_module(
                 if let Some(exports) = computed_exports.get(module) {
                     let mut exports = exports.clone();
                     let names = imported_names.get(module);
+                    let whole = wildcard_modules.contains(module)
+                        && foundations.is_some_and(|inputs| inputs.providers.contains_key(module));
+                    if let Some((inputs, provider)) = foundations.and_then(|inputs| {
+                        inputs
+                            .providers
+                            .get(module)
+                            .map(|provider| (inputs, provider))
+                    }) {
+                        context.provider_modules.insert(module.clone());
+                        let internal = inputs
+                            .providers
+                            .get(&file.module)
+                            .is_some_and(|selected| selected == provider);
+                        if !internal {
+                            let mut must_use = if provider.origin == "inline-source"
+                                && provider.reason.is_none()
+                            {
+                                exports.must_use_callables.clone()
+                            } else {
+                                BTreeMap::new()
+                            };
+                            for (public, symbol) in inputs.exports.range(format!("{module}.")..) {
+                                if !public.starts_with(&format!("{module}.")) {
+                                    break;
+                                }
+                                let Some((from_module, name)) = public.rsplit_once('.') else {
+                                    continue;
+                                };
+                                if from_module != module {
+                                    continue;
+                                }
+                                if let Some(fact) = symbol
+                                    .contracts
+                                    .iter()
+                                    .find(|contract| contract.kind == "must-use")
+                                {
+                                    let origin = crate::foundation::publication_origin(
+                                        provider, symbol, fact,
+                                    );
+                                    let span = exports
+                                        .must_use_callables
+                                        .get(name)
+                                        .filter(|previous| {
+                                            previous.canonical_symbol == origin.canonical_symbol
+                                                && provider.origin == "inline-source"
+                                        })
+                                        .map(|previous| previous.span.clone())
+                                        .or(origin.location)
+                                        .expect("published fact location");
+                                    must_use.insert(
+                                        name.to_owned(),
+                                        MustUseCallable {
+                                            span,
+                                            public_symbol: public.clone(),
+                                            canonical_symbol: origin.canonical_symbol,
+                                            distribution: Some(provider.distribution.clone()),
+                                            version: Some(provider.version.clone()),
+                                            manifest: provider.origin == "manifest",
+                                        },
+                                    );
+                                }
+                            }
+                            exports.must_use_callables = must_use;
+                            for (name, view) in &mut exports.names {
+                                if !inputs.exports.get(&format!("{module}.{name}")).is_some_and(
+                                    |symbol| {
+                                        symbol.contracts.iter().any(|fact| fact.kind == "resource")
+                                    },
+                                ) {
+                                    view.closed_by = None;
+                                    view.closed_by_span = None;
+                                }
+                            }
+                            for (symbol, class) in &mut exports.classes {
+                                if !exports
+                                    .names
+                                    .values()
+                                    .any(|view| view.symbol == *symbol && view.closed_by.is_some())
+                                {
+                                    class.closed_by = None;
+                                    class.closed_by_span = None;
+                                }
+                            }
+                        }
+                    }
                     exports
                         .names
-                        .retain(|name, _| names.is_some_and(|names| names.contains(name)));
+                        .retain(|name, _| whole || names.is_some_and(|names| names.contains(name)));
                     exports
                         .functions
-                        .retain(|name| names.is_some_and(|names| names.contains(name)));
+                        .retain(|name| whole || names.is_some_and(|names| names.contains(name)));
                     exports
                         .must_use_callables
-                        .retain(|name, _| names.is_some_and(|names| names.contains(name)));
+                        .retain(|name, _| whole || names.is_some_and(|names| names.contains(name)));
                     exports.classes.retain(|symbol, _| {
                         exports.names.values().any(|view| &view.symbol == symbol)
                     });

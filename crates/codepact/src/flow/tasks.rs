@@ -595,6 +595,39 @@ pub(super) fn enter_group(
     Some(id)
 }
 
+pub(super) fn sets_task_factory_on_loop(expression: &AstExpr, env: &State) -> bool {
+    let Some((receiver, "set_task_factory", _, _)) = called_method(expression) else {
+        return false;
+    };
+    call_parts(receiver).is_some_and(|(callee, args, keywords)| {
+        args.is_empty()
+            && keywords.is_empty()
+            && matches!(
+                ownership::external_identity(callee, env).as_deref(),
+                Some("external:asyncio.get_running_loop" | "external:asyncio.get_event_loop")
+            )
+    })
+}
+
+pub(super) fn invalidate_task_factory(
+    env: &mut State,
+    file: &SourceFile,
+    range: SourceRange,
+    result: &mut Inspection,
+) {
+    let ownership = env.ownership.as_mut().expect("runtime configuration");
+    ownership.incompatible_task_factory = true;
+    for group in ownership.groups.values_mut() {
+        group.incomplete = true;
+    }
+    boundary(
+        result,
+        file,
+        range,
+        "task factory mutation invalidates the declared default-factory model",
+    );
+}
+
 pub(super) fn task_call(
     expression: &AstExpr,
     env: &mut State,
@@ -604,26 +637,15 @@ pub(super) fn task_call(
     let Some((receiver, method, arguments, keywords)) = called_method(expression) else {
         return false;
     };
-    let Some(name) = expr_name(receiver) else {
-        return false;
-    };
     let Some(ownership) = env.ownership.as_ref() else {
         return false;
     };
-    if method == "set_task_factory" {
-        let ownership = env.ownership.as_mut().expect("runtime configuration");
-        ownership.incompatible_task_factory = true;
-        for group in ownership.groups.values_mut() {
-            group.incomplete = true;
-        }
-        boundary(
-            result,
-            file,
-            expression.range,
-            "task factory mutation invalidates the declared default-factory model",
-        );
+    let name = expr_name(receiver);
+    if method == "set_task_factory" && name.is_some() {
+        invalidate_task_factory(env, file, expression.range, result);
         return false;
     }
+    let Some(name) = name else { return false };
     if let Some((group, id)) = ownership.task_names.get(name).cloned() {
         if method == "cancel" && arguments.is_empty() && keywords.is_empty() {
             if let Some(task) = env
@@ -868,6 +890,59 @@ pub(super) fn clear_captures(record: &CoroutineRecord, env: &mut State) {
     }
 }
 
+pub(super) fn execute_scheduled_coroutine(
+    task_id: &str,
+    record: &CoroutineRecord,
+    env: &State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+) -> State {
+    let mut execution = env.clone();
+    execution.pending_raises.clear();
+    execution.pending_return_targets = None;
+    execution.alive = true;
+    execution
+        .ownership
+        .as_mut()
+        .expect("task execution")
+        .entering_task = true;
+    restore_captures(record, &mut execution);
+    // The parent may already have violated the borrow. The worker's
+    // contracted entry is open; TP2006 retains the parent-side witness.
+    for object in record
+        .captures
+        .values()
+        .filter(|place| !place.transferred)
+        .flat_map(|place| &place.targets)
+    {
+        if execution
+            .objects
+            .get(object)
+            .is_some_and(|mask| mask & CLOSED != 0)
+        {
+            execution.objects.insert(object.clone(), OPEN);
+        }
+    }
+    execution
+        .coroutines
+        .get_mut(task_id)
+        .expect("running coroutine is retained")
+        .consumed = true;
+    execution.awaited_call = Some((record.file_path.clone(), record.invocation.range));
+    consume_expr(
+        &record.invocation,
+        &mut execution,
+        file,
+        contracts,
+        functions,
+        result,
+        0,
+    );
+    execution
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn join_group(
     id: &str,
@@ -895,7 +970,7 @@ pub(super) fn join_group(
     };
     let aborting = matches!(
         incoming,
-        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled)
+        Some(CompletionKind::Raise(_) | CompletionKind::Cancelled(_))
     );
     let body_exception = incoming.and_then(|kind| completion_exception_name(kind, env));
     let mut interrupted = env.clone();
@@ -912,62 +987,53 @@ pub(super) fn join_group(
             );
             continue;
         };
+        if record.consumed {
+            child_errors.extend(
+                record
+                    .task_completion
+                    .iter()
+                    .flat_map(|completion| &completion.errors)
+                    .filter(|name| name.as_deref() != Some("CancelledError"))
+                    .cloned(),
+            );
+            continue;
+        }
         if (task.cancelled_before_start || (aborting && !task.may_have_started))
             && !task.possible
             && !group.incomplete
         {
             for continuation in [&mut *env, &mut interrupted] {
                 if let Some(coroutine) = continuation.coroutines.get_mut(task_id) {
-                    coroutine.consumed = true;
+                    coroutine.complete_task(TaskCompletion {
+                        normal: false,
+                        errors: BTreeSet::from([Some("CancelledError".into())]),
+                    });
                 }
             }
             continue;
         }
-        let mut execution = env.clone();
-        execution.pending_raises.clear();
-        execution.pending_return_targets = None;
-        execution.alive = true;
-        execution
-            .ownership
-            .as_mut()
-            .expect("task execution")
-            .entering_task = true;
-        restore_captures(&record, &mut execution);
-        // The parent may already have violated the borrow. The worker's
-        // contracted entry is open; TP2006 retains the parent-side witness.
-        for object in record
-            .captures
-            .values()
-            .filter(|place| !place.transferred)
-            .flat_map(|place| &place.targets)
-        {
-            if execution
-                .objects
-                .get(object)
-                .is_some_and(|mask| mask & CLOSED != 0)
-            {
-                execution.objects.insert(object.clone(), OPEN);
-            }
-        }
-        execution
-            .coroutines
-            .get_mut(task_id)
-            .expect("running coroutine is retained")
-            .consumed = true;
-        execution.awaited_call = Some((record.file_path.clone(), record.invocation.range));
-        consume_expr(
-            &record.invocation,
-            &mut execution,
-            file,
-            contracts,
-            functions,
-            result,
-            0,
-        );
+        let mut execution =
+            execute_scheduled_coroutine(task_id, &record, env, file, contracts, functions, result);
         let exits = take_pending_raises(&mut execution);
         let cancelled = |exit: &FlowExit| {
-            matches!(exit.kind, CompletionKind::Cancelled)
+            matches!(exit.kind, CompletionKind::Cancelled(_))
                 || raised_exception_name(exit) == Some("CancelledError")
+        };
+        let completed_normally = execution.alive;
+        let stopped = Some("CancelledError".into());
+        let could_be_cancelled = task.cancel_requested || exits.iter().any(cancelled);
+        let mut interrupted_completion = TaskCompletion {
+            normal: completed_normally,
+            errors: exits
+                .iter()
+                .filter(|exit| !cancelled(exit))
+                .map(|exit| raised_exception_name(exit).map(str::to_owned))
+                .collect(),
+        };
+        interrupted_completion.errors.insert(stopped.clone());
+        let normal_completion = TaskCompletion {
+            normal: completed_normally,
+            errors: could_be_cancelled.then_some(stopped).into_iter().collect(),
         };
         child_errors.extend(
             exits
@@ -1062,10 +1128,11 @@ pub(super) fn join_group(
                 "TaskGroup exit leaves escaped or unresolved capture lifetimes",
             );
         } else {
-            for continuation in [&mut *env, &mut interrupted] {
-                if let Some(coroutine) = continuation.coroutines.get_mut(task_id) {
-                    coroutine.consumed = true;
-                }
+            if let Some(coroutine) = env.coroutines.get_mut(task_id) {
+                coroutine.complete_task(normal_completion);
+            }
+            if let Some(coroutine) = interrupted.coroutines.get_mut(task_id) {
+                coroutine.complete_task(interrupted_completion);
             }
         }
     }
@@ -1096,7 +1163,7 @@ pub(super) fn join_group(
         *env = interrupted;
         match (incoming, body_exception) {
             (_, Some("KeyboardInterrupt" | "SystemExit")) => {}
-            (Some(CompletionKind::Cancelled), _) | (_, Some("CancelledError")) => {
+            (Some(CompletionKind::Cancelled(_)), _) | (_, Some("CancelledError")) => {
                 if !child_errors.is_empty() {
                     queue_group_error(env, range, None, &child_errors);
                 }
@@ -1113,10 +1180,11 @@ pub(super) fn join_group(
         return;
     }
     if !group.tasks.is_empty() {
+        asyncio::queue_deadline_cancellations(env, range, &interrupted, false);
         env.pending_raises.push(FlowExit {
             state: interrupted.clone(),
             range,
-            kind: CompletionKind::Cancelled,
+            kind: CompletionKind::Cancelled(None),
         });
     }
     if !child_errors.is_empty() {
@@ -1164,7 +1232,7 @@ fn queue_group_error(
     );
 }
 
-fn apply_worker_cleanup(
+pub(super) fn apply_worker_cleanup(
     state: &mut State,
     object: &str,
     effects: Option<&State>,
@@ -1187,7 +1255,7 @@ fn apply_worker_cleanup(
     }
 }
 
-fn apply_worker_protocol_state(
+pub(super) fn apply_worker_protocol_state(
     state: &mut State,
     object: &str,
     effects: Option<&State>,

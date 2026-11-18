@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 mod queries;
 pub use queries::parse_file;
-use queries::{check_flow_query, inspect_project_query};
+use queries::{check_flow_query, inspect_project_query, select_provider_query};
 
 #[salsa::input]
 pub struct FileInput {
@@ -442,7 +442,9 @@ impl AnalysisSession {
             false,
             crate::Ownership::Disabled,
             false,
+            None,
         )
+        .map(|(checked, _)| checked)
     }
 
     pub fn check_with_must_use_cancellable(
@@ -456,7 +458,9 @@ impl AnalysisSession {
             true,
             crate::Ownership::Disabled,
             false,
+            None,
         )
+        .map(|(checked, _)| checked)
     }
 
     pub fn check_with_ownership(
@@ -481,32 +485,14 @@ impl AnalysisSession {
         python_version: &str,
         ownership: crate::Ownership,
     ) -> Result<SessionCheckResult, AnalysisCancelled> {
-        let checked =
-            self.check_cancellable_with_options(files, python_version, true, ownership, false)?;
-        let mut result = crate::CheckResult::from_inspection_with_models(
-            checked.inspection,
+        self.check_with_options_cancellable(
+            files,
             python_version,
-            &self.model_catalog,
-        );
-        if let Some(model) = crate::model::task_group_metadata(python_version)
-            .filter(|_| ownership.assumes_default_task_factory())
-        {
-            result.model_catalog_version = crate::model::TASK_GROUP_CATALOG_VERSION;
-            result.available_models.push(model);
-        }
-        if ownership.includes_advanced_contracts() {
-            result.model_catalog_version = crate::model::ADVANCED_MODEL_CATALOG_VERSION;
-            if let Some(model) = crate::model::thread_pool_executor_metadata(python_version) {
-                result.available_models.push(model);
-            }
-        }
-        result
-            .available_models
-            .sort_by(|left, right| left.id.cmp(&right.id));
-        Ok(SessionCheckResult {
-            revision: checked.revision,
-            result,
-        })
+            crate::CheckOptions {
+                ownership,
+                ..crate::CheckOptions::default()
+            },
+        )
     }
 
     pub fn check_with_options(
@@ -531,6 +517,43 @@ impl AnalysisSession {
         python_version: &str,
         options: crate::CheckOptions,
     ) -> Result<SessionCheckResult, AnalysisCancelled> {
+        self.run_check(files, python_version, options, None)
+    }
+
+    pub fn check_with_foundations(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+        options: crate::CheckOptions,
+        inputs: crate::foundation::FoundationInputs,
+    ) -> crate::CheckResult {
+        self.check_with_foundations_cancellable(files, python_version, options, inputs)
+            .map(|checked| checked.result)
+            .unwrap_or_else(|_| {
+                crate::CheckResult::from_inspection(
+                    crate::cancelled_inspection(files),
+                    python_version,
+                )
+            })
+    }
+
+    pub fn check_with_foundations_cancellable(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+        options: crate::CheckOptions,
+        inputs: crate::foundation::FoundationInputs,
+    ) -> Result<SessionCheckResult, AnalysisCancelled> {
+        self.run_check(files, python_version, options, Some(Arc::new(inputs)))
+    }
+
+    fn run_check(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+        options: crate::CheckOptions,
+        inputs: Option<Arc<crate::foundation::FoundationInputs>>,
+    ) -> Result<SessionCheckResult, AnalysisCancelled> {
         let mut analysis_files = files.to_vec();
         analysis_files.extend(
             options
@@ -539,12 +562,56 @@ impl AnalysisSession {
                 .cloned()
                 .map(crate::ProviderSource::into_source_file),
         );
-        let checked = self.check_cancellable_with_options(
+        let prepared = inputs.as_deref().map(|inputs| {
+            salsa::Cancelled::catch(|| {
+                let mut prepared = crate::foundation::PreparedFoundations::new(inputs);
+                let mut provider_files = Vec::new();
+                let mut session_bytes = analysis_files.iter().map(|file| file.source.len()).sum::<usize>();
+                let mut top_levels = analysis_files.iter()
+                    .filter_map(|file| file.module.split('.').next().map(str::to_owned))
+                    .collect::<BTreeSet<_>>();
+                for provider in &inputs.providers {
+                    let top = provider.import_scope.split('.').next().unwrap_or_default();
+                    if !top_levels.insert(top.to_owned()) {
+                        continue;
+                    }
+                    let bytes = provider.sources.iter().map(|file| file.source.len()).sum::<usize>();
+                    if analysis_files.len().saturating_add(provider_files.len()).saturating_add(provider.sources.len()) > crate::DEFAULT_MAX_INPUT_FILES
+                        || session_bytes.saturating_add(bytes) > crate::DEFAULT_MAX_SOURCE_BYTES
+                    {
+                        prepared.issues.push(crate::foundation::ProviderIssue {
+                            import_scope: provider.import_scope.clone(),
+                            reason: "selected dependency exceeds the shared source file or byte budget".into(),
+                        });
+                        continue;
+                    }
+                    if let Err(reason) = provider.validate(python_version) {
+                        prepared.issues.push(crate::foundation::ProviderIssue {
+                            import_scope: provider.import_scope.clone(), reason,
+                        });
+                        continue;
+                    }
+                    let selected = select_provider_query(&self.db, Arc::new(provider.clone()), python_version.to_owned());
+                    prepared.load(selected, inputs, python_version);
+                    provider_files.extend(provider.sources_for_analysis());
+                    session_bytes += bytes;
+                }
+                prepared.issues.sort();
+                prepared.issues.dedup();
+                (Arc::new(prepared), provider_files)
+            }).map_err(|_| AnalysisCancelled)
+        }).transpose()?;
+        let prepared = prepared.map(|(prepared, provider_files)| {
+            analysis_files.extend(provider_files);
+            prepared
+        });
+        let (checked, model_uses) = self.check_cancellable_with_options(
             &analysis_files,
             python_version,
             true,
             options.ownership,
             options.experimental_finite_matches,
+            prepared.clone(),
         )?;
         let mut result = crate::CheckResult::from_inspection_with_models(
             checked.inspection,
@@ -566,6 +633,84 @@ impl AnalysisSession {
         result
             .available_models
             .sort_by(|left, right| left.id.cmp(&right.id));
+        if let Some(prepared) = prepared {
+            result.check_schema_version = crate::foundation::CHECK_SCHEMA_VERSION;
+            result.model_catalog_version = crate::foundation::MODEL_CATALOG_VERSION;
+            if let Some(runtime) = &prepared.runtime {
+                result
+                    .available_models
+                    .extend(crate::foundation::stdlib_catalog(
+                        runtime,
+                        python_version,
+                        options.ownership,
+                    ));
+                result
+                    .available_models
+                    .sort_by(|left, right| left.id.cmp(&right.id));
+            }
+            let modules = analysis_files
+                .iter()
+                .map(|file| file.module.clone())
+                .collect::<BTreeSet<_>>();
+            let mut scope = salsa::Cancelled::catch(|| {
+                analysis_files
+                    .iter()
+                    .map(|file| {
+                        let imports = self
+                            .files
+                            .get(&file.path)
+                            .map(|input| {
+                                let summary =
+                                    parse_file(&self.db, *input, python_version.to_owned());
+                                let mut imports = summary.absolute_imports.clone();
+                                imports.extend(prepared.submodule_imports(summary));
+                                imports.sort();
+                                imports.dedup();
+                                imports
+                            })
+                            .unwrap_or_default();
+                        crate::foundation::scope_entry(file, imports, &modules)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .map_err(|_| AnalysisCancelled)?;
+            scope.sort_by(|left, right| left.path.cmp(&right.path));
+            result.foundations = Some(crate::foundation::FoundationEvidence {
+                runtime: prepared.runtime.clone(),
+                catalog_revision: crate::foundation::CATALOG_REVISION.into(),
+                model_uses,
+                providers: prepared
+                    .providers
+                    .values()
+                    .cloned()
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
+                provider_issues: prepared.issues.clone(),
+                scope,
+                exhausted_limits: result
+                    .coverage
+                    .reasons
+                    .iter()
+                    .filter(|reason| reason.contains("limit") || reason.contains("budget"))
+                    .cloned()
+                    .collect(),
+                lock_sha256: prepared.lock_digest.clone(),
+                project_models_sha256: prepared.project_models_digest.clone(),
+                comparison: crate::foundation::ComparisonDescriptor {
+                    schema_version: 1,
+                    engine_version: env!("CARGO_PKG_VERSION").into(),
+                    rule_semantic_revision: crate::adoption::RULE_SEMANTIC_VERSION,
+                    finding_identity_revision: crate::adoption::FINGERPRINT_ALGORITHM_VERSION,
+                    source_target: python_version.into(),
+                    ownership: options.ownership,
+                    finite_matches: options.experimental_finite_matches,
+                    catalog_revision: crate::foundation::CATALOG_REVISION.into(),
+                    normalization_revision: 1,
+                    preservation_policy_revision: 1,
+                },
+            });
+        }
         Ok(SessionCheckResult {
             revision: checked.revision,
             result,
@@ -579,7 +724,8 @@ impl AnalysisSession {
         run_must_use: bool,
         ownership: crate::Ownership,
         finite_matches: bool,
-    ) -> Result<SessionInspection, AnalysisCancelled> {
+        inputs: Option<Arc<crate::foundation::PreparedFoundations>>,
+    ) -> Result<(SessionInspection, Vec<crate::foundation::ModelUse>), AnalysisCancelled> {
         if let Some(mut inspection) = rejected_check_input(files) {
             inspection.assurance = if ownership.includes_advanced_contracts() {
                 crate::ADVANCED_ASSURANCE
@@ -591,10 +737,17 @@ impl AnalysisSession {
                 crate::LIFECYCLE_ASSURANCE
             }
             .into();
-            return Ok(SessionInspection {
-                revision: self.revision,
-                inspection,
-            });
+            return Ok((
+                SessionInspection {
+                    revision: self.revision,
+                    inspection,
+                },
+                Vec::new(),
+            ));
+        }
+        if self.model_catalog.foundations != inputs {
+            self.model_catalog.foundations = inputs.clone();
+            self.revision = self.revision.saturating_add(1);
         }
         if self.ownership != ownership {
             self.ownership = ownership;
@@ -609,15 +762,18 @@ impl AnalysisSession {
             python_version,
             run_must_use,
             finite_matches,
+            inputs.clone(),
         )?;
         let revision = inspected.revision;
         let mut inspection = inspected.inspection;
-        inspection.contracts.retain(|contract| {
-            !contract
-                .source
-                .file
-                .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
-        });
+        if inputs.is_none() {
+            inspection.contracts.retain(|contract| {
+                !contract
+                    .source
+                    .file
+                    .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+            });
+        }
         inspection.diagnostics.retain(|diagnostic| {
             !diagnostic
                 .primary
@@ -631,17 +787,37 @@ impl AnalysisSession {
         if inspection.coverage.reasons.is_empty() {
             inspection.coverage.status = "complete-for-supported-subset".into();
         }
+        let models = self.model_catalog.clone();
         let checked = salsa::Cancelled::catch(|| {
             check_flow_query(
                 &self.db,
                 self.files.values().copied().collect(),
                 python_version.to_string(),
-                self.model_catalog.clone(),
+                models,
                 inspection,
                 ownership,
             )
         });
-        let mut result = checked.map_err(|_| AnalysisCancelled)?.clone();
+        let (mut result, model_uses) = checked.map_err(|_| AnalysisCancelled)?.clone();
+        result.contracts.retain(|contract| {
+            !contract
+                .source
+                .file
+                .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+        });
+        result.diagnostics.retain(|diagnostic| {
+            !diagnostic
+                .primary
+                .file
+                .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+        });
+        result
+            .coverage
+            .reasons
+            .retain(|reason| !reason.starts_with(crate::DEPENDENCY_SOURCE_PREFIX));
+        if result.coverage.reasons.is_empty() {
+            result.coverage.status = "complete-for-supported-subset".into();
+        }
         result.diagnostics.sort_by(|left, right| {
             (
                 &left.primary.file,
@@ -666,10 +842,13 @@ impl AnalysisSession {
             "lifecycle-checking-for-supported-exit-flow"
         }
         .into();
-        Ok(SessionInspection {
-            revision,
-            inspection: result,
-        })
+        Ok((
+            SessionInspection {
+                revision,
+                inspection: result,
+            },
+            model_uses,
+        ))
     }
 
     /// Inspect files and return the session revision used to compute the result.
@@ -679,7 +858,7 @@ impl AnalysisSession {
         files: &[SourceFile],
         python_version: &str,
     ) -> Result<SessionInspection, AnalysisCancelled> {
-        self.inspect_cancellable_with_must_use(files, python_version, false, false)
+        self.inspect_cancellable_with_must_use(files, python_version, false, false, None)
     }
 
     fn inspect_cancellable_with_must_use(
@@ -688,6 +867,7 @@ impl AnalysisSession {
         python_version: &str,
         run_must_use: bool,
         finite_matches: bool,
+        foundations: Option<Arc<crate::foundation::PreparedFoundations>>,
     ) -> Result<SessionInspection, AnalysisCancelled> {
         if files.len() > crate::DEFAULT_MAX_INPUT_FILES {
             let source_bytes = files.iter().fold(0usize, |total, file| {
@@ -777,6 +957,7 @@ impl AnalysisSession {
                 python_version.to_string(),
                 run_must_use,
                 finite_matches,
+                foundations,
             )
         })
         .map_err(|_| AnalysisCancelled)?;
@@ -1181,6 +1362,80 @@ mod tests {
             });
             std::fs::write(path, serde_json::to_vec_pretty(&record).unwrap()).unwrap();
         }
+    }
+
+    #[test]
+    fn phase08_manifest_edits_reuse_unrelated_flow_and_match_fresh_checks() {
+        use crate::foundation::{export_manifest, FoundationInputs, ProviderPackage};
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&events);
+        let storage = salsa::Storage::new(Some(Box::new(move |event| {
+            if let salsa::EventKind::WillExecute { database_key } = event.kind {
+                captured.lock().unwrap().push(format!("{database_key:?}"));
+            }
+        })));
+        let mut session = AnalysisSession {
+            db: Database { storage },
+            ..AnalysisSession::default()
+        };
+        let files = [
+            SourceFile::new("caller.py", "caller", "from provider import op\nop()\n"),
+            SourceFile::new("independent.py", "independent", "def op(): return 0\n"),
+        ];
+        let inputs = |version: &str, decorator: &str| {
+            let mut package = ProviderPackage {
+                distribution: "provider".into(),
+                version: version.into(),
+                import_scope: "provider".into(),
+                sources: vec![SourceFile::new(
+                    "provider/__init__.py",
+                    "provider",
+                    format!("from codepact import must_use\n{decorator}def op(): return 1\n"),
+                )],
+                marked: true,
+                manifest: None,
+            };
+            package.manifest =
+                Some(serde_json::to_string(&export_manifest(&package, "3.13").unwrap()).unwrap());
+            FoundationInputs {
+                providers: vec![package],
+                ..FoundationInputs::default()
+            }
+        };
+        let execute = |session: &mut AnalysisSession, inputs| {
+            session.check_with_foundations(&files, "3.13", crate::CheckOptions::default(), inputs)
+        };
+        let executed = |query: &str| {
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|key| key.contains(query))
+                .count()
+        };
+        let first_inputs = inputs("1.0.0", "@must_use\n");
+        let first = execute(&mut session, first_inputs.clone());
+        assert!(first
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP3001"));
+        assert_eq!(executed("select_provider_query"), 1);
+        assert_eq!(executed("check_flow_file_query"), 2);
+
+        events.lock().unwrap().clear();
+        assert_eq!(execute(&mut session, first_inputs), first);
+        assert_eq!(executed("select_provider_query"), 0);
+        assert_eq!(executed("check_flow_file_query"), 0);
+
+        let upgraded = inputs("2.0.0", "");
+        let after = execute(&mut session, upgraded.clone());
+        assert!(after
+            .diagnostics
+            .iter()
+            .all(|finding| finding.code != "TP3001"));
+        assert_eq!(after, execute(&mut AnalysisSession::default(), upgraded));
+        assert_eq!(executed("select_provider_query"), 1);
+        assert_eq!(executed("check_flow_file_query"), 1);
     }
 
     #[test]

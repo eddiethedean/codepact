@@ -26,8 +26,10 @@ pub(super) struct OwnershipState {
     pub(super) possibly_fresh_groups: BTreeSet<String>,
     pub(super) executor_names: BTreeMap<String, String>,
     pub(super) executors: BTreeMap<String, ExecutorState>,
+    pub(super) processes: process::LocalProcesses,
     pub(super) task_names: BTreeMap<String, (String, String)>,
     pub(super) pending_task: Option<(String, String)>,
+    pub(super) active_timeouts: BTreeMap<String, bool>,
     pub(super) incompatible_task_factory: bool,
     pub(super) entering_task: bool,
     inherited_captures: BTreeMap<String, Vec<CaptureSite>>,
@@ -84,6 +86,10 @@ impl OwnershipState {
         let parent = parent.ownership.as_deref()?;
         let mut child = Self::new(parent.mode, return_owned)?;
         child.incompatible_task_factory = parent.incompatible_task_factory;
+        if !parent.entering_task {
+            child.active_timeouts = parent.active_timeouts.clone();
+        }
+        child.processes.custom_wait = parent.processes.custom_wait;
         child.invalidated_modules = parent.invalidated_modules.clone();
         Some(child)
     }
@@ -117,6 +123,10 @@ impl OwnershipState {
         joined.pending_move &= right.pending_move;
         joined.overflowed |= right.overflowed;
         joined.incompatible_task_factory |= right.incompatible_task_factory;
+        joined
+            .active_timeouts
+            .retain(|id, immediate| right.active_timeouts.get(id) == Some(immediate));
+        joined.processes.join(&right.processes);
         joined
             .invalidated_modules
             .extend(right.invalidated_modules.iter().cloned());
@@ -232,6 +242,7 @@ impl OwnershipState {
 
     pub(super) fn apply_runtime_effects(&mut self, other: &Self) {
         self.incompatible_task_factory |= other.incompatible_task_factory;
+        self.processes.custom_wait |= other.processes.custom_wait;
         self.invalidated_modules
             .extend(other.invalidated_modules.iter().cloned());
     }
@@ -248,6 +259,7 @@ impl OwnershipState {
         self.group_names.remove(name);
         self.task_names.remove(name);
         self.executor_names.remove(name);
+        self.processes.rebind(name);
     }
 
     pub(super) fn own(&mut self, name: &str, targets: &BTreeSet<String>) {
@@ -298,9 +310,13 @@ impl OwnershipState {
         let executor = source
             .and_then(|source| self.executor_names.get(source))
             .cloned();
+        // Save the process alias before the other binding domains are cleared.
+        let mut processes = std::mem::take(&mut self.processes);
+        processes.bind_alias(name, source);
         if source != Some(name) {
             self.rebind(name);
         }
+        self.processes = processes;
         if let Some(moved) = moved {
             self.moved.insert(name.to_owned(), moved);
         }
@@ -359,6 +375,20 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
             Some("external:concurrent.futures.ThreadPoolExecutor")
         }
         ("asyncio", "TaskGroup") => Some(TASK_GROUP),
+        ("builtins", "open") => Some("external:builtins.open"),
+        ("asyncio", "create_task") => Some("external:asyncio.create_task"),
+        ("asyncio", "shield") => Some("external:asyncio.shield"),
+        ("asyncio", "timeout") => Some("external:asyncio.timeout"),
+        ("asyncio", "sleep") => Some("external:asyncio.sleep"),
+        ("asyncio", "get_running_loop") => Some("external:asyncio.get_running_loop"),
+        ("asyncio", "get_event_loop") => Some("external:asyncio.get_event_loop"),
+        ("asyncio", "set_event_loop") => Some("external:asyncio.set_event_loop"),
+        ("asyncio", "CancelledError") => Some("external:asyncio.CancelledError"),
+        ("asyncio", "set_event_loop_policy") => Some("external:asyncio.set_event_loop_policy"),
+        ("multiprocessing", "get_context") => Some("external:multiprocessing.get_context"),
+        ("multiprocessing", "Process") => Some("external:multiprocessing.Process"),
+        ("multiprocessing", "Pool") => Some("external:multiprocessing.Pool"),
+        ("signal", "signal") => Some("external:signal.signal"),
         _ => None,
     }
 }
@@ -501,6 +531,7 @@ pub(super) fn escape_task_handles(
     let Some(ownership) = env.ownership.as_mut() else {
         return;
     };
+    ownership.processes.escape(names, file, range, result);
     let groups = names
         .iter()
         .filter_map(|name| {
@@ -894,7 +925,17 @@ pub(super) fn prepare_call(
     else {
         unreachable!("prepare_call requires a call");
     };
-    if let AstExprKind::Attribute(receiver, method) = &mut function.kind {
+    let published = providers::public_name(function, env)
+        .map(|public| format!("provider:{public}"))
+        .filter(|key| functions.contains_key(key));
+    if let Some(qualified) =
+        published.filter(|_| matches!(function.kind, AstExprKind::Attribute(..)))
+    {
+        let name = format!(":callable:{}", original.range.start);
+        env.function_bindings.insert(name.clone(), qualified);
+        prepared.temporaries.push(name.clone());
+        function.kind = AstExprKind::Name(name);
+    } else if let AstExprKind::Attribute(receiver, method) = &mut function.kind {
         if let Some(name) = expr_name(receiver).map(str::to_owned) {
             report_possibly_unbound_alias(&name, receiver.range, env, file, result);
             prepared.invalid_receiver = check_moved(&name, env, file, receiver.range, result);
@@ -911,6 +952,7 @@ pub(super) fn prepare_call(
                         ownership.group_names.contains_key(&name)
                             || ownership.task_names.contains_key(&name)
                             || ownership.executor_names.contains_key(&name)
+                            || ownership.processes.has_handle(&name)
                     })
                     || env
                         .function_bindings
@@ -979,6 +1021,7 @@ fn snapshot_name(
     let group = ownership.group_names.get(source).cloned();
     let task = ownership.task_names.get(source).cloned();
     let executor = ownership.executor_names.get(source).cloned();
+    let process = ownership.processes.has_handle(source);
     // Captures restored by the coroutine executor already have value identity.
     if ownership.transfer_arguments.contains(source)
         || targets.is_none()
@@ -988,6 +1031,7 @@ fn snapshot_name(
             && group.is_none()
             && task.is_none()
             && executor.is_none()
+            && !process
     {
         return;
     }
@@ -1015,6 +1059,9 @@ fn snapshot_name(
     }
     if let Some(executor) = executor {
         ownership.executor_names.insert(temporary.clone(), executor);
+    }
+    if process {
+        ownership.processes.bind_alias(&temporary, Some(source));
     }
     expression.kind = AstExprKind::Name(temporary.clone());
     temporaries.push(temporary);

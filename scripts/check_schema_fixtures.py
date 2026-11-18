@@ -280,6 +280,31 @@ def main() -> int:
             "settings-v2.schema.json",
             cli_output([*advanced_args, "--show-settings"]),
         )
+        foundations_config = project / "foundations.toml"
+        _ = foundations_config.write_text(
+            "[tool.codepact]\nconfig-version = 1\n"
+            'experimental-foundations = true\npython-version = "3.13"\n'
+            "[tool.codepact.runtime-profile]\n"
+            'implementation = "cpython"\npython-version = "3.13.16"\n'
+            'os = "linux"\narchitecture = "x86_64"\n',
+            encoding="utf-8",
+        )
+        foundations_args = [
+            "check",
+            "--root",
+            str(project),
+            "--config",
+            str(foundations_config),
+            "--json",
+        ]
+        validate_emitted(
+            "0.8 check", "check-report-v4.schema.json", cli_output(foundations_args)
+        )
+        validate_emitted(
+            "0.8 settings",
+            "settings-v3.schema.json",
+            cli_output([*foundations_args, "--show-settings"]),
+        )
         _ = cli_output(
             [
                 "baseline",

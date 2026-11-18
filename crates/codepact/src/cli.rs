@@ -17,6 +17,7 @@ fn write_stderr(value: &str) -> Result<(), String> {
 
 fn usage() {
     stderr_line!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--dependency-root DIR] [--config PYPROJECT|--no-config] [--python-version VERSION] [--experimental-ownership|--no-experimental-ownership] [--experimental-advanced-contracts|--no-experimental-advanced-contracts] [--experimental-finite-matches|--no-experimental-finite-matches] [--mode advisory|strict] [--fail-on error|warning] [--rules CODE[,CODE...]] [--severity CODE=LEVEL] [--json|--output-format text|json|concise] [--baseline FILE] [--max-diagnostics N] [FILE...]\n       codepact baseline update --output FILE --reason TEXT [--replace] [--json] [check options]\n       codepact capabilities --json\n       codepact explain RULE --json\n       codepact --version");
+    stderr_line!("       codepact contracts export --root DIR --distribution NAME --version VERSION --import-scope PACKAGE [--python-version VERSION]\n       codepact contracts verify WHEEL [--python-version VERSION]");
 }
 
 fn emit_failure(format: &str, message: String) -> ExitCode {
@@ -59,6 +60,8 @@ mod discovery;
 mod input;
 mod metadata;
 mod output;
+mod providers;
+mod publications;
 use discovery::resolve_project_root;
 #[cfg(test)]
 use discovery::{discover_python_files, discover_python_files_with_limits, DiscoveryLimits};
@@ -117,6 +120,12 @@ pub(super) fn run() -> ExitCode {
             return ExitCode::from(2);
         }
         return ExitCode::SUCCESS;
+    }
+    if command == "contracts" {
+        return match publications::run(args).and_then(|output| write_stdout(&output)) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => emit_failure("text", error),
+        };
     }
     let inspecting = command == "inspect-contracts";
     let baseline_update = command == "baseline";
@@ -177,7 +186,7 @@ pub(super) fn run() -> ExitCode {
             Ok(root) => root,
             Err(error) => return emit_failure(&output_format, error),
         };
-        let output = serde_json::to_string_pretty(&serde_json::json!({
+        let mut settings = serde_json::json!({
             "execution_status": "settings-resolved",
             "settings_schema_version": 2,
             "root": root,
@@ -197,8 +206,27 @@ pub(super) fn run() -> ExitCode {
             "baseline": c.baseline,
             "severity": c.severity,
             "settings_origins": c.settings_origins
-        }))
-        .unwrap();
+        });
+        if let Some(profile) = &c.runtime_profile {
+            settings["runtime_profile"] = serde_json::to_value(profile).unwrap();
+        }
+        if c.experimental_foundations {
+            settings["experimental_foundations"] = serde_json::Value::Bool(true);
+        }
+        if !c.project_contracts.is_empty() {
+            settings["project_contracts"] = serde_json::to_value(&c.project_contracts).unwrap();
+        }
+        if let Some(lock) = &c.uv_lock {
+            settings["uv_lock"] = serde_json::to_value(lock).unwrap();
+        }
+        if c.experimental_foundations
+            || c.runtime_profile.is_some()
+            || !c.project_contracts.is_empty()
+            || c.uv_lock.is_some()
+        {
+            settings["settings_schema_version"] = serde_json::Value::from(3);
+        }
+        let output = serde_json::to_string_pretty(&settings).unwrap();
         if let Err(error) = write_stdout(&output) {
             stderr_line!("codepact: {error}");
             return ExitCode::from(2);
@@ -284,7 +312,6 @@ pub(super) fn run() -> ExitCode {
     };
     let files = loaded.files;
     let physical_files = loaded.physical_files;
-    let provider_distributions = loaded.provider_distributions;
     if let Some(destination) = baseline_destination.as_deref() {
         let canonical_destination = fs::canonicalize(destination).or_else(|_| {
             let parent = destination.parent().unwrap_or(Path::new("."));
@@ -328,18 +355,25 @@ pub(super) fn run() -> ExitCode {
         };
     }
     let config: EffectiveConfig = effective.expect("checking resolves effective configuration");
-    let mut result = codepact::check_with_options(
-        &files,
-        &python_version,
-        codepact::CheckOptions {
-            ownership: config.ownership,
-            experimental_finite_matches: config.finite_matches,
-            ..codepact::CheckOptions::default()
-        },
-    );
+    let options = codepact::CheckOptions {
+        ownership: config.ownership,
+        experimental_finite_matches: config.finite_matches,
+        ..codepact::CheckOptions::default()
+    };
+    let mut result = if let Some(foundations) = loaded.foundations {
+        codepact::check_with_foundations(&files, &python_version, options, foundations)
+    } else {
+        codepact::check_with_options(&files, &python_version, options)
+    };
     for provider in &config.required_providers {
-        let expected = input::normalized_distribution(provider).unwrap_or_default();
-        if provider_distributions.contains(&expected) {
+        let expected = codepact::foundation::normalized_distribution(provider).unwrap_or_default();
+        if result.foundations.as_ref().is_some_and(|evidence| {
+            evidence.providers.iter().any(|selected| {
+                selected.distribution == expected
+                    && selected.reason.is_none()
+                    && matches!(selected.origin.as_str(), "inline-source" | "manifest")
+            })
+        }) {
             continue;
         }
         let message = format!("required CodePact provider {provider} was not resolved from the selected dependency roots");

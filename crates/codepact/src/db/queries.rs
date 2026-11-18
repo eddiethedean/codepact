@@ -5,6 +5,18 @@ use std::{
     sync::Arc,
 };
 
+#[salsa::tracked(returns(ref))]
+pub(super) fn select_provider_query(
+    db: &dyn Db,
+    provider: Arc<crate::foundation::ProviderPackage>,
+    python_version: String,
+) -> crate::foundation::SelectedPublication {
+    db.unwind_if_revision_cancelled();
+    let publication = crate::foundation::select_publication(&provider, &python_version);
+    db.unwind_if_revision_cancelled();
+    publication
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct FlowFileContext {
     model_catalog: crate::model::FlowModelCatalog,
@@ -59,9 +71,16 @@ fn inspect_module_query(
     context: crate::semantic::ModuleContext,
     run_must_use: bool,
     finite_matches: bool,
+    submodules: BTreeSet<String>,
 ) -> crate::semantic::ModuleAnalysis {
     let source = SourceFile::new(file.path(db), file.module(db), file.semantic_source(db));
     let summary = parse_file(db, file, python_version.clone());
+    let resolved = (!submodules.is_empty()).then(|| {
+        let mut resolved = summary.clone();
+        crate::foundation::normalize_submodule_imports(&mut resolved, &submodules);
+        resolved
+    });
+    let summary = resolved.as_ref().unwrap_or(summary);
     let analysis = crate::source::with_indexed_sources([source.source.as_str()], || {
         crate::semantic::inspect_module(
             &source,
@@ -84,8 +103,9 @@ fn module_exports_query(
     file: FileInput,
     python_version: String,
     context: crate::semantic::ModuleContext,
+    submodules: BTreeSet<String>,
 ) -> crate::semantic::SemanticExports {
-    inspect_module_query(db, file, python_version, context, false, false)
+    inspect_module_query(db, file, python_version, context, false, false, submodules)
         .exports
         .clone()
 }
@@ -97,6 +117,7 @@ pub(super) fn inspect_project_query(
     python_version: String,
     run_must_use: bool,
     finite_matches: bool,
+    foundations: Option<Arc<crate::foundation::PreparedFoundations>>,
 ) -> Inspection {
     db.unwind_if_revision_cancelled();
     let sizes: Vec<_> = files
@@ -135,6 +156,22 @@ pub(super) fn inspect_project_query(
         parsed.insert(source.path.clone(), summary);
         sources.push(source);
     }
+    let mut submodules_by_path = BTreeMap::new();
+    let mut resolved = BTreeMap::new();
+    if let Some(inputs) = &foundations {
+        for (path, summary) in &parsed {
+            let submodules = inputs.submodule_imports(summary);
+            if !submodules.is_empty() {
+                let mut summary = (*summary).clone();
+                crate::foundation::normalize_submodule_imports(&mut summary, &submodules);
+                resolved.insert(path.clone(), summary);
+                submodules_by_path.insert(path.clone(), submodules);
+            }
+        }
+    }
+    for (path, summary) in &resolved {
+        parsed.insert(path.clone(), summary);
+    }
     let plan = crate::semantic::plan_project(&sources, &python_version, &parsed);
     let mut computed_exports = BTreeMap::new();
     let mut module_inspections = Vec::new();
@@ -145,8 +182,14 @@ pub(super) fn inspect_project_query(
         let Some(summary) = parsed.get(&source.path) else {
             continue;
         };
-        let context =
-            crate::semantic::context_for_module(source, summary, &plan, &computed_exports);
+        let context = crate::semantic::context_for_module(
+            source,
+            summary,
+            &plan,
+            &computed_exports,
+            foundations.as_deref(),
+        );
+        let submodules = submodules_by_path.remove(&source.path).unwrap_or_default();
         let analysis = inspect_module_query(
             db,
             file,
@@ -154,14 +197,29 @@ pub(super) fn inspect_project_query(
             context.clone(),
             run_must_use,
             finite_matches,
+            submodules.clone(),
         );
-        let exports = module_exports_query(db, file, python_version.clone(), context);
+        let exports = module_exports_query(db, file, python_version.clone(), context, submodules);
         computed_exports.insert(source.module.clone(), exports.clone());
         module_inspections.push(analysis.inspection.clone());
     }
     let inspection = crate::semantic::combine_project(plan.inspection, module_inspections);
     db.unwind_if_revision_cancelled();
     inspection
+}
+
+fn flow_summary(
+    db: &dyn Db,
+    file: FileInput,
+    python_version: &str,
+    model_catalog: &crate::model::FlowModelCatalog,
+) -> ParseSummary {
+    let mut summary = parse_file(db, file, python_version.to_owned()).clone();
+    if let Some(inputs) = &model_catalog.foundations {
+        let submodules = inputs.submodule_imports(&summary);
+        crate::foundation::normalize_submodule_imports(&mut summary, &submodules);
+    }
+    summary
 }
 
 #[salsa::tracked(returns(ref))]
@@ -173,7 +231,7 @@ fn check_flow_file_query(
     flow_budget: usize,
     context: FlowFileContext,
     mut inspection: Inspection,
-) -> Inspection {
+) -> (Inspection, Vec<crate::foundation::ModelUse>) {
     db.unwind_if_revision_cancelled();
     let sources: Vec<_> = dependencies
         .iter()
@@ -190,30 +248,33 @@ fn check_flow_file_query(
         .map(|dependency| {
             (
                 dependency.path(db).to_string(),
-                parse_file(db, *dependency, python_version.clone()).clone(),
+                flow_summary(db, *dependency, &python_version, &context.model_catalog),
             )
         })
         .collect();
     crate::flow::reset_flow_budget(flow_budget);
-    crate::source::with_indexed_sources(
-        sources.iter().map(|source| source.source.as_str()),
-        || {
-            crate::flow::check_file_bodies(
-                file.path(db),
-                &sources,
-                &summaries,
-                &mut inspection,
-                crate::flow::FlowOptions {
-                    python_version: &python_version,
-                    models: &context.model_catalog,
-                    cyclic_modules: &context.cyclic_modules,
-                    ownership: context.ownership,
+    let ((), uses) =
+        crate::foundation::collect_model_uses(context.model_catalog.foundations.is_some(), || {
+            crate::source::with_indexed_sources(
+                sources.iter().map(|source| source.source.as_str()),
+                || {
+                    crate::flow::check_file_bodies(
+                        file.path(db),
+                        &sources,
+                        &summaries,
+                        &mut inspection,
+                        crate::flow::FlowOptions {
+                            python_version: &python_version,
+                            models: &context.model_catalog,
+                            cyclic_modules: &context.cyclic_modules,
+                            ownership: context.ownership,
+                        },
+                    );
                 },
-            );
-        },
-    );
+            )
+        });
     db.unwind_if_revision_cancelled();
-    inspection
+    (inspection, uses)
 }
 
 #[salsa::tracked(returns(ref))]
@@ -224,7 +285,7 @@ pub(super) fn check_flow_query(
     model_catalog: crate::model::FlowModelCatalog,
     mut inspection: Inspection,
     ownership: crate::Ownership,
-) -> Inspection {
+) -> (Inspection, Vec<crate::foundation::ModelUse>) {
     db.unwind_if_revision_cancelled();
     let sources: Vec<_> = files
         .iter()
@@ -235,7 +296,7 @@ pub(super) fn check_flow_query(
         .map(|file| {
             (
                 file.path(db).to_string(),
-                parse_file(db, *file, python_version.clone()).clone(),
+                flow_summary(db, *file, &python_version, &model_catalog),
             )
         })
         .collect();
@@ -265,6 +326,7 @@ pub(super) fn check_flow_query(
             .source
             .file
             .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+            && model_catalog.foundations.is_none()
         {
             continue;
         }
@@ -277,6 +339,7 @@ pub(super) fn check_flow_query(
     // Since the input file cap is lower than the total flow-step limit, every file
     // receives a nonzero share and the sum of all per-file limits stays bounded.
     let flow_budget = crate::flow::MAX_FLOW_STEPS / files.len().max(1);
+    let mut uses = BTreeSet::new();
     for (target, source) in files.iter().copied().zip(&sources) {
         db.unwind_if_revision_cancelled();
         if target.path(db).starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
@@ -336,12 +399,21 @@ pub(super) fn check_flow_query(
             .iter()
             .map(|contract| contract.base_symbol.clone())
             .collect::<BTreeSet<_>>();
+        let mut scoped_models = model_catalog.for_resource_symbols(&resource_symbols);
+        scoped_models.foundations = model_catalog.foundations.as_ref().map(|inputs| {
+            let imported = dependencies
+                .iter()
+                .filter_map(|dependency| summaries.get(dependency.path(db)))
+                .flat_map(|summary| summary.absolute_imports.iter().map(String::as_str))
+                .collect();
+            Arc::new(inputs.for_modules(&dependency_modules, &imported))
+        });
         let flow_context = FlowFileContext {
-            model_catalog: model_catalog.for_resource_symbols(&resource_symbols),
+            model_catalog: scoped_models,
             cyclic_modules: cyclic_modules.clone(),
             ownership,
         };
-        let flow = check_flow_file_query(
+        let (flow, file_uses) = check_flow_file_query(
             db,
             target,
             dependencies,
@@ -350,6 +422,7 @@ pub(super) fn check_flow_query(
             flow_context,
             flow_input,
         );
+        uses.extend(file_uses.iter().cloned());
         inspection
             .diagnostics
             .extend(flow.diagnostics.iter().cloned());
@@ -363,5 +436,5 @@ pub(super) fn check_flow_query(
         }
     }
     db.unwind_if_revision_cancelled();
-    inspection
+    (inspection, uses.into_iter().collect())
 }

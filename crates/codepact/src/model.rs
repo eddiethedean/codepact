@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::sync::OnceLock;
 
 pub const CHECK_SCHEMA_VERSION: u8 = 1;
 pub const CHECK_MODEL_CATALOG_VERSION: u8 = 2;
@@ -63,12 +64,15 @@ pub(crate) struct ModelAlias {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) struct FlowModelCatalog {
     resources: Vec<ResourceEffectModel>,
+    #[serde(skip)]
+    pub(crate) foundations: Option<std::sync::Arc<crate::foundation::PreparedFoundations>>,
 }
 
 impl Default for FlowModelCatalog {
     fn default() -> Self {
         let mut catalog = Self {
             resources: Vec::new(),
+            foundations: None,
         };
         for model in builtin_resource_effect_models() {
             catalog
@@ -84,6 +88,67 @@ fn builtin_resource_effect_models() -> Vec<ResourceEffectModel> {
     // the flow engine. Resource-specific close summaries are added here only
     // when their source and outcome matrix have been reviewed.
     Vec::new()
+}
+
+fn stdlib_file_close() -> &'static ResourceEffectModel {
+    static FILE_CLOSE: OnceLock<ResourceEffectModel> = OnceLock::new();
+    FILE_CLOSE.get_or_init(|| ResourceEffectModel {
+        id: "TPM-FILE-001".into(),
+        qualified_symbol: "_io.TextIOWrapper".into(),
+        close_method: "close".into(),
+        source_revision: "v3.13.16".into(),
+        source_url: "https://github.com/python/cpython/blob/v3.13.16/Modules/_io/textio.c".into(),
+        supported_python_versions: BTreeSet::from(["3.13".into()]),
+        platform_assumptions: vec!["CPython 3.13.16 on Linux x86_64".into()],
+        argument_aliases: Vec::new(),
+        result_alias: None,
+        duty_handoff: "none".into(),
+        suppression: "not-a-context-manager".into(),
+        asynchronous: false,
+        normal: Some(LifecyclePostcondition::Closed),
+        exceptional: Some(LifecyclePostcondition::Unknown),
+        cancelled: None,
+        repeat_close: RepeatClosePolicy::Idempotent,
+        post_close_methods: BTreeSet::new(),
+        trust: "reviewed-model".into(),
+        reviewer: "CodePact 0.8 model specification".into(),
+        valid_cases: vec!["close and context exit of a text file".into()],
+        invalid_cases: vec!["use after close".into()],
+        unknown_cases: vec!["raised close".into()],
+    })
+}
+
+pub(crate) fn project_resource_close(
+    model: &crate::foundation::ProjectResourceModel,
+    target: &str,
+) -> ResourceEffectModel {
+    ResourceEffectModel {
+        id: format!("project-model:{}", model.factory),
+        qualified_symbol: model.resource.clone(),
+        close_method: model.close_method.clone(),
+        source_revision: format!("{}=={}", model.distribution, model.version),
+        source_url: String::new(),
+        supported_python_versions: BTreeSet::from([target.to_owned()]),
+        platform_assumptions: Vec::new(),
+        argument_aliases: Vec::new(),
+        result_alias: None,
+        duty_handoff: "none".into(),
+        suppression: "not-a-context-manager".into(),
+        asynchronous: false,
+        normal: Some(LifecyclePostcondition::Closed),
+        exceptional: Some(match model.exceptional_close {
+            crate::foundation::ExceptionalClose::Closed => LifecyclePostcondition::Closed,
+            crate::foundation::ExceptionalClose::Unknown => LifecyclePostcondition::Unknown,
+        }),
+        cancelled: None,
+        repeat_close: RepeatClosePolicy::Unspecified,
+        post_close_methods: BTreeSet::new(),
+        trust: "reviewed-project-model".into(),
+        reviewer: model.provenance.clone(),
+        valid_cases: Vec::new(),
+        invalid_cases: Vec::new(),
+        unknown_cases: Vec::new(),
+    }
 }
 
 impl FlowModelCatalog {
@@ -175,11 +240,21 @@ impl FlowModelCatalog {
         close_method: &str,
         python_version: &str,
     ) -> Option<&ResourceEffectModel> {
-        self.resources.iter().find(|model| {
-            model.qualified_symbol == qualified_symbol
-                && model.close_method == close_method
-                && model.supported_python_versions.contains(python_version)
-        })
+        self.resources
+            .iter()
+            .find(|model| {
+                model.qualified_symbol == qualified_symbol
+                    && model.close_method == close_method
+                    && model.supported_python_versions.contains(python_version)
+            })
+            .or_else(|| {
+                let runtime = self.foundations.as_ref()?.runtime.as_ref()?;
+                let file = stdlib_file_close();
+                (runtime.applicability(python_version).is_ok()
+                    && file.qualified_symbol == qualified_symbol
+                    && file.close_method == close_method)
+                    .then_some(file)
+            })
     }
 
     pub(crate) fn for_resource_symbols(&self, symbols: &BTreeSet<String>) -> Self {
@@ -190,6 +265,7 @@ impl FlowModelCatalog {
                 .filter(|model| symbols.contains(&model.qualified_symbol))
                 .cloned()
                 .collect(),
+            foundations: self.foundations.clone(),
         }
     }
 }
@@ -305,7 +381,7 @@ mod flow_model_tests {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
     pub file: String,
     pub line: usize,
@@ -380,6 +456,8 @@ pub struct CheckResult {
     pub contracts: Vec<Contract>,
     pub diagnostics: Vec<CheckDiagnostic>,
     pub coverage: Coverage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foundations: Option<crate::foundation::FoundationEvidence>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -519,6 +597,10 @@ impl CheckResult {
                         .cloned()
                 };
                 let trust = match diagnostic.code.as_str() {
+                    "TP1001" | "TP1002" | "TP1003" | "TP2001" | "TP2002" | "TP2005"
+                        if diagnostic.semantic_identity.iter().any(|entry| entry.contains("installed-checked-source")) => "source-checked",
+                    "TP1001" | "TP1002" | "TP1003" | "TP2001"
+                        if diagnostic.semantic_identity.iter().any(|entry| entry.contains("reviewed-model")) => "reviewed-model",
                     "TP1001" | "TP1002" | "TP1003" | "TP2001" => "declared-unverified",
                     "TP9001" | "TP9002" => "unknown-boundary",
                     "TP2006" if diagnostic.semantic_identity.iter().any(|id| id.starts_with("TPM-TASK-001@")) => "reviewed-model",
@@ -534,7 +616,7 @@ impl CheckResult {
                         if diagnostic
                             .semantic_identity
                             .iter()
-                            .any(|id| id.starts_with("TPM-TASK-001@")) =>
+                            .any(|id| id.starts_with("TPM-TASK-001@") || id.starts_with("TPM-PROCESS-001@") || id.starts_with("TPM-POOL-001@")) =>
                     {
                         "reviewed-model"
                     }
@@ -590,7 +672,7 @@ impl CheckResult {
                         canonical_symbol: diagnostic.semantic_identity[2].clone(),
                         distribution: diagnostic.semantic_identity[3].clone(),
                         version: diagnostic.semantic_identity[4].clone(),
-                        origin_kind: "installed-wheel".into(),
+                        origin_kind: diagnostic.semantic_identity.get(5).cloned().unwrap_or_else(|| "installed-wheel".into()),
                     });
                 CheckDiagnostic {
                     semantic_identity: diagnostic.semantic_identity,
@@ -730,6 +812,7 @@ impl CheckResult {
             contracts: inspection.contracts,
             diagnostics,
             coverage: inspection.coverage,
+            foundations: None,
         }
     }
 }

@@ -49,17 +49,20 @@ def verify_installed_outcome_typing(interpreter: Path, root: Path, work: Path) -
     )
 
 
-def verify_documented_upgrade(dist: Path, work: Path) -> None:
-    """Replay documented upgrades from 0.5.1 and 0.6.0 to the 0.7 CLI extra."""
-    for previous_version in ("0.5.1", "0.6.0"):
+def verify_documented_upgrade(dist: Path, work: Path, candidate_version: str) -> None:
+    """Replay upgrades to the candidate's exact helper and CLI extra."""
+    for previous_version in ("0.5.1", "0.6.0", "0.7.0"):
         project = work / f"upgrade-project-{previous_version}"
         project.mkdir()
+        interpreter_package = (
+            "codepact[cli]" if previous_version == "0.7.0" else "codepact"
+        )
         (project / "pyproject.toml").write_text(
             "[project]\n"
             'name = "codepact-upgrade-qualification"\n'
             'version = "0.1.0"\n'
             'requires-python = ">=3.11"\n'
-            f'dependencies = ["codepact=={previous_version}"]\n'
+            f'dependencies = ["{interpreter_package}=={previous_version}"]\n'
             "\n[tool.uv]\n"
             "package = false\n",
             encoding="utf-8",
@@ -85,13 +88,13 @@ def verify_documented_upgrade(dist: Path, work: Path) -> None:
 
         uv(
             "add",
-            "codepact[cli]==0.7.0",
+            f"codepact[cli]=={candidate_version}",
             "--find-links",
             str(dist),
         )
         uv("sync", "--locked")
         version = uv("run", "--locked", "codepact", "--version", capture=True)
-        if version != "codepact 0.7.0":
+        if version != f"codepact {candidate_version}":
             raise RuntimeError(
                 f"the upgraded command has unexpected version: {version}"
             )
@@ -103,7 +106,10 @@ def verify_documented_upgrade(dist: Path, work: Path) -> None:
             "from codepact import Ok; from codepact.rust import Ok as RustOk; "
             "assert Ok is RustOk",
         )
-        print(f"Documented {previous_version}-to-0.7.0 helper and CLI upgrade passed")
+        print(
+            f"Documented {previous_version}-to-{candidate_version} helper "
+            "and CLI upgrade passed"
+        )
 
 
 def verify_installed_marked_provider(
@@ -549,7 +555,8 @@ def main() -> None:
                         any(".data/scripts/codepact" in name for name in names) == cli
                     )
                     assert ("codepact/py.typed" in names) != cli
-        verify_documented_upgrade(work / "dist", work)
+        helper_version = locked_package_version(root, "codepact")
+        verify_documented_upgrade(work / "dist", work, helper_version)
         typing_extensions_version = locked_package_version(root, "typing-extensions")
         python_executable = Path(sys.base_prefix) / (
             "python.exe"
@@ -646,7 +653,6 @@ def main() -> None:
         extra_interpreter = extra_environment / (
             "Scripts/python.exe" if os.name == "nt" else "bin/python"
         )
-        helper_version = locked_package_version(root, "codepact")
         subprocess.run(
             [
                 "uv",
@@ -691,6 +697,17 @@ def main() -> None:
             scripts_directory / ("codepact.exe" if os.name == "nt" else "codepact"),
             work,
         )
+        publication_checks = [
+            sys.executable,
+            str(root / "scripts/check_phase08_artifacts.py"),
+            "--cli",
+            str(
+                scripts_directory / ("codepact.exe" if os.name == "nt" else "codepact")
+            ),
+        ]
+        if receipt := os.environ.get("CODEPACT_PHASE08_ARTIFACT_EVIDENCE"):
+            publication_checks.extend(["--receipt", str(Path(receipt).resolve())])
+        subprocess.run(publication_checks, cwd=work, check=True)
 
         source_artifacts = work / "cli-extra-sources"
         source_artifacts.mkdir()

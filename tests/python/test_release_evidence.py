@@ -81,6 +81,15 @@ class ReleaseEvidenceTest(unittest.TestCase):
             phase_plan.parent.mkdir(parents=True)
             phase_plan.write_text("- [ ] **R01** — Runtime outcome checks.\n")
             self.assertEqual(required_phase_gates(root, "0.7.0"), ["R01"])
+            (phase_plan.parent / "0.8-former.md").write_text(
+                "# Archived\n\nStatus **Superseded as a release assignment**.\n"
+                "- [ ] **E01** — Historical gate.\n"
+            )
+            (phase_plan.parent / "0.8-active.md").write_text(
+                "- [ ] **AS01** — Task lifecycle.\n"
+                "- [ ] **E10-A** — Built-wheel check.\n"
+            )
+            self.assertEqual(required_phase_gates(root, "0.8.0"), ["AS01", "E10-A"])
 
     def test_maintainer_can_validate_and_approve_every_gate_alone(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -158,6 +158,7 @@ faq
 :caption: Reference
 
 cli
+phase08-preview
 rules
 supported-syntax
 limitations

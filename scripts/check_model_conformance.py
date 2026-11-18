@@ -26,6 +26,8 @@ class ModelSuite:
     module: str
     upstream_modules: tuple[str, ...]
     tests: tuple[str, ...]
+    platform: str | None = None
+    machine: str | None = None
 
 
 def object_value(value: object, label: str) -> dict[str, object]:
@@ -79,6 +81,12 @@ def load_manifest(path: Path) -> tuple[ModelSuite, ...]:
                 module,
                 string_list(suite.get("upstream_modules"), "upstream_modules"),
                 tests,
+                string_value(suite["platform"], "platform")
+                if "platform" in suite
+                else None,
+                string_value(suite["machine"], "machine")
+                if "machine" in suite
+                else None,
             )
         )
     for label, values in (
@@ -161,7 +169,13 @@ def qualify(root: Path, manifest_path: Path, python_version: str) -> dict[str, o
         return receipt
     selected = [suite for suite in suites if python_version in suite.python_versions]
     receipt["selected_suites"] = [
-        {"id": suite.identifier, "models": suite.models} for suite in selected
+        {
+            "id": suite.identifier,
+            "models": suite.models,
+            **({"platform": suite.platform} if suite.platform else {}),
+            **({"machine": suite.machine} if suite.machine else {}),
+        }
+        for suite in selected
     ]
     required = sorted(test for suite in selected for test in suite.tests)
     receipt["required"] = required
@@ -175,6 +189,16 @@ def qualify(root: Path, manifest_path: Path, python_version: str) -> dict[str, o
             f"expected CPython {python_version}; got "
             f"{actual['implementation']} {actual['python_version']}"
         )
+    for suite in selected:
+        if suite.platform is not None and suite.platform != actual["platform"]:
+            errors.append(
+                f"{suite.identifier} requires {suite.platform}, "
+                f"got {actual['platform']}"
+            )
+        if suite.machine is not None and suite.machine != actual["machine"]:
+            errors.append(
+                f"{suite.identifier} requires {suite.machine}, got {actual['machine']}"
+            )
     # Do not import or run probes on a runtime that cannot qualify the model.
     if errors:
         return receipt

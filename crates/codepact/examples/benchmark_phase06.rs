@@ -105,6 +105,10 @@ fn measure(workload: &str, size: usize) {
         baseline: None,
         dependency_roots: Vec::new(),
         required_providers: Vec::new(),
+        runtime_profile: None,
+        experimental_foundations: false,
+        project_contracts: Vec::new(),
+        uv_lock: None,
         severity: Default::default(),
         settings_origins: Default::default(),
     };

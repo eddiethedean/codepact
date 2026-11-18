@@ -21,6 +21,7 @@ pub use config::{
 use fingerprint::{code_before_comment, fingerprint, hash, source_comments, AnchorCache};
 
 pub const ADOPTION_SCHEMA_VERSION: u8 = 3;
+pub const FOUNDATION_ADOPTION_SCHEMA_VERSION: u8 = 4;
 pub const BASELINE_SCHEMA_VERSION: u8 = 1;
 pub const FINGERPRINT_ALGORITHM_VERSION: u8 = 5;
 pub const RULE_SEMANTIC_VERSION: u8 = 4;
@@ -48,6 +49,8 @@ pub struct AdoptionReport {
     pub target_python_version: String,
     pub model_catalog_version: u8,
     pub available_models: Vec<crate::CheckModelMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foundations: Option<crate::foundation::FoundationEvidence>,
     pub assurance: String,
     pub contracts: Vec<crate::Contract>,
     pub coverage: crate::Coverage,
@@ -363,7 +366,7 @@ pub fn build_report(
     }
     let mut files_by_path = files.iter().collect::<Vec<_>>();
     files_by_path.sort_by(|a, b| (&a.path, &a.module).cmp(&(&b.path, &b.module)));
-    let snapshot_manifest = files_by_path
+    let mut snapshot_manifest = files_by_path
         .iter()
         .map(|file| SnapshotFile {
             logical_path: file.path.clone(),
@@ -374,6 +377,16 @@ pub fn build_report(
         .iter()
         .map(|file| (&file.path, &file.module))
         .collect::<Vec<_>>();
+    if let Some(evidence) = &result.foundations {
+        snapshot_manifest = evidence
+            .scope
+            .iter()
+            .map(|file| SnapshotFile {
+                logical_path: file.path.clone(),
+                sha256: file.sha256.clone(),
+            })
+            .collect();
+    }
     let semantic_fingerprint = hash(
         serde_json::to_vec(&(
             env!("CARGO_PKG_VERSION"),
@@ -391,9 +404,22 @@ pub fn build_report(
         .as_slice(),
     );
     let model_fingerprint = hash(
-        serde_json::to_vec(&(result.model_catalog_version, &result.available_models))
-            .map_err(|error| format!("cannot encode model fingerprint: {error}"))?
-            .as_slice(),
+        if let Some(evidence) = &result.foundations {
+            serde_json::to_vec(&(
+                result.model_catalog_version,
+                &result.available_models,
+                &evidence.comparison,
+                &evidence.runtime,
+                &evidence.providers,
+                &evidence.provider_issues,
+                &evidence.lock_sha256,
+                &evidence.project_models_sha256,
+            ))
+        } else {
+            serde_json::to_vec(&(result.model_catalog_version, &result.available_models))
+        }
+        .map_err(|error| format!("cannot encode model fingerprint: {error}"))?
+        .as_slice(),
     );
     let suppression_policy = files_by_path
         .iter()
@@ -686,14 +712,20 @@ pub fn build_report(
         .root
         .canonicalize()
         .unwrap_or_else(|_| config.root.clone());
+    let has_foundations = result.foundations.is_some();
     let report = AdoptionReport {
         execution_status: "completed".into(),
         engine_version: env!("CARGO_PKG_VERSION").into(),
-        report_schema_version: ADOPTION_SCHEMA_VERSION,
+        report_schema_version: if has_foundations {
+            FOUNDATION_ADOPTION_SCHEMA_VERSION
+        } else {
+            ADOPTION_SCHEMA_VERSION
+        },
         check_schema_version: result.check_schema_version,
         target_python_version: result.target_python_version,
         model_catalog_version: result.model_catalog_version,
         available_models: result.available_models,
+        foundations: result.foundations,
         assurance: result.assurance,
         contracts: result.contracts,
         coverage: result.coverage,
@@ -709,7 +741,7 @@ pub fn build_report(
         policy_warnings,
         unused_suppressions,
         details_truncated,
-        snapshot_algorithm_version: 1,
+        snapshot_algorithm_version: if has_foundations { 2 } else { 1 },
         snapshot_id,
         semantic_fingerprint,
         policy_fingerprint,

@@ -23,7 +23,7 @@ pub(super) fn capabilities_json() -> String {
             {"code":"TP9002","semantic_version":1,"tier":"mandatory","enabled_by_default":true,"explanation_id":"TP9002.R001"}
         ],
         "formats": ["text", "json", "concise"],
-        "settings": ["root", "python-version", "include", "exclude", "enabled-rules", "mode", "fail-on", "baseline", "severity", "experimental-ownership", "experimental-advanced-contracts", "experimental-finite-matches", "dependency-roots", "required-providers", "assume-default-task-factory"],
+        "settings": ["root", "python-version", "include", "exclude", "enabled-rules", "mode", "fail-on", "baseline", "severity", "experimental-ownership", "experimental-advanced-contracts", "experimental-finite-matches", "dependency-roots", "required-providers", "assume-default-task-factory", "experimental-foundations", "runtime-profile", "project-contracts", "uv-lock"],
         "limits": {
             "config_bytes": 65536,
             "baseline_bytes": 16777216,

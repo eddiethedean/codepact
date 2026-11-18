@@ -1,0 +1,39 @@
+{
+  "assurance": "lifecycle-checking-for-supported-exit-flow",
+  "available_models": [],
+  "check_schema_version": 2,
+  "contracts": [],
+  "coverage": {
+    "declarations": 0,
+    "reasons": [],
+    "source_bytes": 0,
+    "status": "complete-for-supported-subset"
+  },
+  "diagnostics": [],
+  "model_catalog_version": 2,
+  "schema_version": 0,
+  "target_python_version": "3.11",
+  "foundations": {
+    "runtime": null,
+    "catalog_revision": "cpython-3.13.16-linux-x86_64-v1",
+    "model_uses": [],
+    "providers": [],
+    "provider_issues": [],
+    "scope": [],
+    "exhausted_limits": [],
+    "lock_sha256": null,
+    "project_models_sha256": null,
+    "comparison": {
+      "schema_version": 1,
+      "engine_version": "0.8.0",
+      "rule_semantic_revision": 4,
+      "finding_identity_revision": 5,
+      "source_target": "3.13",
+      "ownership": "advanced-assume-default-task-factory",
+      "finite_matches": false,
+      "catalog_revision": "cpython-3.13.16-linux-x86_64-v1",
+      "normalization_revision": 1,
+      "preservation_policy_revision": 1
+    }
+  }
+}

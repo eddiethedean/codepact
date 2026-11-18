@@ -39,18 +39,51 @@ pub(super) fn discover_python_files_with_limits(
         root,
         output,
         budget,
-        selected,
+        &|path, symbolic| {
+            Ok(!symbolic
+                && path.extension().is_some_and(|extension| extension == "py")
+                && selected(path))
+        },
         limits,
         &mut visited_entries,
         0,
     )
 }
 
+pub(super) fn is_native_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("so") || ext.eq_ignore_ascii_case("pyd"))
+}
+
+pub(super) fn discover_provider_sources(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    let mut visited = 0;
+    discover_python_files_inner(
+        root,
+        &mut files,
+        codepact::DEFAULT_MAX_INPUT_FILES,
+        &|path, symbolic| {
+            if is_native_extension(path) {
+                return Err(format!(
+                    "native extension {} is outside the pure-Python provider profile",
+                    path.display()
+                ));
+            }
+            Ok(!symbolic && path.extension().is_some_and(|extension| extension == "py"))
+        },
+        DEFAULT_DISCOVERY_LIMITS,
+        &mut visited,
+        0,
+    )?;
+    Ok(files)
+}
+
 fn discover_python_files_inner(
     root: &Path,
     output: &mut Vec<PathBuf>,
     budget: usize,
-    selected: &impl Fn(&Path) -> bool,
+    selected: &impl Fn(&Path, bool) -> Result<bool, String>,
     limits: DiscoveryLimits,
     visited_entries: &mut usize,
     depth: usize,
@@ -87,6 +120,7 @@ fn discover_python_files_inner(
         let metadata = fs::symlink_metadata(&path)
             .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
         if metadata.file_type().is_symlink() {
+            selected(&path, true)?;
             continue;
         }
         if metadata.is_dir()
@@ -104,10 +138,7 @@ fn discover_python_files_inner(
                 visited_entries,
                 depth + 1,
             )?;
-        } else if metadata.is_file()
-            && path.extension().is_some_and(|extension| extension == "py")
-            && selected(&path)
-        {
+        } else if metadata.is_file() && selected(&path, false)? {
             if output.len() >= budget {
                 return Err(format!(
                     "project discovery exceeds the {budget} selected Python file limit"
