@@ -12,7 +12,6 @@ import platform
 import sqlite3
 import shutil
 import subprocess
-import sysconfig
 import tempfile
 import threading
 import unittest
@@ -274,7 +273,12 @@ class SqlProfiles(unittest.IsolatedAsyncioTestCase):
 def run_checker(executable):
     with tempfile.TemporaryDirectory() as directory:
         project = Path(directory)
-        dependencies = json.dumps(sysconfig.get_path("purelib"))
+        # uv can expose --with-requirements from a site-packages overlay.
+        # Use the installed distribution's location for the checker.
+        purelib = Path(
+            importlib.metadata.distribution("httpx").locate_file("")
+        ).resolve()
+        dependencies = json.dumps(str(purelib))
         (project / "pyproject.toml").write_text(
             f"""[tool.codepact]
 config-version = 1
@@ -392,9 +396,13 @@ async def direct_while_scheduled():
         result = subprocess.run(
             [executable, "check", "--json"], cwd=project, capture_output=True, text=True
         )
-        if result.returncode != 1:
-            raise AssertionError((result.returncode, result.stdout, result.stderr))
         report = json.loads(result.stdout)
+        if result.returncode != 1:
+            issues = report.get("foundations", {}).get("provider_issues", [])
+            raise AssertionError(
+                f"expected static violations to exit 1, got {result.returncode}. "
+                f"Provider issues {issues}. Execution error {report.get('error', result.stderr)}."
+            )
         uses = {
             use["symbol"]
             for use in report["foundations"]["model_uses"]
@@ -447,7 +455,6 @@ async def direct_while_scheduled():
         # selected files no longer verify against that distribution's RECORD.
         shadow = project / "shadow"
         shadow.mkdir()
-        purelib = Path(sysconfig.get_path("purelib"))
         shutil.copytree(
             purelib / "httpx",
             shadow / "httpx",
