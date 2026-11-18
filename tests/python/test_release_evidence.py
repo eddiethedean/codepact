@@ -91,6 +91,24 @@ class ReleaseEvidenceTest(unittest.TestCase):
             )
             self.assertEqual(required_phase_gates(root, "0.8.0"), ["AS01", "E10-A"])
 
+    def test_release_gate_section_accepts_plain_bullets(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            phase_plan = root / "docs/planning/phases/0.9-obligations.md"
+            phase_plan.parent.mkdir(parents=True)
+            phase_plan.write_text(
+                "# Phase plan\n"
+                "- **OH01** — Referenced gate.\n\n"
+                "## Release gates\n\n"
+                "- **AS03** — Work observation.\n"
+                "- **E10-B** — Wheel comparison.\n\n"
+                "## Related work\n\n"
+                "- **E10-C** — Later stage.\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(required_phase_gates(root, "0.9.0"), ["AS03", "E10-B"])
+            self.assertEqual(required_phase_gates(root, "0.9.1"), ["AS03", "E10-B"])
+
     def test_maintainer_can_validate_and_approve_every_gate_alone(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
