@@ -8,19 +8,19 @@ minimums and [release availability](availability.md) to choose a release.
 
 ## Verify and install wheels
 
-Download the published 0.9.0 wheels on a machine that matches the runner's
-Python, OS, and architecture. A wheel-only download fails if the selected
-index offers no compatible wheel.
+On a machine that matches the runner's Python, OS, and architecture, set
+`CODEPACT_VERSION` to the published version you intend to install. A
+wheel-only download fails if the index offers no compatible wheel.
 
 ```sh
-python -m pip download --only-binary=:all: --dest wheelhouse 'codepact[cli]==0.9.0'
+python -m pip download --only-binary=:all: --dest wheelhouse "codepact[cli]==$CODEPACT_VERSION"
 python -m pip hash wheelhouse/*.whl
 ```
 
-Compare the helper and CLI digests with the
-[0.9.0 publication record](https://github.com/eddiethedean/codepact/blob/4bc0d1b14f6be6d8fb80f2151a9cce7e73fac374/docs/releases/0.9.0-evidence.md#registry-sha-256)
-and verify transitive artifacts against your approved registry or mirror.
-For a standalone CLI wheelhouse download `codepact-cli==0.9.0` instead.
+Compare the helper and CLI digests with the corresponding
+[release evidence](availability.md#releases) and verify transitive artifacts
+against your approved registry or mirror. For a standalone CLI wheelhouse,
+download `"codepact-cli==$CODEPACT_VERSION"`.
 Record every resolved package as an exact pin with its SHA-256 hash in
 `approved-requirements.txt`. Transfer that file and the verified wheelhouse
 to the runner. Install into an activated virtual environment.
@@ -31,7 +31,7 @@ python -m pip install --no-index --find-links wheelhouse \
 codepact --version
 ```
 
-Expect `codepact 0.9.0`. Registry hashes check artifact integrity.
+Expect the selected CodePact version. Registry hashes check artifact integrity.
 Use the tagged revision and [release evidence](availability.md#releases)
 for the source and build record. Apply your organization's trust policy to
 the source, registry, and CI artifacts. Review [report data handling](security.md)
@@ -46,14 +46,12 @@ commit-based source link in [release availability](availability.md) when
 sharing archived instructions independently of hosted aliases.
 
 Run the verifier from the maintenance checkout. Replace `HOSTED_VERSION_URL`
-and `RELEASE_COMMIT` with the activated URL and full commit. Set `--version`
-to the tag's version and `--recipe-version` to the published pin in that
-tag's `docs/versions.toml`. A tag made before registry publication can retain
-the preceding stable install recipes.
+and `RELEASE_COMMIT` with the activated URL and full commit. `--channel Released`
+checks that the install examples pin the same version as the release.
 
 ```sh
 python scripts/verify_docs_release.py HOSTED_VERSION_URL \
-  --version 0.10.0 --recipe-version 0.9.0 --channel Released --revision RELEASE_COMMIT
+  --version 0.10.0 --channel Released --revision RELEASE_COMMIT
 ```
 
 The verifier checks the docs version and revision, the installation pin,

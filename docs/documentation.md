@@ -105,6 +105,12 @@ task and link to reference material for details. Use source-backed examples via
 label candidate-only commands explicitly.
 
 The published pin and immutable source revision live in `docs/versions.toml`.
+On a matching release tag, Sphinx renders pages beginning with
+`<!-- release-recipes -->` using the tag's version. Use that marker on guides
+whose exact version references all identify their install version. Keep it
+off historical release notes and migration pages. The docs CI job checks both
+the candidate and simulated tagged builds.
+
 After updating release metadata, regenerate the pinned commands and schema
 table. To refresh rule tables, supply the actual published and checkout
 executables. The published table uses that binary's explanations and

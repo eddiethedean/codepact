@@ -1,17 +1,28 @@
 # Check queues, IPC and guards
 
-**Requires CodePact 0.10.** In a 0.10 candidate checkout, build and identify the
-binary before using the examples. The [published install guide](install.md)
-uses 0.9.0, which does not accept `spawn-main-script` or `async-guards`.
+**Requires CodePact 0.10.** Set `CODEPACT` to the absolute path of the 0.10.0
+executable or use that path in each command.
+
+:::{only} codepact_release
+
+Install the [standalone CLI](install.md#standalone-command) and run
+`codepact --version` to confirm `codepact 0.10.0`.
+
+:::
+
+:::{only} not codepact_release
+
+Build and identify the binary from the 0.10 checkout. The published 0.9.0
+CLI rejects `spawn-main-script` and `async-guards`.
 
 ```sh
 cargo build --locked -p codepact
 ./target/debug/codepact --version
 ```
 
-Expect `codepact 0.10.0` for this candidate. In PowerShell, use
-`target/debug/codepact.exe`. Set `CODEPACT` to the absolute path of that
-executable or use the full path in each command.
+Expect `codepact 0.10.0`. In PowerShell, use `target/debug/codepact.exe`.
+
+:::
 
 ```{raw} html
 <p><a href="_static/codepact-concurrency.zip" download>Download the queue, guard, and spawn cases</a></p>

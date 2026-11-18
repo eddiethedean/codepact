@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Support and maintenance
 
 CodePact 0.9.0 supports source checks and opt-in reviewed contracts and

@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Command-line reference
 
 This reference covers the CodePact 0.9.0 analyzer and its opt-in check modes.

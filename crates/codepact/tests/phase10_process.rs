@@ -103,6 +103,62 @@ def run():
 }
 
 #[test]
+fn primitive_and_message_limits_keep_prior_ipc_receipt_and_close() {
+    let first_receipt = r#"from multiprocessing import get_context
+def run():
+    ctx = get_context("spawn")
+    first = ctx.SimpleQueue()
+    first.put(11)
+    first.get()
+    first.close()
+"#;
+    let mut at_primitive_limit = first_receipt.to_owned();
+    for index in 0..7 {
+        at_primitive_limit.push_str(&format!("    lock_{index} = ctx.Lock()\n"));
+    }
+    let mut at_message_limit = format!("{first_receipt}    backlog = ctx.SimpleQueue()\n");
+    for index in 0..16 {
+        at_message_limit.push_str(&format!("    backlog.put({index})\n"));
+    }
+
+    for (within_limit, extra, cleanup, reason) in [
+        (
+            at_primitive_limit,
+            "    overflow = ctx.Lock()\n",
+            "",
+            "multiprocessing primitive identity or budget exhausted",
+        ),
+        (
+            at_message_limit,
+            "    backlog.put(16)\n",
+            "    backlog.close()\n",
+            "IPC admission needs a provable wait and distinct bounded message identity",
+        ),
+    ] {
+        let supported = inspect(&format!("{within_limit}{cleanup}"), None);
+        assert_eq!(supported.coverage.status, "complete-for-supported-subset");
+        assert!(supported.diagnostics.is_empty(), "{supported:#?}");
+
+        let exceeded = inspect(&format!("{within_limit}{extra}{cleanup}"), None);
+        assert_eq!(exceeded.coverage.status, "incomplete", "{exceeded:#?}");
+        assert!(exceeded
+            .coverage
+            .reasons
+            .iter()
+            .any(|item| item.contains(reason)));
+        let uses = &exceeded.foundations.as_ref().unwrap().model_uses;
+        for (line, effect) in [(6, "receive"), (7, "close")] {
+            assert!(
+                uses.iter().any(|site| {
+                    site.applicable && site.site.line == line && site.effect == effect
+                }),
+                "{line} {effect}: {exceeded:#?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn pipe_directions_and_eof_have_independent_evidence() {
     let report = inspect(
         r#"from multiprocessing import get_context

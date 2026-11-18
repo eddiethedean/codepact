@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Frequently asked questions
 
 ## Which version can I install now?

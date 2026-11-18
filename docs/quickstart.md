@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Run your first check
 
 Use CodePact 0.9.0 to find a connection used after close, then fix the source

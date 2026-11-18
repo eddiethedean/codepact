@@ -27,6 +27,15 @@ jobs:
           enable-cache: true
       - name: Build the documentation
         run: make check-docs
+      - name: Verify the tagged docs pin the release version
+        env:
+          READTHEDOCS_VERSION_TYPE: tag
+          READTHEDOCS_GIT_COMMIT_HASH: ${{ github.sha }}
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          export READTHEDOCS_GIT_IDENTIFIER="v$version"
+          uv run --no-project --with-requirements docs/requirements.txt sphinx-build -E -a -b html -n -W docs "$RUNNER_TEMP/docs-tagged"
+          python scripts/verify_docs_release.py "$RUNNER_TEMP/docs-tagged" --channel Released --version "$version" --revision "$GITHUB_SHA"
       - name: Build wheels for the documented installation
         run: uv build --wheel --no-sources --all-packages --out-dir "$RUNNER_TEMP/docs-wheels"
       - name: Add the locked helper runtime dependency to the local wheelhouse

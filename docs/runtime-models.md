@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Configure reviewed runtime models
 
 ## Select the runtime profile

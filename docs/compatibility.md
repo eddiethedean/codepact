@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Compatibility and fit
 
 Check these versions separately before installing or making a CI check required.

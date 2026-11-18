@@ -47,7 +47,7 @@ feature fits your project.
 | Persistent outcomes | 0.9 | Default rule selection. A callable or provider opts in through a supported `MustHandle` contract. |
 | Work-result observation | 0.9 | Applicable runtime and ownership profile. Task, future, or worker completion and result observation are independent. |
 | Declaration policy | 0.9 | Add `[[tool.codepact.declaration-policy]]` entries. Each selects a dotted `module`, optional `function`, a `requirement`, and `mode` of `preview` or `enforce`. See [policy selectors](adopting.md#require-a-declaration-on-a-selected-api). |
-| Queues, IPC, and guards | **0.10 candidate** | Applicable [0.10 runtime profile](concurrency.md). The `async-guards` table and `spawn-main-script` setting require 0.10. |
+| Queues, IPC, and guards | 0.10 | Applicable [0.10 runtime profile](concurrency.md). The `async-guards` table and `spawn-main-script` setting require 0.10. |
 
 Ownership, advanced contracts, finite matches, the default-task-factory
 assumption, and explicitly requesting foundations are off when unset.
@@ -60,8 +60,8 @@ when you have no provider or runtime inputs.
 | --- | --- | --- |
 | `[tool.codepact.dependencies]` | `roots`, `required-providers`, `project-contracts`, `uv-lock` | Ordered installed package roots, required distribution names, project-model files, and an optional compatible lockfile. Configured paths are relative to the config file. See [installed providers](consume-providers.md). |
 | `[tool.codepact.runtime-profile]` | `implementation`, `python-version`, `os`, `architecture`, `event-loop`, `start-method`, `assume-standard-process-wait` | The first four keys identify the analyzed runtime, separately from the source target. Loop and start method settings select applicable effects. The wait assumption defaults to false. See [runtime models](runtime-models.md). |
-| `[tool.codepact.runtime-profile]`, 0.10 candidate | `spawn-main-script` | A normalized `.py` path relative to the analysis root, such as `main.py`. Qualifies the direct script passed to Python for explicit spawn. |
-| `[[tool.codepact.async-guards]]`, 0.10 candidate | `module`, `coroutine`, `resource`, `lock`, `method` | A statically resolved top-level coroutine, local allocations for the protected resource and exact lock, and a source-resolved method. See [guard examples](concurrency.md#guard-a-resource-method). |
+| `[tool.codepact.runtime-profile]`, 0.10+ | `spawn-main-script` | A normalized `.py` path relative to the analysis root, such as `main.py`. Qualifies the direct script passed to Python for explicit spawn. |
+| `[[tool.codepact.async-guards]]`, 0.10+ | `module`, `coroutine`, `resource`, `lock`, `method` | A statically resolved top-level coroutine, local allocations for the protected resource and exact lock, and a source-resolved method. See [guard examples](concurrency.md#guard-a-resource-method). |
 
 Source-only checks and foundations checks expose different report versions.
 Use the [schema table](schemas.md) and read model applicability in

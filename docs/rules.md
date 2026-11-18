@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Diagnostic rule catalog
 
 Use the code from your report to find the contract involved and the first
@@ -90,13 +92,13 @@ the reason visible during review. [Example](contracts.md#acknowledge-a-persisten
 
 ## Queue, IPC and synchronization rules
 
-**Requires the 0.10 candidate.** These rules require the applicable runtime
+**Requires CodePact 0.10.** These rules require the applicable runtime
 profile and the ownership or advanced-contract settings for that model.
 
 ```{include} _generated/candidate-rules.inc
 ```
 
-[Build the candidate and run the examples](concurrency.md)
+[Run the protocol examples](concurrency.md)
 
 ## Informational review hints
 

@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Rust API reference
 
 The published `codepact` crate exposes the same inspector and lifecycle checker

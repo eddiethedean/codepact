@@ -25,10 +25,15 @@ published_source = (
     f"{published['published_revision']}/docs/README.md"
 )
 docs_revision = os.environ.get("READTHEDOCS_GIT_COMMIT_HASH", "")
-tagged_release = os.environ.get("READTHEDOCS_VERSION_TYPE") == "tag" and os.environ.get(
-    "READTHEDOCS_GIT_IDENTIFIER"
-) in {release, f"v{release}"}
+tag_identifier = os.environ.get("READTHEDOCS_GIT_IDENTIFIER", "").removeprefix(
+    "refs/tags/"
+)
+tagged_release = os.environ.get("READTHEDOCS_VERSION_TYPE") == "tag" and (
+    tag_identifier in {release, f"v{release}"}
+    or os.environ.get("READTHEDOCS_VERSION") == "stable"
+)
 released_docs = release == published_version or tagged_release
+recipe_version = release if tagged_release else published_version
 archive_version, archive_source = (
     (
         release,
@@ -97,7 +102,7 @@ html_context = {
     "docs_version": release,
     "docs_channel": "Released" if released_docs else "Candidate",
     "docs_revision": docs_revision,
-    "published_version": published_version,
+    "recipe_version": recipe_version,
     "archive_version": archive_version,
     "archive_source": archive_source,
 }
@@ -111,6 +116,12 @@ html_show_sphinx = False
 html_static_path = ["_static"]
 html_extra_path = ["schemas"]
 html_css_files = ["codepact.css"]
+
+
+def render_release_recipes(_app: Sphinx, _docname: str, source: list[str]) -> None:
+    """Point versioned guides at the matching artifacts on a release tag."""
+    if source[0].startswith("<!-- release-recipes -->\n"):
+        source[0] = source[0].replace(published_version, recipe_version)
 
 
 def build_example_archives(app: Sphinx, exception: Exception | None) -> None:
@@ -143,4 +154,8 @@ def build_example_archives(app: Sphinx, exception: Exception | None) -> None:
 
 
 def setup(app: Sphinx) -> None:
+    if released_docs:
+        app.tags.add("codepact_release")
+    if recipe_version != published_version:
+        _ = app.connect("source-read", render_release_recipes)
     _ = app.connect("build-finished", build_example_archives)

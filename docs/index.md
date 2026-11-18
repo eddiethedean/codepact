@@ -51,9 +51,9 @@ missed cleanup, and discarded results directly in source.
 ::::{container} cp-release-strip
 
 :::{container} cp-release cp-release-published
-**0.9.0 · Persistent obligations and change review**
+**Release notes**
 
-[See what changed in 0.9.0](release-notes.md)
+[New features, limitations, and upgrades](release-notes.md)
 :::
 
 :::{container} cp-release cp-release-ownership

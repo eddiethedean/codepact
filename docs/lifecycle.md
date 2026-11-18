@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Check a resource lifecycle
 
 Use CodePact 0.9.0 to reproduce a use after close, read its evidence, and

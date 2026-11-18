@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Examples
 
 Each example has a narrow purpose. Install CodePact 0.9.0 with

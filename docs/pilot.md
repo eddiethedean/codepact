@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Pilot a package
 
 Use the standalone 0.9.0 checker to compare three outcomes with the same

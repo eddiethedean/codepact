@@ -1,10 +1,11 @@
 # Release and capability availability
 
-CodePact 0.9.0 is available as the Python helper, a matching native CLI,
-and a Rust crate. [PyPI helper](https://pypi.org/project/codepact/0.9.0/) ·
-[PyPI CLI](https://pypi.org/project/codepact-cli/0.9.0/) ·
-[crates.io](https://crates.io/crates/codepact/0.9.0) ·
-[Source tag](https://github.com/eddiethedean/codepact/tree/v0.9.0)
+CodePact is distributed as a Python helper, matching native CLI, and Rust
+crate. The [installation guide](install.md) pins the version used by this
+site. [PyPI helper](https://pypi.org/project/codepact/) ·
+[PyPI CLI](https://pypi.org/project/codepact-cli/) ·
+[crates.io](https://crates.io/crates/codepact) ·
+[Source tags](https://github.com/eddiethedean/codepact/tags)
 
 Read the guides in the [hosted documentation](https://codepact.readthedocs.io/en/latest/index.html)
 or open the [stable documentation](https://codepact.readthedocs.io/en/stable/index.html) for the current release tag.
@@ -16,8 +17,8 @@ For a permanent link to 0.9.0 instructions, use the
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
-| CodePact 0.10.0 | Candidate checkout | Source build | [Queues, IPC, guards, and direct-script spawn](concurrency.md) |
-| CodePact 0.9.0 | Current release | `codepact`, `codepact-cli`, Rust crate `codepact` | Persistent outcome and work duties, declaration policy, source and wheel comparison, and reviewed HTTP and SQL profiles |
+| CodePact 0.10.0 | [Candidate and release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.10.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | [Queues, IPC, guards, and direct-script spawn](concurrency.md) |
+| CodePact 0.9.0 | [Published](https://github.com/eddiethedean/codepact/blob/4bc0d1b14f6be6d8fb80f2151a9cce7e73fac374/docs/releases/0.9.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Persistent outcome and work duties, declaration policy, source and wheel comparison, and reviewed HTTP and SQL profiles |
 | CodePact 0.8.0 | [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.8.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Reviewed installed contracts, wheel manifests, and opt-in file, asyncio, and multiprocessing models |
 | CodePact 0.7.0 | [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.7.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Typed outcomes, opt-in finite matches, and marked installed-provider checking |
 | CodePact 0.6.0 | [Published advanced-contracts preview](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.6.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Opt-in exclusive access, state protocols, and a bounded ThreadPoolExecutor model |
@@ -30,32 +31,22 @@ For a permanent link to 0.9.0 instructions, use the
 
 Real-world usefulness remains unqualified for the synthetic previews.
 
-## Install CodePact 0.9.0
+(install-codepact-090)=
+## Install CodePact
 
-Install the helper and matching CLI with `uv add 'codepact[cli]==0.9.0'`. For
-the helper alone, use `uv add codepact==0.9.0`. For the command alone, use
-`uv tool install codepact-cli==0.9.0`. Rust applications can use
-`cargo add codepact@=0.9.0`. [Install options](install.md) · [Migration guide](upgrading.md)
+Choose the [helper, CLI, or Rust installation](install.md), or use the
+[migration guide](upgrading.md) to update an existing project.
 
 ## Build from source
 
-Build the selected repository checkout with Python 3.11+ and Rust 1.96+:
-
-```sh
-git clone --branch v0.9.0 https://github.com/eddiethedean/codepact.git
-cd codepact
-uv sync --locked --extra cli
-uv run --locked --extra cli codepact --version
-uv run --locked --extra cli codepact check --root examples
-```
-
-The example check intentionally exits `1` with TP1001. Record the full Git
-revision when sharing reports from a source build.
+Use the [tagged source procedure](install.md#build-from-source) with Python
+3.11+, Rust 1.96+, and a linker. Record the full Git revision when sharing
+reports from a source build.
 
 ## Platform and runtime evidence
 
-The 0.9.0 distribution matrix includes a pure Python helper wheel, both
-source archives, and eight native CLI wheel targets.
+The distribution matrix covers a pure Python helper wheel, both source
+archives, and eight native CLI wheel targets.
 
 | Platform | x86-64 | ARM64 |
 | --- | --- | --- |

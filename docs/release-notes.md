@@ -1,6 +1,9 @@
 # Release notes
 
-## 0.10.0 candidate — queues, IPC and synchronization
+See the site header for the docs channel and [release availability](availability.md)
+for package and source links.
+
+## 0.10.0 — queues, IPC and synchronization
 
 - Reviewed asyncio models track queue admission, receipt, accounting and
   shutdown. The synchronization checks cover local locks, semaphore permits,
@@ -11,6 +14,12 @@
   explicit-spawn worker entry checks.
 - Source review reports changed protocol requirements at matched sites,
   including guard changes between two clean checks.
+
+The new diagnostics and protocol effects require the applicable opt-in setup
+and CPython 3.13.16 on Linux x86-64 with a Python 3.13 source target. Default
+source-only checks retain their report schema and failure policy. Unresolved
+actors, launch evidence, aliases, or operation ordering can leave coverage
+incomplete.
 
 [Configure the queue and guard models](reviewed-contracts.md#queues-ipc-and-guards) ·
 {ref}`Upgrade to 0.10.0 <upgrade-010>`

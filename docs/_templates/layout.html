@@ -4,6 +4,7 @@
   {{ super() }}
   <meta name="codepact-docs-version" content="{{ docs_version }}">
   <meta name="codepact-docs-channel" content="{{ docs_channel }}">
+  <meta name="codepact-docs-recipe-version" content="{{ recipe_version }}">
   {% if docs_revision %}<meta name="codepact-docs-revision" content="{{ docs_revision }}">{% endif %}
 {% endblock %}
 
@@ -40,9 +41,9 @@
       <strong>{{ docs_channel }} docs {{ docs_version }}</strong>
       <span aria-hidden="true"> · </span>
       <a href="{{ archive_source }}">Permanent {{ archive_version }} sources</a>
-      {% if docs_version != published_version %}
+      {% if docs_version != recipe_version %}
         <span aria-hidden="true"> · </span>
-        Standard install examples use {{ published_version }}
+        Standard install examples use {{ recipe_version }}
       {% endif %}
       {% if docs_channel == "Candidate" %}
         <span aria-hidden="true"> · </span>

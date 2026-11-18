@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Installation
 
 Install CodePact 0.9.0. The Python installer requires Python 3.11 or later,

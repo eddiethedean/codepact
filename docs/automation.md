@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Run CodePact in CI
 
 Start with the same version, root, Python source target, and settings that

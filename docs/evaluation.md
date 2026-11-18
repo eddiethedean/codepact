@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Evaluate CodePact for your team
 
 Use CodePact 0.9.0 for a scoped trial of annotated Python resources. Evaluate

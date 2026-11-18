@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Check with installed providers
 
 CodePact reads exact files and metadata from explicitly selected dependency

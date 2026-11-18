@@ -7,6 +7,9 @@ without importing or running the project.
 
 ## Install 0.9.0
 
+For the current distribution's pin, see the
+[stable install guide](https://codepact.readthedocs.io/en/stable/install.html#standalone-command).
+
 ```sh
 uv tool install codepact-cli==0.9.0
 codepact --version

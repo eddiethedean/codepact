@@ -366,6 +366,67 @@ async def run():
 }
 
 #[test]
+fn primitive_and_message_limits_keep_known_receipts_and_recover_after_an_edit() {
+    let first_receipt = "from asyncio import Lock, Queue\nasync def run():\n    first = Queue()\n    first.put_nowait(11)\n    first.get_nowait()\n";
+    let mut at_primitive_limit = first_receipt.to_owned();
+    for index in 0..7 {
+        at_primitive_limit.push_str(&format!("    lock_{index} = Lock()\n"));
+    }
+    let mut at_message_limit = format!("{first_receipt}    backlog = Queue()\n");
+    // The outstanding receipt also counts toward the live-message limit.
+    for index in 0..15 {
+        at_message_limit.push_str(&format!("    backlog.put_nowait({index})\n"));
+    }
+
+    let mut session = AnalysisSession::default();
+    for (within_limit, extra, reason) in [
+        (
+            at_primitive_limit,
+            "    overflow = Lock()\n",
+            "asyncio protocol primitive budget exceeded",
+        ),
+        (
+            at_message_limit,
+            "    backlog.put_nowait(15)\n",
+            "asyncio queue live message budget exceeded",
+        ),
+    ] {
+        let over_limit = format!("{within_limit}{extra}");
+        let exceeded = check(&over_limit);
+        assert_eq!(exceeded.coverage.status, "incomplete", "{exceeded:#?}");
+        assert!(exceeded
+            .coverage
+            .reasons
+            .iter()
+            .any(|item| item.contains(reason)));
+        assert_eq!(
+            findings(&exceeded, "TP7001"),
+            [(
+                5,
+                "asyncio queue receipt leaves an outstanding accounting duty"
+            )]
+        );
+        let recovered = check(&within_limit);
+        assert_eq!(recovered.coverage.status, "complete-for-supported-subset");
+        assert_eq!(findings(&recovered, "TP7001").len(), 1);
+
+        for (source, expected) in [(&over_limit, exceeded), (&within_limit, recovered)] {
+            let revised = session.check_with_foundations(
+                &[SourceFile::new(
+                    "async_protocols.py",
+                    "async_protocols",
+                    source,
+                )],
+                "3.13",
+                options(),
+                inputs(),
+            );
+            assert_eq!(revised, expected);
+        }
+    }
+}
+
+#[test]
 fn blocked_join_observes_zero_before_the_new_admission() {
     let result = check(
         r#"from asyncio import Queue, create_task

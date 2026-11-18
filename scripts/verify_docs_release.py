@@ -67,19 +67,29 @@ def verify(
     revision: str | None,
     legacy: bool,
 ) -> None:
-    pages = ("index.html", "install.html", "quickstart.html", "rules.html")
+    recipes = {"install.html": "codepact-cli", "quickstart.html": "codepact[cli]"}
+    if not legacy:
+        recipes.update(
+            {"pilot.html": "codepact-cli", "automation.html": "codepact-cli"}
+        )
+    pages = ("index.html", "rules.html", *recipes)
     guides = {name: Page(read(location, name)) for name in pages}
     quickstart = guides["quickstart.html"]
-    require(
-        f"codepact[cli]=={recipe_version}" in "".join(quickstart.text),
-        f"Quick start does not install {recipe_version}",
-    )
+    for name, package in recipes.items():
+        require(
+            f"{package}=={recipe_version}" in "".join(guides[name].text),
+            f"{name} does not install {recipe_version}",
+        )
     for name, guide in guides.items():
         if not legacy:
             require(
                 guide.metadata.get("codepact-docs-version") == docs_version
                 and guide.metadata.get("codepact-docs-channel") == channel,
                 f"{name} is missing the expected {channel} docs {docs_version} label",
+            )
+            require(
+                guide.metadata.get("codepact-docs-recipe-version") == recipe_version,
+                f"{name} is missing the expected recipe version {recipe_version}",
             )
         if revision is not None:
             require(
@@ -138,7 +148,7 @@ def verify(
 class Arguments(argparse.Namespace):
     location: str
     version: str
-    recipe_version: str
+    recipe_version: str | None
     channel: str
     revision: str | None
     legacy: bool
@@ -150,7 +160,9 @@ def main() -> None:
         "location", help="built HTML directory or hosted version URL"
     )
     _ = parser.add_argument("--version", default=CHECKOUT, help="expected docs version")
-    _ = parser.add_argument("--recipe-version", default=PUBLISHED)
+    _ = parser.add_argument(
+        "--recipe-version", help="override the install version implied by the channel"
+    )
     _ = parser.add_argument(
         "--channel",
         choices=("Released", "Candidate"),
@@ -165,10 +177,13 @@ def main() -> None:
     args = parser.parse_args(namespace=Arguments())
     if args.legacy and not args.revision:
         parser.error("--legacy requires --revision")
+    recipe_version = args.recipe_version or (
+        args.version if args.channel == "Released" else PUBLISHED
+    )
     verify(
         args.location,
         args.version,
-        args.recipe_version,
+        recipe_version,
         args.channel,
         args.revision,
         args.legacy,

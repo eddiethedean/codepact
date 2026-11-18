@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Consume reports in CI
 
 Save the JSON report alongside the original check exit status. Use the

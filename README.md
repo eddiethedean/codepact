@@ -19,8 +19,9 @@ discarded must-use result. Run it alongside your type checker and tests.
 ## Quick start
 
 Use an empty directory with [uv](https://docs.astral.sh/uv/getting-started/installation/)
-and Python 3.11 or later. This POSIX-shell example installs the published
-release, writes the sample, and checks it as source text.
+and Python 3.11 or later. This POSIX-shell example installs a pinned release,
+writes the sample, and checks it as source text. For the install pin that
+matches the current distribution, use the [stable install guide](https://codepact.readthedocs.io/en/stable/install.html).
 
 <!-- generated: readme-demo -->
 ```sh

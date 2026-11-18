@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Adopt CodePact in a project
 
 Start with a narrow source root and an advisory report. Review what the
