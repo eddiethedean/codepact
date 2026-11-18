@@ -63,7 +63,7 @@ and the candidate using `cargo build --release --locked --example NAME`. Build
 candidate with the path to the baseline checkout.
 
 ```sh
-CODEPACT_PHASE07_PROCESS_REPEATS=24 python scripts/capture_phase09_performance.py \\
+CODEPACT_PHASE07_PROCESS_REPEATS=24 python scripts/capture_phase09_performance.py \
   --baseline /path/to/codepact-v0.8.0 --output target/phase09-performance.json
 ```
 
