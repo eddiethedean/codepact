@@ -4,7 +4,7 @@
 
 Start with a narrow source root and an advisory report. Review what the
 checker covered before choosing which results should fail CI. The examples
-use the 0.9.0 default scope.
+use the 0.10.0 default scope.
 [Release scope and qualification](availability.md)
 
 ## Evaluate one package
@@ -27,12 +27,12 @@ use the 0.9.0 default scope.
    has meaningful coverage, findings are understood, and owners agree on
    the warning threshold and exception review. Expand one package at a time.
 
-## Install 0.9.0
+## Install 0.10.0
 
 In your uv project, install the helper and matching CLI:
 
 ```sh
-uv add 'codepact[cli]==0.9.0'
+uv add 'codepact[cli]==0.10.0'
 uv run --locked codepact --version
 uv run --locked codepact capabilities --json
 ```
@@ -72,7 +72,7 @@ supported outcome types and patterns.
 
 ### Require a declaration on a selected API
 
-CodePact 0.9.0 supports independent declaration policies for synchronous,
+CodePact 0.10.0 supports independent declaration policies for synchronous,
 top-level functions. Select one function by name or omit `function` to cover
 the public synchronous functions in the named module.
 Selectors use the final module binding. An exact selector without a statically

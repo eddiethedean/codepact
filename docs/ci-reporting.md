@@ -59,7 +59,7 @@ the policy. Check out the base and candidate in separate directories. Retain
 each revision's dependency artifacts and capture the full selected root in
 both checkouts. Use the same pinned binary and analyzed Python target.
 
-Set `CODEPACT` to the absolute path to the verified 0.9.0 CLI. Set
+Set `CODEPACT` to the absolute path to the verified 0.10.0 CLI. Set
 `CODEPACT_BASE_POLICY` and `CODEPACT_CANDIDATE_POLICY` to absolute paths to
 host-controlled configurations that apply the same policy. If the configurations
 select lockfiles or project model files, set their paths for the corresponding

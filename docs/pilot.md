@@ -2,7 +2,7 @@
 
 # Pilot a package
 
-Use the standalone 0.9.0 checker to compare three outcomes with the same
+Use the standalone 0.10.0 checker to compare three outcomes with the same
 source-only policy. The example has two local modules. `ExportSession` gives
 the analyzer a declared cleanup contract, and `export_receipt` borrows the
 session. The sample uses fixed data in place of a real storage service.
@@ -22,12 +22,12 @@ From a repository checkout, the same project is in `docs/_examples/pilot`.
 
 <!-- smoke: pilot-settings -->
 ```sh
-uv tool run --from codepact-cli==0.9.0 codepact check --show-settings --json
+uv tool run --from codepact-cli==0.10.0 codepact check --show-settings --json
 ```
 
 <!-- smoke: pilot-advisory -->
 ```sh
-uv tool run --from codepact-cli==0.9.0 codepact check --json > report.json
+uv tool run --from codepact-cli==0.10.0 codepact check --json > report.json
 ```
 
 Settings show a `src` root, target `3.13`, and advisory mode. The check
@@ -48,7 +48,7 @@ Use `cp variants/repaired.py src/job.py` in a POSIX shell or
 
 <!-- smoke: pilot-strict -->
 ```sh
-uv tool run --from codepact-cli==0.9.0 codepact check --mode strict --json > report.json
+uv tool run --from codepact-cli==0.10.0 codepact check --mode strict --json > report.json
 ```
 
 Expect exit `0`, no diagnostics, and coverage

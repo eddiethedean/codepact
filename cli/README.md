@@ -5,19 +5,19 @@ Python resource contracts. Use it to check supported use after close, missed
 cleanup, and discarded must-use results. The checker reads Python source
 without importing or running the project.
 
-## Install 0.9.0
+## Install 0.10.0
 
 For the current distribution's pin, see the
 [stable install guide](https://codepact.readthedocs.io/en/stable/install.html#standalone-command).
 
 ```sh
-uv tool install codepact-cli==0.9.0
+uv tool install codepact-cli==0.10.0
 codepact --version
 ```
 
 If your project also needs annotations or typed outcome helpers, install
-`codepact==0.9.0` in its Python environment. To install the helper and matching
-CLI together, use `codepact[cli]==0.9.0`. The helper alone does not install the
+`codepact==0.10.0` in its Python environment. To install the helper and matching
+CLI together, use `codepact[cli]==0.10.0`. The helper alone does not install the
 native command.
 [Installation and platform support](https://codepact.readthedocs.io/en/latest/install.html)
 

@@ -20,8 +20,8 @@ analysis without installing application dependencies.
 python -m pip install --no-deps --target installed dist/acme_storage-1.2.0-py3-none-any.whl
 ```
 
-From `caller/`, run these commands. Use the published 0.9.0 CLI installed
-on your PATH or prefix it with `uv tool run --from codepact-cli==0.9.0`.
+From `caller/`, run these commands. Use the published 0.10.0 CLI installed
+on your PATH or prefix it with `uv tool run --from codepact-cli==0.10.0`.
 
 ```sh
 codepact check --dependency-root ../installed --json > report.json

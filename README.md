@@ -26,7 +26,7 @@ matches the current distribution, use the [stable install guide](https://codepac
 <!-- generated: readme-demo -->
 ```sh
 uv init --bare --name codepact-demo
-uv add 'codepact[cli]==0.9.0'
+uv add 'codepact[cli]==0.10.0'
 mkdir src
 cat > src/connection.py <<'PYTHON'
 """Small lifecycle example with a borrowed use after close."""

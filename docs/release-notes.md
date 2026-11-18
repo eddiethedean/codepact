@@ -21,6 +21,7 @@ source-only checks retain their report schema and failure policy. Unresolved
 actors, launch evidence, aliases, or operation ordering can leave coverage
 incomplete.
 
+[Install 0.10.0](install.md) ·
 [Configure the queue and guard models](reviewed-contracts.md#queues-ipc-and-guards) ·
 {ref}`Upgrade to 0.10.0 <upgrade-010>`
 
@@ -35,7 +36,7 @@ incomplete.
   results. Installed HTTP and SQL profiles check supported client and session
   lifetimes and bounded concurrent operations.
 
-[Install 0.9.0](install.md) · {ref}`Upgrade to 0.9.0 <upgrade-09>` ·
+[Install 0.9.0](https://github.com/eddiethedean/codepact/blob/7b17a494f7d98cfa7f9dc27db5dc7d88b1214e78/docs/install.md) · {ref}`Upgrade to 0.9.0 <upgrade-09>` ·
 [Review a change](ci-reporting.md#review-a-change) · [Provider profiles](reviewed-contracts.md)
 · [Permanent 0.9.0 guide sources](https://github.com/eddiethedean/codepact/blob/7b17a494f7d98cfa7f9dc27db5dc7d88b1214e78/docs/README.md)
 

@@ -4,7 +4,7 @@
 
 Check these versions separately before installing or making a CI check required.
 
-| Version | CodePact 0.9.0 | Where to set or verify it |
+| Version | CodePact 0.10.0 | Where to set or verify it |
 | --- | --- | --- |
 | Python that installs the wheel or runs the helper package | Python 3.11 or later. Helper and installer checks run on CPython 3.11–3.14. | Run `python --version` in the installation environment. The native CLI itself runs without importing your application. |
 | Python source target | 3.11, 3.12, or 3.13. Defaults to 3.11. | Set `python-version` in `[tool.codepact]` or pass `--python-version`. Verify it with `check --show-settings --json`. |

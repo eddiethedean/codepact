@@ -3,11 +3,11 @@
 # Rust API reference
 
 The published `codepact` crate exposes the same inspector and lifecycle checker
-used by the command-line program. This reference uses CodePact 0.9.0.
+used by the command-line program. This reference uses CodePact 0.10.0.
 
 ## Install
 
-Add the released crate to a Cargo project with `cargo add codepact@=0.9.0`. To
+Add the released crate to a Cargo project with `cargo add codepact@=0.10.0`. To
 build the workspace crate from source, run this from the repository root:
 
 ```sh
@@ -83,7 +83,7 @@ The crate also exposes `check_report(files, target)` and
 `check_schema_version: 1`. Its checker diagnostics add completion kind, trust,
 coverage reason and repair guidance while declaration inspection remains schema
 version 0. The result includes the selected Python target and versioned built-in
-model catalog. The [`codepact` 0.9.0 rustdoc](https://docs.rs/codepact/0.9.0/codepact/)
+model catalog. The [`codepact` 0.10.0 rustdoc](https://docs.rs/codepact/0.10.0/codepact/)
 documents the published API. `AnalysisSession::check_report_cancellable` returns a
 revision-tagged `SessionCheckResult`. `check` continues returning `Inspection`
 for source compatibility. The 0.x API remains provisional and may change in a
@@ -108,7 +108,7 @@ analyzed scope and contributes to snapshot identity.
 ## Build an adoption report
 
 Use the adoption resolver and report builder when your host needs CLI policy.
-In a Rust project with `codepact = "=0.9.0"`, save the
+In a Rust project with `codepact = "=0.10.0"`, save the
 {download}`complete example <../crates/codepact/examples/adoption_report.rs>`
 as `src/main.rs`, then run `cargo run --locked` after generating a lockfile.
 
@@ -225,7 +225,7 @@ An `Ok` return does not establish successful declaration analysis. Check the ret
 ## Public types and limits
 
 The crate root exports the following result and input types. The 0.x API is
-provisional. [CodePact 0.9.0 rustdoc](https://docs.rs/codepact/0.9.0/codepact/) ·
+provisional. [CodePact 0.10.0 rustdoc](https://docs.rs/codepact/0.10.0/codepact/) ·
 [Historical TypePact 0.2.0 rustdoc](https://docs.rs/typepact/0.2.0/typepact/)
 
 | Type or function | Purpose |

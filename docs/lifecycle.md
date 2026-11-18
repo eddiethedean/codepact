@@ -2,7 +2,7 @@
 
 # Check a resource lifecycle
 
-Use CodePact 0.9.0 to reproduce a use after close, read its evidence, and
+Use CodePact 0.10.0 to reproduce a use after close, read its evidence, and
 make the example pass. [Configure check policy](adopting.md)
 
 ## Install and run
@@ -10,7 +10,7 @@ make the example pass. [Configure check policy](adopting.md)
 Install the matching helper and CLI packages in your project:
 
 ```sh
-uv add 'codepact[cli]==0.9.0'
+uv add 'codepact[cli]==0.10.0'
 ```
 
 The analyzer reads Python source as text; it does not import the example.

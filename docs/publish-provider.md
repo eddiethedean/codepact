@@ -2,7 +2,7 @@
 
 # Publish a provider wheel
 
-Use the published 0.9.0 CLI to export and verify the sample wheel. The project
+Use the published 0.10.0 CLI to export and verify the sample wheel. The project
 uses a regular pure-Python package under `src/acme_storage`, with an empty
 `py.codepact` marker and a Hatchling build that includes package data. The
 sample publishes a must-use contract for `acme_storage.export_receipt`.

@@ -1,4 +1,4 @@
-<!-- Generated from CodePact 0.9.0 by sync_docs_reference.py. -->
+<!-- Generated from CodePact 0.10.0 by sync_docs_reference.py. -->
 
 | Rule | Introduced | Selection | Meaning |
 | --- | --- | --- | --- |
@@ -28,5 +28,10 @@
 | `TP6001` | 0.7.0 | Informational hint | A local class with a supported close method is passed to contextlib.closing. |
 | `TP6002` | 0.7.0 | Informational hint | An unmarked synchronous wrapper directly returns a resolved must-use result. |
 | `TP6003` | 0.9.0 | Informational hint | A wildcard acknowledged the sole remaining variant of a pending outcome. |
+| `TP7001` | 0.10.0 | Opt-in | A queue operation violates the local accounting or shutdown protocol. |
+| `TP7002` | 0.10.0 | Opt-in | A guard, permit or signal protocol is violated. |
+| `TP7003` | 0.10.0 | Opt-in | A queue or connection protocol is violated. |
+| `TP7004` | 0.10.0 | Opt-in | An acquisition, release or shared update violates the selected process protocol. |
+| `TP7005` | 0.10.0 | Opt-in | A direct-script launch violates the reviewed spawn entry protocol. |
 | `TP9001` | 0.1.0 | Mandatory | A construct or effect is outside the qualified analysis subset. |
 | `TP9002` | 0.1.0 | Mandatory | The requested analysis did not complete. |

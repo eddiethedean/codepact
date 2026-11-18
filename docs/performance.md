@@ -5,17 +5,15 @@ CodePact sets explicit source and work limits. See the
 CLI starts a new process per invocation; the Rust `AnalysisSession` can reuse
 work when a host updates a project repeatedly.
 
-## Current release and candidate evidence
+## Release evidence
 
 The [0.9 measurements](https://github.com/eddiethedean/codepact/blob/7b17a494f7d98cfa7f9dc27db5dc7d88b1214e78/docs/planning/phases/0.9/performance.md)
 include synthetic outcome and work-result workloads, provider upgrades, and
 paired comparisons against 0.8. They distinguish a cold run from reuse in
 one session and record peak memory, sample counts, and toolchain.
-The [0.10 candidate measurements](https://github.com/eddiethedean/codepact/pull/27)
-cover 64-caller queue, IPC, and guard workloads on macOS ARM64, with paired
-comparisons against published 0.9. Consult the branch's
-[reproduction procedure](https://github.com/eddiethedean/codepact/blob/724f9da84852029a08d00fb5ef66027800e8d09b/docs/planning/phases/0.10/implementation-evidence.md#performance-replay)
-for the workload inputs and raw receipt locations.
+The 0.10.0 release evidence reports 64-caller queue, IPC, and guard workloads
+on macOS ARM64 and 24 paired process runs against 0.9.0.
+[0.10.0 performance evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.10.0-evidence.md#performance-comparison)
 
 For a CI pilot, measure fresh runs of the pinned CLI over the same representative
 root. Record wall time, selected files, coverage, and runner type. For an

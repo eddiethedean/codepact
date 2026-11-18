@@ -7,7 +7,7 @@
 Set the source target and analyzed runtime in `pyproject.toml`. Apply
 this profile when the application runs under the stated CPython version,
 platform, and assumptions. The checker can run on a different host.
-These examples use the published 0.9.0 CLI.
+These examples use the published 0.10.0 CLI.
 
 ```{literalinclude} _examples/work/pyproject.toml
 :language: toml
@@ -84,7 +84,7 @@ to acknowledge it.
 Extract the project and run the published checker from its directory.
 
 ```sh
-uv tool run --from codepact-cli==0.9.0 codepact check --json > report.json
+uv tool run --from codepact-cli==0.10.0 codepact check --json > report.json
 ```
 
 ```{literalinclude} _examples/work/src/main.py
@@ -101,4 +101,4 @@ uv tool run --from codepact-cli==0.9.0 codepact check --json > report.json
 Read the diagnostic's primary line and `foundations.model_uses` together.
 `await-local-task` shows retrieval of the result. See
 [acknowledging persistent outcomes](contracts.md#acknowledge-a-persistent-outcome)
-for variant matches and forwarding. [0.10 candidate protocols](concurrency.md)
+for variant matches and forwarding. [Queue, IPC, and guard models](concurrency.md)

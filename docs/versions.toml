@@ -1,6 +1,6 @@
 # Update the published version and its immutable source revision together.
-published_version = "0.9.0"
-published_revision = "7b17a494f7d98cfa7f9dc27db5dc7d88b1214e78"
+published_version = "0.10.0"
+published_revision = "dd35d345d9511a33faea76e51a709605071bd5fa"
 
 # First releases are historical metadata. The checked CLI supplies rule text,
 # tiers, and whether each rule is on in the default scope.

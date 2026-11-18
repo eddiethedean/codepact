@@ -2,7 +2,7 @@
 
 # Command-line reference
 
-This reference covers the CodePact 0.9.0 analyzer and its opt-in check modes.
+This reference covers the CodePact 0.10.0 analyzer and its opt-in check modes.
 The analyzer reads Python source without importing or executing the project.
 [Release availability](availability.md)
 
