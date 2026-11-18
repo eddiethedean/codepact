@@ -7,15 +7,15 @@ consumers should reject versions they do not support.
 | Interface | Schema |
 | --- | --- |
 | Declaration inspection | [inspection schema 0](schemas/inspection-v0.schema.json) |
-| Rust `CheckResult` | [checker result schema 1](schemas/check-result-v1.schema.json), [0.8 checker result schema 2](schemas/check-result-v2.schema.json) |
-| CLI check report | [adoption report schema 3](schemas/check-report-v3.schema.json), [0.8 adoption report schema 4](schemas/check-report-v4.schema.json) |
+| Rust `CheckResult` | [checker result schema 1](schemas/check-result-v1.schema.json), [foundations checker result schema 2](schemas/check-result-v2.schema.json) |
+| CLI check report | [adoption report schema 3](schemas/check-report-v3.schema.json), [foundations report schema 4](schemas/check-report-v4.schema.json) |
 | CLI execution failure | [failure envelope for report schema 3](schemas/failure-v3.schema.json) |
 | Baseline file | [baseline schema 1](schemas/baseline-v1.schema.json) |
 | Baseline update summary | [baseline-update schema 1](schemas/baseline-update-v1.schema.json) |
 | Capability list | [capability schema 1](schemas/capabilities-v1.schema.json) |
 | Rule explanation | [explanation schema 1](schemas/explanation-v1.schema.json) |
-| Resolved settings | [settings schema 2](schemas/settings-v2.schema.json), [0.8 settings schema 3](schemas/settings-v3.schema.json) |
-| 0.8 model evidence | [foundations evidence schema 1](schemas/foundations-evidence-v1.schema.json) |
+| Resolved settings | [settings schema 2](schemas/settings-v2.schema.json), [settings schema 3](schemas/settings-v3.schema.json) |
+| Reviewed model evidence | [foundations evidence schema 1](schemas/foundations-evidence-v1.schema.json) |
 | Source review capture | [review snapshot schema 1](schemas/review-snapshot-v1.schema.json) |
 | Source review comparison | [review result schema 1](schemas/review-v1.schema.json) |
 | Wheel contract comparison | [contract diff schema 1](schemas/contract-diff-v1.schema.json) |
@@ -25,7 +25,7 @@ Valid and invalid JSON fixtures are maintained in the
 The fixtures illustrate version boundaries and rejection behavior; they do not
 qualify release or pilot gates. Schema 2 reports and failures remain available
 for older consumers. Schema 3 adds explicit provider selection and the
-finite-match setting. CodePact 0.8.0 emits CLI report schema 4 and Rust result
+finite-match setting. CodePact 0.9.0 emits CLI report schema 4 and Rust result
 schema 2 for foundations checks. These schemas carry the resolved scope,
 provider and model-use evidence, and versioned comparison descriptor.
 Execution failures still use the schema 3 failure envelope.

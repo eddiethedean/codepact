@@ -1,5 +1,36 @@
 # Upgrade CodePact
 
+(upgrade-09)=
+## Upgrade to 0.9.0
+
+Update the helper and CLI together and commit the refreshed lockfile.
+
+```sh
+uv add 'codepact[cli]==0.9.0'
+uv run --locked codepact --version
+```
+
+Use `uv add codepact==0.9.0` for a helper-only project,
+`uv tool install codepact-cli==0.9.0` for a standalone command, or
+`cargo add codepact@=0.9.0` for a Rust host. [Install options](install.md)
+
+- **Outcome contracts.** Add `MustHandle` to selected `Result` and `Option` returns
+  when the caller must explicitly acknowledge each delivered outcome.
+  [Persistent outcome examples](contracts.md#acknowledge-a-persistent-outcome)
+- **Declaration policy.** Start in preview mode for the APIs you want to check.
+  Configuring declaration policy selects settings schema 3. Ordinary source-only
+  checks still emit CLI report schema 3.
+  [Declaration policy](adopting.md#require-a-declaration-on-a-selected-api)
+- **Baselines and review.** Rerun the check and regenerate your baseline under
+  the intended settings. Compare both revisions using captures from the same
+  0.9.0 binary. [Change review](cli.md#compare-captured-source-analyses)
+- **Installed providers.** Use the reviewed wheels and explicit runtime profile
+  to enable the new HTTP and SQL models. Compare published wheel changes with
+  `codepact contracts diff`.
+  [Provider profiles](reviewed-contracts.md#reviewed-http-and-sql-profiles) ·
+  [Wheel comparison](cli.md#compare-published-wheel-contracts)
+
+(upgrade-08)=
 ## Upgrade to 0.8.0
 
 Update the helper and CLI together and commit the refreshed lockfile.

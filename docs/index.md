@@ -50,9 +50,9 @@ missed cleanup, and discarded results directly in source.
 ::::{container} cp-release-strip
 
 :::{container} cp-release cp-release-published
-**0.8.0 · Reviewed contracts and concurrency**
+**0.9.0 · Persistent obligations and change review**
 
-[See what changed in 0.8.0](release-notes.md)
+[See what changed in 0.9.0](release-notes.md)
 :::
 
 :::{container} cp-release cp-release-ownership
@@ -88,7 +88,7 @@ Set a project policy, review existing findings, and record intentional exception
 :::{container} cp-guide
 [Run in CI](automation.md)
 
-Choose an exit policy and preserve structured reports for later review.
+Choose an exit policy, preserve reports, and compare source revisions in CI.
 :::
 
 :::{container} cp-guide

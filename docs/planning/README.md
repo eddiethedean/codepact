@@ -26,8 +26,8 @@ Planning baseline: 2026-10-31; release mapping updated 2026-11-17. These documen
 | [0.13 stabilization](phases/0.13-stabilization.md) | Compatibility/adoption rehearsals and recorded 1.0 readiness |
 | [Carried-forward gates](phases/carry-forward-gates.md) | Unchanged E01–E12 and S01–S09 definitions and completion ownership |
 | [Contract and portfolio workstreams](contract-and-portfolio-workstreams.md) | Retained library LC, review CR, outcome OH and portfolio PC work |
-| [Persistent outcomes v1](persistent-outcomes.md) | Proposed opt-in MustHandle production, identity, compatibility and acknowledgment acceptance for 0.9 |
-| [Change review v1](change-review.md) | Proposed preservation prerequisites, verdicts, trusted snapshots and review exit behavior for 0.9 |
+| [Persistent outcomes v1](persistent-outcomes.md) | CodePact 0.9.0 opt-in MustHandle production, identity, compatibility and acknowledgment |
+| [Change review v1](change-review.md) | CodePact 0.9.0 preservation prerequisites, verdicts, trusted snapshots and review exit behavior |
 | [Shared analyzer](semantic-analyzer.md) | Canonical contracts, flow analysis, summaries and diagnostics |
 | [Publishing CodePact contracts](published-contracts.md) | Package markers, installed dependency analysis, manifest design, and contract compatibility checks |
 | [Concurrent resource safety](concurrency.md) | Released CS01–CS05, new AS/MP/BR semantics, CS06 integration and CS07 audit |

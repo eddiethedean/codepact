@@ -1,8 +1,8 @@
 # 0.9 validation matrix
 
-All rows are pending. The [phase plan](../0.9-obligations-and-change-review.md)
-assigns release gates. The [specification](specification.md) defines the
-proposed profiles. Compare inherited behavior with published
+Use this matrix to reproduce validation for CodePact 0.9.0. The
+[phase plan](../0.9-obligations-and-change-review.md) assigns release gates.
+The [specification](specification.md) defines the profiles. Compare inherited behavior with published
 [CodePact 0.8.0](../../../releases/0.8.0-evidence.md).
 
 ## Required cases

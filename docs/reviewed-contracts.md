@@ -1,6 +1,6 @@
 # Reviewed contracts and runtime models
 
-CodePact 0.8.0 checks contracts from installed pure Python wheels. Package
+CodePact 0.9.0 checks contracts from installed pure Python wheels. Package
 authors can publish a manifest, and application teams can supply reviewed
 contracts for an exact dependency version. The opt-in standard library
 models target CPython 3.13.16 on Linux x86-64. Reports identify the selected
@@ -157,13 +157,43 @@ with model applicability, artifact digests, source scope, and exhausted limits.
 Rust hosts can supply the equivalent inputs through `check_with_foundations`.
 [Output schemas](schemas.md) · [Rust integration](rust-api.md#check-with-reviewed-models)
 
-## HTTP and SQL preview for 0.9
+### Work result observation
 
-The checker selects reviewed effects from the installed source in configured
-`dependency-roots`. The initial profiles target CPython 3.13.16 on Linux
-x86-64 with Python 3.13 source. Declare the runtime as shown above. For async
-profiles, enable experimental ownership and set the default task-factory
-assumption for an event loop you control.
+With the runtime profile above, CodePact checks result or exception observation
+for supported local asyncio tasks and futures, explicit-spawn Pool jobs, and
+local thread-pool jobs. An await, `result()`, or `get()` can observe work in the
+supported profile. Checking status or waiting for shutdown leaves the result
+obligation pending. When `exception()` reports a successful worker with no
+exception, the result still needs to be observed. A delivered `MustHandle`
+outcome has a separate acknowledgment duty.
+[Rule catalog](rules.md) · [Persistent outcomes](contracts.md#acknowledge-a-persistent-outcome)
+
+## Reviewed HTTP and SQL profiles
+
+The profiles target CPython 3.13.16 on Linux x86-64 with Python 3.13 source.
+Declare the runtime as shown above. For async profiles, enable experimental
+ownership and set the default task-factory assumption for an event loop you
+control.
+
+To reproduce the reviewed SQL stack on Linux x86-64 with glibc 2.34 or later,
+download {download}`phase09-provider-requirements.txt <../tests/conformance/phase09-provider-requirements.txt>`
+into your project directory and install the pinned wheels in a fresh environment.
+The requirements include the exact pure-Python SQLAlchemy wheel and its SHA-256
+hash. A version-only SQLAlchemy pin can select a native wheel outside this profile.
+
+```sh
+uv venv --python 3.13.16 .codepact-providers
+uv pip install --python .codepact-providers/bin/python --only-binary :all: \
+  -r phase09-provider-requirements.txt
+```
+
+Add the environment's package directory to the project configuration alongside
+the runtime profile above. Run `codepact check --root src --json` against your source.
+
+```toml
+[tool.codepact.dependencies]
+roots = [".codepact-providers/lib/python3.13/site-packages"]
+```
 
 | Distribution | Reviewed operations |
 | --- | --- |

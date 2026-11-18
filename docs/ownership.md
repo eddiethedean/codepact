@@ -187,9 +187,9 @@ The first ThreadPoolExecutor subset is narrower: exact
 resolved `submit` workers with no tracked resource arguments or captures, and
 `shutdown` with default or literal arguments. It tracks `Accepting` and
 `Shutdown`, and reports submit after shutdown. Its model is pinned to CPython
-3.13.16 source; other targets produce a boundary. Worker execution, futures,
-worker-side effects, and cleanup are not inferred. The report lists the
-experimental model and pin.
+3.13.16 source; other targets produce a boundary. With the reviewed runtime
+profile, CodePact also tracks whether a supported future's result or exception
+was observed. The report lists the selected model and pin. [Work observation](reviewed-contracts.md#work-result-observation)
 
 Run examples with `--mode strict` to fail on incomplete coverage.
 
@@ -200,7 +200,7 @@ Run examples with `--mode strict` to fail on incomplete coverage.
 - The TaskGroup model covers direct calls to a tracked group's `create_task`
   with one resolved coroutine function. Its source pins are CPython 3.11.15,
   3.12.13 and 3.13.16. The project assumption covers the running default
-  CPython loop and its non-eager task factory. With the 0.8 runtime profile
+  CPython loop and its non-eager task factory. With the reviewed runtime profile
   selected, the checker can also model scoped task creation, direct task
   awaits, shielding, and timeouts. Custom factories, detached tasks, and
   escaping group or task handles can leave coverage incomplete.

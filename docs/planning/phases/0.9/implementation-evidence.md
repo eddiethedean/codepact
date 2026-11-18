@@ -1,7 +1,7 @@
 # 0.9 implementation evidence
 
 The [phase plan](../0.9-obligations-and-change-review.md) and
-[validation matrix](validation.md) track qualification for the 0.9.0 preview.
+[validation matrix](validation.md) describe qualification for CodePact 0.9.0.
 The comparison baseline is [published 0.8.0](../../../releases/0.8.0-evidence.md).
 
 | Evidence | Reproduction |

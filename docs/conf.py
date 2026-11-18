@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 project = "CodePact"
 author = "CodePact contributors"
 copyright = "2026, CodePact contributors"
-version = "0.8"
-release = "0.8.0"
+version = "0.9"
+release = "0.9.0"
 
 extensions = [
     "myst_parser",

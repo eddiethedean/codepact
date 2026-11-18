@@ -24,8 +24,9 @@ This document is the authoritative release sequence. The original [feature miles
 
 ## Sequence and dependencies
 
-The released 0.8 foundations are the basis for the upcoming obligations,
-change review, and library model work. Release acceptance follows these dependencies:
+CodePact 0.9.0 builds on the 0.8 foundations for persistent obligations,
+change review, and reviewed HTTP and SQL models. Release acceptance follows
+these dependencies.
 
 | Phase | Dependency and completion |
 | --- | --- |

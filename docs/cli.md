@@ -1,6 +1,6 @@
 # Command-line reference
 
-This reference covers the CodePact 0.8.0 analyzer and its opt-in check modes.
+This reference covers the CodePact 0.9.0 analyzer and its opt-in check modes.
 The analyzer reads Python source without importing or executing the project.
 [Release availability](availability.md)
 
@@ -37,7 +37,11 @@ codepact capabilities --json
 codepact explain RULE --json
 codepact contracts export --root DIR --distribution NAME --version VERSION
                           --import-scope PACKAGE [--python-version 3.11|3.12|3.13]
-codepact contracts verify WHEEL
+codepact contracts verify WHEEL [--python-version 3.11|3.12|3.13]
+codepact contracts diff BEFORE_WHEEL AFTER_WHEEL [--python-version 3.11|3.12|3.13] [--json]
+codepact review capture [check options]
+codepact review BEFORE AFTER [--repair FINGERPRINT ...] [--json]
+                [--current DIR [-- check options]]
 ```
 
 `inspect-contracts` keeps the inspection interface: it requires explicit files
@@ -135,7 +139,7 @@ Unknown keys, invalid patterns or rule codes, unsupported targets, and
 severity overrides for mandatory or disabled rules fail configuration.
 `--show-settings --json` reports each setting's origin without reading
 source. It accepts no file operands or detail limit. It emits settings schema 3
-when a runtime profile, project contracts, `uv-lock`, or
+when a declaration policy, runtime profile, project contracts, `uv-lock`, or
 `experimental-foundations = true` is set. Other settings reports use schema 2,
 including reports with only dependency roots configured.
 
@@ -194,7 +198,7 @@ above.
 ## Reviewed runtime models
 
 Configure `[tool.codepact.runtime-profile]` in `pyproject.toml` to select the
-analyzed program's runtime. The 0.8 models target CPython 3.13.16 on Linux
+analyzed program's runtime. The reviewed models target CPython 3.13.16 on Linux
 x86-64 with source target `3.13`. The asyncio and multiprocessing models
 also need the applicable ownership settings and runtime assumptions.
 [Runtime profile and supported operations](reviewed-contracts.md#select-the-runtime-profile)

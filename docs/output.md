@@ -15,6 +15,9 @@ do not imply schema versions.
 | `explain RULE --json` | [explanation schema 1](schemas/explanation-v1.schema.json) |
 | `check --show-settings --json` | [settings schema 2](schemas/settings-v2.schema.json) or [settings schema 3](schemas/settings-v3.schema.json) |
 | `baseline update --json` summary | [baseline-update schema 1](schemas/baseline-update-v1.schema.json) |
+| `review capture` | [review snapshot schema 1](schemas/review-snapshot-v1.schema.json) |
+| `review BEFORE AFTER --json` | [review result schema 1](schemas/review-v1.schema.json) |
+| `contracts diff BEFORE_WHEEL AFTER_WHEEL --json` | [contract diff schema 1](schemas/contract-diff-v1.schema.json) |
 | CLI execution/configuration error in JSON mode | [failure envelope for report schema 3](schemas/failure-v3.schema.json) |
 
 Downloadable schemas and fixture links are listed in the [schema reference](schemas.md).

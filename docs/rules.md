@@ -11,12 +11,12 @@ settings for each bug and repair. Install [uv](install.md#standalone-command),
 then clone the examples and check both versions of the project.
 
 ```sh
-git clone --branch v0.8.0 --depth 1 https://github.com/eddiethedean/codepact.git
+git clone --branch v0.9.0 --depth 1 https://github.com/eddiethedean/codepact.git
 cd codepact
 cases=crates/codepact/tests/projects/code_smells
-uv tool run --from codepact-cli==0.8.0 codepact check \
+uv tool run --from codepact-cli==0.9.0 codepact check \
   --config "$cases/batch_teardown/buggy/pyproject.toml" --mode strict
-uv tool run --from codepact-cli==0.8.0 codepact check \
+uv tool run --from codepact-cli==0.9.0 codepact check \
   --config "$cases/batch_teardown/fixed/pyproject.toml" --mode strict
 ```
 
@@ -40,7 +40,7 @@ Expect exit `1` with TP9001 and incomplete coverage for opaque effects.
 For a comparison, use
 `--config "$cases/unmarked_status/control/pyproject.toml" --mode strict`.
 The unmarked status has no must-use obligation and the check exits `0`.
-[Corpus source and expected findings](https://github.com/eddiethedean/codepact/tree/v0.8.0/crates/codepact/tests/projects/code_smells)
+[Corpus source and expected findings](https://github.com/eddiethedean/codepact/tree/v0.9.0/crates/codepact/tests/projects/code_smells)
 
 ## Published rules
 
@@ -54,7 +54,7 @@ The unmarked status has no must-use obligation and the check exits `0`.
 | `TP4001` | 0.1.0 | The selected Python grammar could not parse the file | Fix the syntax error or select the source target matching the code. |
 | `TP4002` | 0.1.0 | A declaration is invalid or metadata conflicts | Compare the primary and related spans; make the lifecycle/access declarations for that view consistent. |
 | `TP9001` | 0.1.0 | An unsupported or unresolved construct leaves coverage incomplete | Supply a missing supported input or reduce the pilot to a documented subset. Do not treat the boundary as a pass. |
-| `TP3003` | 0.9 preview | A local task, future, or pool job exits without observation under the selected runtime profile | Observe the result or worker exception through a supported await or retrieval. Completion and shutdown preserve this duty. |
+| `TP3003` | 0.9.0 | A supported task, future, pool job, or thread-pool job reaches scope exit with its result or exception unobserved | Observe the result or worker exception through a supported await or retrieval. Completion and shutdown preserve this duty. |
 | `TP9002` | Rust inspection convenience API | Cancellation produced an incomplete report; cancellable APIs return `AnalysisCancelled` | Treat the result as cancelled and retry only if the host still needs the current revision. |
 
 The CLI uses TP3001 at warning severity by default. Its result-use

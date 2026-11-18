@@ -1,10 +1,9 @@
 # Before-and-after change review
 
-Specification revision: **1**. Status: **Planned; acceptance pending**.
-CR01 descriptor decisions are required in 0.8. The bounded CR01–CR05 and
-CR07–CR09 workflow and CR06 CLI/in-memory checkpoint belong to
-[0.9](phases/0.9-obligations-and-change-review.md); cache/editor/MCP parity
-completes in 0.12. Command names and schemas remain proposed.
+Specification revision **1**. The bounded CR01–CR05 and CR07–CR09 workflow
+and the CR06 CLI and in-memory checkpoint are part of
+[CodePact 0.9.0](phases/0.9-obligations-and-change-review.md). Cache, editor, and
+MCP parity is planned for 0.12.
 
 ## Inputs, authority and snapshot claims
 

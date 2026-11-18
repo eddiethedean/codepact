@@ -1,6 +1,6 @@
 # 0.9 specification
 
-These are proposed implementation profiles for the [phase plan](../0.9-obligations-and-change-review.md).
+These are the CodePact 0.9.0 profiles for the [phase plan](../0.9-obligations-and-change-review.md).
 The [validation matrix](validation.md) defines the evidence required to promote
 these profiles. Use the published [0.8.0 baseline](../../../releases/0.8.0-evidence.md)
 for inherited behavior and artifact checks.
@@ -9,7 +9,7 @@ for inherited behavior and artifact checks.
 
 Implement the [MustHandle v1 semantics](../../persistent-outcomes.md) in the
 shared analyzer. Use the existing resolved declaration identities and exact
-CodePact variant facts. The proposed helper surface is `MustHandle[T]`, an
+CodePact variant facts. The helper surface is `MustHandle[T]`, an
 `Annotated` alias for a callable's outer `Result` or `Option`, and
 `discard_outcome(value, reason="…")`. A statically reviewable reason starts
 with a nonempty literal string after trimming whitespace. The existing
@@ -72,7 +72,7 @@ repeated production site or exceeded bound retains incomplete coverage.
 ## Installed provider profiles
 
 Use the same CPython and target profile for the first library matrix. These
-versions are proposed pins for the fixtures. Capture wheel hashes, transitive
+versions are the pins for the fixtures. Capture wheel hashes, transitive
 dependency artifacts, backend and effective configuration in the reviewed model
 and evidence. Apply facts through the 0.8 provider resolution and provenance
 ledger. Bind each profile to the selected distribution, canonical symbol and
@@ -156,14 +156,14 @@ Include raw findings, disposition, clean-site anchors and required coverage in
 the completed evidence. A pure comparator can produce a historical conclusion
 from two captures. A current-workspace claim requires verification of the after
 snapshot against current inputs. Apply the v1 verdict precedence and retain all
-blocking reasons. The proposed `codepact review` command accepts two completed
+blocking reasons. The `codepact review` command accepts two completed
 captures, supports text and versioned JSON, and uses exit `0` for pass, `1` for a
 completed nonpass and `2` for input or execution failure. The CI recipe pins the
 checker and obtains the reference and policy from the trusted host workflow.
 [Change review v1 prerequisites](../../change-review.md#preservation-pass-requirements) ·
 [Verdicts and exit status](../../change-review.md#verdicts-and-exit-status)
 
-**Author artifact comparison.** The proposed installed `codepact contracts
+**Author artifact comparison.** The installed `codepact contracts
 diff` command compares two actual local wheel publications using the bounded
 E10-A reader and validator. Compare normalized public import paths, applicable
 caller obligations and supplier guarantees. Report compatible differences,
