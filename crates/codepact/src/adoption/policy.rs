@@ -20,13 +20,20 @@ pub(super) struct BaselinePolicy {
 }
 
 impl BaselinePolicy {
-    pub(super) fn new(loaded: Baseline, result: &CheckResult, config: &EffectiveConfig) -> Self {
+    pub(super) fn new(
+        loaded: Baseline,
+        result: &CheckResult,
+        files: &[SourceFile],
+        config: &EffectiveConfig,
+    ) -> Self {
         let compatible = loaded.target_python_version == result.target_python_version
             && loaded.model_catalog_version == result.model_catalog_version
             && loaded.rule_semantic_version == RULE_SEMANTIC_VERSION
             && loaded.ownership == config.ownership
             && loaded.ownership_model_revision.as_deref()
                 == ownership_model_revision(result).as_deref()
+            && loaded.declaration_policy_sha256
+                == super::declarations::revision(result, files, config)
             && loaded.engine_version == env!("CARGO_PKG_VERSION");
         Self {
             entries: loaded.entries.iter().map(BaselineKey::from).collect(),
@@ -231,6 +238,10 @@ pub(super) fn apply(
             .severity
             .get(&diagnostic.code)
             .map(String::as_str)
+            .filter(|_| {
+                !(super::config::DECLARATION_RULES.contains(&diagnostic.code.as_str())
+                    && base == "info")
+            })
             .unwrap_or(&base)
             .to_string();
         let threshold = if config.fail_on == "error" {

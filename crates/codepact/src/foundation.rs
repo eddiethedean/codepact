@@ -2,9 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::{cell::RefCell, collections::BTreeSet};
+mod libraries;
 mod models;
 mod publication;
 mod runtime;
+pub use libraries::{reviewed_library_dependencies, reviewed_library_source_limit};
 pub(crate) use models::{
     normalize_submodule_imports, publication_origin, scope_entry, ApplicableFactory,
     PreparedFoundations,
@@ -14,12 +16,15 @@ pub use models::{
     ProviderIssue, ProviderOrigin, ProviderSelection, ScopedSource,
 };
 pub use publication::{
-    decode_manifest, export_manifest, module_for_source, normalized_distribution,
-    regular_relative_path, sha256, verify_publication, ArtifactFile, Manifest, ProviderPackage,
-    PublicationLocation, PublishedContract, PublishedSymbol, MANIFEST_FILENAME, MARKER_FILENAME,
-    MAX_METADATA_BYTES,
+    capture_publication, decode_manifest, diff_publications, export_manifest, module_for_source,
+    normalized_distribution, regular_relative_path, sha256, verify_publication, ArtifactFile,
+    ContractChange, ContractChangeKind, ContractDiff, Manifest, ProviderPackage,
+    PublicationIdentity, PublicationLocation, PublicationSnapshot, PublishedContract,
+    PublishedSymbol, MANIFEST_FILENAME, MARKER_FILENAME, MAX_METADATA_BYTES,
 };
-pub(crate) use publication::{select_publication, SelectedPublication};
+pub(crate) use publication::{
+    normalized_provider_agreements, select_publication, SelectedPublication,
+};
 pub(crate) use runtime::stdlib_catalog;
 pub use runtime::{RuntimeProfile, CATALOG_REVISION};
 
@@ -71,8 +76,7 @@ pub struct FoundationEvidence {
     pub comparison: ComparisonDescriptor,
 }
 
-/// Versioned semantic inputs for CR01. Comparison of two snapshots is a
-/// separate operation in the next phase.
+/// Versioned semantic inputs used by source preservation review.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComparisonDescriptor {
     pub schema_version: u8,

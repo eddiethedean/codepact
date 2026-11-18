@@ -1,5 +1,19 @@
 # Release notes
 
+## 0.9.0 — persistent obligations and change review
+
+- `MustHandle` tracks explicit acknowledgment after assignment, aliases and
+  supported handoffs. The existing immediate `MustUse` checks still apply.
+- `codepact review` compares captured source analyses and reports preservation
+  verdicts. `codepact contracts diff` compares two reviewed wheel publications.
+- Declaration policy can preview or enforce requirements on selected APIs.
+- Reviewed runtime models track unobserved task, future, pool, and executor
+  results. Installed HTTP and SQL profiles check supported client and session
+  lifetimes and bounded concurrent operations.
+
+[Install 0.9.0](install.md) · {ref}`Upgrade to 0.9.0 <upgrade-09>` ·
+[Review a change](ci-reporting.md#review-a-change) · [Provider profiles](reviewed-contracts.md)
+
 ## 0.8.0 — reviewed contracts and concurrency
 
 CodePact 0.8.0 extends checking across installed packages and adds bounded
@@ -23,7 +37,7 @@ models for standard library resource lifetimes.
   digests, scope, and a versioned comparison descriptor. Existing source-only
   checks retain their report formats unless foundations are explicitly enabled.
 
-[Install 0.8.0](install.md) · [Upgrade from 0.7](upgrading.md) ·
+{ref}`Upgrade to 0.8.0 <upgrade-08>` ·
 [Configure reviewed contracts and runtime models](reviewed-contracts.md)
 
 ## 0.7.0 — typed outcomes and finite-match preview

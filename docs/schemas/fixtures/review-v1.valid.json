@@ -1,0 +1,23 @@
+{
+  "review_schema_version": 1,
+  "before_snapshot": "911ee4253c65160dcf5e2465906929abbfc79cefecadcc31b0fa535669fe4f71",
+  "after_snapshot": "c7b83dff5e118a20f2d2b3a8f80134dd6aab23116751707fd4ed0b5f2a1b636e",
+  "claim": "historical",
+  "after_check_exit": 0,
+  "verdict": "review-required",
+  "exit_code": 1,
+  "reasons": [
+    {
+      "category": "policy",
+      "detail": "effective settings, baseline, or inline suppression changed"
+    }
+  ],
+  "changed_sections": [
+    "policy"
+  ],
+  "findings": [],
+  "added_files": [],
+  "removed_files": [],
+  "added_contracts": [],
+  "removed_contracts": []
+}

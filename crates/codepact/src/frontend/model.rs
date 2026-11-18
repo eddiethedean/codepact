@@ -34,6 +34,10 @@ pub(crate) enum AstExprKind {
     Boolean(bool),
     String(String),
     Primitive,
+    /// A reviewed SQLModel statement already evaluated during call preparation.
+    EvaluatedSqlModelSelect {
+        scalar: bool,
+    },
     NoneLiteral,
     Other,
     DepthLimit,
@@ -122,6 +126,7 @@ pub(crate) enum FlowStatement {
         range: SourceRange,
     },
     Loop {
+        asynchronous: bool,
         test: Option<AstExpr>,
         iterator: Option<AstExpr>,
         target: Option<String>,
@@ -159,6 +164,7 @@ pub(crate) enum FlowStatement {
     Store {
         value: AstExpr,
         target: Option<AstExpr>,
+        annotation: Option<AstExpr>,
         range: SourceRange,
     },
     ClosureDefinition {

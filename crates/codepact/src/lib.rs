@@ -9,6 +9,7 @@ mod flow;
 pub mod foundation;
 mod frontend;
 mod identifiers;
+pub mod review;
 pub use identifiers::is_python_identifier;
 mod model;
 mod semantic;

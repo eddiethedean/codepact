@@ -73,11 +73,13 @@ def required_phase_gates(root: Path, version: str) -> list[str]:
     ]
     if len(plans) != 1:
         return []
+    gate_section = section(plans[0], "Release gates")
+    checkbox = r"(?:\[[ xX]\]\s*)?" if gate_section else r"\[[ xX]\]\s*"
     gate_pattern = re.compile(
-        r"^\s*-\s*\[[ xX]\]\s*\*\*([A-Z]+\d{2}(?:-[A-Z])?)(?:\*\*\s*|[ \t]+)[—-]",
+        rf"^\s*-\s*{checkbox}\*\*([A-Z]+\d{{2}}(?:-[A-Z])?)(?:\*\*\s*|[ \t]+)[—-]",
         re.M,
     )
-    return gate_pattern.findall(plans[0])
+    return gate_pattern.findall(gate_section or plans[0])
 
 
 def release_evidence_errors(

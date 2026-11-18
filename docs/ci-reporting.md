@@ -10,7 +10,7 @@ For a custom POSIX-shell job with Python 3.11 or later, download
 {download}`check-report.sh <_examples/check-report.sh>`. Pass the complete
 command that runs your check. The script adds `--json`, saves the output,
 checks the completed report's schema version and status, and returns the check
-status. It accepts schema versions 2, 3, and 4, including 0.8 foundations reports.
+status. It accepts schema versions 2, 3, and 4, including foundations reports.
 
 <!-- smoke: ci-report -->
 ```sh
@@ -49,6 +49,58 @@ model provenance.
 Share a minimized reproduction or a reviewed excerpt outside that audience.
 Keep the original report private when consumers need its complete identity
 and audit metadata. [Security and data handling](security.md)
+
+## Review a change
+
+The trusted host workflow selects the base revision, the checker artifact and
+the policy. Check out the base and candidate in separate directories. Retain
+each revision's dependency artifacts and capture the full selected root in
+both checkouts. Use the same pinned binary and analyzed Python target.
+
+Set `CODEPACT` to the absolute path to the verified 0.9.0 CLI. Set
+`CODEPACT_BASE_POLICY` and `CODEPACT_CANDIDATE_POLICY` to absolute paths to
+host-controlled configurations that apply the same policy. If the configurations
+select lockfiles or project model files, set their paths for the corresponding
+revision. The checker resolves relative configuration paths from the policy
+file's directory.
+
+Set `CODEPACT_BASE_DEPENDENCY_ROOT` and `CODEPACT_CANDIDATE_DEPENDENCY_ROOT`
+to the directories holding each revision's installed packages and their
+`.dist-info` directories. The recipe passes each root explicitly. A relative
+`--dependency-root` path resolves from the selected checkout. Keep the captures
+in the host job's working directory alongside the two checkouts.
+
+```sh
+capture() {
+    checkout=$1
+    policy=$2
+    dependency_root=$3
+    snapshot=$4
+    status=0
+    (cd "$checkout" && "$CODEPACT" review capture \
+        --root . --config "$policy" --python-version 3.13 \
+        --dependency-root "$dependency_root") > "$snapshot" || status=$?
+    case "$status" in
+        0|1) return 0 ;;
+        *) return "$status" ;;
+    esac
+}
+
+capture base-checkout "$CODEPACT_BASE_POLICY" "$CODEPACT_BASE_DEPENDENCY_ROOT" before.json || exit $?
+capture candidate-checkout "$CODEPACT_CANDIDATE_POLICY" "$CODEPACT_CANDIDATE_DEPENDENCY_ROOT" after.json || exit $?
+"$CODEPACT" review before.json after.json --json > review.json
+```
+
+Compare the distribution names, versions, and `artifact_sha256` values in each
+capture's `foundations.providers` against the CodePact provider identities you
+expect for that revision. The digest covers the provider inputs that CodePact
+reads. For source-only checks, omit `--dependency-root` and use policies with no
+configured dependency roots.
+
+An exit of `1` from capture can contain findings relevant to preservation
+review. Keep the comparator's exit status for the CI gate. A hash binds a
+capture to its content. Authority for the reference and policy comes from the
+host job. [Review options and exits](cli.md#compare-captured-source-analyses)
 
 ## Older releases
 

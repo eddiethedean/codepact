@@ -46,6 +46,9 @@ pub(super) fn invalid_argument_format(args: &[OsString]) -> &'static str {
         Some("capabilities" | "explain") => return "json",
         Some("inspect-contracts") => (false, "json"),
         Some("check") => (false, "text"),
+        Some("review") if args.clone().next().flatten() == Some("capture") => return "json",
+        Some("review") => (false, "text"),
+        Some("contracts") if args.next().flatten() == Some("diff") => (false, "text"),
         Some("baseline") if args.next().flatten() == Some("update") => (true, "text"),
         _ => return "text",
     };

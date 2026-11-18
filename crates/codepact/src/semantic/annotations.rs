@@ -557,6 +557,7 @@ fn normalize_canonical_identity(identity: &str) -> String {
     match identity {
         "codepact::rust::Borrowed" | "codepact::contracts::Borrowed" => "codepact::Borrowed".into(),
         "codepact::rust::Owned" | "codepact::contracts::Owned" => "codepact::Owned".into(),
+        "codepact::rust::MustUse" | "codepact::contracts::MustUse" => "codepact::MustUse".into(),
         "codepact::rust::BorrowedMut" | "codepact::contracts::BorrowedMut" => {
             "codepact::BorrowedMut".into()
         }

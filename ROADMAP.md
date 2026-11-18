@@ -16,7 +16,7 @@ This document is the authoritative release sequence. The original [feature miles
 | 0.6.x | Suspension-aware exclusive access, typestate and effects | [0.6 plan](docs/planning/phases/0.6-advanced-contracts.md) | M4 |
 | 0.7.x | Typed outcomes, helper and CLI install split, and an installed-wheel must-use preview | [0.7 plan](docs/planning/phases/0.7-typed-outcomes.md) | M5 runtime portion |
 | 0.8.x | Reviewed contracts and concurrency foundations | [0.8 plan](docs/planning/phases/0.8-reviewed-concurrency-foundations.md) | M5 integration portion |
-| 0.9.x | Persistent obligations and before-and-after review | [0.9 plan](docs/planning/phases/0.9-obligations-and-change-review.md) | M5 integration portion |
+| 0.9.x | Persistent obligations and before-and-after review | [0.9 plan](docs/planning/phases/0.9-obligations-and-change-review.md) · [Validation](docs/planning/phases/0.9/validation.md) | M5 integration portion |
 | 0.10.x | Queues, IPC and synchronization | [0.10 plan](docs/planning/phases/0.10-queues-ipc-and-synchronization.md) | M5 integration portion |
 | 0.11.x | Shutdown, async resources and executor bridges | [0.11 plan](docs/planning/phases/0.11-shutdown-and-bridges.md) | M5 integration portion |
 | 0.12.x | Portfolio adoption, broader models and integrations | [0.12 plan](docs/planning/phases/0.12-ecosystem-and-integrations.md) | M5 integration portion |
@@ -24,8 +24,9 @@ This document is the authoritative release sequence. The original [feature miles
 
 ## Sequence and dependencies
 
-The released 0.8 foundations are the basis for the upcoming obligations,
-change review, and library model work. Release acceptance follows these dependencies:
+CodePact 0.9.0 builds on the 0.8 foundations for persistent obligations,
+change review, and reviewed HTTP and SQL models. Release acceptance follows
+these dependencies.
 
 | Phase | Dependency and completion |
 | --- | --- |

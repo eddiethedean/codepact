@@ -98,6 +98,7 @@ pub(super) fn identify(
             &config.include,
             &config.exclude,
             &config.required_providers,
+            &config.declaration_policy,
             baseline_content_hash,
             &suppression_policy,
         ))

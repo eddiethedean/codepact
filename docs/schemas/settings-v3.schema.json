@@ -70,11 +70,19 @@
           "TP2101",
           "TP2102",
           "TP3001",
+          "TP3003",
           "TP4001",
           "TP4002",
+          "TP4101",
+          "TP4102",
+          "TP4103",
           "TP9001",
           "TP9002",
-          "TP5001"
+          "TP5001",
+          "TP5002",
+          "TP5003",
+          "TP5004",
+          "TP5005"
         ]
       }
     },
@@ -113,6 +121,20 @@
           "warning",
           "info"
         ]
+      }
+    },
+    "declaration_policy": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["module", "function", "requirement", "mode"],
+        "properties": {
+          "module": {"type": "string", "minLength": 1},
+          "function": {"type": ["string", "null"]},
+          "requirement": {"enum": ["resource-access", "owned-return", "must-use"]},
+          "mode": {"enum": ["preview", "enforce"]}
+        }
       }
     },
     "settings_origins": {

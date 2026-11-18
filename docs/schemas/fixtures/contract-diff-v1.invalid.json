@@ -1,0 +1,25 @@
+{
+  "contract_diff_schema_version": 0,
+  "before": {
+    "distribution": "reviewed",
+    "version": "1.0",
+    "import_scope": "reviewed",
+    "python_version": "3.13",
+    "artifact_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "after": {
+    "distribution": "reviewed",
+    "version": "2.0",
+    "import_scope": "reviewed",
+    "python_version": "3.13",
+    "artifact_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "compatible": false,
+  "changes": [
+    {
+      "public_symbol": "reviewed.receipt",
+      "kind": "new-caller-obligation",
+      "detail": "added must-use on return"
+    }
+  ]
+}

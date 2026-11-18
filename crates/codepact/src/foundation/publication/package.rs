@@ -102,7 +102,9 @@ impl ProviderPackage {
                 .iter()
                 .map(|file| file.source.len())
                 .sum::<usize>()
-                > crate::DEFAULT_MAX_SOURCE_BYTES
+                > self
+                    .reviewed_library_limit()
+                    .unwrap_or(crate::DEFAULT_MAX_SOURCE_BYTES)
         {
             return Err("provider source discovery exceeded the file or byte budget".into());
         }
@@ -140,6 +142,11 @@ impl ProviderPackage {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn reviewed_library_limit(&self) -> Option<usize> {
+        (!self.marked && self.manifest.is_none()).then_some(())?;
+        crate::foundation::reviewed_library_source_limit(&self.import_scope)
     }
 
     pub(crate) fn sources_for_analysis(&self) -> Vec<SourceFile> {

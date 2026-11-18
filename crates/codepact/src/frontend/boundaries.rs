@@ -1,11 +1,88 @@
 use super::*;
 
+#[derive(Default)]
+struct OutcomeHeaders {
+    markers: BTreeSet<String>,
+    payload_types: BTreeSet<String>,
+}
+
+impl OutcomeHeaders {
+    fn clear(&mut self) {
+        self.markers.clear();
+        self.payload_types.clear();
+    }
+
+    fn rebind(&mut self, name: &str) {
+        clear_imported_names(&mut self.markers, name);
+        clear_imported_names(&mut self.payload_types, name);
+    }
+
+    fn contains_marker(&self, expression: &Expr) -> bool {
+        let mut pending = vec![expression];
+        for _ in 0..ExpressionBudget::MAX_NODES {
+            let Some(expression) = pending.pop() else {
+                return false;
+            };
+            match expression {
+                Expr::Subscript(subscript) => {
+                    if dotted_name(&subscript.value)
+                        .is_some_and(|name| self.markers.contains(&name))
+                    {
+                        return true;
+                    }
+                    pending.push(&subscript.slice);
+                }
+                Expr::Tuple(tuple) => pending.extend(&tuple.elts),
+                Expr::Call(call)
+                    if dotted_name(&call.func).is_some_and(|name| self.markers.contains(&name)) =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn return_requires_boundary(
+        &self,
+        expression: &Expr,
+        safe_calls: &BTreeSet<String>,
+        safe_subscripts: &BTreeSet<String>,
+        annotated_subscripts: &BTreeSet<String>,
+    ) -> bool {
+        if expression_has_unknown_call(expression, safe_calls) {
+            return true;
+        }
+        if !self.payload_types.is_empty() && self.contains_marker(expression) {
+            let outcome_subscripts = safe_subscripts
+                .union(&self.payload_types)
+                .cloned()
+                .collect();
+            expression_has_unsafe_annotation_evaluation(
+                expression,
+                safe_calls,
+                &outcome_subscripts,
+                annotated_subscripts,
+            )
+        } else {
+            expression_has_unsafe_annotation_evaluation(
+                expression,
+                safe_calls,
+                safe_subscripts,
+                annotated_subscripts,
+            )
+        }
+    }
+}
+
 fn function_header_requires_boundary(
     function: &ruff_python_ast::StmtFunctionDef,
     safe_metadata_calls: &std::collections::BTreeSet<String>,
     safe_annotation_subscripts: &std::collections::BTreeSet<String>,
     annotated_subscripts: &std::collections::BTreeSet<String>,
     must_use_names: &std::collections::BTreeSet<String>,
+    outcome_headers: &OutcomeHeaders,
 ) -> bool {
     (!function.decorator_list.is_empty()
         && !decorators_are_only_must_use(&function.decorator_list, must_use_names))
@@ -22,13 +99,12 @@ fn function_header_requires_boundary(
             })
         })
         || function.returns.as_deref().is_some_and(|expr| {
-            expression_has_unknown_call(expr, safe_metadata_calls)
-                || expression_has_unsafe_annotation_evaluation(
-                    expr,
-                    safe_metadata_calls,
-                    safe_annotation_subscripts,
-                    annotated_subscripts,
-                )
+            outcome_headers.return_requires_boundary(
+                expr,
+                safe_metadata_calls,
+                safe_annotation_subscripts,
+                annotated_subscripts,
+            )
         })
 }
 
@@ -361,6 +437,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
         "ExclusiveBorrow",
         "StateAccess",
         "MustUseResult",
+        "MustHandleOutcome",
     ];
     let mut metadata_names = std::collections::BTreeSet::new();
     let mut resource_names = std::collections::BTreeSet::new();
@@ -376,6 +453,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
     let mut annotated_subscripts = std::collections::BTreeSet::new();
     let mut must_use_names = std::collections::BTreeSet::new();
     let mut known_resource_classes = std::collections::BTreeSet::new();
+    let mut outcome_headers = OutcomeHeaders::default();
     let mut boundaries = Vec::with_capacity(statements.len());
     for statement in statements {
         let boundary = match statement {
@@ -385,6 +463,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 &safe_annotation_subscripts,
                 &annotated_subscripts,
                 &must_use_names,
+                &outcome_headers,
             ),
             Stmt::ClassDef(class) => {
                 class_body_requires_boundary(
@@ -394,6 +473,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     &annotated_subscripts,
                     &must_use_names,
                     &transition_names,
+                    &outcome_headers,
                 ) || class_header_requires_boundary(class, &resource_names, &state_machine_names)
             }
             _ => false,
@@ -405,6 +485,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
             state_machine_names.clear();
             transition_names.clear();
             safe_annotation_subscripts.clear();
+            outcome_headers.clear();
             annotated_subscripts.clear();
             known_resource_classes.clear();
             must_use_names.clear();
@@ -423,6 +504,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     state_machine_names.clear();
                     transition_names.clear();
                     safe_annotation_subscripts.clear();
+                    outcome_headers.clear();
                     annotated_subscripts.clear();
                     must_use_names.clear();
                     known_resource_classes.clear();
@@ -440,6 +522,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut state_machine_names, &local);
                     clear_imported_names(&mut transition_names, &local);
                     clear_imported_names(&mut safe_annotation_subscripts, &local);
+                    outcome_headers.rebind(&local);
                     clear_imported_names(&mut annotated_subscripts, &local);
                     clear_imported_names(&mut must_use_names, &local);
                     if import.level != 0 {
@@ -449,7 +532,9 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                         Some("codepact.contracts") if metadata.contains(&source.as_str()) => {
                             metadata_names.insert(local.clone());
                         }
-                        Some("codepact") if source == "Resource" => {
+                        Some("codepact")
+                            if matches!(source.as_str(), "Resource" | "MustHandleOutcome") =>
+                        {
                             metadata_names.insert(local.clone());
                         }
                         Some("codepact") if source == "contracts" => {
@@ -464,12 +549,41 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                         Some(
                             "typing" | "typing_extensions" | "codepact.rust" | "codepact.contracts"
                         )
-                    ) {
+                    ) || module.as_deref() == Some("codepact") && source == "MustHandle"
+                    {
                         safe_annotation_subscripts.insert(local.clone());
                     } else if module.as_deref() == Some("codepact")
                         && matches!(source.as_str(), "rust" | "contracts")
                     {
                         safe_annotation_subscripts.insert(format!("{local}.*"));
+                    }
+                    match (module.as_deref(), source.as_str()) {
+                        (Some("codepact" | "codepact.outcomes"), "Result" | "Option") => {
+                            outcome_headers.payload_types.insert(local.clone());
+                        }
+                        (
+                            Some("codepact" | "codepact.rust" | "codepact.contracts"),
+                            "MustHandle",
+                        )
+                        | (Some("codepact" | "codepact.contracts"), "MustHandleOutcome") => {
+                            outcome_headers.markers.insert(local.clone());
+                        }
+                        (Some("codepact"), "rust" | "contracts") => {
+                            outcome_headers
+                                .markers
+                                .insert(format!("{local}.MustHandle"));
+                            if source == "contracts" {
+                                outcome_headers
+                                    .markers
+                                    .insert(format!("{local}.MustHandleOutcome"));
+                            }
+                        }
+                        (Some("codepact"), "outcomes") => {
+                            outcome_headers
+                                .payload_types
+                                .extend([format!("{local}.Result"), format!("{local}.Option")]);
+                        }
+                        _ => {}
                     }
                     if matches!(module.as_deref(), Some("typing" | "typing_extensions"))
                         && source == "Annotated"
@@ -525,6 +639,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut state_machine_names, &local);
                     clear_imported_names(&mut transition_names, &local);
                     clear_imported_names(&mut safe_annotation_subscripts, &local);
+                    outcome_headers.rebind(&local);
                     clear_imported_names(&mut annotated_subscripts, &local);
                     clear_imported_names(&mut must_use_names, &local);
                     if source == "codepact.contracts" {
@@ -538,6 +653,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                         }
                     } else if source == "codepact" {
                         metadata_names.insert(format!("{local}.Resource"));
+                        metadata_names.insert(format!("{local}.MustHandleOutcome"));
                         resource_names.insert(format!("{local}.resource"));
                         state_machine_names.insert(format!("{local}.state_machine"));
                         transition_names.insert(format!("{local}.transition"));
@@ -553,6 +669,26 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     ) {
                         safe_annotation_subscripts.insert(format!("{local}.*"));
                     }
+                    let prefix = alias
+                        .asname
+                        .as_ref()
+                        .map_or_else(|| source.clone(), ToString::to_string);
+                    match source.as_str() {
+                        "codepact" | "codepact.contracts" | "codepact.rust" => {
+                            outcome_headers
+                                .markers
+                                .insert(format!("{prefix}.MustHandle"));
+                            if source != "codepact.rust" {
+                                outcome_headers
+                                    .markers
+                                    .insert(format!("{prefix}.MustHandleOutcome"));
+                            }
+                        }
+                        "codepact.outcomes" => outcome_headers
+                            .payload_types
+                            .extend([format!("{prefix}.Result"), format!("{prefix}.Option")]),
+                        _ => {}
+                    }
                     if matches!(source.as_str(), "typing" | "typing_extensions") {
                         annotated_subscripts.insert(format!("{local}.Annotated"));
                     }
@@ -567,6 +703,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 clear_imported_names(&mut state_machine_names, function.name.as_ref());
                 clear_imported_names(&mut transition_names, function.name.as_ref());
                 clear_imported_names(&mut safe_annotation_subscripts, function.name.as_ref());
+                outcome_headers.rebind(function.name.as_ref());
                 clear_imported_names(&mut annotated_subscripts, function.name.as_ref());
                 clear_imported_names(&mut must_use_names, function.name.as_ref());
                 known_resource_classes.remove(function.name.as_ref());
@@ -577,6 +714,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 clear_imported_names(&mut state_machine_names, class.name.as_ref());
                 clear_imported_names(&mut transition_names, class.name.as_ref());
                 clear_imported_names(&mut safe_annotation_subscripts, class.name.as_ref());
+                outcome_headers.rebind(class.name.as_ref());
                 clear_imported_names(&mut annotated_subscripts, class.name.as_ref());
                 clear_imported_names(&mut must_use_names, class.name.as_ref());
                 known_resource_classes.remove(class.name.as_ref());
@@ -608,6 +746,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut state_machine_names, &name);
                     clear_imported_names(&mut transition_names, &name);
                     clear_imported_names(&mut safe_annotation_subscripts, &name);
+                    outcome_headers.rebind(&name);
                     clear_imported_names(&mut annotated_subscripts, &name);
                     clear_imported_names(&mut must_use_names, &name);
                     known_resource_classes.remove(&name);
@@ -625,6 +764,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     state_machine_names.clear();
                     transition_names.clear();
                     safe_annotation_subscripts.clear();
+                    outcome_headers.clear();
                     annotated_subscripts.clear();
                     must_use_names.clear();
                     known_resource_classes.clear();
@@ -658,6 +798,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut state_machine_names, &name);
                     clear_imported_names(&mut transition_names, &name);
                     clear_imported_names(&mut safe_annotation_subscripts, &name);
+                    outcome_headers.rebind(&name);
                     clear_imported_names(&mut annotated_subscripts, &name);
                     clear_imported_names(&mut must_use_names, &name);
                     known_resource_classes.remove(&name);
@@ -676,6 +817,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     state_machine_names.clear();
                     transition_names.clear();
                     safe_annotation_subscripts.clear();
+                    outcome_headers.clear();
                     annotated_subscripts.clear();
                     must_use_names.clear();
                     known_resource_classes.clear();
@@ -692,6 +834,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     clear_imported_names(&mut state_machine_names, &name);
                     clear_imported_names(&mut transition_names, &name);
                     clear_imported_names(&mut safe_annotation_subscripts, &name);
+                    outcome_headers.rebind(&name);
                     clear_imported_names(&mut annotated_subscripts, &name);
                     clear_imported_names(&mut must_use_names, &name);
                     known_resource_classes.remove(&name);
@@ -703,6 +846,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 state_machine_names.clear();
                 transition_names.clear();
                 safe_annotation_subscripts.clear();
+                outcome_headers.clear();
                 annotated_subscripts.clear();
                 must_use_names.clear();
                 known_resource_classes.clear();
@@ -719,6 +863,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                     state_machine_names.clear();
                     transition_names.clear();
                     safe_annotation_subscripts.clear();
+                    outcome_headers.clear();
                     annotated_subscripts.clear();
                     must_use_names.clear();
                     known_resource_classes.clear();
@@ -730,6 +875,7 @@ pub(super) fn definition_header_boundaries(statements: &[Stmt]) -> Vec<bool> {
                 state_machine_names.clear();
                 transition_names.clear();
                 safe_annotation_subscripts.clear();
+                outcome_headers.clear();
                 annotated_subscripts.clear();
                 must_use_names.clear();
                 known_resource_classes.clear();
@@ -766,6 +912,7 @@ fn class_body_requires_boundary(
     annotated_subscripts: &std::collections::BTreeSet<String>,
     must_use_names: &std::collections::BTreeSet<String>,
     transition_names: &std::collections::BTreeSet<String>,
+    outcome_headers: &OutcomeHeaders,
 ) -> bool {
     class
         .body
@@ -797,13 +944,12 @@ fn class_body_requires_boundary(
                         })
                     })
                     || function.returns.as_deref().is_some_and(|expr| {
-                        expression_has_unknown_call(expr, safe_metadata_calls)
-                            || expression_has_unsafe_annotation_evaluation(
-                                expr,
-                                safe_metadata_calls,
-                                safe_annotation_subscripts,
-                                annotated_subscripts,
-                            )
+                        outcome_headers.return_requires_boundary(
+                            expr,
+                            safe_metadata_calls,
+                            safe_annotation_subscripts,
+                            annotated_subscripts,
+                        )
                     })
             }
             Stmt::Pass(_) => false,

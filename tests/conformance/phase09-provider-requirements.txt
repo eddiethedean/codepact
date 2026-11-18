@@ -1,0 +1,11 @@
+httpx==0.28.1
+httpcore==1.0.9
+httpx2==2.16.2
+httpcore2==2.16.2
+anyio==4.16.0
+sqlalchemy @ https://files.pythonhosted.org/packages/61/4a/32a002e26025be40cbbd979e77bcc27b6e3de37b26277eade76e82cc1e8b/sqlalchemy-2.0.58-py3-none-any.whl#sha256=cc1b78ba0ed1f32156d1582f94ca4aca74633e4dcdde3eb1562dd4742493f594
+sqlmodel==0.0.44
+aiosqlite==0.22.1
+etlantic==0.59.0
+etlantic-sqlmodel==0.59.0
+dpcs==0.13.1

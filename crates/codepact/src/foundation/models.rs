@@ -145,6 +145,27 @@ pub(crate) struct PreparedFoundations {
 }
 
 impl PreparedFoundations {
+    pub(crate) fn load_reviewed_library(
+        &mut self,
+        package: &ProviderPackage,
+        inputs: &FoundationInputs,
+    ) {
+        let mut provider = super::libraries::select(package);
+        if provider.reason.is_none() {
+            provider.reason = inputs.uv_lock.as_deref().and_then(|source| {
+                lock::LockVersions::parse(source)
+                    .and_then(|versions| versions.verify(&package.distribution, &package.version))
+                    .err()
+            });
+        }
+        for file in &package.sources {
+            self.providers.insert(file.module.clone(), provider.clone());
+            if file.module != package.import_scope {
+                self.importable_children.insert(file.module.clone());
+            }
+        }
+    }
+
     pub(crate) fn new(inputs: &FoundationInputs) -> Self {
         Self {
             runtime: inputs.runtime.clone(),
@@ -233,6 +254,15 @@ impl PreparedFoundations {
         modules: &BTreeSet<String>,
         imported: &BTreeSet<&str>,
     ) -> Self {
+        let library_scopes = imported
+            .iter()
+            .filter_map(|name| name.split('.').next())
+            .filter(|scope| super::reviewed_library_source_limit(scope).is_some())
+            .flat_map(|scope| {
+                std::iter::once(scope)
+                    .chain(super::reviewed_library_dependencies(scope).iter().copied())
+            })
+            .collect::<BTreeSet<_>>();
         let relevant = |public: &str| {
             public
                 .rsplit_once('.')
@@ -242,13 +272,20 @@ impl PreparedFoundations {
             runtime: self.runtime.clone(),
             importable_children: self
                 .importable_children
-                .intersection(modules)
+                .iter()
+                .filter(|module| modules.contains(*module) || imported.contains(module.as_str()))
                 .cloned()
                 .collect(),
             providers: self
                 .providers
                 .iter()
-                .filter(|(module, _)| modules.contains(*module))
+                .filter(|(module, provider)| {
+                    modules.contains(*module)
+                        || (provider.origin == "reviewed-library"
+                            && library_scopes.contains(provider.import_scope.as_str())
+                            && (module.as_str() == provider.import_scope
+                                || imported.contains(module.as_str())))
+                })
                 .map(|(module, value)| (module.clone(), value.clone()))
                 .collect(),
             exports: self

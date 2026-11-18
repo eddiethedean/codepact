@@ -604,6 +604,7 @@ impl CheckResult {
                     "TP1001" | "TP1002" | "TP1003" | "TP2001" => "declared-unverified",
                     "TP9001" | "TP9002" => "unknown-boundary",
                     "TP2006" if diagnostic.semantic_identity.iter().any(|id| id.starts_with("TPM-TASK-001@")) => "reviewed-model",
+                    "TP3003" if diagnostic.semantic_identity.iter().any(|id| id.starts_with("TPM-")) => "reviewed-model",
                     "TP2101" | "TP2102"
                         if diagnostic
                             .semantic_identity
@@ -651,6 +652,9 @@ impl CheckResult {
                     "TP2004" => Some("Keep the borrowed view inside the checked region and leave cleanup to its owner.".into()),
                     "TP2005" => Some("Pass a uniquely held resource through codepact.move, or declare a verified shared borrow.".into()),
                     "TP2006" => Some("Keep the resource open until the tracked coroutine or group has completed.".into()),
+                    "TP3003" => Some(
+                        "Retrieve the work result or worker exception on the affected path.".into(),
+                    ),
                     "TP3001" => Some(
                         "Handle the result, assign it for immediate handling, or call codepact.discard when abandonment is intentional.".into(),
                     ),

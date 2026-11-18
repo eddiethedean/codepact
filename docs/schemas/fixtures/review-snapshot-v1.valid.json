@@ -1,0 +1,108 @@
+{
+  "review_snapshot_schema_version": 1,
+  "snapshot_id": "911ee4253c65160dcf5e2465906929abbfc79cefecadcc31b0fa535669fe4f71",
+  "descriptor": {
+    "engine_version": "0.9.0",
+    "check_schema_version": 1,
+    "rule_semantics": 4,
+    "finding_identity": 5,
+    "comparison_algorithm": 1,
+    "python_target": "3.11",
+    "ownership": "disabled",
+    "finite_matches": false,
+    "assurance": "lifecycle-and-must-use-checking-for-supported-exit-flow",
+    "model_catalog": 2,
+    "reviewed_providers": false
+  },
+  "selected_files": [
+    {
+      "logical_path": "main.py",
+      "module": "main",
+      "sha256": "a06106e01c0ed5a953720fe62093cdd5cc2cbcc2144ca6a260e43a2393c81c0f"
+    }
+  ],
+  "dependency_roots": [],
+  "policy": {
+    "include": [
+      "**/*.py"
+    ],
+    "exclude": [],
+    "enabled_rules": [
+      "TP1001",
+      "TP1002",
+      "TP1003",
+      "TP2001",
+      "TP3001",
+      "TP5002",
+      "TP5003",
+      "TP5004",
+      "TP5005"
+    ],
+    "mode": "advisory",
+    "fail_on": "error",
+    "severity": {},
+    "declaration_policy": [],
+    "required_providers": [],
+    "baseline_sha256": null,
+    "suppressions": {}
+  },
+  "settings_origins": {
+    "baseline": "default",
+    "dependency-roots": "default",
+    "enabled-rules": "default",
+    "exclude": "default",
+    "fail-on": "default",
+    "include": "default",
+    "mode": "default",
+    "python-version": "default",
+    "root": "current-directory"
+  },
+  "contracts": [],
+  "models": [
+    {
+      "id": "TPM-CTX-001",
+      "qualified_symbol": "contextlib.closing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On context exit, call the wrapped object's resolved close method. Do not suppress the body exception. Cleanup success or failure follows the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    },
+    {
+      "id": "TPM-CTX-002",
+      "qualified_symbol": "contextlib.aclosing",
+      "source_revisions": [
+        "CPython v3.11.0 Lib/contextlib.py",
+        "CPython v3.12.0 Lib/contextlib.py",
+        "CPython v3.13.0 Lib/contextlib.py"
+      ],
+      "source_urls": [
+        "https://github.com/python/cpython/blob/v3.11.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.12.0/Lib/contextlib.py",
+        "https://github.com/python/cpython/blob/v3.13.0/Lib/contextlib.py"
+      ],
+      "selection_rule": "Exact import identity only; applies when the selected target Python version is 3.11, 3.12, or 3.13.",
+      "modeled_behavior": "On async context exit, await the wrapped object's resolved aclose method. Do not suppress the body exception. Cleanup success, failure, and cancellation follow the wrapped CodePact close summary.",
+      "qualification": "Qualified for CodePact 0.3.0 within Python targets 3.11\u20133.13; source review and controlled runtime evidence, including exact source/interpreter hashes, are recorded in docs/planning/phases/0.3/contextlib-conformance.md and docs/releases/0.3.0-evidence.md."
+    }
+  ],
+  "foundations": null,
+  "findings": [],
+  "operations": [],
+  "coverage": {
+    "status": "complete-for-supported-subset",
+    "reasons": [],
+    "source_bytes": 10,
+    "declarations": 0
+  },
+  "details_truncated": false,
+  "check_exit": 0
+}

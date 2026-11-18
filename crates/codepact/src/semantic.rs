@@ -23,6 +23,20 @@ use project::order_project_files;
 pub(crate) use project::{context_for_module, plan_project};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) fn declaration_policy_must_use(
+    decorators: &[AstExpr],
+    returns: Option<&AstExpr>,
+    imports: &BTreeMap<String, String>,
+) -> (bool, bool) {
+    let supported = decorators
+        .iter()
+        .all(|decorator| canonical(decorator, imports).as_deref() == Some("codepact::must_use"));
+    (
+        function_is_must_use(decorators, returns, imports),
+        supported,
+    )
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct ClassDecl {
     closed_by: Option<String>,

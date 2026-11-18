@@ -109,7 +109,7 @@ and the [0.3 validation map](https://github.com/eddiethedean/codepact/blob/main/
 
 ## Provisional interfaces
 
-The helper API, CLI flags, and diagnostics can change during 0.x. In 0.8.0,
+The helper API, CLI flags, and diagnostics can change during 0.x. In 0.9.0,
 completed CLI check reports use schema 3 or 4, depending on whether
 foundations are enabled. Pin matching package versions and read the schema
 identifier before consuming a report.

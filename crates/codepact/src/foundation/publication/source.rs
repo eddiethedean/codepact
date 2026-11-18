@@ -2,6 +2,7 @@
 
 use super::{ProviderPackage, PublicationLocation, PublishedContract, PublishedSymbol};
 use crate::{
+    flow::outcomes::{scan_declarations, OutcomeContract},
     frontend::{AstExprKind, Declaration, SourceRange},
     SourceFile, Span,
 };
@@ -37,10 +38,25 @@ pub(super) fn source_publication(
         declarations: parsed,
     } = crate::semantic::publication_inspection(&files, target)?;
     let mut cleanup_methods = BTreeMap::new();
+    let supplied_modules = files.iter().map(|file| file.module.clone()).collect();
+    let outcome_declarations = parsed
+        .iter()
+        .map(|(module, declarations)| {
+            (
+                module.as_str(),
+                scan_declarations(declarations, &supplied_modules).returns,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     let bindings = files
         .iter()
         .map(|file| {
-            let bindings = bind_module(&file.module, &parsed[&file.module], &mut cleanup_methods);
+            let bindings = bind_module(
+                &file.module,
+                &parsed[&file.module],
+                &outcome_declarations[&*file.module],
+                &mut cleanup_methods,
+            );
             (file.module.as_str(), bindings)
         })
         .collect::<BTreeMap<_, _>>();
@@ -75,6 +91,28 @@ pub(super) fn source_publication(
                 &inspection,
                 &must_use,
             );
+            if let Some(outcome) =
+                outcome_declarations[definition.module].get(&definition.range.start)
+            {
+                let path = file
+                    .path
+                    .strip_prefix(crate::DEPENDENCY_SOURCE_PREFIX)
+                    .and_then(|path| path.split_once('/'))
+                    .map(|(_, path)| path)
+                    .expect("provider logical path");
+                contracts.push(PublishedContract {
+                    kind: "must-handle-return".into(),
+                    version: 1,
+                    subject: "return".into(),
+                    resource: None,
+                    close_method: None,
+                    required_capabilities: vec![outcome.capability().into()],
+                    evidence: PublicationLocation {
+                        path: path.into(),
+                        line: crate::source_span(&file.path, &file.source, definition.range).line,
+                    },
+                });
+            }
             contracts.sort_by(|left, right| {
                 (&left.kind, &left.subject).cmp(&(&right.kind, &right.subject))
             });
@@ -136,6 +174,7 @@ struct ModuleBindings {
 fn bind_module(
     module: &str,
     declarations: &[Declaration],
+    outcomes: &BTreeMap<usize, OutcomeContract>,
     cleanup_methods: &mut BTreeMap<String, BTreeSet<String>>,
 ) -> ModuleBindings {
     let mut names = BTreeMap::new();
@@ -145,13 +184,15 @@ fn bind_module(
             Declaration::Function {
                 name,
                 range,
-                is_async: false,
+                is_async,
                 is_generator: false,
                 unsupported: false,
                 decorators,
                 must_use_decorator,
                 ..
-            } if decorators.is_empty() || *must_use_decorator => {
+            } if (!is_async || outcomes.contains_key(&range.start))
+                && (decorators.is_empty() || *must_use_decorator) =>
+            {
                 names.insert(
                     name.clone(),
                     Binding::Definition {

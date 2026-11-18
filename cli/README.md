@@ -5,16 +5,16 @@ Python resource contracts. Use it to check supported use after close, missed
 cleanup, and discarded must-use results. The checker reads Python source
 without importing or running the project.
 
-## Install 0.8.0
+## Install 0.9.0
 
 ```sh
-uv tool install codepact-cli==0.8.0
+uv tool install codepact-cli==0.9.0
 codepact --version
 ```
 
 If your project also needs annotations or typed outcome helpers, install
-`codepact==0.8.0` in its Python environment. To install the helper and matching
-CLI together, use `codepact[cli]==0.8.0`. The helper alone does not install the
+`codepact==0.9.0` in its Python environment. To install the helper and matching
+CLI together, use `codepact[cli]==0.9.0`. The helper alone does not install the
 native command.
 [Installation and platform support](https://codepact.readthedocs.io/en/latest/install.html)
 
@@ -42,8 +42,9 @@ for supported Linux, macOS, and Windows platforms. Building from source
 requires Rust 1.96 or later and a linker.
 [Release artifacts](https://codepact.readthedocs.io/en/latest/availability.html)
 
-CodePact 0.8.0 adds `codepact contracts export` and `codepact contracts verify`
-for wheel publishers. Configure installed dependency roots or a reviewed
-runtime profile to use the new models and get report schema 4.
+CodePact 0.9.0 adds `codepact review` for comparing captured source analyses
+and `codepact contracts diff` for comparing two wheel publications. Configure
+installed dependency roots or a reviewed runtime profile to use reviewed
+models and get report schema 4.
 [Reviewed contracts and runtime models](https://codepact.readthedocs.io/en/latest/reviewed-contracts.html) ·
 [Source](https://github.com/eddiethedean/codepact)

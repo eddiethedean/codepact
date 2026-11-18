@@ -5,6 +5,7 @@ use std::path::Path;
 
 mod baseline;
 mod config;
+mod declarations;
 mod fingerprint;
 mod policy;
 mod render;
@@ -18,8 +19,10 @@ use config::scoped_rules;
 #[cfg(test)]
 use config::{glob_match, read_configuration, MAX_CONFIG_BYTES};
 pub use config::{
-    included, reject_symlink_components, resolve_config, DependenciesConfig, EffectiveConfig,
-    Overrides, ProjectConfig, ADVANCED_RULES, DEFAULT_RULES, FINITE_MATCH_RULES, OWNERSHIP_RULES,
+    included, reject_symlink_components, resolve_config, DeclarationKind, DeclarationMode,
+    DeclarationRequirement, DependenciesConfig, EffectiveConfig, Overrides, ProjectConfig,
+    ADVANCED_RULES, DECLARATION_RULES, DEFAULT_RULES, FINITE_MATCH_RULES, OUTCOME_RULES,
+    OWNERSHIP_RULES,
 };
 #[cfg(test)]
 use render::serialize_pretty_limited;
@@ -124,6 +127,11 @@ pub struct BaselineUpdateSummary {
     pub snapshot_id: String,
     pub coverage_status: String,
 }
+pub(crate) use fingerprint::{
+    semantic_anchor as review_site_anchor, source_comments as review_source_comments,
+    AnchorCache as ReviewAnchorCache,
+};
+pub(crate) use render::serialize_pretty_limited as serialize_limited;
 pub fn build_report(
     result: CheckResult,
     files: &[SourceFile],
@@ -131,11 +139,23 @@ pub fn build_report(
     baseline_path: Option<&Path>,
     max: Option<usize>,
 ) -> Result<AdoptionReport, String> {
+    build_report_with_baseline_digest(result, files, config, baseline_path, max)
+        .map(|(report, _)| report)
+}
+
+pub(crate) fn build_report_with_baseline_digest(
+    mut result: CheckResult,
+    files: &[SourceFile],
+    config: &EffectiveConfig,
+    baseline_path: Option<&Path>,
+    max: Option<usize>,
+) -> Result<(AdoptionReport, String), String> {
     validate_analysis_scope(&result, config)?;
+    declarations::apply(&mut result, files, config);
     let (baseline, baseline_content_hash) = if let Some(path) = baseline_path {
         let (loaded, content_hash) = load_baseline_file(path, "baseline")?;
         (
-            Some(policy::BaselinePolicy::new(loaded, &result, config)),
+            Some(policy::BaselinePolicy::new(loaded, &result, files, config)),
             content_hash,
         )
     } else {
@@ -155,10 +175,21 @@ pub fn build_report(
         baseline.as_ref(),
     );
     let details = render::present_details(policy.diagnostics, max)?;
-    let disabled_rules = scoped_rules(config.ownership, config.finite_matches)
-        .filter(|rule| !config.enabled_rules.contains(*rule))
-        .map(str::to_owned)
-        .collect();
+    let disabled_rules = scoped_rules(
+        config.ownership,
+        config.finite_matches,
+        config.runtime_profile.is_some(),
+    )
+    .chain(
+        config
+            .declaration_policy
+            .iter()
+            .map(|entry| entry.requirement.code())
+            .collect::<std::collections::BTreeSet<_>>(),
+    )
+    .filter(|rule| !config.enabled_rules.contains(*rule))
+    .map(str::to_owned)
+    .collect();
     let exit_code = u8::from(!policy.failures.is_empty());
     let project_root = config
         .root
@@ -225,7 +256,7 @@ pub fn build_report(
         baseline: policy.baseline,
         exit_code,
     };
-    Ok(report)
+    Ok((report, baseline_content_hash))
 }
 
 pub fn failure(message: String) -> serde_json::Value {
@@ -236,6 +267,51 @@ pub fn failure(message: String) -> serde_json::Value {
         "check_schema_version":crate::CHECK_SCHEMA_VERSION,
         "error":{"category":"configuration-or-execution","message":message}
     })
+}
+
+pub fn require_provider_publications(
+    result: &mut CheckResult,
+    files: &[SourceFile],
+    required_providers: &[String],
+) {
+    for provider in required_providers {
+        let expected = crate::foundation::normalized_distribution(provider).unwrap_or_default();
+        if result.foundations.as_ref().is_some_and(|evidence| {
+            evidence.providers.iter().any(|selected| {
+                selected.distribution == expected
+                    && selected.reason.is_none()
+                    && matches!(selected.origin.as_str(), "inline-source" | "manifest")
+            })
+        }) {
+            continue;
+        }
+        let message = format!("required CodePact provider {provider} was not resolved from the selected dependency roots");
+        let path = files.first().map_or("<input>", |file| file.path.as_str());
+        result.coverage.status = "incomplete".into();
+        result.coverage.reasons.push(format!("{path}:1: {message}"));
+        result.diagnostics.push(CheckDiagnostic {
+            semantic_identity: vec![provider.clone()],
+            provider_evidence: None,
+            code: "TP9001".into(),
+            severity: "warning".into(),
+            message: message.clone(),
+            primary: Span {
+                file: path.into(),
+                line: 1,
+                column: 1,
+                end_line: 1,
+                end_column: 1,
+            },
+            related: Vec::new(),
+            certainty: "unknown".into(),
+            completion: None,
+            trust: "unresolved-provider".into(),
+            coverage_reason: Some(message),
+            repair: Some(
+                "Add a dependency root containing the marked installed distribution.".into(),
+            ),
+        });
+    }
 }
 
 pub fn suppression_diagnostic(

@@ -205,6 +205,7 @@ fn collect_files(
             &files,
             python_version,
             &project_models,
+            config.experimental_foundations || config.runtime_profile.is_some(),
         );
         physical_files.extend(providers.files);
         (config.experimental_foundations

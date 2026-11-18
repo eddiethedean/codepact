@@ -1,10 +1,9 @@
 # Before-and-after change review
 
-Specification revision: **1**. Status: **Planned; acceptance pending**.
-CR01 descriptor decisions are required in 0.8. The bounded CR01–CR05 and
-CR07–CR09 workflow and CR06 CLI/in-memory checkpoint belong to
-[0.9](phases/0.9-obligations-and-change-review.md); cache/editor/MCP parity
-completes in 0.12. Command names and schemas remain proposed.
+Specification revision **1**. The bounded CR01–CR05 and CR07–CR09 workflow
+and the CR06 CLI and in-memory checkpoint are part of
+[CodePact 0.9.0](phases/0.9-obligations-and-change-review.md). Cache, editor, and
+MCP parity is planned for 0.12.
 
 ## Inputs, authority and snapshot claims
 
@@ -95,13 +94,14 @@ when a single verdict is selected.
 | `inconclusive` | Evidence cannot establish the requested conclusion, including insufficient coverage or comparability. | `1` |
 | Input/execution failure | Invalid input, unsupported schema or execution failure prevents comparison. | `2` |
 
-A known disallowed violation can establish failure despite unrelated
-uncertainty. Otherwise insufficient comparability or coverage prevents a
-preservation pass; known changes and all nonpassing reasons remain visible.
-Completing or rendering a comparison does not itself produce a passing review.
-A supported report with truncated required evidence is inconclusive, whereas
-an invalid schema is an input failure. Engine mismatch can produce insufficient
-comparability and guidance to rerun both sides.
+For completed comparisons, select `failed` when a failure is conclusive from
+the available evidence, including a known disallowed regression alongside
+unrelated uncertainty. Otherwise select `inconclusive` if required evidence is
+insufficient, `review-required` if a known change needs approval, and `passed`
+when the policy is satisfied. Retain all nonpassing reasons. Truncated required
+evidence in a supported report is inconclusive. An invalid schema is an input
+failure. Engine mismatch can produce insufficient comparability and guidance
+to rerun both sides.
 
 A completed `check` report with exit `1` remains a valid comparison input;
 automation must retain a before report containing the violation to repair.

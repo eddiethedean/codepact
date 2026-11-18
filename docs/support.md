@@ -1,6 +1,6 @@
 # Support and maintenance
 
-CodePact 0.8.0 supports source checks and opt-in reviewed contracts and
+CodePact 0.9.0 supports source checks and opt-in reviewed contracts and
 runtime models. APIs, diagnostics, and schemas remain provisional during
 the 0.x series. [Release availability](availability.md)
 
@@ -23,7 +23,7 @@ Do not post vulnerability details in a public issue; follow the
 The repository does not publish a response-time SLA, a long-term-support
 window, guaranteed backports, or named module owners. Compatibility evidence
 and release scope are recorded per version. See the
-[0.8.0 platform and runtime summary](availability.md).
+[0.9.0 platform and runtime summary](availability.md).
 [Evaluate a representative package](evaluation.md) before making checks required.
 
 Because the APIs, diagnostics, and JSON schema are provisional during 0.x,

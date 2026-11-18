@@ -1,6 +1,6 @@
 //! Call evaluation at the boundary between syntax and the flow engine.
 use super::{
-    boundary, consume_expr, expr_name, is_unshadowed_builtin_exception,
+    boundary, consume_expr, expr_name, is_unshadowed_builtin_exception, library, outcomes,
     ownership::{cap_handles, check_moved, qualified_function_key},
     process, providers, queue_raise, report_possibly_unbound_alias, runtime, span, tasks, weaken,
     AstExpr, AstExprKind, CallKeyword, CallSignature, Contract, FunctionMap, Inspection,
@@ -162,8 +162,10 @@ pub(super) fn evaluate_call_arguments(
                 | AstExprKind::Boolean(_)
                 | AstExprKind::NoneLiteral
                 | AstExprKind::Primitive
+                | AstExprKind::EvaluatedSqlModelSelect { .. }
         ) {
             consume_expr(argument, env, file, contracts, functions, result, depth + 1);
+            env.outcomes.remember_argument(argument.range);
         }
     }
 }
@@ -179,6 +181,7 @@ impl PreparedCall {
         fn clear(env: &mut State, names: &[String]) {
             let ownership = env.ownership.as_mut().expect("prepared ownership call");
             for name in names {
+                env.outcomes.bind(name, outcomes::Values::new());
                 env.places.remove(name);
                 env.unknown_places.remove(name);
                 env.coroutine_aliases.remove(name);
@@ -245,6 +248,7 @@ pub(super) fn prepare_call(
                         ownership.group_names.contains_key(&name)
                             || ownership.task_names.contains_key(&name)
                             || ownership.executor_names.contains_key(&name)
+                            || ownership.work.has_name(&name)
                             || ownership.processes.has_handle(&name)
                     })
                     || env
@@ -285,9 +289,16 @@ pub(super) fn prepare_call(
                 | AstExprKind::Boolean(_)
                 | AstExprKind::NoneLiteral
                 | AstExprKind::Primitive
+                | AstExprKind::EvaluatedSqlModelSelect { .. }
         ) {
+            let sqlmodel_select = library::sqlmodel_select_is_scalar(argument, env);
             consume_expr(argument, env, file, contracts, functions, result, depth + 1);
             snapshot_result(argument, env, file, &mut prepared.temporaries);
+            if argument.kind == AstExprKind::Primitive {
+                if let Some(scalar) = sqlmodel_select {
+                    argument.kind = AstExprKind::EvaluatedSqlModelSelect { scalar };
+                }
+            }
         }
     }
     cap_handles(env, file, original.range, result);
@@ -315,6 +326,8 @@ fn snapshot_name(
     let task = ownership.task_names.get(source).cloned();
     let executor = ownership.executor_names.get(source).cloned();
     let process = ownership.processes.has_handle(source);
+    let work = ownership.work.has_name(source);
+    let outcome = env.outcomes.read_carrier(source);
     // Captures restored by the coroutine executor already have value identity.
     if ownership.transfer_arguments.contains(source)
         || targets.is_none()
@@ -325,6 +338,8 @@ fn snapshot_name(
             && task.is_none()
             && executor.is_none()
             && !process
+            && !work
+            && outcome.ids.is_empty()
     {
         return;
     }
@@ -354,6 +369,8 @@ fn snapshot_name(
     if process {
         ownership.processes.bind_alias(&temporary, Some(source));
     }
+    ownership.work.snapshot(source, &temporary);
+    env.outcomes.bind_carrier(&temporary, outcome);
     expression.kind = AstExprKind::Name(temporary.clone());
     temporaries.push(temporary);
 }
@@ -369,6 +386,8 @@ fn snapshot_result(
     let targets = env.pending_return_targets.take();
     let coroutine = env.pending_coroutine_result.take();
     let task = ownership.pending_task.take();
+    let work = ownership.work.snapshot_pending(&temporary);
+    let outcome = env.outcomes.take_carrier();
     let moved = std::mem::take(&mut ownership.pending_move);
     if let Some(targets) = targets {
         env.places.insert(temporary.clone(), targets);
@@ -382,7 +401,7 @@ fn snapshot_result(
         env.coroutine_aliases.insert(temporary.clone(), coroutine);
     } else if let Some(task) = task {
         ownership.task_names.insert(temporary.clone(), task);
-    } else {
+    } else if !work && outcome.ids.is_empty() {
         // Keep unsupported argument shapes visible to the existing signature binder.
         if matches!(
             expression.kind,
@@ -392,6 +411,7 @@ fn snapshot_result(
         }
         return;
     }
+    env.outcomes.bind_carrier(&temporary, outcome);
     expression.kind = AstExprKind::Name(temporary.clone());
     temporaries.push(temporary);
 }
@@ -423,7 +443,9 @@ pub(super) fn dispatch_runtime_call(
     // and a signal-handler update may invalidate later waits before generic
     // call evaluation continues.
     runtime::open_resource(expr, env, file, result).claimed()
+        || super::library::call(expr, env, file, result)
         || super::asyncio::call(expr, env, file, result).claimed()
+        || super::work::call(expr, env, file, result)
         || builtin_exception_call(expr, env, file, result)
         || (env.ownership.is_some() && tasks::task_call(expr, env, file, result))
         || (env.ownership.is_some() && super::executor::call(expr, env, file, functions, result))

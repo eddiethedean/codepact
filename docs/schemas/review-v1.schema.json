@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/review-v1.schema.json",
+  "title": "CodePact preservation review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_schema_version",
+    "before_snapshot",
+    "after_snapshot",
+    "claim",
+    "after_check_exit",
+    "verdict",
+    "exit_code",
+    "reasons",
+    "changed_sections",
+    "findings",
+    "added_files",
+    "removed_files",
+    "added_contracts",
+    "removed_contracts"
+  ],
+  "properties": {
+    "review_schema_version": {
+      "const": 1
+    },
+    "before_snapshot": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "after_snapshot": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "claim": {
+      "enum": [
+        "historical",
+        "current-workspace"
+      ]
+    },
+    "after_check_exit": {
+      "enum": [
+        0,
+        1
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "passed",
+        "failed",
+        "review-required",
+        "inconclusive"
+      ]
+    },
+    "exit_code": {
+      "enum": [
+        0,
+        1
+      ]
+    },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "category",
+          "detail"
+        ],
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "changed_sections": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "classification",
+          "before",
+          "after"
+        ],
+        "properties": {
+          "classification": {
+            "type": "string"
+          },
+          "before": {
+            "oneOf": [
+              {
+                "$ref": "review-snapshot-v1.schema.json#/$defs/finding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after": {
+            "oneOf": [
+              {
+                "$ref": "review-snapshot-v1.schema.json#/$defs/finding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "added_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "removed_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "added_contracts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "removed_contracts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "verdict": {
+        "const": "passed"
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "exit_code": {
+        "const": 0
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "exit_code": {
+        "const": 1
+      }
+    }
+  }
+}

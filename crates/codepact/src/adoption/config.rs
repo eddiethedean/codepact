@@ -8,6 +8,8 @@ pub const DEFAULT_RULES: &[&str] = &["TP1001", "TP1002", "TP1003", "TP2001", "TP
 pub const OWNERSHIP_RULES: &[&str] = &["TP2002", "TP2003", "TP2004", "TP2005", "TP2006"];
 pub const ADVANCED_RULES: &[&str] = &["TP2101", "TP2102"];
 pub const FINITE_MATCH_RULES: &[&str] = &["TP5001"];
+pub const OUTCOME_RULES: &[&str] = &["TP5002", "TP5003", "TP5004", "TP5005"];
+pub const DECLARATION_RULES: &[&str] = &["TP4101", "TP4102", "TP4103"];
 
 pub(super) const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
@@ -57,6 +59,42 @@ pub struct ProjectConfig {
     pub experimental_foundations: bool,
     #[serde(default)]
     pub severity: BTreeMap<String, String>,
+    #[serde(default, rename = "declaration-policy")]
+    pub declaration_policy: Vec<DeclarationRequirement>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct DeclarationRequirement {
+    pub module: String,
+    pub function: Option<String>,
+    pub requirement: DeclarationKind,
+    pub mode: DeclarationMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DeclarationKind {
+    ResourceAccess,
+    OwnedReturn,
+    MustUse,
+}
+
+impl DeclarationKind {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::ResourceAccess => "TP4101",
+            Self::OwnedReturn => "TP4102",
+            Self::MustUse => "TP4103",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DeclarationMode {
+    Preview,
+    Enforce,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,6 +135,7 @@ pub struct EffectiveConfig {
     pub uv_lock: Option<PathBuf>,
     pub severity: BTreeMap<String, String>,
     pub settings_origins: BTreeMap<String, String>,
+    pub declaration_policy: Vec<DeclarationRequirement>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -266,6 +305,11 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
             }
         });
     let c = config;
+    let mut declaration_policy = c
+        .as_ref()
+        .map(|config| config.declaration_policy.clone())
+        .unwrap_or_default();
+    declaration_policy.sort();
     let experimental_ownership = overrides
         .experimental_ownership
         .or_else(|| c.as_ref().and_then(|c| c.experimental_ownership))
@@ -296,11 +340,17 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         (true, false, false) => crate::Ownership::Enabled,
         (false, _, _) => crate::Ownership::Disabled,
     };
+    let runtime_profile = c.as_ref().and_then(|c| c.runtime_profile.clone());
     let mut rules: BTreeSet<String> = c
         .as_ref()
         .and_then(|c| c.enabled_rules.clone())
         .unwrap_or_else(|| {
-            scoped_rules(ownership, finite_matches)
+            scoped_rules(ownership, finite_matches, runtime_profile.is_some())
+                .chain(
+                    declaration_policy
+                        .iter()
+                        .map(|entry| entry.requirement.code()),
+                )
                 .map(str::to_owned)
                 .collect()
         })
@@ -325,6 +375,11 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         }
         if FINITE_MATCH_RULES.contains(&r.as_str()) && !finite_matches {
             return Err(format!("rule {r} requires experimental-finite-matches"));
+        }
+        if r == "TP3003" && (!ownership.is_enabled() || runtime_profile.is_none()) {
+            return Err(format!(
+                "rule {r} requires experimental-ownership and a runtime-profile"
+            ));
         }
     }
     let mut severity = c.as_ref().map(|c| c.severity.clone()).unwrap_or_default();
@@ -407,7 +462,6 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         .as_ref()
         .and_then(|c| c.dependencies.as_ref()?.required_providers.clone())
         .unwrap_or_default();
-    let runtime_profile = c.as_ref().and_then(|c| c.runtime_profile.clone());
     let experimental_foundations = c.as_ref().is_some_and(|c| c.experimental_foundations);
     let project_contracts = c
         .as_ref()
@@ -434,6 +488,9 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
     let mut settings_origins = BTreeMap::new();
     if runtime_profile.is_some() {
         settings_origins.insert("runtime-profile".into(), "pyproject.toml".into());
+    }
+    if !declaration_policy.is_empty() {
+        settings_origins.insert("declaration-policy".into(), "pyproject.toml".into());
     }
     for (setting, configured) in [
         ("experimental-foundations", experimental_foundations),
@@ -630,6 +687,7 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         uv_lock,
         severity,
         settings_origins,
+        declaration_policy,
     })
 }
 
@@ -639,6 +697,27 @@ fn validate_config(c: &ProjectConfig) -> Result<(), String> {
             "unsupported config-version {}; expected 1",
             c.config_version
         ));
+    }
+    let target = c.python_version.as_deref().unwrap_or("3.11");
+    let mut selectors = BTreeSet::new();
+    for entry in &c.declaration_policy {
+        if !entry
+            .module
+            .split('.')
+            .all(|part| crate::is_python_identifier(part, target))
+            || entry
+                .function
+                .as_ref()
+                .is_some_and(|name| !crate::is_python_identifier(name, target))
+        {
+            return Err(
+                "declaration-policy requires a valid dotted module and optional function name"
+                    .into(),
+            );
+        }
+        if !selectors.insert((&entry.module, &entry.function, entry.requirement)) {
+            return Err("duplicate declaration-policy selector and requirement".into());
+        }
     }
     if let Some(dependencies) = &c.dependencies {
         if let Some(required) = &dependencies.required_providers {
@@ -721,6 +800,9 @@ pub(super) fn eligible_code(code: &str) -> bool {
         || OWNERSHIP_RULES.contains(&code)
         || ADVANCED_RULES.contains(&code)
         || FINITE_MATCH_RULES.contains(&code)
+        || OUTCOME_RULES.contains(&code)
+        || DECLARATION_RULES.contains(&code)
+        || code == "TP3003"
 }
 
 pub(super) fn validate_rule(r: &str) -> Result<(), String> {
@@ -734,10 +816,12 @@ pub(super) fn validate_rule(r: &str) -> Result<(), String> {
 pub(super) fn scoped_rules(
     ownership: crate::Ownership,
     finite_matches: bool,
+    has_runtime_profile: bool,
 ) -> impl Iterator<Item = &'static str> {
     DEFAULT_RULES
         .iter()
         .copied()
+        .chain(OUTCOME_RULES.iter().copied())
         .chain(
             OWNERSHIP_RULES
                 .iter()
@@ -756,6 +840,7 @@ pub(super) fn scoped_rules(
                 .copied()
                 .filter(move |_| finite_matches),
         )
+        .chain((ownership.is_enabled() && has_runtime_profile).then_some("TP3003"))
 }
 pub(super) fn validate_pattern(p: &str) -> Result<(), String> {
     if p.is_empty()

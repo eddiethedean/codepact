@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -233,6 +234,147 @@ def verify_project_model(
     }
 
 
+def compare_published_upgrades(
+    cli: Path,
+    work: Path,
+    original_source: Path,
+    original: Path,
+    caller_check: list[str],
+) -> dict[str, object]:
+    results: dict[str, object] = {}
+    for label, version in (
+        ("compatible-move", "1.1"),
+        ("new-caller-obligation", "1.2"),
+        ("weakened-guarantee", "1.3"),
+    ):
+        stage = work / f"upgrade-source-{label}"
+        package = project(stage, DISTRIBUTION, PACKAGE, version)
+        _ = shutil.copytree(original_source / PACKAGE, package, dirs_exist_ok=True)
+        implementation = package / "_impl.py"
+        if label == "compatible-move":
+            _ = implementation.rename(package / "_relocated.py")
+            module = package / "__init__.py"
+            _ = module.write_text(
+                module.read_text(encoding="utf-8").replace("._impl", "._relocated"),
+                encoding="utf-8",
+            )
+        elif label == "new-caller-obligation":
+            operations = package / "operations.py"
+            _ = operations.write_text(
+                operations.read_text(encoding="utf-8").replace(
+                    "def receipt():", "@must_use\ndef receipt():"
+                ),
+                encoding="utf-8",
+            )
+        else:
+            _ = implementation.write_text(
+                implementation.read_text(encoding="utf-8").replace(
+                    "def acquire() -> 'Owned[Channel]':", "def acquire():"
+                ),
+                encoding="utf-8",
+            )
+        manifest = command(
+            [
+                str(cli),
+                "contracts",
+                "export",
+                "--root",
+                str(stage),
+                "--distribution",
+                DISTRIBUTION,
+                "--version",
+                version,
+                "--import-scope",
+                PACKAGE,
+                "--python-version",
+                "3.13",
+            ],
+            work,
+        )
+        _ = (package / MANIFEST).write_text(manifest, encoding="utf-8")
+        candidate = build(stage, work / f"upgrade-wheel-{label}")
+        _ = command([str(cli), "contracts", "verify", str(candidate)], work)
+        args = [str(cli), "contracts", "diff", str(original), str(candidate)]
+        status = 0 if label == "compatible-move" else 1
+        json_text = command([*args, "--json"], work, exit_code=status)
+        assert json_text == command([*args, "--json"], work, exit_code=status)
+        result = cast(dict[str, object], json.loads(json_text))
+        changes = cast(list[dict[str, object]], result["changes"])
+        assert result["compatible"] == (status == 0)
+        if status == 0:
+            assert any(
+                "implementation moved" in str(change["detail"]) for change in changes
+            )
+        else:
+            assert any(change["kind"] == label for change in changes)
+        text = command(args, work, exit_code=status)
+        assert ("compatible" if status == 0 else label) in text
+        site = install(work, f"isolated-upgrade-{label}", [candidate])
+        check_args = caller_check.copy()
+        check_args[check_args.index("--dependency-root") + 1] = str(site)
+        check_exit = 0 if label == "weakened-guarantee" else 1
+        check = cast(
+            dict[str, object],
+            json.loads(command(check_args, work, exit_code=check_exit)),
+        )
+        findings = cast(list[dict[str, object]], check["diagnostics"])
+        if label == "weakened-guarantee":
+            coverage = cast(dict[str, object], check["coverage"])
+            assert coverage["status"] == "incomplete"
+            foundations = cast(dict[str, object], check["foundations"])
+            assert not any(
+                use["effect"] == "owned-return" and use["applicable"]
+                for use in cast(list[dict[str, object]], foundations["model_uses"])
+            )
+        if label == "new-caller-obligation":
+            assert sum(item["code"] == "TP3001" for item in findings) == 2
+        else:
+            assert sum(item["code"] == "TP3001" for item in findings) == 1
+        results[label] = {
+            "wheel_sha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
+            "changes": changes,
+        }
+
+    with zipfile.ZipFile(original) as archive:
+        manifest_text = archive.read(f"{PACKAGE}/{MANIFEST}")
+    manifest_document = cast(dict[str, object], json.loads(manifest_text))
+    symbols = cast(list[dict[str, object]], manifest_document["symbols"])
+    facts = cast(list[dict[str, object]], symbols[0]["contracts"])
+    facts[0]["required_capabilities"] = ["unsupported-future-effect"]
+    unavailable = rewrite_wheel(
+        original,
+        work / "unsupported-diff-wheel",
+        {f"{PACKAGE}/{MANIFEST}": json.dumps(manifest_document).encode()},
+    )
+    uncertain = cast(
+        dict[str, object],
+        json.loads(
+            command(
+                [
+                    str(cli),
+                    "contracts",
+                    "diff",
+                    str(original),
+                    str(unavailable),
+                    "--json",
+                ],
+                work,
+                exit_code=1,
+            )
+        ),
+    )
+    assert not uncertain["compatible"]
+    assert any(
+        change["kind"] == "insufficient-evidence"
+        for change in cast(list[dict[str, object]], uncertain["changes"])
+    )
+    results["insufficient-evidence"] = {
+        "wheel_sha256": hashlib.sha256(unavailable.read_bytes()).hexdigest(),
+        "changes": uncertain["changes"],
+    }
+    return results
+
+
 def verify_artifacts(cli: Path, work: Path) -> dict[str, object]:
     provider_source = work / "provider"
     provider = project(provider_source, DISTRIBUTION, PACKAGE, "1.0")
@@ -250,7 +392,8 @@ def verify_artifacts(cli: Path, work: Path) -> dict[str, object]:
         f"open({str(provider_sentinel)!r}, 'w').close()\n", encoding="utf-8"
     )
     _ = (provider / "operations.py").write_text(
-        "from codepact import must_use\n@must_use\ndef result(): return 1\n",
+        "from codepact import must_use\n@must_use\ndef result(): return 1\n"
+        "def receipt(): return 1\n",
         encoding="utf-8",
     )
     _ = (provider / "_impl.py").write_text(
@@ -270,7 +413,7 @@ def verify_artifacts(cli: Path, work: Path) -> dict[str, object]:
     )
     _ = (caller / "work.py").write_text(
         f"from {PACKAGE} import acquire, operations as ops, consume\n"
-        "from codepact import move\nops.result()\n"
+        "from codepact import move\nops.result()\nops.receipt()\n"
         "def leak():\n    value = acquire()\n"
         "def repair():\n    value = acquire()\n    value.close()\n"
         "def run():\n    value = acquire()\n"
@@ -400,6 +543,21 @@ def verify_artifacts(cli: Path, work: Path) -> dict[str, object]:
             "independently installed inline and manifest providers disagree"
         )
     manifest_site, manifest_check = candidates["manifest"]
+    artifact_diff = compare_published_upgrades(
+        cli, work, provider_source, wheel, manifest_check
+    )
+    _ = command(
+        [
+            str(cli),
+            "contracts",
+            "diff",
+            str(wheel),
+            str(invalid_wheels["source-stale"]),
+            "--json",
+        ],
+        work,
+        exit_code=2,
+    )
     installed_native = manifest_site / PACKAGE / "operations.so"
     _ = installed_native.write_bytes(b"controlled native shadow")
     shadowed = cast(dict[str, object], json.loads(command(manifest_check, work)))
@@ -445,6 +603,7 @@ def verify_artifacts(cli: Path, work: Path) -> dict[str, object]:
             for artifact in (inline, wheel, caller_wheel)
         },
         "verified_manifest": verified,
+        "artifact_diff": artifact_diff,
         "rejected_wheels": sorted(invalid_wheels),
         "rejected_installations": [
             "native-shadow",

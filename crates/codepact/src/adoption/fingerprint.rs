@@ -142,12 +142,12 @@ fn normalized_span(source: &str, span: &Span, starts: &[usize]) -> String {
 }
 
 #[derive(Default)]
-pub(super) struct AnchorCache {
+pub(crate) struct AnchorCache {
     anchors: BTreeMap<(String, usize, usize, usize, usize), String>,
     line_starts: BTreeMap<String, Vec<usize>>,
 }
 
-pub(super) fn semantic_anchor(source: &str, span: &Span, cache: &mut AnchorCache) -> String {
+pub(crate) fn semantic_anchor(source: &str, span: &Span, cache: &mut AnchorCache) -> String {
     let starts = cache
         .line_starts
         .entry(span.file.clone())
@@ -174,7 +174,7 @@ pub(super) fn semantic_anchor(source: &str, span: &Span, cache: &mut AnchorCache
         .clone()
 }
 
-pub(super) fn source_comments(source: &str) -> Vec<(usize, &str)> {
+pub(crate) fn source_comments(source: &str) -> Vec<(usize, &str)> {
     let mut comments = Vec::new();
     // Use the same Python lexer family as source analysis. In particular, this
     // keeps quotes inside PEP 701 f-string expressions from ending the outer

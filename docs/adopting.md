@@ -2,7 +2,7 @@
 
 Start with a narrow source root and an advisory report. Review what the
 checker covered before choosing which results should fail CI. The examples
-use the 0.8.0 default scope.
+use the 0.9.0 default scope.
 [Release scope and qualification](availability.md)
 
 ## Evaluate one package
@@ -25,12 +25,12 @@ use the 0.8.0 default scope.
    has meaningful coverage, findings are understood, and owners agree on
    the warning threshold and exception review. Expand one package at a time.
 
-## Install 0.8.0
+## Install 0.9.0
 
 In your uv project, install the helper and matching CLI:
 
 ```sh
-uv add 'codepact[cli]==0.8.0'
+uv add 'codepact[cli]==0.9.0'
 uv run --locked codepact --version
 uv run --locked codepact capabilities --json
 ```
@@ -80,6 +80,40 @@ files to discovery rather than narrowing it. Use a narrow root when a project
 contains generated or unsupported code.
 
 ## Introduce checks gradually
+
+### Require a declaration on a selected API
+
+CodePact 0.9.0 supports independent declaration policies for synchronous,
+top-level functions. Select one function by name or omit `function` to cover
+the public synchronous functions in the named module.
+Selectors use the final module binding. An exact selector without a statically
+resolved function contributes incomplete coverage.
+
+```toml
+[[tool.codepact.declaration-policy]]
+module = "app.connections"
+requirement = "resource-access"
+mode = "preview"
+
+[[tool.codepact.declaration-policy]]
+module = "app.connections"
+function = "connect"
+requirement = "owned-return"
+mode = "enforce"
+```
+
+`resource-access` requires explicit access on known resource parameters.
+`owned-return` requires an `Owned` resource return on every selected function.
+Use exact function selectors for APIs that hand off cleanup when the module
+also exposes functions with other return types.
+`must-use` requires the immediate-use decorator or annotation. The rules are
+`TP4101`, `TP4102` and `TP4103`, respectively. `preview` records informational
+findings, and `enforce` uses the configured failure threshold. An exact function
+entry takes precedence over a module entry for the same requirement.
+
+Use `codepact check --show-settings --json` to inspect the effective policy.
+Baseline matching uses the effective declarations and dependency contracts.
+Strict checks still fail when analysis coverage is incomplete.
 
 Start with the default advisory policy and inspect a JSON report:
 

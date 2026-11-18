@@ -53,12 +53,24 @@ pub(super) fn public_functions(
         else {
             continue;
         };
-        if symbol.symbol_kind != "function" || definition.is_async || !definition.supported_binding
+        let outcome_return = definition.outcome_return.filter(|contract| {
+            symbol.contracts.iter().any(|fact| {
+                fact.kind == "must-handle-return"
+                    && fact
+                        .required_capabilities
+                        .iter()
+                        .any(|capability| capability == contract.capability())
+            })
+        });
+        if symbol.symbol_kind != "function"
+            || (definition.is_async && outcome_return.is_none())
+            || !definition.supported_binding
         {
             continue;
         }
         if inputs.unavailable.contains_key(public)
             && !symbol.contracts.iter().any(|fact| fact.kind == "must-use")
+            && outcome_return.is_none()
             && symbol
                 .contracts
                 .iter()
@@ -71,6 +83,7 @@ pub(super) fn public_functions(
             continue;
         }
         let mut published = definition.clone();
+        published.outcome_return = outcome_return;
         published.parameter_contracts.retain(|parameter, _| {
             symbol.contracts.iter().any(|fact| {
                 fact.kind == "owned-parameter"
@@ -84,8 +97,9 @@ pub(super) fn public_functions(
         }
         let mut owned_return = false;
         for fact in &symbol.contracts {
-            if matches!(fact.kind.as_str(), "owned-return" | "owned-parameter")
-                && verified_close(fact, definitions)
+            if (fact.kind == "must-handle-return" && outcome_return.is_some())
+                || (matches!(fact.kind.as_str(), "owned-return" | "owned-parameter")
+                    && verified_close(fact, definitions))
             {
                 owned_return |= fact.kind == "owned-return";
                 published.publication.push(BoundFact {

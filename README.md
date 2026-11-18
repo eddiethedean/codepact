@@ -1,6 +1,6 @@
 # CodePact
 
-![CodePact banner](https://raw.githubusercontent.com/eddiethedean/codepact/v0.8.0/docs/_static/codepact-banner.png)
+![CodePact banner](https://raw.githubusercontent.com/eddiethedean/codepact/v0.9.0/docs/_static/codepact-banner.png)
 
 CodePact finds Python resource bugs before runtime. Declare how an object
 closes and which functions own or borrow it. CodePact reads source and can flag
@@ -18,12 +18,13 @@ discarded must-use result. Run it alongside your type checker and tests.
 [Rule catalog](https://codepact.readthedocs.io/en/latest/rules.html) ·
 [Roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md)
 
-**New in 0.8.0.** Check resource contracts across installed Python packages,
-export and verify wheel contract manifests, and supply reviewed models for an
-exact dependency version. Opt in to models for local text files, asyncio task
-lifetimes, and multiprocessing with an explicit spawn context.
+**New in 0.9.0.** Track persistent outcome duties with `MustHandle`, require
+declarations on selected APIs, and compare code changes or two published
+wheels. Reviewed HTTP and SQL profiles add bounded client and session checks,
+and work models track when a task or future result remains unobserved.
 [Release notes](https://codepact.readthedocs.io/en/latest/release-notes.html) ·
-[Reviewed contracts and runtime models](https://codepact.readthedocs.io/en/latest/reviewed-contracts.html)
+[Review a change](https://codepact.readthedocs.io/en/latest/ci-reporting.html#review-a-change) ·
+[Reviewed provider profiles](https://codepact.readthedocs.io/en/latest/reviewed-contracts.html)
 
 ## Quick start
 
@@ -32,14 +33,14 @@ and Python 3.11 or later, start a project.
 
 ```sh
 uv init --bare --name codepact-demo
-uv add 'codepact[cli]==0.8.0'
+uv add 'codepact[cli]==0.9.0'
 uv run --locked codepact --version
 mkdir src
 ```
 
-Expect `codepact 0.8.0`.
+Expect `codepact 0.9.0`.
 
-Save the complete [connection example](https://github.com/eddiethedean/codepact/blob/v0.8.0/examples/lifecycle.py)
+Save the complete [connection example](https://github.com/eddiethedean/codepact/blob/v0.9.0/examples/lifecycle.py)
 as `src/connection.py` and run the check.
 
 ```sh
@@ -65,6 +66,7 @@ Delete the final line and rerun with `--mode strict` to confirm exit `0`.
 | `Owned[T]` | Cleanup duties across modeled exits and open resources at ownership handoff |
 | `Borrowed[T]` | Closing a resource through a shared view |
 | `@must_use` or `MustUse[T]` | Bare discarded calls to marked synchronous functions |
+| `MustHandle[Result[T, E]]` or `MustHandle[Option[T]]` | Unacknowledged outcomes across supported assignments, aliases, and returns |
 
 The helpers use `typing.Annotated`, so ordinary types remain available to mypy
 and Pyright. The checker follows supported branches, aliases, calls, exceptions,

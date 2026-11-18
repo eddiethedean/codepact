@@ -141,6 +141,40 @@ See the [Python API reference](python-api.rst) for signatures and the
 [rule catalog](rules.md#experimental-finite-outcome-matches) for the static
 preview boundary.
 
+## Acknowledge a persistent outcome
+
+Declare `MustHandle[Result[T, E]]` or `MustHandle[Option[T]]` on a callable
+return to require acknowledgment after delivery. Use ordinary payloads.
+Assignment and aliasing carry the same duty. A supported match acknowledges
+the alternative that enters its arm, and a marked return can forward a pending
+duty to its caller. A direct await of a supported async producer delivers the
+duty on successful return.
+
+```python
+from codepact import MustHandle, Nothing, Option, Some
+
+
+def read_label(found: bool) -> MustHandle[Option[str]]:
+    if found:
+        return Some("ready")
+    return Nothing()
+
+
+def display_label(found: bool) -> str:
+    outcome = read_label(found)
+    match outcome:
+        case Some(label):
+            return label
+        case Nothing():
+            return "missing"
+```
+
+Use `discard_outcome(outcome, reason="a cached label is available")` to record
+an intentional discard. Give a nonempty literal reason so review can retain
+it. `MustUse` remains available for immediate-use contracts. An unresolved
+helper or container that can retain the outcome appears as an incomplete
+analysis boundary. [Persistent outcome rules](rules.md#persistent-outcome-duties)
+
 ## Use `Annotated` directly
 
 You can spell the metadata explicitly with `typing.Annotated`:

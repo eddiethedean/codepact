@@ -1,11 +1,17 @@
 //! Selection of provider publications from validated source artifacts.
 
+mod compare;
 mod manifest;
 mod package;
 mod source;
 use source::{source_publication, SourcePublication};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) use compare::normalized_provider_agreements;
+pub use compare::{
+    capture_publication, diff_publications, ContractChange, ContractChangeKind, ContractDiff,
+    PublicationIdentity, PublicationSnapshot,
+};
 pub use manifest::{
     decode_manifest, Manifest, PublicationLocation, PublishedContract, PublishedSymbol,
 };

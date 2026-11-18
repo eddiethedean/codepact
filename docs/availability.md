@@ -1,10 +1,10 @@
 # Release and capability availability
 
-CodePact 0.8.0 is available as the Python helper, a matching native CLI,
-and a Rust crate. [PyPI helper](https://pypi.org/project/codepact/0.8.0/) ·
-[PyPI CLI](https://pypi.org/project/codepact-cli/0.8.0/) ·
-[crates.io](https://crates.io/crates/codepact/0.8.0) ·
-[Source tag](https://github.com/eddiethedean/codepact/tree/v0.8.0)
+CodePact 0.9.0 is available as the Python helper, a matching native CLI,
+and a Rust crate. [PyPI helper](https://pypi.org/project/codepact/0.9.0/) ·
+[PyPI CLI](https://pypi.org/project/codepact-cli/0.9.0/) ·
+[crates.io](https://crates.io/crates/codepact/0.9.0) ·
+[Source tag](https://github.com/eddiethedean/codepact/tree/v0.9.0)
 
 Read the guides in the [hosted documentation](https://codepact.readthedocs.io/en/latest/index.html)
 or open the [stable documentation](https://codepact.readthedocs.io/en/stable/index.html) for the current release tag. [Build a local HTML preview](documentation.md)
@@ -13,7 +13,8 @@ or open the [stable documentation](https://codepact.readthedocs.io/en/stable/ind
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
-| CodePact 0.8.0 | Current release | `codepact`, `codepact-cli`, Rust crate `codepact` | Reviewed installed contracts, wheel manifests, and opt-in file, asyncio, and multiprocessing models |
+| CodePact 0.9.0 | Current release | `codepact`, `codepact-cli`, Rust crate `codepact` | Persistent outcome and work duties, declaration policy, source and wheel comparison, and reviewed HTTP and SQL profiles |
+| CodePact 0.8.0 | [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.8.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Reviewed installed contracts, wheel manifests, and opt-in file, asyncio, and multiprocessing models |
 | CodePact 0.7.0 | [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.7.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Typed outcomes, opt-in finite matches, and marked installed-provider checking |
 | CodePact 0.6.0 | [Published advanced-contracts preview](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.6.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Opt-in exclusive access, state protocols, and a bounded ThreadPoolExecutor model |
 | CodePact 0.5.1 | Published corrective release | `codepact`, `codepact-cli`, Rust crate `codepact` | CLI, source-location, adoption-identity, and ownership-boundary fixes; 0.5.0 behavior retained |
@@ -25,19 +26,19 @@ or open the [stable documentation](https://codepact.readthedocs.io/en/stable/ind
 
 Real-world usefulness remains unqualified for the synthetic previews.
 
-## Install CodePact 0.8.0
+## Install CodePact 0.9.0
 
-Install the helper and matching CLI with `uv add 'codepact[cli]==0.8.0'`. For
-the helper alone, use `uv add codepact==0.8.0`. For the command alone, use
-`uv tool install codepact-cli==0.8.0`. Rust applications can use
-`cargo add codepact@=0.8.0`. [Install options](install.md) · [Migration guide](upgrading.md)
+Install the helper and matching CLI with `uv add 'codepact[cli]==0.9.0'`. For
+the helper alone, use `uv add codepact==0.9.0`. For the command alone, use
+`uv tool install codepact-cli==0.9.0`. Rust applications can use
+`cargo add codepact@=0.9.0`. [Install options](install.md) · [Migration guide](upgrading.md)
 
 ## Build from source
 
 Build the selected repository checkout with Python 3.11+ and Rust 1.96+:
 
 ```sh
-git clone --branch v0.8.0 https://github.com/eddiethedean/codepact.git
+git clone --branch v0.9.0 https://github.com/eddiethedean/codepact.git
 cd codepact
 uv sync --locked --extra cli
 uv run --locked --extra cli codepact --version
@@ -49,7 +50,7 @@ revision when sharing reports from a source build.
 
 ## Platform and runtime evidence
 
-The 0.8.0 distribution matrix includes a pure Python helper wheel, both
+The 0.9.0 distribution matrix includes a pure Python helper wheel, both
 source archives, and eight native CLI wheel targets.
 
 | Platform | x86-64 | ARM64 |
@@ -62,10 +63,10 @@ source archives, and eight native CLI wheel targets.
 The helpers run on Python 3.11 and later. The analyzer accepts source targets
 3.11–3.13. Building the CLI from source requires Rust 1.96+ and a linker.
 
-The 0.8 runtime models target CPython 3.13.16 on Linux x86-64. This profile
+The reviewed runtime models target CPython 3.13.16 on Linux x86-64. This profile
 describes the analyzed program and can be selected from any supported CLI
 host. [Model profiles and assumptions](reviewed-contracts.md) ·
-[Implementation evidence](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.8/implementation-evidence.md)
+[Implementation evidence](https://github.com/eddiethedean/codepact/blob/v0.9.0/docs/planning/phases/0.9/implementation-evidence.md)
 
 ## Earlier release evidence
 

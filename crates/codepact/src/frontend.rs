@@ -5,7 +5,7 @@ use ruff_python_ast::{
 };
 use ruff_python_parser::{Mode, ParseOptions};
 use ruff_text_size::Ranged;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod boundaries;
 mod lowering;
@@ -23,6 +23,52 @@ use lowering::{
 
 pub(crate) const MODULE_STAR_IMPORT_UNCERTAINTY: &str =
     "module-level wildcard import is unsupported";
+
+/// Resolve direct definitions that still occupy their name at module exit.
+pub(crate) fn final_definitions(declarations: &[Declaration]) -> BTreeMap<&str, &Declaration> {
+    let mut definitions = BTreeMap::new();
+    for declaration in declarations {
+        match declaration {
+            Declaration::Function { name, .. } | Declaration::Class { name, .. } => {
+                definitions.insert(name.as_str(), declaration);
+            }
+            Declaration::Import { names, .. } => {
+                for name in names {
+                    definitions.remove(name.import_binding());
+                }
+            }
+            Declaration::ImportFrom { names, .. } => {
+                for name in names {
+                    if name.name == "*" {
+                        definitions.clear();
+                    } else {
+                        definitions.remove(name.member_binding());
+                    }
+                }
+            }
+            Declaration::Assignment {
+                name: Some(name),
+                value: Some(_),
+                ..
+            }
+            | Declaration::TypeAlias {
+                name: Some(name), ..
+            } => {
+                definitions.remove(name.as_str());
+            }
+            Declaration::Delete { names, .. } => {
+                for name in names.iter().flatten() {
+                    definitions.remove(name.as_str());
+                }
+            }
+            Declaration::ModuleFlow { .. } | Declaration::Unsupported { .. } => {
+                definitions.clear();
+            }
+            _ => {}
+        }
+    }
+    definitions
+}
 
 impl CallSignature {
     fn from_parameters(parameters: &ruff_python_ast::Parameters) -> Self {
@@ -809,11 +855,7 @@ pub(crate) fn parse_frontend(
                     .bases()
                     .iter()
                     .any(|base| !matches!(base, Expr::Name(name) if name.id.as_str() == "object")),
-                bound_methods: if source_path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
-                    bound_class_methods(&class.body)
-                } else {
-                    BTreeSet::new()
-                },
+                bound_methods: bound_class_methods(&class.body),
                 methods: class
                     .body
                     .iter()

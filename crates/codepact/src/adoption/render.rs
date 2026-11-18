@@ -49,7 +49,7 @@ impl Write for LimitedVecWriter {
     }
 }
 
-pub(super) fn serialize_pretty_limited<T: Serialize>(
+pub(crate) fn serialize_pretty_limited<T: Serialize>(
     value: &T,
     limit: usize,
     label: &str,

@@ -1,10 +1,7 @@
 # Persistent outcome acknowledgment
 
-Specification revision: **1**. Status: **Planned; acceptance pending**.
-This specifies the proposed `MustHandle` preview. OH01 semantics are required
-in 0.8; OH01–OH07 implementation and qualification belong to
-[0.9](phases/0.9-obligations-and-change-review.md). It does not describe
-behavior already released in 0.7. Public spellings remain provisional.
+Specification revision **1**. This specifies the `MustHandle` contract released
+in [CodePact 0.9.0](phases/0.9-obligations-and-change-review.md) under OH01–OH07.
 
 ## Initial declaration and compatibility boundary
 
@@ -12,7 +9,7 @@ behavior already released in 0.7. Public spellings remain provisional.
 declaration is a callable return annotation whose resolved outer outcome is
 an exact CodePact `Result` or `Option` with ordinary payloads. A supported
 published contract may express that same outward requirement. A transparent
-`Annotated` alias is the proposed Python spelling.
+`Annotated` alias is the Python spelling.
 
 Existing code acquires the stronger requirement only through a new declaration
 or applicable published contract. Constructing an unmarked `Ok`, `Err`, `Some`

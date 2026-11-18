@@ -1,0 +1,432 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/review-snapshot-v1.schema.json",
+  "title": "CodePact review capture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_snapshot_schema_version",
+    "snapshot_id",
+    "descriptor",
+    "selected_files",
+    "dependency_roots",
+    "policy",
+    "settings_origins",
+    "contracts",
+    "models",
+    "foundations",
+    "findings",
+    "operations",
+    "coverage",
+    "details_truncated",
+    "check_exit"
+  ],
+  "properties": {
+    "review_snapshot_schema_version": {
+      "const": 1
+    },
+    "snapshot_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine_version",
+        "check_schema_version",
+        "rule_semantics",
+        "finding_identity",
+        "comparison_algorithm",
+        "python_target",
+        "ownership",
+        "finite_matches",
+        "assurance",
+        "model_catalog",
+        "reviewed_providers"
+      ],
+      "properties": {
+        "engine_version": {
+          "type": "string"
+        },
+        "check_schema_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rule_semantics": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "finding_identity": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comparison_algorithm": {
+          "enum": [1, 2, 3]
+        },
+        "python_target": {
+          "type": "string"
+        },
+        "ownership": {
+          "enum": [
+            "disabled",
+            "enabled",
+            "assume-default-task-factory",
+            "advanced",
+            "advanced-assume-default-task-factory"
+          ]
+        },
+        "finite_matches": {
+          "type": "boolean"
+        },
+        "assurance": {
+          "type": "string"
+        },
+        "model_catalog": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reviewed_providers": {
+          "type": "boolean"
+        }
+      }
+    },
+    "selected_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "logical_path",
+          "module",
+          "sha256"
+        ],
+        "properties": {
+          "logical_path": {
+            "type": "string"
+          },
+          "module": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "dependency_roots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "include",
+        "exclude",
+        "enabled_rules",
+        "mode",
+        "fail_on",
+        "severity",
+        "declaration_policy",
+        "required_providers",
+        "baseline_sha256",
+        "suppressions"
+      ],
+      "properties": {
+        "include": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enabled_rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mode": {
+          "enum": [
+            "advisory",
+            "strict"
+          ]
+        },
+        "fail_on": {
+          "enum": [
+            "error",
+            "warning"
+          ]
+        },
+        "severity": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ]
+          }
+        },
+        "declaration_policy": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "module",
+              "function",
+              "requirement",
+              "mode"
+            ],
+            "properties": {
+              "module": {
+                "type": "string"
+              },
+              "function": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requirement": {
+                "enum": [
+                  "resource-access",
+                  "owned-return",
+                  "must-use"
+                ]
+              },
+              "mode": {
+                "enum": [
+                  "preview",
+                  "enforce"
+                ]
+              }
+            }
+          }
+        },
+        "required_providers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "baseline_sha256": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suppressions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "items": false,
+              "minItems": 2
+            }
+          }
+        }
+      }
+    },
+    "settings_origins": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "contracts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "$ref": "check-result-v2.schema.json#/$defs/model"
+      }
+    },
+    "foundations": {
+      "oneOf": [
+        {
+          "$ref": "foundations-evidence-v1.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "identity",
+          "origin",
+          "completion",
+          "closed"
+        ],
+        "properties": {
+          "identity": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "origin": {
+            "$ref": "inspection-v0.schema.json#/$defs/span"
+          },
+          "completion": {
+            "type": "string"
+          },
+          "closed": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "coverage": {
+      "$ref": "inspection-v0.schema.json#/$defs/coverage"
+    },
+    "details_truncated": {
+      "type": "boolean"
+    },
+    "check_exit": {
+      "enum": [
+        0,
+        1
+      ]
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fingerprint",
+        "code",
+        "primary",
+        "certainty",
+        "severity",
+        "actionable",
+        "disposition",
+        "disposition_reason",
+        "message",
+        "operation",
+        "condition",
+        "completion"
+      ],
+      "properties": {
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "code": {
+          "type": "string"
+        },
+        "primary": {
+          "$ref": "inspection-v0.schema.json#/$defs/span"
+        },
+        "certainty": {
+          "enum": [
+            "definite",
+            "possible",
+            "unknown"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ]
+        },
+        "actionable": {
+          "type": "boolean"
+        },
+        "disposition": {
+          "type": "string"
+        },
+        "disposition_reason": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "operation": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "condition": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completion": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

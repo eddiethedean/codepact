@@ -2,7 +2,7 @@
 
 ## Which version can I install now?
 
-Install CodePact 0.8.0 from PyPI or crates.io. Its default scope includes
+Install CodePact 0.9.0 from PyPI or crates.io. Its default scope includes
 project policy, baselines, and synchronous must-use checks. Enable experimental
 ownership to try moves, lexical borrows, and TaskGroup checks. [Install CodePact](install.md) ·
 [Experimental ownership](ownership.md)
@@ -67,5 +67,5 @@ consumption and unsupported nested expressions remain boundaries. See
 
 The analyzer currently accepts source targets 3.11, 3.12, and 3.13. This is
 separate from the interpreter running the command, and the default target is
-3.11. Helper runtime support begins at Python 3.11. The 0.8 standard library
+3.11. Helper runtime support begins at Python 3.11. The reviewed standard library
 models use the explicitly selected [runtime profile](reviewed-contracts.md#select-the-runtime-profile).
