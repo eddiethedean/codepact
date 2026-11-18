@@ -123,6 +123,21 @@
         ]
       }
     },
+    "async_guards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["module", "coroutine", "resource", "lock", "method"],
+        "properties": {
+          "module": {"type": "string", "minLength": 1},
+          "coroutine": {"type": "string", "minLength": 1},
+          "resource": {"type": "string", "minLength": 1},
+          "lock": {"type": "string", "minLength": 1},
+          "method": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "declaration_policy": {
       "type": "array",
       "items": {

@@ -291,6 +291,20 @@
         "$ref": "#/$defs/finding"
       }
     },
+    "protocol_contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["identity", "family", "origin", "contract"],
+        "properties": {
+          "identity": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "family": {"type": "string", "minLength": 1},
+          "origin": {"$ref": "inspection-v0.schema.json#/$defs/span"},
+          "contract": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
     "operations": {
       "type": "array",
       "items": {

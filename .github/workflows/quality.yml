@@ -27,19 +27,50 @@ jobs:
           enable-cache: true
       - name: Build the documentation
         run: make check-docs
+      - name: Verify the tagged docs pin the release version
+        env:
+          READTHEDOCS_VERSION_TYPE: tag
+          READTHEDOCS_GIT_COMMIT_HASH: ${{ github.sha }}
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          export READTHEDOCS_GIT_IDENTIFIER="v$version"
+          uv run --no-project --with-requirements docs/requirements.txt sphinx-build -E -a -b html -n -W docs "$RUNNER_TEMP/docs-tagged"
+          python scripts/verify_docs_release.py "$RUNNER_TEMP/docs-tagged" --channel Released --version "$version" --revision "$GITHUB_SHA"
       - name: Build wheels for the documented installation
         run: uv build --wheel --no-sources --all-packages --out-dir "$RUNNER_TEMP/docs-wheels"
       - name: Add the locked helper runtime dependency to the local wheelhouse
         run: |
           typing_extensions_version="$(python -c 'from pathlib import Path; from scripts.check_python_package import locked_package_version; print(locked_package_version(Path("."), "typing-extensions"))')"
           python -m pip download --no-deps --only-binary=:all: --dest "$RUNNER_TEMP/docs-wheels" "typing-extensions==$typing_extensions_version"
-      - name: Replay the documented commands
+      - name: Install both documentation CLI versions
+        run: |
+          published="$(python scripts/sync_docs_reference.py --published-version)"
+          checkout="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$published" != "$checkout" ]; then
+            python -m pip download --no-deps --only-binary=:all: --dest "$RUNNER_TEMP/docs-wheels" "codepact==$published" "codepact-cli==$published"
+          fi
+          uv venv "$RUNNER_TEMP/published-docs"
+          uv venv "$RUNNER_TEMP/checkout-docs"
+          uv pip install --python "$RUNNER_TEMP/published-docs/bin/python" --no-index --find-links "$RUNNER_TEMP/docs-wheels" "codepact-cli==$published"
+          uv pip install --python "$RUNNER_TEMP/checkout-docs/bin/python" --no-index --find-links "$RUNNER_TEMP/docs-wheels" "codepact-cli==$checkout"
+      - name: Verify generated references and replay provider and protocol guides
+        run: |
+          published="$RUNNER_TEMP/published-docs/bin/codepact"
+          checkout="$RUNNER_TEMP/checkout-docs/bin/codepact"
+          python scripts/sync_docs_reference.py --check --published-cli "$published" --checkout-cli "$checkout"
+          python scripts/check_docs_protocols.py --published-cli "$published" --checkout-cli "$checkout"
+      - name: Replay the documented commands with published and checkout wheels
         env:
           UV_OFFLINE: "1"
           UV_FIND_LINKS: ${{ runner.temp }}/docs-wheels
-        run: python scripts/check_docs_examples.py --checkout
-      - name: Check the Rust integration example
-        run: cargo run --locked -p codepact --example adoption_report
+        run: |
+          python scripts/check_docs_examples.py
+          python scripts/check_docs_examples.py --checkout
+      - name: Check the Rust integration examples
+        run: |
+          for example in adoption_report reviewed_inputs cancellation; do
+            cargo run --locked -p codepact --example "$example"
+          done
 
   quality:
     if: github.event_name != 'schedule'

@@ -18,6 +18,7 @@ missed cleanup, and discarded results directly in source.
 :::{container} cp-actions
 [Run your first check](quickstart.md)
 [Installation options](install.md)
+[Check project compatibility](compatibility.md)
 :::
 
 ::::
@@ -50,9 +51,9 @@ missed cleanup, and discarded results directly in source.
 ::::{container} cp-release-strip
 
 :::{container} cp-release cp-release-published
-**0.9.0 · Persistent obligations and change review**
+**Release notes**
 
-[See what changed in 0.9.0](release-notes.md)
+[New features, limitations, and upgrades](release-notes.md)
 :::
 
 :::{container} cp-release cp-release-ownership
@@ -123,20 +124,22 @@ The Python helpers run on Python 3.11 and later. The checker accepts Python
 
 quickstart
 install
+compatibility
+project-guide
 ```
 
 ```{toctree}
 :hidden:
 :maxdepth: 2
-:caption: Learn with examples
+:caption: Learn contracts
 
-contracts
-project-guide
 lifecycle
+contracts
+ownership
 examples
 bugs-caught
-ownership
-inspector
+runtime-models
+concurrency
 ```
 
 ```{toctree}
@@ -144,9 +147,11 @@ inspector
 :maxdepth: 2
 :caption: Adopt and operate
 
+pilot
 adopting
 automation
 ci-reporting
+consume-providers
 troubleshooting
 upgrading
 faq
@@ -157,15 +162,19 @@ faq
 :maxdepth: 2
 :caption: Reference
 
+integration
 cli
-reviewed-contracts
+configuration
 rules
 supported-syntax
 limitations
+inspector
 output
 schemas
 python-api
 rust-api
+reviewed-contracts
+publish-provider
 ```
 
 ```{toctree}
@@ -181,6 +190,7 @@ performance
 architecture
 development
 documentation
+release-verification
 release-notes
 roadmap
 synthetic-projects

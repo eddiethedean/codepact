@@ -1,5 +1,29 @@
 # Release notes
 
+See the site header for the docs channel and [release availability](availability.md)
+for package and source links.
+
+## 0.10.0 — queues, IPC and synchronization
+
+- Reviewed asyncio models track queue admission, receipt, accounting and
+  shutdown. The synchronization checks cover local locks, semaphore permits,
+  condition waits, event signals, and configured guarded resource methods.
+- Reviewed multiprocessing models track Queue, JoinableQueue, SimpleQueue and
+  Pipe operations, local feeder and endpoint cleanup, and selected guards for
+  compound Value and Array updates. A declared direct script selects the new
+  explicit-spawn worker entry checks.
+- Source review reports changed protocol requirements at matched sites,
+  including guard changes between two clean checks.
+
+The new diagnostics and protocol effects require the applicable opt-in setup
+and CPython 3.13.16 on Linux x86-64 with a Python 3.13 source target. Default
+source-only checks retain their report schema and failure policy. Unresolved
+actors, launch evidence, aliases, or operation ordering can leave coverage
+incomplete.
+
+[Configure the queue and guard models](reviewed-contracts.md#queues-ipc-and-guards) ·
+{ref}`Upgrade to 0.10.0 <upgrade-010>`
+
 ## 0.9.0 — persistent obligations and change review
 
 - `MustHandle` tracks explicit acknowledgment after assignment, aliases and
@@ -13,6 +37,7 @@
 
 [Install 0.9.0](install.md) · {ref}`Upgrade to 0.9.0 <upgrade-09>` ·
 [Review a change](ci-reporting.md#review-a-change) · [Provider profiles](reviewed-contracts.md)
+· [Permanent 0.9.0 guide sources](https://github.com/eddiethedean/codepact/blob/7b17a494f7d98cfa7f9dc27db5dc7d88b1214e78/docs/README.md)
 
 ## 0.8.0 — reviewed contracts and concurrency
 

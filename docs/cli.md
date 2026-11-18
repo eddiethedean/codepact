@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Command-line reference
 
 This reference covers the CodePact 0.9.0 analyzer and its opt-in check modes.
@@ -120,21 +122,13 @@ root = "src"
 python-version = "3.12"
 include = ["**/*.py"]
 exclude = ["generated/**"]
-enabled-rules = ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"]
 mode = "advisory"
 fail-on = "error"
-baseline = "codepact-baseline.json"
-experimental-finite-matches = true
-
-[tool.codepact.dependencies]
-roots = [".venv/lib/python3.12/site-packages"]
-required-providers = ["billing-sdk"]
-
-[tool.codepact.severity]
-TP3001 = "warning"
 ```
 
-Create the baseline with `baseline update` before adding its path.
+See [configuration and capabilities](configuration.md) for defaults, rule
+overrides, dependency inputs, and the versions that introduced each option.
+Create a baseline with `baseline update` before adding its path.
 Unknown keys, invalid patterns or rule codes, unsupported targets, and
 severity overrides for mandatory or disabled rules fail configuration.
 `--show-settings --json` reports each setting's origin without reading

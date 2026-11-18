@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const CATALOG_REVISION: &str = "cpython-3.13.16-linux-x86_64-v1";
+pub const CATALOG_REVISION: &str = "cpython-3.13.16-linux-x86_64-v2";
 
 /// The runtime of the analyzed program. The Python grammar target is a
 /// separate input and the checker never derives these values from its host.
@@ -17,6 +17,9 @@ pub struct RuntimeProfile {
     pub event_loop: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_method: Option<String>,
+    /// Exact source path of the script invoked by the interpreter for spawn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spawn_main_script: Option<String>,
     #[serde(default)]
     pub assume_standard_process_wait: bool,
 }
@@ -78,12 +81,26 @@ pub(crate) fn stdlib_catalog(
         .asyncio(target, ownership.assumes_default_task_factory())
         .is_ok()
     {
-        catalog.push((
-            "TPM-ASYNCIO-001",
-            "asyncio.create_task",
-            "Lib/asyncio/tasks.py",
-            "Local scheduling, direct wait, cancellation, shield and timeout.",
-        ));
+        catalog.extend([
+            (
+                "TPM-ASYNCIO-001",
+                "asyncio.create_task",
+                "Lib/asyncio/tasks.py",
+                "Local scheduling, direct wait, cancellation, shield and timeout.",
+            ),
+            (
+                "TPM-QUEUE-001",
+                "asyncio.Queue",
+                "Lib/asyncio/queues.py",
+                "FIFO admission, receipt, accounting, join and shutdown.",
+            ),
+            (
+                "TPM-SYNC-001",
+                "asyncio.Lock",
+                "Lib/asyncio/locks.py",
+                "Local guards, semaphore permits, condition waits and event signals.",
+            ),
+        ]);
     }
     if ownership.includes_advanced_contracts() && profile.spawn(target, "spawn").is_ok() {
         catalog.extend([
@@ -99,15 +116,58 @@ pub(crate) fn stdlib_catalog(
                 "Lib/multiprocessing/pool.py",
                 "Explicit-spawn submission and local Pool shutdown.",
             ),
+            (
+                "TPM-IPC-001",
+                "multiprocessing.Queue",
+                "Lib/multiprocessing/queues.py",
+                "Queue and JoinableQueue admission, receipt, accounting and feeder cleanup.",
+            ),
+            (
+                "TPM-IPC-002",
+                "multiprocessing.connection.Connection",
+                "Lib/multiprocessing/connection.py",
+                "SimpleQueue and Pipe serialization, local endpoints, receipt and EOF.",
+            ),
+            (
+                "TPM-SYNC-002",
+                "multiprocessing.Lock",
+                "Lib/multiprocessing/synchronize.py",
+                "Process locks, semaphore permits and guards for shared values and arrays.",
+            ),
         ]);
+        if profile.spawn_main_script.is_some() {
+            catalog.push((
+                "TPM-SPAWN-001",
+                "multiprocessing.Process.start",
+                "Lib/multiprocessing/spawn.py",
+                "Direct-script spawn entry, worker resolution and argument checks.",
+            ));
+        }
     }
-    catalog.into_iter().map(|(id, symbol, source, behavior)| crate::CheckModelMetadata {
-        id: id.into(),
-        qualified_symbol: symbol.into(),
-        source_revisions: vec!["v3.13.16".into()],
-        source_urls: vec![format!("https://github.com/python/cpython/blob/v3.13.16/{source}")],
-        selection_rule: "Declared CPython 3.13.16/Linux x86_64 runtime, exact binding and applicable model assumptions.".into(),
-        modeled_behavior: behavior.into(),
-        qualification: "Phase 0.8 experimental model. Release qualification is tracked in the phase plan.".into(),
+    catalog.into_iter().map(|(id, symbol, source, behavior)| {
+        let supporting_sources: &[&str] = match id {
+            "TPM-QUEUE-001" => &["Lib/asyncio/locks.py"],
+            "TPM-IPC-001" => &["Lib/multiprocessing/connection.py", "Lib/multiprocessing/reduction.py"],
+            "TPM-IPC-002" => &["Lib/multiprocessing/queues.py", "Lib/multiprocessing/reduction.py"],
+            "TPM-SYNC-002" => &["Lib/multiprocessing/sharedctypes.py", "Modules/_multiprocessing/semaphore.c"],
+            "TPM-SPAWN-001" => &["Lib/multiprocessing/popen_spawn_posix.py", "Lib/multiprocessing/process.py"],
+            _ => &[],
+        };
+        crate::CheckModelMetadata {
+            id: id.into(),
+            qualified_symbol: symbol.into(),
+            source_revisions: vec!["v3.13.16".into()],
+            source_urls: std::iter::once(source)
+                .chain(supporting_sources.iter().copied())
+                .map(|path| format!("https://github.com/python/cpython/blob/v3.13.16/{path}"))
+                .collect(),
+            selection_rule: if id == "TPM-SPAWN-001" {
+                "Declared CPython 3.13.16/Linux x86_64 runtime, explicit spawn and matching direct script."
+            } else {
+                "Declared CPython 3.13.16/Linux x86_64 runtime, exact binding and applicable model assumptions."
+            }.into(),
+            modeled_behavior: behavior.into(),
+            qualification: "Experimental model. Release qualification is tracked in the phase plan.".into(),
+        }
     }).collect()
 }

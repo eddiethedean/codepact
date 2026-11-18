@@ -42,7 +42,9 @@ def summarize(
     }
 
 
-def compare_manifests(baseline: Path, candidate: Path) -> dict[str, object]:
+def paired_workload(
+    baseline: Path, candidate: Path, workload: str, fields: tuple[str, ...]
+) -> dict[str, object]:
     binaries = {"baseline": baseline, "candidate": candidate}
     samples: dict[str, list[dict[str, object]]] = {side: [] for side in binaries}
     orders: list[list[str]] = []
@@ -50,17 +52,23 @@ def compare_manifests(baseline: Path, candidate: Path) -> dict[str, object]:
         order = list(binaries) if trial % 2 == 0 else list(reversed(binaries))
         orders.append(order)
         for side in order:
-            samples[side].append(measure_once(binaries[side], "manifest", CALLERS))
+            samples[side].append(measure_once(binaries[side], workload, CALLERS))
     return {
-        "workload": "installed-manifest",
+        "workload": workload,
         "caller_functions": CALLERS,
         "pair_order": orders,
         "paired_change": {
             field: paired_change(samples["baseline"], samples["candidate"], field)
-            for field in FIELDS
+            for field in fields
         },
-        **{side: summarize(runs, FIELDS) for side, runs in samples.items()},
+        **{side: summarize(runs, fields) for side, runs in samples.items()},
     }
+
+
+def compare_manifests(baseline: Path, candidate: Path) -> dict[str, object]:
+    measurement = paired_workload(baseline, candidate, "manifest", FIELDS)
+    measurement["workload"] = "installed-manifest"
+    return measurement
 
 
 def capture(baseline: Path, candidate: Path) -> dict[str, object]:

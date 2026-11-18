@@ -217,6 +217,7 @@ fn collect_files(
             providers: providers.packages,
             provider_issues: providers.issues,
             project_models,
+            async_guards: config.async_guards.clone(),
             uv_lock,
         })
     } else {

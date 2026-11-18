@@ -231,7 +231,13 @@ pub(super) fn execute(
         {
             let termination = process::termination_test(test, env, file, result);
             let work_test = work::test(test, env, file, result);
-            if termination.is_none() && work_test.is_none() {
+            let protocol_test = process::protocol_test(test, env, file, result);
+            let main_guard = process::is_main_guard(test, env, file);
+            if termination.is_none()
+                && work_test.is_none()
+                && protocol_test.is_none()
+                && !main_guard
+            {
                 consume_expr(test, env, file, contracts, functions, result, 0);
             }
             outcomes.raises.extend(take_pending_raises(env));
@@ -256,8 +262,12 @@ pub(super) fn execute(
                 );
                 continue;
             }
-            if let AstExprKind::Boolean(value) = &test.kind {
-                let branch = if *value { body } else { alternate };
+            let known_test = match &test.kind {
+                AstExprKind::Boolean(value) => Some(*value),
+                _ => async_protocols::test(test, env),
+            };
+            if let Some(value) = known_test {
+                let branch = if value { body } else { alternate };
                 let control_depth = env.control_depth;
                 env.control_depth += 1;
                 outcomes.append(execute(
@@ -288,6 +298,11 @@ pub(super) fn execute(
                 work::refine(&mut left, test, true);
                 work::refine(&mut right, test, false);
             }
+            if let Some(test) = &protocol_test {
+                process::refine_protocol_test(&mut left, test, true);
+                process::refine_protocol_test(&mut right, test, false);
+            }
+            process::refine_main_guard(&mut left, main_guard);
             let left_outcomes = execute(
                 body,
                 &mut left,
@@ -531,8 +546,14 @@ fn execute_with_outcomes(
         match statement {
             FlowStatement::Assign { name, range, .. }
             | FlowStatement::EscapingAssign { name, range, .. } => {
+                guarded_access::check_binding(name, env, file, *range, functions, result);
                 let value = assignment_outcome.unwrap_or_else(|| env.outcomes.take_carrier());
                 if matches!(statement, FlowStatement::EscapingAssign { .. }) {
+                    if let (Some(binding), Some(ownership)) =
+                        (env.module_function_bindings.get(name), &mut env.ownership)
+                    {
+                        ownership.invalidate_function_export(binding.clone());
+                    }
                     outcomes::escape(env, &value.ids, file, *range, result);
                 }
                 let previous = env.outcomes.bind_carrier(name, value);
@@ -653,6 +674,11 @@ fn resolved_exception_name<'a>(expression: &'a AstExpr, state: &State) -> Option
     match ownership::external_identity(expression, state).as_deref() {
         Some("external:asyncio.CancelledError") => return Some("CancelledError"),
         Some("external:asyncio.InvalidStateError") => return Some("asyncio.InvalidStateError"),
+        Some("external:asyncio.QueueEmpty") => return Some("asyncio.QueueEmpty"),
+        Some("external:asyncio.QueueFull") => return Some("asyncio.QueueFull"),
+        Some("external:asyncio.QueueShutDown") => return Some("asyncio.QueueShutDown"),
+        Some("external:queue.Empty") => return Some("queue.Empty"),
+        Some("external:queue.Full") => return Some("queue.Full"),
         Some("external:concurrent.futures.CancelledError") => {
             return Some("concurrent.futures.CancelledError")
         }
@@ -662,7 +688,10 @@ fn resolved_exception_name<'a>(expression: &'a AstExpr, state: &State) -> Option
         }
         _ => {}
     }
-    if let Some(name) = expr_name(expression).and_then(|name| name.strip_prefix(":work-error:")) {
+    if let Some(name) = expr_name(expression).and_then(|name| {
+        name.strip_prefix(":work-error:")
+            .or_else(|| name.strip_prefix(":exception:"))
+    }) {
         return known_exception_for_match(name).then_some(name);
     }
     expr_name(expression).filter(|name| is_unshadowed_exception_handler_name(name, state))
@@ -715,6 +744,11 @@ fn known_exception_for_match(name: &str) -> bool {
             name,
             "CancelledError"
                 | "asyncio.InvalidStateError"
+                | "asyncio.QueueEmpty"
+                | "asyncio.QueueFull"
+                | "asyncio.QueueShutDown"
+                | "queue.Empty"
+                | "queue.Full"
                 | "concurrent.futures.CancelledError"
                 | "multiprocessing.TimeoutError"
         )
@@ -724,6 +758,11 @@ fn builtin_exception_parents(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "CancelledError" => &["BaseException"],
         "asyncio.InvalidStateError"
+        | "asyncio.QueueEmpty"
+        | "asyncio.QueueFull"
+        | "asyncio.QueueShutDown"
+        | "queue.Empty"
+        | "queue.Full"
         | "concurrent.futures.CancelledError"
         | "multiprocessing.TimeoutError" => &["Exception"],
         "BaseException" => &[],
@@ -963,18 +1002,22 @@ fn execute_try(
             dispatch_state.alive = true;
             dispatch_state.pending_raises.clear();
             if let Some(exception_type) = &handler.exception {
-                consume_expr(
-                    exception_type,
-                    &mut dispatch_state,
-                    file,
-                    contracts,
-                    functions,
-                    result,
-                    0,
-                );
-                pending
-                    .raises
-                    .extend(take_pending_raises(&mut dispatch_state));
+                if expression_exception_names(exception_type, &dispatch_state)
+                    .is_none_or(|names| names.iter().any(Option::is_none))
+                {
+                    consume_expr(
+                        exception_type,
+                        &mut dispatch_state,
+                        file,
+                        contracts,
+                        functions,
+                        result,
+                        0,
+                    );
+                    pending
+                        .raises
+                        .extend(take_pending_raises(&mut dispatch_state));
+                }
             }
             if !dispatch_state.alive {
                 may_remain_unhandled = false;
@@ -2357,6 +2400,9 @@ pub(super) fn execute_non_if_statement(
             range,
             ..
         } if env.ownership.is_some() => {
+            if process::initialize_pipe(value, target.as_ref(), env, file, result) {
+                return None;
+            }
             if asyncio::is_gather(value, env) {
                 if let (
                     AstExprKind::Await(awaited),
@@ -2512,7 +2558,13 @@ pub(super) fn execute_non_if_statement(
                 env.shadowed_classes.insert(name.clone());
             }
         }
+        FlowStatement::AugmentedStore {
+            target,
+            value,
+            range,
+        } if process::compound_store(target, value, *range, env, file, result) => {}
         FlowStatement::Unsupported { range }
+        | FlowStatement::AugmentedStore { range, .. }
         | FlowStatement::Store { range, .. }
         | FlowStatement::ClosureDefinition { range, .. }
         | FlowStatement::DeleteLocal { range, .. } => {

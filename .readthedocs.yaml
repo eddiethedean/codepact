@@ -6,6 +6,7 @@ build:
     python: "3.11"
   jobs:
     pre_build:
+      - '"$READTHEDOCS_VIRTUALENV_PATH/bin/python" scripts/sync_docs_reference.py --check'
       - '"$READTHEDOCS_VIRTUALENV_PATH/bin/python" scripts/check_schema_fixtures.py --fixtures-only'
       - '"$READTHEDOCS_VIRTUALENV_PATH/bin/python" scripts/check_docs_links.py'
 

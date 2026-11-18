@@ -12,16 +12,32 @@ pub(crate) struct CleanupSite {
     pub(crate) closed: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ProtocolSite {
+    pub(crate) family: &'static str,
+    pub(crate) origin: Span,
+    pub(crate) contract: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Journal {
     pub(crate) sites: BTreeSet<CleanupSite>,
+    pub(crate) protocols: BTreeSet<ProtocolSite>,
     pub(crate) truncated: bool,
 }
 
 impl Journal {
     fn push(&mut self, site: CleanupSite) {
-        if self.sites.len() < MAX_OPERATIONS {
+        if self.sites.len() + self.protocols.len() < MAX_OPERATIONS {
             self.sites.insert(site);
+        } else {
+            self.truncated = true;
+        }
+    }
+
+    fn push_protocol(&mut self, site: ProtocolSite) {
+        if self.sites.len() + self.protocols.len() < MAX_OPERATIONS {
+            self.protocols.insert(site);
         } else {
             self.truncated = true;
         }
@@ -31,6 +47,9 @@ impl Journal {
         self.truncated |= other.truncated;
         for site in &other.sites {
             self.push(site.clone());
+        }
+        for site in &other.protocols {
+            self.push_protocol(site.clone());
         }
     }
 }
@@ -58,6 +77,18 @@ pub(crate) fn record(site: impl FnOnce() -> CleanupSite) {
     ACTIVE.with(|active| {
         if let Some(journal) = active.borrow_mut().as_mut() {
             journal.push(site());
+        }
+    });
+}
+
+pub(crate) fn record_protocol(family: &'static str, origin: Span, contract: Vec<String>) {
+    ACTIVE.with(|active| {
+        if let Some(journal) = active.borrow_mut().as_mut() {
+            journal.push_protocol(ProtocolSite {
+                family,
+                origin,
+                contract,
+            });
         }
     });
 }

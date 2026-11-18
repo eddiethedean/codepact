@@ -4,21 +4,8 @@ CodePact has separate versioned envelopes for declaration inspection, the Rust
 checker API, the CLI check report, baselines and static metadata. Package versions
 do not imply schema versions.
 
-| Output | Schema |
-| --- | --- |
-| `inspect-contracts --json` and Rust `Inspection` | [inspection schema 0](schemas/inspection-v0.schema.json) |
-| Rust `CheckResult` from `check_report` | [checker result schema 1](schemas/check-result-v1.schema.json) |
-| Rust `CheckResult` from `check_with_foundations` | [checker result schema 2](schemas/check-result-v2.schema.json) |
-| CLI `check --json` | [adoption report schema 3](schemas/check-report-v3.schema.json) or [foundations report schema 4](schemas/check-report-v4.schema.json) |
-| Baseline file | [baseline schema 1](schemas/baseline-v1.schema.json) |
-| `capabilities --json` | [capabilities schema 1](schemas/capabilities-v1.schema.json) |
-| `explain RULE --json` | [explanation schema 1](schemas/explanation-v1.schema.json) |
-| `check --show-settings --json` | [settings schema 2](schemas/settings-v2.schema.json) or [settings schema 3](schemas/settings-v3.schema.json) |
-| `baseline update --json` summary | [baseline-update schema 1](schemas/baseline-update-v1.schema.json) |
-| `review capture` | [review snapshot schema 1](schemas/review-snapshot-v1.schema.json) |
-| `review BEFORE AFTER --json` | [review result schema 1](schemas/review-v1.schema.json) |
-| `contracts diff BEFORE_WHEEL AFTER_WHEEL --json` | [contract diff schema 1](schemas/contract-diff-v1.schema.json) |
-| CLI execution/configuration error in JSON mode | [failure envelope for report schema 3](schemas/failure-v3.schema.json) |
+```{include} _generated/schema-table.inc
+```
 
 Downloadable schemas and fixture links are listed in the [schema reference](schemas.md).
 Consumers should dispatch on the schema version and treat a failed execution

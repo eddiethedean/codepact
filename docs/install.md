@@ -1,14 +1,18 @@
+<!-- release-recipes -->
+
 # Installation
 
 Install CodePact 0.9.0. The Python installer requires Python 3.11 or later,
 including when installing only the CLI wheel. The analyzer accepts Python
 3.11, 3.12, and 3.13 source targets and defaults to 3.11. Choose your target
 with `--python-version` or `python-version` in project configuration.
+[Compare installation, source, and runtime versions](compatibility.md) ·
 [Supported platforms and release artifacts](availability.md#platform-and-runtime-evidence)
 
 | Goal | Install route |
 | --- | --- |
 | Add helper imports and the checker to a uv project | [uv project](#uv-project) |
+| Import annotations or outcomes in application code | [Helper-only installation](#helper-only-installation) |
 | Use the helpers and checker in an existing pip workflow | [pip environment](#pip-environment) |
 | Run the checker against source or in CI | [Standalone command](#standalone-command) |
 | Embed the analyzer or install the executable with Cargo | [Rust library and Cargo command](#rust-library-and-cargo-command) |
@@ -39,7 +43,9 @@ uv run --locked python -c "from codepact import Result, Option"
 ```
 
 The helper has no CLI dependency. Add the `cli` extra only when the project
-needs to run CodePact commands.
+needs to install the CLI alongside the helper. To keep the executable in CI
+while your application imports the helper, install the helper in the project
+and use the [standalone command](#standalone-command) in CI.
 
 ## pip environment
 

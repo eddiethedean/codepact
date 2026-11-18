@@ -250,13 +250,21 @@ fn inspect_inner(
                                         .insert(format!("{prefix}.{member}"), declaration.clone());
                                 }
                             }
-                        } else if item.name == "contextlib"
-                            && !supplied_modules.contains(&item.name)
+                        } else if matches!(
+                            item.name.as_str(),
+                            "contextlib"
+                                | "asyncio"
+                                | "asyncio.queues"
+                                | "asyncio.locks"
+                                | "multiprocessing"
+                                | "queue"
+                        ) && !supplied_modules.contains(&item.name)
                             && !ambiguous_modules.contains(&item.name)
                         {
+                            let external = item.alias.as_ref().map_or(local, |_| &item.name);
                             state
                                 .imports
-                                .insert(local.to_owned(), "external:contextlib".into());
+                                .insert(local.to_owned(), format!("external:{external}"));
                         } else if installed_provider
                             && item.name == "typing"
                             && !supplied_modules.contains("typing")
@@ -1290,7 +1298,9 @@ fn clear_module_flow_state(
                         names.insert(name.clone());
                     }
                 }
-                Flow::Store { target: None, .. } | Flow::Unsupported { .. } => {
+                Flow::Store { target: None, .. }
+                | Flow::AugmentedStore { .. }
+                | Flow::Unsupported { .. } => {
                     *unknown = true;
                 }
                 Flow::Pass { .. }

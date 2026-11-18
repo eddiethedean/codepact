@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Check a resource lifecycle
 
 Use CodePact 0.9.0 to reproduce a use after close, read its evidence, and
@@ -82,22 +84,24 @@ coverage. [Policy and exits](cli.md#policy-and-exits)
 
 Readable output is the default. For the provisional structured report:
 
+<!-- smoke: lifecycle-json -->
 ```sh
 uv run --locked codepact check --root src --json
 ```
 
-Read both `diagnostics` and `coverage`. A successful exit can include possible
-findings or incomplete analysis. The default CLI report uses checker
-schema 2 and the assurance value
-`lifecycle-and-must-use-checking-for-supported-exit-flow`. Declaration
-provenance remains `declared-unverified`. [Output reference](output.md)
+The source-only command above emits `report_schema_version: 3` and
+`check_schema_version: 1`. Read `diagnostics` and `coverage` together. An
+advisory check can pass with incomplete coverage or below-threshold findings.
+This example has lifecycle and must-use assurance, and its declaration uses
+`declared-unverified` provenance. [Schema selection and report fields](output.md)
 
 ## Choose a narrow project root
 
 `check` scans `.py` files below its root. An explicit filename adds an input; it
 does not restrict discovery to that file. Keep unrelated examples, generated
-files, and unsupported code outside the selected root. The default root is the
-current directory. The scan skips symlinks and common build and environment
+files, and unsupported code outside the selected root. Without a configured
+root or a loaded CodePact table, the default root is the working directory.
+The scan skips symlinks and common build and environment
 directories; see the [CLI reference](cli.md).
 
 The 0.3 checker also models bounded cleanup duties across exceptional exits,

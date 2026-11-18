@@ -1,4 +1,4 @@
-"""Small lifecycle example for `codepact check --root examples`."""
+"""Small lifecycle example with a borrowed use after close."""
 
 from codepact import resource
 from codepact.rust import Borrowed

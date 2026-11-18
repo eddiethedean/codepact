@@ -20,7 +20,7 @@ Planning baseline: 2026-10-31; release mapping updated 2026-11-17. These documen
 | [0.7 typed outcomes plan](phases/0.7-typed-outcomes.md) | Published Result/Option, finite matches, install split and installed-wheel must-use preview; R01–R10, CS05 and G1–G8 passed. [Specification](phases/0.7/specification.md) · [V07 matrix](phases/0.7/validation.md) |
 | [0.8 foundations](phases/0.8-reviewed-concurrency-foundations.md) | Reviewed providers and first asyncio/multiprocessing lifecycle models. [Specification](phases/0.8/specification.md) · [V08 matrix](phases/0.8/validation.md) · [Implementation evidence](phases/0.8/implementation-evidence.md) |
 | [0.9 obligations and review](phases/0.9-obligations-and-change-review.md) | Persistent responsibilities, before/after comparison and separate HTTP/SQL profiles. [Specification](phases/0.9/specification.md) · [V09 matrix](phases/0.9/validation.md) |
-| [0.10 queues and IPC](phases/0.10-queues-ipc-and-synchronization.md) | Queue accounting, process communication and bounded synchronization |
+| [0.10 queues and IPC](phases/0.10-queues-ipc-and-synchronization.md) | Queue accounting, process communication and bounded synchronization. [Specification](phases/0.10/specification.md) · [V10 matrix](phases/0.10/validation.md) |
 | [0.11 shutdown and bridges](phases/0.11-shutdown-and-bridges.md) | Async resources, worker shutdown, executor bridges and bounded shared memory |
 | [0.12 integrations](phases/0.12-ecosystem-and-integrations.md) | Portfolio/native/framework adoption, caching, editors and MCP |
 | [0.13 stabilization](phases/0.13-stabilization.md) | Compatibility/adoption rehearsals and recorded 1.0 readiness |

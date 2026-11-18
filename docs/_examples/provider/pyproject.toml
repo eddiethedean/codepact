@@ -1,0 +1,12 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "acme-storage"
+version = "1.2.0"
+requires-python = ">=3.11"
+dependencies = ["codepact>=0.9,<1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/acme_storage"]

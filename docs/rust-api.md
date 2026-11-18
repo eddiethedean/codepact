@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Rust API reference
 
 The published `codepact` crate exposes the same inspector and lifecycle checker
@@ -19,6 +21,21 @@ cargo run --locked -p codepact -- --version
 ```
 
 Source builds require Rust 1.96 or newer. Python CLI wheels do not require a Rust toolchain at installation time.
+
+## Choose an entry point
+
+| Host task | API | Output |
+| --- | --- | --- |
+| Read declared facts from supplied files | `inspect` | `Inspection`, schema 0 |
+| Check source with the lifecycle rule set | `check_report` | `CheckResult`, check schema 1. The older `check` returns `Inspection`. |
+| Select ownership or other opt-in rules | `check_with_options` or `check_with_ownership` | `CheckResult` for the selected scope. |
+| Supply a runtime profile or installed contract inputs | `check_with_foundations` | `CheckResult`, check schema 2 with foundations evidence. |
+| Apply CLI-style policy, baselines and exit codes | `adoption::build_report` after a policy-compatible check | Adoption report schema 3 or 4. |
+| Update a snapshot repeatedly | `AnalysisSession` | Use a cancellable method when a host needs to detect cancelled work. |
+
+The host supplies source, logical paths, and module names. Use the
+[CLI](cli.md) if you want CodePact to discover files and installed provider
+roots. See [how to choose an integration surface](integration.md).
 
 ## One-shot inspection
 
@@ -113,6 +130,20 @@ can retain the session and pass the next full snapshot to it.
 
 ## Check with reviewed models
 
+Run the complete file-model example from the repository with
+`cargo run --locked -p codepact --example reviewed_inputs`. In a standalone
+Rust project pin the crate as shown above, add `serde_json`, and save the
+{download}`example <../crates/codepact/examples/reviewed_inputs.rs>` as `src/main.rs`.
+
+```{literalinclude} ../crates/codepact/examples/reviewed_inputs.rs
+:language: rust
+```
+
+The source is checked without opening `settings.txt`. Expect check schema 2,
+an applicable `builtins.open` model, and `TP1001` on the use after context exit.
+The example returns a process status of `0` after printing the raw result.
+Use the adoption report builder if the host needs a policy exit code.
+
 Use `check_with_foundations(files, python_version, options, inputs)` to
 analyze selected provider artifacts, project contracts, or a runtime profile.
 Pass ordinary source files and `CheckOptions` as for `check_with_options`.
@@ -179,6 +210,15 @@ validation matrix records query-execution evidence for both cases; see the
 ## Cancellation and results
 
 Obtain `session.cancellation_token()` before starting the inspection, then give the token to the thread responsible for cancelling work. Calling `cancel()` requests cancellation of the associated query. Use `inspect_cancellable` to distinguish cancellation from a completed analysis: it returns `Err(AnalysisCancelled)` without publishing partial output. The convenience `inspect` method represents cancellation as an incomplete report with `TP9002`.
+
+Run `cargo run --locked -p codepact --example cancellation` from the checkout
+or {download}`save the example <../crates/codepact/examples/cancellation.rs>`
+in a project that depends on the published crate. It deterministically cancels
+the first request, then prints a completed revision for a fresh snapshot.
+
+```{literalinclude} ../crates/codepact/examples/cancellation.rs
+:language: rust
+```
 
 An `Ok` return does not establish successful declaration analysis. Check the returned `inspection.coverage.status` and diagnostics, since syntax errors, unresolved declarations, and work limits can be represented by a completed report. `SessionInspection.revision` describes the source/settings revision, not the JSON schema version.
 

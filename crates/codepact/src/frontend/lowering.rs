@@ -493,6 +493,11 @@ fn flow_statements_at(
                     annotation: None,
                     range: source_range(statement),
                 },
+                Stmt::AugAssign(assign) => FlowStatement::AugmentedStore {
+                    target: expression(&assign.target, budget, 0),
+                    value: expression(&assign.value, budget, 0),
+                    range: source_range(statement),
+                },
                 Stmt::AnnAssign(assign) => match assign.target.as_ref() {
                     Expr::Name(target_name) => {
                         let name = target_name.id.to_string();

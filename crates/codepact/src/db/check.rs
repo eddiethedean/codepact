@@ -94,6 +94,14 @@ impl AnalysisSession {
             options.ownership,
         );
         if let Some(prepared) = prepared {
+            for issue in prepared
+                .issues
+                .iter()
+                .filter(|issue| issue.import_scope == "<async-guards>")
+            {
+                result.coverage.status = "incomplete".into();
+                result.coverage.reasons.push(issue.reason.clone());
+            }
             let scope = self.foundation_scope(&analysis_files, python_version, &prepared)?;
             add_foundations_evidence(
                 &mut result,
@@ -122,6 +130,32 @@ impl AnalysisSession {
     ) -> Result<Arc<PreparedFoundations>, AnalysisCancelled> {
         let (prepared, provider_files) = salsa::Cancelled::catch(|| {
             let mut prepared = PreparedFoundations::new(inputs);
+            if let Err(reason) =
+                foundation::validate_async_guards(&prepared.async_guards, python_version)
+            {
+                prepared.issues.push(ProviderIssue {
+                    import_scope: "<async-guards>".into(),
+                    reason,
+                });
+                prepared.async_guards.clear();
+            }
+            prepared.async_guards.retain(|guard| {
+                if files.iter().any(|file| {
+                    file.module == guard.module
+                        && !file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+                }) {
+                    true
+                } else {
+                    prepared.issues.push(ProviderIssue {
+                        import_scope: "<async-guards>".into(),
+                        reason: format!(
+                            "reviewed asyncio guard module {} is outside the selected source scope",
+                            guard.module
+                        ),
+                    });
+                    false
+                }
+            });
             let mut provider_files = Vec::new();
             let mut session_bytes = files.iter().map(|file| file.source.len()).sum::<usize>();
             let mut reviewed_bytes = 0usize;

@@ -11,6 +11,7 @@ pub(super) struct TaskGroup {
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct ScheduledTask {
     pub(super) site: Span,
+    pub(super) ordinal: usize,
     pub(super) possible: bool,
     pub(super) cancel_requested: bool,
     pub(super) may_have_started: bool,
@@ -447,23 +448,24 @@ pub(super) fn task_call(
         }
     }
     super::library::check_scheduled_operation(&id, env, file, expression.range, result);
-    env.ownership
+    let group = env
+        .ownership
         .as_mut()
         .expect("task ownership")
         .groups
         .get_mut(&group_id)
-        .expect("active group")
-        .tasks
-        .insert(
-            id.clone(),
-            ScheduledTask {
-                site: span(file, expression.range),
-                possible: active_possible,
-                cancel_requested: false,
-                may_have_started: false,
-                cancelled_before_start: false,
-            },
-        );
+        .expect("active group");
+    group.tasks.insert(
+        id.clone(),
+        ScheduledTask {
+            site: span(file, expression.range),
+            ordinal: group.tasks.len(),
+            possible: active_possible,
+            cancel_requested: false,
+            may_have_started: false,
+            cancelled_before_start: false,
+        },
+    );
     env.ownership.as_mut().expect("task ownership").pending_task = Some((group_id, id.clone()));
     work::schedule_task(env, &id, file, expression.range, result);
     true
@@ -508,11 +510,9 @@ pub(super) fn execute_scheduled_coroutine(
     execution.pending_raises.clear();
     execution.pending_return_targets = None;
     execution.alive = true;
-    execution
-        .ownership
-        .as_mut()
-        .expect("task execution")
-        .entering_task = true;
+    let ownership = execution.ownership.as_mut().expect("task execution");
+    ownership.entering_task = true;
+    ownership.async_protocols.begin_actor(task_id);
     restore_captures(record, &mut execution);
     // The parent may already have violated the borrow. The worker's
     // contracted entry is open; TP2006 retains the parent-side witness.
@@ -584,7 +584,59 @@ pub(super) fn join_group(
     interrupted.pending_raises.clear();
     let mut child_errors = BTreeSet::new();
     let mut normal_possible = true;
-    for (task_id, task) in &group.tasks {
+    let domain = &env.ownership.as_ref().expect("task group").async_protocols;
+    let tracked: BTreeSet<_> = group
+        .tasks
+        .keys()
+        .filter_map(|id| env.coroutines.get(id))
+        .flat_map(|record| record.captures.values())
+        .flat_map(|capture| capture.targets.iter())
+        .filter(|id| domain.has_handle(id))
+        .cloned()
+        .collect();
+    let bounded = async_protocols::supported_actor_count(group.tasks.len());
+    let ordered = !tracked.is_empty()
+        && bounded
+        && !aborting
+        && !group.incomplete
+        && !group.active_possible
+        && group
+            .tasks
+            .values()
+            .all(|task| !task.possible && !task.cancel_requested && !task.may_have_started)
+        && group.tasks.keys().all(|id| {
+            env.coroutines.get(id).is_some_and(|record| {
+                async_protocols::straight_line_worker(record, env, functions, true)
+            })
+        });
+    if !tracked.is_empty() && !bounded {
+        boundary(
+            result,
+            file,
+            range,
+            "asyncio protocol actor budget exceeded",
+        );
+        for continuation in [&mut *env, &mut interrupted] {
+            let domain = &mut continuation
+                .ownership
+                .as_mut()
+                .expect("task group")
+                .async_protocols;
+            for id in &tracked {
+                domain.mark_uncertain(id);
+            }
+        }
+    }
+    let mut members: Vec<_> = group.tasks.iter().collect();
+    if ordered {
+        members.sort_by_key(|(_, task)| task.ordinal);
+        env.ownership
+            .as_mut()
+            .expect("task group")
+            .async_protocols
+            .set_ordered_workers(group.tasks.keys().cloned().collect());
+    }
+    for (task_id, task) in members {
         let Some(record) = env.coroutines.get(task_id).cloned() else {
             boundary(
                 result,
@@ -623,6 +675,20 @@ pub(super) fn join_group(
         let mut execution =
             execute_scheduled_coroutine(task_id, &record, env, file, contracts, functions, result);
         let exits = take_pending_raises(&mut execution);
+        let worker_paths: Vec<_> = execution
+            .alive
+            .then_some(&execution)
+            .into_iter()
+            .chain(exits.iter().map(|exit| &exit.state))
+            .collect();
+        async_protocols::report_worker(&worker_paths, task_id, file, range, result);
+        let blocked = worker_paths.iter().any(|state| {
+            state
+                .ownership
+                .as_ref()
+                .is_some_and(|ownership| ownership.async_protocols.suspended())
+        });
+        let lost_order = ordered && (blocked || !exits.is_empty() || !execution.alive);
         let cancelled = |exit: &FlowExit| {
             matches!(exit.kind, CompletionKind::Cancelled(_))
                 || raised_exception_name(exit) == Some("CancelledError")
@@ -728,6 +794,19 @@ pub(super) fn join_group(
                 }
             }
         }
+        if lost_order {
+            for continuation in [&mut *env, &mut interrupted] {
+                let domain = &mut continuation
+                    .ownership
+                    .as_mut()
+                    .expect("task group")
+                    .async_protocols;
+                domain.set_ordered_workers(BTreeSet::new());
+                for id in &tracked {
+                    domain.mark_uncertain(id);
+                }
+            }
+        }
         if unresolved_capture {
             boundary(
                 result,
@@ -751,6 +830,11 @@ pub(super) fn join_group(
             work::ready(&mut interrupted, task_id);
         }
     }
+    env.ownership
+        .as_mut()
+        .expect("task group")
+        .async_protocols
+        .set_ordered_workers(BTreeSet::new());
     if group.incomplete {
         boundary(
             result,
@@ -907,6 +991,12 @@ pub(super) fn apply_worker_protocol_state(
     let Some(effects) = effects else {
         return;
     };
+    if let (Some(ownership), Some(worker)) = (state.ownership.as_mut(), effects.ownership.as_ref())
+    {
+        ownership
+            .async_protocols
+            .apply_worker(object, &worker.async_protocols, may_not_start);
+    }
     let Some(after) = effects.protocol_states.get(object) else {
         if effects.protocol_unknown.contains(object) {
             state.protocol_unknown.insert(object.to_owned());

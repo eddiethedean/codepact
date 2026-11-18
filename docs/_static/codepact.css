@@ -24,6 +24,11 @@ body {
 a, .rst-content a { color: var(--cp-blue); }
 .rst-content a:visited { color: #5740a1; }
 .rst-content a:hover { color: var(--cp-blue-strong); }
+.cp-docs-version {
+  color: var(--cp-muted);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
 a:focus-visible, button:focus-visible, input:focus-visible {
   outline: 3px solid #5473ff;
   outline-offset: 3px;

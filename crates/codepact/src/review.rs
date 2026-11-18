@@ -68,6 +68,15 @@ pub struct ReviewOperation {
     pub closed: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewProtocolContract {
+    pub identity: String,
+    pub family: String,
+    pub origin: Span,
+    pub contract: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReviewPolicy {
@@ -98,6 +107,8 @@ pub struct ReviewSnapshot {
     pub foundations: Option<FoundationEvidence>,
     pub findings: Vec<ReviewFinding>,
     pub operations: Vec<ReviewOperation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protocol_contracts: Vec<ReviewProtocolContract>,
     pub coverage: crate::Coverage,
     pub details_truncated: bool,
     pub check_exit: u8,
@@ -239,9 +250,20 @@ pub fn capture(
     foundations: Option<&FoundationInputs>,
     max_diagnostics: Option<usize>,
 ) -> Result<ReviewSnapshot, String> {
+    let mut analyzed_guards = foundations
+        .map(|inputs| inputs.async_guards.clone())
+        .unwrap_or_default();
+    let mut configured_guards = config.async_guards.clone();
+    analyzed_guards.sort();
+    configured_guards.sort();
     if options.ownership != config.ownership
         || options.experimental_finite_matches != config.finite_matches
         || !options.provider_sources.is_empty()
+        || analyzed_guards != configured_guards
+        || config.runtime_profile.as_ref().is_some_and(|profile| {
+            profile.spawn_main_script.is_some()
+                && foundations.and_then(|inputs| inputs.runtime.as_ref()) != Some(profile)
+        })
     {
         return Err(
             "review capture requires matching analysis settings and reviewed provider inputs"
@@ -284,6 +306,20 @@ pub fn capture(
             })
         })
         .collect();
+    let mut protocol_contracts = journal
+        .protocols
+        .iter()
+        .filter_map(|site| {
+            let source = by_path.get(site.origin.file.as_str())?;
+            Some(ReviewProtocolContract {
+                identity: operation_identity(source, &site.origin, &[], site.family, &mut anchors),
+                family: site.family.into(),
+                origin: site.origin.clone(),
+                contract: site.contract.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    protocol_contracts.sort();
     let mut sites_by_origin = BTreeMap::<_, Vec<_>>::new();
     for site in &journal.sites {
         sites_by_origin.entry(&site.origin).or_default().push(site);
@@ -429,6 +465,7 @@ pub fn capture(
         foundations: adoption.foundations,
         findings,
         operations,
+        protocol_contracts,
         coverage: adoption.coverage,
         details_truncated,
         check_exit: adoption.exit_code,

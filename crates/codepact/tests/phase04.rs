@@ -1172,6 +1172,8 @@ fn capabilities_and_rule_explanations_publish_the_supported_surface_and_limits()
         codepact::adoption::FINITE_MATCH_RULES,
         codepact::adoption::DECLARATION_RULES,
         codepact::adoption::OUTCOME_RULES,
+        codepact::adoption::ASYNC_PROTOCOL_RULES,
+        codepact::adoption::PROCESS_PROTOCOL_RULES,
         &[
             "TP3003", "TP4001", "TP4002", "TP6001", "TP6002", "TP6003", "TP9001", "TP9002",
         ],
@@ -1187,6 +1189,8 @@ fn capabilities_and_rule_explanations_publish_the_supported_surface_and_limits()
             || codepact::adoption::ADVANCED_RULES.contains(&code)
             || codepact::adoption::FINITE_MATCH_RULES.contains(&code)
             || codepact::adoption::DECLARATION_RULES.contains(&code)
+            || codepact::adoption::ASYNC_PROTOCOL_RULES.contains(&code)
+            || codepact::adoption::PROCESS_PROTOCOL_RULES.contains(&code)
             || code == "TP3003"
         {
             assert_eq!(rule["tier"], "experimental");

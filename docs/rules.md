@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Diagnostic rule catalog
 
 Use the code from your report to find the contract involved and the first
@@ -44,19 +46,10 @@ The unmarked status has no must-use obligation and the check exits `0`.
 
 ## Published rules
 
-| Code | Available since | Meaning | First repair to consider |
-| --- | --- | --- | --- |
-| `TP1001` | 0.2.0 | A resource known or possibly closed is used | Move the use before the closing operation, or make the control-flow paths preserve a valid open resource before use. Review certainty and the related close location. |
-| `TP1002` | 0.3.0 | A modeled function exit may leave an owned resource cleanup duty outstanding | Close it on every supported exit or return it through an `Owned[T]` contract. Review certainty, the exit and the acquisition location. |
-| `TP1003` | 0.3.0 | An `Owned[T]` return is closed or attempts to return a `Borrowed` resource | Return an open owned resource, or change the declared return contract if ownership is not being transferred. |
-| `TP2001` | 0.2.0 | A supported body closes a resource through a `Borrowed` parameter or alias | Keep the borrowed operation non-consuming. If the function truly owns and closes the resource, declare the ownership contract accurately and verify callers. |
-| `TP3001` | 0.4.0 | A resolved synchronous must-use result is discarded as a bare expression | Handle or immediately pass/return the value, or use `codepact.discard(call())` when abandonment is intentional. |
-| `TP4001` | 0.1.0 | The selected Python grammar could not parse the file | Fix the syntax error or select the source target matching the code. |
-| `TP4002` | 0.1.0 | A declaration is invalid or metadata conflicts | Compare the primary and related spans; make the lifecycle/access declarations for that view consistent. |
-| `TP9001` | 0.1.0 | An unsupported or unresolved construct leaves coverage incomplete | Supply a missing supported input or reduce the pilot to a documented subset. Do not treat the boundary as a pass. |
-| `TP3003` | 0.9.0 | A supported task, future, pool job, or thread-pool job reaches scope exit with its result or exception unobserved | Observe the result or worker exception through a supported await or retrieval. Completion and shutdown preserve this duty. |
-| `TP9002` | Rust inspection convenience API | Cancellation produced an incomplete report; cancellable APIs return `AnalysisCancelled` | Treat the result as cancelled and retry only if the host still needs the current revision. |
+```{include} _generated/published-rules.inc
+```
 
+Selection describes the scope in which the binary exposes a rule. A selected rule still needs applicable input and can report a different certainty.
 The CLI uses TP3001 at warning severity by default. Its result-use
 contract accepts `@must_use`, `MustUse[T]`, and
 `Annotated[T, MustUseResult()]` on resolved synchronous returns. Assignment and
@@ -96,6 +89,16 @@ applicable published outcome contract.
 Handle the outcome with a supported variant match, forward it through a marked
 return, or record a deliberate discard. The informational TP5005 finding keeps
 the reason visible during review. [Example](contracts.md#acknowledge-a-persistent-outcome)
+
+## Queue, IPC and synchronization rules
+
+**Requires CodePact 0.10.** These rules require the applicable runtime
+profile and the ownership or advanced-contract settings for that model.
+
+```{include} _generated/candidate-rules.inc
+```
+
+[Run the protocol examples](concurrency.md)
 
 ## Informational review hints
 

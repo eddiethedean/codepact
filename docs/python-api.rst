@@ -29,9 +29,10 @@ The runtime helper also accepts ``resource(Connection, closed_by="close")``. Sou
 ``must_use`` attaches ``MustUseResult`` metadata to and returns the original
 callable. It preserves the callable's parameters, result type and identity; it
 does not wrap or enforce the function at runtime. The source checker uses the
-marker on supported synchronous returns.
-``discard`` evaluates the given value and returns ``None`` without changing
-resource ownership, cleanup or exception behavior.
+marker on supported synchronous returns. Conflicting existing metadata raises
+``ValueError``.
+The argument to ``discard`` is evaluated before the call. The helper returns
+``None`` and leaves ownership and cleanup unchanged.
 
 Typed outcomes
 --------------
@@ -67,12 +68,19 @@ perform cleanup.
 
 .. autofunction:: codepact.capture_async
 
-``capture`` and ``capture_async`` require a nonempty tuple of ``Exception``
-subclasses. Cancellation, process-control exceptions and exception groups
-propagate unchanged. The async helper creates no task; it invokes and awaits
-the supplied callable in the current task. ``Some(None)`` converts to
-``None`` with ``to_nullable``, so absence and an explicit ``None`` payload
-cannot both be recovered after conversion.
+``capture(function, exceptions, /, *args, **kwargs)`` calls the supplied
+callable once with the remaining arguments. It returns ``Ok(result)`` on
+success or ``Err(exception)`` for a selected exception. An empty tuple,
+a non-tuple, or an element other than an ``Exception`` subclass raises
+``TypeError`` before the callable runs. Other exceptions propagate, including
+cancellation, process-control exceptions, and exception groups.
+``capture_async`` applies the same rules when awaited. It invokes and awaits
+the callable in the current task.
+
+``from_nullable(None)`` returns ``Nothing()``. Other values, including falsy
+ones, become ``Some(value)``. ``to_nullable`` returns the payload from
+``Some`` and returns ``None`` for ``Nothing``. After conversion,
+``Some(None)`` and ``Nothing()`` both produce ``None``.
 
 Persistent outcome acknowledgment
 ---------------------------------
@@ -87,9 +95,45 @@ Persistent outcome acknowledgment
 
 .. autofunction:: codepact.discard_outcome
 
-Use a nonempty literal ``reason`` to include the waiver in static review.
-The helper validates the reason and returns ``None``. See :doc:`contracts`
-for a complete persistent-outcome example.
+Pass a ``Result`` or ``Option`` value and a keyword-only ``reason``.
+An empty or whitespace-only reason, or a value of another type for
+``reason``, raises ``ValueError``. A valid call returns ``None`` and
+performs no cleanup. Use a literal reason to include the waiver in static
+review. See :doc:`contracts` for a complete persistent-outcome example.
+
+Finite state protocols
+----------------------
+
+.. autofunction:: codepact.state_machine
+
+Pass ``states`` as a nonempty iterable of unique, non-keyword Python
+identifiers. ``initial`` names one declared state. The helper returns a
+decorator that attaches metadata and preserves class identity. Invalid
+names, duplicates, an unknown initial state, and conflicting class
+metadata raise ``ValueError``.
+
+.. autofunction:: codepact.transition
+
+``from_state`` takes one state name or a tuple of allowed state names.
+``to_state`` names the normal completion state. ``on_raise`` and
+``on_cancel`` optionally name states for an exceptional or cancelled exit.
+The returned decorator attaches metadata and preserves the callable.
+Invalid names, duplicate input states, and conflicting metadata raise
+``ValueError``. The analyzer resolves state membership and interprets
+omitted exceptional or cancellation effects as unknown in supported cases.
+
+.. py:data:: codepact.State
+
+   ``State[T, Literal["ready"]]`` is an annotation alias for
+   ``Annotated[T, StateAccess[Literal["ready"]]]``. The supported
+   receiver-only method form asserts a state precondition. It is also
+   exported from ``codepact.contracts`` and ``codepact.rust``.
+
+.. autoclass:: codepact.contracts.StateAccess
+
+These helpers declare metadata. Use the :doc:`ownership` guide for the
+advanced-contract opt-in, literal declaration forms, and a complete
+precondition and transition example.
 
 ``codepact.move``
 -----------------
@@ -158,9 +202,10 @@ Public imports and examples
 
    Re-export of :py:class:`codepact.contracts.MustUseResult`.
 
-``codepact.rust`` also exports ``Borrowed``, ``Owned``, ``BorrowedMut``, and
-``MustUse``. Use those aliases for short annotations or import the equivalent
-``codepact.contracts`` aliases beside their metadata classes.
+Use ``codepact.rust`` or ``codepact.contracts`` for the access
+aliases. Outcome types and adapters are available through ``codepact``,
+``codepact.outcomes``, and ``codepact.rust``. The ``codepact.rust``
+namespace supplies Python declarations and helpers.
 
 .. code-block:: python
 

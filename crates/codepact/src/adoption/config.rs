@@ -10,6 +10,8 @@ pub const ADVANCED_RULES: &[&str] = &["TP2101", "TP2102"];
 pub const FINITE_MATCH_RULES: &[&str] = &["TP5001"];
 pub const OUTCOME_RULES: &[&str] = &["TP5002", "TP5003", "TP5004", "TP5005"];
 pub const DECLARATION_RULES: &[&str] = &["TP4101", "TP4102", "TP4103"];
+pub const ASYNC_PROTOCOL_RULES: &[&str] = &["TP7001", "TP7002"];
+pub const PROCESS_PROTOCOL_RULES: &[&str] = &["TP7003", "TP7004", "TP7005"];
 
 pub(super) const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
@@ -61,6 +63,8 @@ pub struct ProjectConfig {
     pub severity: BTreeMap<String, String>,
     #[serde(default, rename = "declaration-policy")]
     pub declaration_policy: Vec<DeclarationRequirement>,
+    #[serde(default, rename = "async-guards")]
+    pub async_guards: Vec<crate::foundation::AsyncGuardModel>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -136,6 +140,7 @@ pub struct EffectiveConfig {
     pub severity: BTreeMap<String, String>,
     pub settings_origins: BTreeMap<String, String>,
     pub declaration_policy: Vec<DeclarationRequirement>,
+    pub async_guards: Vec<crate::foundation::AsyncGuardModel>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -310,6 +315,11 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         .map(|config| config.declaration_policy.clone())
         .unwrap_or_default();
     declaration_policy.sort();
+    let mut async_guards = c
+        .as_ref()
+        .map(|config| config.async_guards.clone())
+        .unwrap_or_default();
+    async_guards.sort();
     let experimental_ownership = overrides
         .experimental_ownership
         .or_else(|| c.as_ref().and_then(|c| c.experimental_ownership))
@@ -341,6 +351,9 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         (false, _, _) => crate::Ownership::Disabled,
     };
     let runtime_profile = c.as_ref().and_then(|c| c.runtime_profile.clone());
+    if !async_guards.is_empty() && (!ownership.is_enabled() || runtime_profile.is_none()) {
+        return Err("async-guards requires experimental-ownership and a runtime-profile".into());
+    }
     let mut rules: BTreeSet<String> = c
         .as_ref()
         .and_then(|c| c.enabled_rules.clone())
@@ -381,6 +394,17 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
                 "rule {r} requires experimental-ownership and a runtime-profile"
             ));
         }
+        if (ASYNC_PROTOCOL_RULES.contains(&r.as_str()) && !ownership.is_enabled())
+            || (PROCESS_PROTOCOL_RULES.contains(&r.as_str())
+                && !ownership.includes_advanced_contracts())
+            || ((ASYNC_PROTOCOL_RULES.contains(&r.as_str())
+                || PROCESS_PROTOCOL_RULES.contains(&r.as_str()))
+                && runtime_profile.is_none())
+        {
+            return Err(format!(
+                "rule {r} requires its experimental ownership mode and a runtime-profile"
+            ));
+        }
     }
     let mut severity = c.as_ref().map(|c| c.severity.clone()).unwrap_or_default();
     if let Some(overrides) = &overrides.severity {
@@ -408,6 +432,7 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
     if !matches!(python_version.as_str(), "3.11" | "3.12" | "3.13") {
         return Err(format!("unsupported Python target version {python_version}; supported targets are 3.11, 3.12 and 3.13"));
     }
+    crate::foundation::validate_async_guards(&async_guards, &python_version)?;
     let mode = overrides
         .mode
         .clone()
@@ -491,6 +516,9 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
     }
     if !declaration_policy.is_empty() {
         settings_origins.insert("declaration-policy".into(), "pyproject.toml".into());
+    }
+    if !async_guards.is_empty() {
+        settings_origins.insert("async-guards".into(), "pyproject.toml".into());
     }
     for (setting, configured) in [
         ("experimental-foundations", experimental_foundations),
@@ -688,6 +716,7 @@ pub fn resolve_config(cwd: &Path, overrides: &Overrides) -> Result<EffectiveConf
         severity,
         settings_origins,
         declaration_policy,
+        async_guards,
     })
 }
 
@@ -699,6 +728,24 @@ fn validate_config(c: &ProjectConfig) -> Result<(), String> {
         ));
     }
     let target = c.python_version.as_deref().unwrap_or("3.11");
+    if let Some(script) = c
+        .runtime_profile
+        .as_ref()
+        .and_then(|p| p.spawn_main_script.as_deref())
+    {
+        if !script.ends_with(".py")
+            || script.contains('\\')
+            || script.contains(':')
+            || script
+                .split('/')
+                .any(|part| part.is_empty() || matches!(part, "." | ".."))
+        {
+            return Err(
+                "spawn-main-script requires a Python file path relative to the analysis root"
+                    .into(),
+            );
+        }
+    }
     let mut selectors = BTreeSet::new();
     for entry in &c.declaration_policy {
         if !entry
@@ -802,6 +849,8 @@ pub(super) fn eligible_code(code: &str) -> bool {
         || FINITE_MATCH_RULES.contains(&code)
         || OUTCOME_RULES.contains(&code)
         || DECLARATION_RULES.contains(&code)
+        || ASYNC_PROTOCOL_RULES.contains(&code)
+        || PROCESS_PROTOCOL_RULES.contains(&code)
         || code == "TP3003"
 }
 
@@ -841,6 +890,18 @@ pub(super) fn scoped_rules(
                 .filter(move |_| finite_matches),
         )
         .chain((ownership.is_enabled() && has_runtime_profile).then_some("TP3003"))
+        .chain(
+            ASYNC_PROTOCOL_RULES
+                .iter()
+                .copied()
+                .filter(move |_| ownership.is_enabled() && has_runtime_profile),
+        )
+        .chain(
+            PROCESS_PROTOCOL_RULES
+                .iter()
+                .copied()
+                .filter(move |_| ownership.includes_advanced_contracts() && has_runtime_profile),
+        )
 }
 pub(super) fn validate_pattern(p: &str) -> Result<(), String> {
     if p.is_empty()

@@ -43,6 +43,9 @@ For a focused change, use the relevant target before the full gate:
 
 Required runtime model probes have their own exact-version qualification:
 
+Run the following command on **Linux x86-64**. The interpreter and platform
+both have to match the [runtime registry](https://github.com/eddiethedean/codepact/blob/main/tests/conformance/runtime-models.json).
+
 ```sh
 uv run --no-project --python 3.13.16 python scripts/check_model_conformance.py \
   --python-version 3.13.16 --receipt target/test-evidence/conformance.json
@@ -52,6 +55,25 @@ Repeat for the other runtimes in `tests/conformance/runtime-models.json`. A
 wrong interpreter, missing probe, skip, expected failure, or test failure makes
 qualification fail. The floating interpreter compatibility suite may skip
 inapplicable models; it does not replace these required runs.
+
+On a different host with Docker, run the pinned interpreter in a Linux
+x86-64 container. The fixture copy keeps worker imports on the container
+filesystem. Run this from the checkout root.
+
+```sh
+mkdir -p target/test-evidence
+docker run --rm --platform linux/amd64 \
+  --mount "type=bind,source=$PWD,target=/source,readonly" \
+  --mount "type=bind,source=$PWD/target/test-evidence,target=/evidence" \
+  python:3.13.16-slim-bookworm sh -ec '
+    mkdir -p /tmp/probes/tests
+    cp -R /source/scripts /tmp/probes/
+    cp -R /source/tests/python /source/tests/conformance /tmp/probes/tests/
+    cd /tmp/probes
+    exec python scripts/check_model_conformance.py --python-version 3.13.16 \
+      --receipt /evidence/conformance-3.13.16.json
+  '
+```
 
 For the scheduled edit-history workload, set `CODEPACT_EDIT_HISTORIES=128` and
 `CODEPACT_EDIT_STEPS=64` before the semantic test command. History counts accept
@@ -63,6 +85,23 @@ for the bounded oracle's scope and future qualification work.
 Run the source CLI with `cargo run --locked -- ...` to avoid accidentally using
 an installed published executable. The [lifecycle tutorial](lifecycle.md) contains
 both an intentional failing example and its valid counterpart.
+
+## Make a first rule change
+
+1. Find the diagnostic in the [rule catalog](rules.md). Read the
+   [architecture map](architecture.md#locate-a-change) to decide whether
+   the behavior belongs to declaration resolution, flow, a reviewed model,
+   or adoption policy.
+2. Add a failing control and a repair or boundary beside the relevant
+   analyzer tests. For example, start with the queue receipt fixture in
+   `crates/codepact/tests/phase10_async.rs`. Assert the code, primary
+   location, and applicable effect or coverage reason.
+3. Run `cargo test --locked -p codepact --test phase10_async` for
+   that fixture, then `make check-rust`. Use the pinned Linux checks
+   above when changing the runtime semantics of a reviewed model.
+4. Update the rule explanation and its linked guide when behavior changes.
+   Run `make check-docs` and replay affected examples. In the PR, include
+   the expected failing and repaired results and name any remaining boundary.
 
 ## Build the docs
 

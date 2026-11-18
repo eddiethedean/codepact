@@ -1,8 +1,18 @@
 use super::*;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+mod protocol;
+pub(super) use protocol::{
+    compound_store, enter_guard, initialize_pipe, leave_guard, protocol_test, refine_protocol_test,
+    report_protocol_scope,
+};
 
 const PROCESS_MODEL: &str = "TPM-PROCESS-001";
 const POOL_MODEL: &str = "TPM-POOL-001";
+const SPAWN_MODEL: &str = "TPM-SPAWN-001";
 const MAX_HANDLES: usize = 32;
+const MAX_CHILDREN: usize = 3;
 const NEW: u8 = 1;
 const STARTED: u8 = 2;
 const ENDED: u8 = 4;
@@ -12,6 +22,10 @@ const FORCED: u8 = 32;
 const JOINED: u8 = 64;
 const UNCERTAIN: u8 = 128;
 const FORCED_JOINED: u8 = CLOSED;
+
+// Flow branches share this accumulator so a suspended path can retain its IPC
+// prefix even when execution discards its state as a normal continuation.
+type WorkerWaits = Rc<RefCell<Option<protocol::LocalProtocol>>>;
 
 fn pool_submission_signature() -> &'static CallSignature {
     static SIGNATURE: std::sync::OnceLock<CallSignature> = std::sync::OnceLock::new();
@@ -34,6 +48,10 @@ pub(super) struct LocalProcesses {
     aliases: BTreeMap<String, String>,
     handles: BTreeMap<String, LocalHandle>,
     pub(super) custom_wait: bool,
+    protocol: protocol::LocalProtocol,
+    entry_path: EntryPath,
+    workers: BTreeMap<String, PendingWorker>,
+    worker_waits: Option<WorkerWaits>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -43,6 +61,34 @@ struct LocalHandle {
     origin: Span,
     admitted_work: bool,
     prelaunch_failure: bool,
+    worker: Option<WorkerCandidate>,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum EntryPath {
+    #[default]
+    Unknown,
+    ImportTime,
+    Protected,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum WorkerCandidate {
+    Ready {
+        target: String,
+        arguments: BTreeMap<String, protocol::SpawnArgument>,
+    },
+    Invalid,
+    ContextMismatch,
+    Unknown,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct PendingWorker {
+    target: String,
+    bindings: protocol::WorkerBindings,
+    evaluated: Option<protocol::WorkerEffects>,
+    projected: BTreeSet<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -70,6 +116,14 @@ impl HandleKind {
 impl LocalProcesses {
     pub(super) fn join(&mut self, other: &Self) {
         self.custom_wait |= other.custom_wait;
+        self.entry_path = if self.entry_path == other.entry_path {
+            self.entry_path
+        } else {
+            EntryPath::Unknown
+        };
+        self.protocol.join(&other.protocol);
+        self.workers
+            .retain(|id, worker| other.workers.get(id) == Some(worker));
         self.contexts
             .retain(|name, method| other.contexts.get(name) == Some(method));
         self.aliases
@@ -79,6 +133,9 @@ impl LocalProcesses {
                 handle.states |= other.states;
                 handle.admitted_work |= other.admitted_work;
                 handle.prelaunch_failure &= other.prelaunch_failure;
+                if handle.worker != other.worker {
+                    handle.worker = Some(WorkerCandidate::Unknown);
+                }
             } else {
                 handle.states |= UNCERTAIN;
             }
@@ -95,12 +152,23 @@ impl LocalProcesses {
     pub(super) fn rebind(&mut self, name: &str) {
         self.aliases.remove(name);
         self.contexts.remove(name);
+        self.protocol.rebind(name);
+    }
+
+    pub(super) fn inherit_entry(&mut self, parent: &Self, module_scope: bool) {
+        self.entry_path = if module_scope && parent.entry_path == EntryPath::Unknown {
+            EntryPath::ImportTime
+        } else {
+            parent.entry_path
+        };
     }
 
     pub(super) fn bind_alias(&mut self, name: &str, source: Option<&str>) {
         let id = source.and_then(|source| self.aliases.get(source)).cloned();
         let context = source.and_then(|source| self.contexts.get(source)).cloned();
-        self.rebind(name);
+        self.aliases.remove(name);
+        self.contexts.remove(name);
+        self.protocol.bind_alias(name, source);
         if let Some(id) = id {
             self.aliases.insert(name.to_owned(), id);
         }
@@ -110,11 +178,11 @@ impl LocalProcesses {
     }
 
     pub(super) fn has_handle(&self, name: &str) -> bool {
-        self.aliases.contains_key(name)
+        self.aliases.contains_key(name) || self.protocol.has_handle(name)
     }
 
     pub(super) fn has_aliases(&self) -> bool {
-        !self.aliases.is_empty()
+        !self.aliases.is_empty() || self.protocol.has_aliases()
     }
 
     pub(super) fn escape(
@@ -124,6 +192,7 @@ impl LocalProcesses {
         range: SourceRange,
         result: &mut Inspection,
     ) {
+        self.protocol.escape(names, file, range, result);
         for name in names {
             if let Some(handle) = self
                 .aliases
@@ -243,6 +312,250 @@ fn worker_is_local(expression: &AstExpr, env: &State, functions: &FunctionMap) -
         })
 }
 
+fn launch_matches(env: &State, file: &SourceFile) -> bool {
+    runtime::runtime_profile(env)
+        .ok()
+        .and_then(|profile| profile.spawn_main_script.as_deref())
+        .is_some_and(|path| std::path::Path::new(path) == std::path::Path::new(&file.path))
+}
+
+pub(super) fn is_main_guard(test: &AstExpr, env: &State, file: &SourceFile) -> bool {
+    use ruff_python_ast::{CmpOp, Expr};
+    if !env.module_scope
+        || !launch_matches(env, file)
+        || env.definitely_bound_names.contains("__name__")
+    {
+        return false;
+    }
+    let Some(source) = file.source.get(test.range.start..test.range.end) else {
+        return false;
+    };
+    if !source.contains("__main__") {
+        return false;
+    }
+    let Ok(parsed) = ruff_python_parser::parse_expression(source) else {
+        return false;
+    };
+    let Expr::Compare(compare) = parsed.into_syntax().body.as_ref().clone() else {
+        return false;
+    };
+    type MainOperands<'a> = (&'a Expr, &'a Expr);
+    let names_main = |(left, right): MainOperands<'_>| {
+        matches!(left, Expr::Name(name) if name.id.as_str() == "__name__")
+            && matches!(right, Expr::StringLiteral(value) if value.value.to_str() == "__main__")
+    };
+    compare.ops.as_ref() == [CmpOp::Eq]
+        && compare.comparators.len() == 1
+        && (names_main((&compare.left, &compare.comparators[0]))
+            || names_main((&compare.comparators[0], &compare.left)))
+}
+
+pub(super) fn refine_main_guard(env: &mut State, is_guard: bool) {
+    if is_guard {
+        if let Some(ownership) = env.ownership.as_mut() {
+            ownership.processes.entry_path = EntryPath::Protected;
+        }
+    }
+}
+
+fn spawn_keywords(value: &AstExpr, file: &SourceFile) -> Option<Vec<CallKeyword>> {
+    let source = file.source.get(value.range.start..value.range.end)?;
+    let parsed = ruff_python_parser::parse_expression(source)
+        .ok()?
+        .into_syntax();
+    if !matches!(parsed.body.as_ref(), ruff_python_ast::Expr::Dict(_)) {
+        return None;
+    }
+    let AstExprKind::Collection(values) = &value.kind else {
+        return None;
+    };
+    let (pairs, remainder) = values.as_chunks::<2>();
+    if !remainder.is_empty() {
+        return None;
+    }
+    pairs
+        .iter()
+        .map(|[key, value]| {
+            let AstExprKind::String(name) = &key.kind else {
+                return None;
+            };
+            Some((Some(name.clone()), value.clone()))
+        })
+        .collect()
+}
+
+fn pure_constructor_arguments(
+    arguments: &[AstExpr],
+    keywords: &[CallKeyword],
+    env: &State,
+) -> bool {
+    fn supported(value: &AstExpr, env: &State) -> bool {
+        match &value.kind {
+            AstExprKind::Name(_)
+            | AstExprKind::Boolean(_)
+            | AstExprKind::String(_)
+            | AstExprKind::Primitive
+            | AstExprKind::NoneLiteral
+            | AstExprKind::Closure(_) => true,
+            AstExprKind::Tuple(items) | AstExprKind::Collection(items) => {
+                items.iter().all(|item| supported(item, env))
+            }
+            AstExprKind::Attribute(receiver, _) => expr_name(receiver)
+                .and_then(|name| env.function_bindings.get(name))
+                .is_some_and(|binding| binding.starts_with("module:")),
+            _ => false,
+        }
+    }
+    arguments.is_empty()
+        && keywords
+            .iter()
+            .all(|(name, value)| name.is_some() && supported(value, env))
+}
+
+fn spawn_candidate(
+    arguments: &[AstExpr],
+    keywords: &[CallKeyword],
+    env: &State,
+    file: &SourceFile,
+    functions: &FunctionMap,
+) -> WorkerCandidate {
+    if !arguments.is_empty() {
+        return WorkerCandidate::Unknown;
+    }
+    let mut positions = BTreeMap::new();
+    for (key, value) in keywords {
+        let Some(key @ ("target" | "args" | "kwargs")) = key.as_deref() else {
+            return WorkerCandidate::Unknown;
+        };
+        if positions.insert(key, value).is_some() {
+            return WorkerCandidate::Unknown;
+        }
+    }
+    let Some(target) = positions.get("target") else {
+        return WorkerCandidate::Unknown;
+    };
+    let target_key = match &target.kind {
+        AstExprKind::Closure(_) => return WorkerCandidate::Invalid,
+        AstExprKind::Name(name) => {
+            if env
+                .ownership
+                .as_ref()
+                .is_some_and(|ownership| ownership.has_closure(name))
+            {
+                return WorkerCandidate::Invalid;
+            }
+            if env.shadowed_functions.contains(name) {
+                return WorkerCandidate::Unknown;
+            }
+            env.function_bindings.get(name).cloned()
+        }
+        AstExprKind::Attribute(receiver, member) => expr_name(receiver)
+            .and_then(|name| ownership::qualified_function_key(name, member, env)),
+        _ => None,
+    };
+    let Some(key) = target_key else {
+        return WorkerCandidate::Unknown;
+    };
+    let Some(worker) = functions.get(&key).filter(|worker| {
+        worker.supported_binding
+            && !worker.is_async
+            && !worker
+                .file
+                .path
+                .starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
+    }) else {
+        return WorkerCandidate::Unknown;
+    };
+    let args = match positions.get("args").map(|expr| &expr.kind) {
+        None => &[][..],
+        Some(AstExprKind::Tuple(args)) => args,
+        _ => return WorkerCandidate::Unknown,
+    };
+    if positions
+        .get("args")
+        .is_some_and(|expr| prelaunch_failure(expr))
+    {
+        return WorkerCandidate::Invalid;
+    }
+    let kwargs = match positions.get("kwargs") {
+        None => Vec::new(),
+        Some(value) => match spawn_keywords(value, file) {
+            Some(keywords) => keywords,
+            None => return WorkerCandidate::Unknown,
+        },
+    };
+    let Ok(bound) = bind_arguments(&worker.signature, args, &kwargs, false) else {
+        return WorkerCandidate::Unknown;
+    };
+    let arguments = bound
+        .into_iter()
+        .map(|(param, expression)| {
+            protocol::spawn_argument(expression, env, file).map(|argument| (param, argument))
+        })
+        .collect::<Option<BTreeMap<_, _>>>();
+    match arguments {
+        Some(arguments)
+            if arguments
+                .values()
+                .any(|arg| matches!(arg, protocol::SpawnArgument::ForkGuard)) =>
+        {
+            WorkerCandidate::ContextMismatch
+        }
+        Some(arguments) => WorkerCandidate::Ready {
+            target: key,
+            arguments,
+        },
+        None => WorkerCandidate::Unknown,
+    }
+}
+
+fn validate_worker_target(
+    target: &str,
+    env: &State,
+    functions: &FunctionMap,
+) -> Result<(), &'static str> {
+    const UNRESOLVED: &str = "the captured spawn target's module export is unresolved at start";
+    let definition = functions.get(target).ok_or(UNRESOLVED)?;
+    let module = &definition.file.module;
+    let canonical = definition.binding_key.as_deref().ok_or(UNRESOLVED)?;
+    let (name, _) = canonical
+        .split_once("::")
+        .and_then(|(_, member)| member.rsplit_once(':'))
+        .ok_or(UNRESOLVED)?;
+    let binding = |exports: &BTreeMap<String, String>| {
+        exports
+            .get(name)
+            .and_then(|key| functions.get(key))
+            .and_then(|current| current.binding_key.as_deref())
+    };
+    if env.ownership.as_ref().is_some_and(|ownership| {
+        ownership.function_export_invalidated(canonical)
+            || ownership.module_invalidated(&format!("module:{module}"))
+    }) {
+        return Err(UNRESOLVED);
+    }
+    let exports = if &env.scope_module == module {
+        if env.module_scope {
+            // A flow join may retain the old binding while recording that one
+            // branch shadowed it.
+            if env.shadowed_functions.contains(name) {
+                return Err(UNRESOLVED);
+            }
+            &env.function_bindings
+        } else {
+            &env.module_function_bindings
+        }
+    } else if launch_matches(env, &definition.file) {
+        return Err(UNRESOLVED);
+    } else {
+        &definition.module_bindings.functions
+    };
+    if binding(exports) != Some(canonical) {
+        return Err(UNRESOLVED);
+    }
+    Ok(())
+}
+
 fn valid_start_arguments(
     kind: HandleKind,
     arguments: &[AstExpr],
@@ -320,6 +633,9 @@ pub(super) fn initialize(
             .insert(name.into(), method);
         return true;
     }
+    if protocol::initialize(name, expression, env, file, functions, result) {
+        return true;
+    }
     let Some((kind, method, arguments, keywords)) = constructor(expression, env) else {
         return false;
     };
@@ -327,9 +643,18 @@ pub(super) fn initialize(
         && keywords
             .iter()
             .any(|(name, value)| name.as_deref() == Some("args") && prelaunch_failure(value));
+    let legacy_shape = valid_start_arguments(kind, arguments, keywords, env, file, functions);
+    let phase10_requested = kind == HandleKind::Process
+        && (!legacy_shape
+            || runtime::runtime_profile(env)
+                .ok()
+                .and_then(|profile| profile.spawn_main_script.as_ref())
+                .is_some());
+    let worker = (phase10_requested && pure_constructor_arguments(arguments, keywords, env))
+        .then(|| spawn_candidate(arguments, keywords, env, file, functions));
     let applies = runtime::runtime_profile(env)
         .and_then(|profile| profile.spawn(&env.target_python_version, method.unwrap_or_default()))
-        .and_then(|()| valid_start_arguments(kind, arguments, keywords, env, file, functions)
+        .and_then(|()| (legacy_shape || worker.is_some())
             .then_some(()).ok_or("multiprocessing constructor requires a local worker with plain values or a literal Pool size"));
     if !runtime::use_model(
         kind.symbol(),
@@ -375,6 +700,7 @@ pub(super) fn initialize(
             origin: span(file, expression.range),
             admitted_work: false,
             prelaunch_failure: fails_before_launch,
+            worker,
         },
     );
     true
@@ -644,6 +970,10 @@ pub(super) fn call(
     if !modeled_mode(env) {
         return calls::ModelCall::Unrecognized;
     }
+    let primitive = protocol::call(expression, env, file, functions, result);
+    if !matches!(primitive, calls::ModelCall::Unrecognized) {
+        return primitive;
+    }
     if let Some((function, _, _)) = call_parts(expression) {
         if ownership::external_identity(function, env).as_deref() == Some("external:signal.signal")
         {
@@ -680,7 +1010,7 @@ pub(super) fn call(
         return calls::ModelCall::Applied;
     }
     let effect = match operation {
-        Operation::Process(operation) => call.apply_process(operation, env, result),
+        Operation::Process(operation) => call.apply_process(operation, env, functions, result),
         Operation::Pool(operation) => call.apply_pool(operation, env, functions, result),
     };
     call.record_effect(effect.name, effect.applicability, result)
@@ -759,6 +1089,7 @@ impl HandleCall<'_> {
         &self,
         operation: ProcessOperation,
         env: &mut State,
+        functions: &FunctionMap,
         result: &mut Inspection,
     ) -> OperationEffect {
         let Self {
@@ -775,15 +1106,76 @@ impl HandleCall<'_> {
                 OperationEffect::applied("serialization-rejected-before-launch")
             }
             ProcessOperation::Start => {
+                if matches!(handle.worker, Some(WorkerCandidate::Invalid)) {
+                    report_spawn_issue(
+                        file,
+                        range,
+                        &handle.origin,
+                        "spawn cannot serialize this local or lambda target or argument",
+                        result,
+                    );
+                    record_spawn(
+                        file,
+                        range,
+                        "serialization-rejected-before-launch",
+                        Ok(()),
+                        result,
+                    );
+                    raise_named(env, range, "AttributeError");
+                    env.alive = false;
+                    return OperationEffect::applied("serialization-rejected-before-launch");
+                }
+                if matches!(handle.worker, Some(WorkerCandidate::ContextMismatch)) {
+                    report_spawn_issue(
+                        file,
+                        range,
+                        &handle.origin,
+                        "spawn cannot serialize a guard created in a fork context",
+                        result,
+                    );
+                    record_spawn(
+                        file,
+                        range,
+                        "context-mismatch-before-launch",
+                        Ok(()),
+                        result,
+                    );
+                    raise_named(env, range, "RuntimeError");
+                    env.alive = false;
+                    return OperationEffect::applied("context-mismatch-before-launch");
+                }
+                if let Some(WorkerCandidate::Ready { target, .. }) = &handle.worker {
+                    if let Err(reason) = validate_worker_target(target, env, functions) {
+                        record_spawn(file, range, "worker-entry", Err(reason), result);
+                        queue_raise(env, range, None);
+                        states(env, id, handle_state | STARTED | UNCERTAIN);
+                        return OperationEffect::declined("start", reason);
+                    }
+                }
                 states(env, id, handle_state | UNCERTAIN);
                 queue_raise(env, range, None);
                 states(env, id, STARTED | (handle_state & UNCERTAIN));
+                if let Some(worker) = &handle.worker {
+                    prepare_worker(id, worker, &handle.origin, env, file, range, result);
+                }
                 OperationEffect::applied("start")
             }
             ProcessOperation::Join(timeout) => {
                 queue_raise(env, range, None);
                 match timeout {
                     JoinTimeout::Untimed if qualified_child_wait(env) => {
+                        if handle_state & STARTED != 0
+                            && matches!(handle.worker, Some(WorkerCandidate::Ready { .. }))
+                            && env.ownership.as_ref().unwrap().processes.entry_path
+                                == EntryPath::Protected
+                            && !complete_worker(id, env, file, range, functions, result)
+                        {
+                            env.alive = false;
+                            return OperationEffect::declined(
+                                "join",
+                                "untimed Process.join requires established worker completion",
+                            );
+                        }
                         states(env, id, ENDED | (handle_state & UNCERTAIN));
                         OperationEffect::applied("join")
                     }
@@ -1130,4 +1522,357 @@ pub(super) fn refine_test(env: &mut State, test: &TerminationTest, truth: bool) 
     };
     env.alive &= updated != 0;
     handle.states = updated;
+}
+
+fn record_spawn(
+    file: &SourceFile,
+    range: SourceRange,
+    effect: &str,
+    applies: Result<(), &str>,
+    result: &mut Inspection,
+) {
+    runtime::use_model(
+        "multiprocessing.Process.start",
+        effect,
+        SPAWN_MODEL,
+        applies,
+        file,
+        range,
+        result,
+    );
+}
+
+fn report_spawn_issue(
+    file: &SourceFile,
+    range: SourceRange,
+    origin: &Span,
+    message: &str,
+    result: &mut Inspection,
+) {
+    report(
+        result,
+        "TP7005",
+        message,
+        span(file, range),
+        vec![origin.clone()],
+        "definite",
+        vec![format!(
+            "{SPAWN_MODEL}@{}",
+            crate::foundation::CATALOG_REVISION
+        )],
+    );
+}
+
+fn prepare_worker(
+    id: &str,
+    candidate: &WorkerCandidate,
+    origin: &Span,
+    env: &mut State,
+    file: &SourceFile,
+    range: SourceRange,
+    result: &mut Inspection,
+) {
+    let process = &env.ownership.as_ref().unwrap().processes;
+    let declared = runtime::runtime_profile(env)
+        .ok()
+        .and_then(|profile| profile.spawn_main_script.as_deref());
+    if process.entry_path == EntryPath::Unknown
+        && !env.module_scope
+        && env.call_depth == 0
+        && declared.is_some()
+    {
+        // Top-level function bodies are also checked as declarations. Their
+        // launch context is checked separately at a source-resolved invocation.
+        return;
+    }
+    if declared.is_none() {
+        record_spawn(
+            file,
+            range,
+            "worker-entry",
+            Err("worker entry requires a declared direct spawn main script"),
+            result,
+        );
+        return;
+    }
+    if process.entry_path != EntryPath::Protected {
+        if (env.module_scope && launch_matches(env, file))
+            || process.entry_path == EntryPath::ImportTime
+        {
+            report_spawn_issue(file, range, origin, "spawn startup runs during import or outside the declared direct script's main guard", result);
+        }
+        record_spawn(
+            file,
+            range,
+            "worker-entry",
+            Err("spawn startup is outside a resolved direct script main guard"),
+            result,
+        );
+        return;
+    }
+    let WorkerCandidate::Ready { target, arguments } = candidate else {
+        record_spawn(
+            file,
+            range,
+            "worker-entry",
+            Err("spawn target, argument serialization or primitive context is unresolved"),
+            result,
+        );
+        return;
+    };
+    if process.workers.len() >= MAX_CHILDREN {
+        record_spawn(
+            file,
+            range,
+            "worker-entry",
+            Err("spawn actor budget exceeded"),
+            result,
+        );
+        return;
+    }
+    let channels = protocol::spawn_channels(env, arguments);
+    if process.workers.values().any(|worker| {
+        channels
+            .iter()
+            .any(|channel| worker.bindings.touches(channel))
+    }) {
+        record_spawn(
+            file,
+            range,
+            "worker-entry",
+            Err("more than one worker may use this IPC link"),
+            result,
+        );
+        return;
+    }
+    let Some(bindings) = protocol::prepare_spawn(env, id, arguments) else {
+        record_spawn(
+            file,
+            range,
+            "worker-entry",
+            Err("spawn could not establish distinct local primitive copies"),
+            result,
+        );
+        return;
+    };
+    env.ownership.as_mut().unwrap().processes.workers.insert(
+        id.into(),
+        PendingWorker {
+            target: target.clone(),
+            bindings,
+            evaluated: None,
+            projected: BTreeSet::new(),
+        },
+    );
+    record_spawn(file, range, "qualified-worker-entry", Ok(()), result);
+}
+
+fn evaluate_worker(
+    id: &str,
+    worker: &PendingWorker,
+    parent: &State,
+    file: &SourceFile,
+    range: SourceRange,
+    functions: &FunctionMap,
+    result: &mut Inspection,
+) -> Option<protocol::WorkerEffects> {
+    let Some(definition) = functions.get(&worker.target) else {
+        record_spawn(
+            file,
+            range,
+            "worker-entry",
+            Err("the selected spawn target is unavailable"),
+            result,
+        );
+        return None;
+    };
+    if parent.call_depth >= MAX_CALL_DEPTH || parent.call_stack.contains(&worker.target) {
+        record_spawn(
+            file,
+            range,
+            "worker-entry",
+            Err("spawn worker execution depth is exhausted"),
+            result,
+        );
+        return None;
+    }
+    let mut ownership = OwnershipState::for_child(parent, false)?;
+    let waits = Rc::new(RefCell::new(None));
+    ownership.processes.worker_waits = Some(Rc::clone(&waits));
+    ownership.processes.protocol = protocol::child_protocol(parent, id, &worker.bindings);
+    ownership.processes.entry_path = EntryPath::Unknown;
+    let (function_bindings, class_bindings) = module_bindings_for_child(parent, definition);
+    let mut child = State {
+        ownership: Some(ownership),
+        alive: true,
+        scope_module: definition.file.module.clone(),
+        target_python_version: parent.target_python_version.clone(),
+        models: Arc::clone(&parent.models),
+        protocol_machines: parent.protocol_machines.clone(),
+        call_depth: parent.call_depth + 1,
+        call_stack: parent.call_stack.clone(),
+        function_bindings: function_bindings.clone(),
+        function_bindings_complete: true,
+        class_bindings: class_bindings.clone(),
+        class_bindings_complete: true,
+        module_function_bindings: function_bindings,
+        module_class_bindings: class_bindings,
+        allocation_context: vec![id.into()],
+        ..State::default()
+    };
+    child.call_stack.insert(worker.target.clone());
+    let local_names = definition
+        .parameters
+        .iter()
+        .cloned()
+        .chain(assigned_names(&definition.statements))
+        .collect::<BTreeSet<_>>();
+    child
+        .definitely_bound_names
+        .extend(definition.parameters.iter().cloned());
+    child.shadowed_functions.extend(local_names.iter().cloned());
+    child.shadowed_classes.extend(local_names);
+    let exits = execute(
+        &definition.statements,
+        &mut child,
+        &definition.file,
+        &definition.contracts,
+        functions,
+        result,
+        0,
+    );
+    let exit_range = definition
+        .statements
+        .last()
+        .map(statement_range)
+        .unwrap_or(range);
+    let mut final_paths = exits
+        .raises
+        .into_iter()
+        .chain(exits.returns)
+        .collect::<Vec<_>>();
+    if child.alive {
+        final_paths.push(FlowExit {
+            state: child,
+            range: exit_range,
+            kind: CompletionKind::Fallthrough,
+        });
+    }
+    for exit in &final_paths {
+        report_cleanup_exit(
+            result,
+            &definition.file,
+            exit,
+            None,
+            exit_range,
+            None,
+            false,
+            functions,
+            &BTreeSet::new(),
+        );
+    }
+    let completed =
+        join_states(final_paths.into_iter().map(|exit| exit.state).collect()).and_then(|state| {
+            state
+                .ownership
+                .map(|ownership| ownership.processes.protocol)
+        });
+    let waiting = waits.borrow_mut().take();
+    let complete = waiting.is_none() && completed.is_some();
+    let after = match (waiting, completed) {
+        (Some(mut waiting), Some(completed)) => {
+            waiting.join(&completed);
+            waiting
+        }
+        (Some(waiting), None) => waiting,
+        (None, completed) => completed?,
+    };
+    Some(protocol::worker_effects(parent, after, complete))
+}
+
+fn stop_at_worker_wait(env: &mut State) -> bool {
+    let processes = &env.ownership.as_ref().expect("worker protocol").processes;
+    let Some(waits) = &processes.worker_waits else {
+        return false;
+    };
+    let mut waits = waits.borrow_mut();
+    if let Some(waiting) = waits.as_mut() {
+        waiting.join(&processes.protocol);
+    } else {
+        *waits = Some(processes.protocol.clone());
+    }
+    env.alive = false;
+    true
+}
+
+fn advance_channel(
+    channel: &str,
+    env: &mut State,
+    file: &SourceFile,
+    range: SourceRange,
+    functions: &FunctionMap,
+    result: &mut Inspection,
+) {
+    let Some(processes) = env.ownership.as_ref().map(|ownership| &ownership.processes) else {
+        return;
+    };
+    let mut matching = processes
+        .workers
+        .iter()
+        .filter(|(_, worker)| worker.bindings.touches(channel));
+    let Some((id, worker)) = matching.next() else {
+        return;
+    };
+    if matching.next().is_some() || worker.projected.contains(channel) {
+        return;
+    }
+    let (id, mut worker) = (id.clone(), worker.clone());
+    if worker.evaluated.is_none() {
+        worker.evaluated = evaluate_worker(&id, &worker, env, file, range, functions, result);
+    }
+    if let Some(effects) = &worker.evaluated {
+        if protocol::project_channel(env, effects, channel) || effects.complete {
+            worker.projected.insert(channel.into());
+        } else if worker.projected.is_empty() {
+            // A later parent operation can supply evidence for this wait.
+            worker.evaluated = None;
+        }
+    }
+    env.ownership
+        .as_mut()
+        .unwrap()
+        .processes
+        .workers
+        .insert(id, worker);
+}
+
+fn complete_worker(
+    id: &str,
+    env: &mut State,
+    file: &SourceFile,
+    range: SourceRange,
+    functions: &FunctionMap,
+    result: &mut Inspection,
+) -> bool {
+    let Some(worker) = env
+        .ownership
+        .as_ref()
+        .unwrap()
+        .processes
+        .workers
+        .get(id)
+        .cloned()
+    else {
+        return false;
+    };
+    let effects = worker
+        .evaluated
+        .clone()
+        .or_else(|| evaluate_worker(id, &worker, env, file, range, functions, result));
+    let Some(effects) = effects.filter(|effects| effects.complete) else {
+        return false;
+    };
+    env.ownership.as_mut().unwrap().processes.workers.remove(id);
+    protocol::complete_worker(env, &effects, id, &worker.projected);
+    true
 }

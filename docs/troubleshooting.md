@@ -1,3 +1,5 @@
+<!-- release-recipes -->
+
 # Troubleshooting
 
 Start with the command and process exit status. Inspection writes JSON by default;
@@ -43,7 +45,10 @@ possible findings remain. Read `coverage.reasons` and certainty as well as
 severity. Typical declaration boundaries include forward annotations, relative
 imports, decorated functions, and computed contract expressions.
 
-Complete coverage describes the implemented declaration subset. It does not imply that function bodies were checked for resource safety.
+For `inspect-contracts`, complete coverage refers to declarations. For
+`check`, it refers to the supported flow under the selected contracts and
+models. See the [compatibility checklist](compatibility.md#common-project-patterns)
+for boundaries specific to each command.
 
 For installed contracts or a runtime profile, inspect `foundations.model_uses`
 and `foundations.provider_issues` in the JSON report. A stale manifest, a
@@ -79,14 +84,20 @@ Literal `None` parameters and returns are ordinary non-resource annotations and 
 
 ## An imported class cannot be resolved
 
-For inspection, pass the defining module and consuming module in the same
-invocation. Set `--root` so logical names agree with the absolute imports. The
-checker discovers files under its root; ensure the provider is inside
-that root. Neither mode searches installed packages or executes Python imports.
-
-Use the [multi-file tutorial](project-guide.md) as a reference. Relative imports and supplied-module cycles are outside the supported scope.
-Declaration inspection also leaves re-export chains unresolved. The checker
-supports selected named re-exports. [Import resolution](supported-syntax.md#import-resolution)
+1. **Local source.** For `inspect-contracts`, pass both files explicitly.
+   For `check`, keep both files under the selected root and include policy.
+   Set the root so logical names match absolute imports. Run
+   `codepact check --show-settings --json` and inspect `root`,
+   `settings_origins`, and the include/exclude patterns.
+2. **Installed dependency.** Use `check` with an explicit
+   `--dependency-root` or configured roots. Ordinary project discovery and
+   declaration inspection do not search installed packages. Inspect
+   `foundations.providers` and `foundations.provider_issues` in the check
+   report. [Resolve an installed provider](consume-providers.md)
+3. **Unsupported import.** Read `coverage.reasons`. Relative imports and
+   supplied-module cycles leave a boundary. The checker handles selected named
+   re-exports. Declaration inspection leaves re-export chains unresolved.
+   [Import resolution](supported-syntax.md#import-resolution)
 
 ## Multiple files map to the same module
 

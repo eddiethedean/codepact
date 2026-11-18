@@ -1,0 +1,20 @@
+[tool.codepact]
+config-version = 1
+root = "src"
+python-version = "3.13"
+experimental-ownership = true
+assume-default-task-factory = true
+
+[tool.codepact.runtime-profile]
+implementation = "cpython"
+python-version = "3.13.16"
+os = "linux"
+architecture = "x86_64"
+event-loop = "default"
+
+[[tool.codepact.async-guards]]
+module = "main"
+coroutine = "update"
+resource = "counter"
+lock = "lock"
+method = "increment"

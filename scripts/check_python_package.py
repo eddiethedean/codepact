@@ -42,6 +42,9 @@ def verify_installed_outcome_typing(interpreter: Path, root: Path, work: Path) -
 
 def verify_documented_upgrade(dist: Path, work: Path, candidate_version: str) -> None:
     """Replay upgrades to the candidate's exact helper and CLI extra."""
+    environment = os.environ.copy()
+    # Each upgrade must use its disposable project's own environment.
+    _ = environment.pop("UV_PROJECT_ENVIRONMENT", None)
     for previous_version in ("0.5.1", "0.6.0", "0.7.0"):
         project = work / f"upgrade-project-{previous_version}"
         project.mkdir()
@@ -63,6 +66,7 @@ def verify_documented_upgrade(dist: Path, work: Path, candidate_version: str) ->
             result = subprocess.run(
                 ["uv", *arguments],
                 cwd=project,
+                env=environment,
                 check=True,
                 capture_output=capture,
                 text=True,

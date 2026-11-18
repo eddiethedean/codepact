@@ -1,5 +1,46 @@
 # Upgrade CodePact
 
+(upgrade-010)=
+## Upgrade to 0.10.0
+
+:::{only} codepact_release
+
+Update the helper and matching CLI together and refresh the lockfile.
+
+```sh
+uv add 'codepact[cli]==0.10.0'
+uv run --locked codepact --version
+```
+
+For other installation routes, see [installation](install.md).
+
+:::
+
+:::{only} not codepact_release
+
+From the 0.10 checkout run
+`cargo build --locked -p codepact`, then verify
+`./target/debug/codepact --version` prints `codepact 0.10.0`. Use that binary
+for [the new runtime examples](concurrency.md). If testing packaged helpers,
+build matching checkout wheels with `uv build --wheel --no-sources --all-packages`.
+
+:::
+
+Regenerate baselines and capture both review revisions with the same checker.
+
+- Enable the reviewed runtime profile for queues and synchronization. Declare
+  `spawn-main-script` relative to the analysis root to select direct-script
+  spawn entry and worker effects.
+- Use `async-guards` to select an exact asyncio lock for a supported resource
+  method. Effective settings include those declarations.
+- Rust callers building `RuntimeProfile` and `FoundationInputs` as struct
+  literals can set `spawn_main_script` to `None` and `async_guards` to an
+  empty vector for requests that use earlier profiles.
+- Review readers can use the optional `protocol_contracts` array in snapshot
+  schema 1 to inspect matched operation keys and the applicable protocol facts.
+
+[Configure the new profiles](reviewed-contracts.md#queues-ipc-and-guards)
+
 (upgrade-09)=
 ## Upgrade to 0.9.0
 

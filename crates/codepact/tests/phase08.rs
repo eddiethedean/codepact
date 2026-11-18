@@ -57,6 +57,7 @@ fn runtime() -> RuntimeProfile {
         event_loop: Some("default".into()),
         start_method: Some("spawn".into()),
         assume_standard_process_wait: true,
+        spawn_main_script: None,
     }
 }
 

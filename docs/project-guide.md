@@ -57,6 +57,7 @@ Start with modules that use direct absolute imports and recognized
 annotations. Relative imports, postponed or string annotations, and dynamic
 dispatch can leave coverage incomplete. Read `coverage.reasons` when a
 provider or call fails to resolve. [Supported syntax](supported-syntax.md) ·
+[Project compatibility and fit](compatibility.md#common-project-patterns) ·
 [Configuration lookup](cli.md#project-configuration-and-scope)
 
 ## Inspect just the declarations
