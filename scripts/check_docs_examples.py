@@ -27,10 +27,13 @@ def snippet(page: str, name: str, language: str = "sh") -> str:
 
 
 def shell(cwd: Path, command: str, expected: int = 0) -> str:
+    environment = {**os.environ, "UV_TOOL_DIR": str(cwd / ".uv-tools")}
+    # Keep the tutorial's uv commands in the disposable project.
+    _ = environment.pop("UV_PROJECT_ENVIRONMENT", None)
     result = subprocess.run(
         ["sh", "-ec", command],
         cwd=cwd,
-        env={**os.environ, "UV_TOOL_DIR": str(cwd / ".uv-tools")},
+        env=environment,
         capture_output=True,
         text=True,
         check=False,
