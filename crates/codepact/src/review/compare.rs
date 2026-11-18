@@ -387,23 +387,35 @@ pub fn compare(
     let mut changes = Vec::new();
     let mut matched = BTreeSet::new();
     let mut repaired = BTreeSet::new();
-    let old_waivers = before
+    let mut old_waivers = BTreeMap::new();
+    for waiver in before
         .findings
         .iter()
         .filter(|finding| finding.code == "TP5005")
-        .map(|finding| (&finding.fingerprint, &finding.message))
-        .collect::<BTreeSet<_>>();
+    {
+        *old_waivers
+            .entry((&waiver.fingerprint, &waiver.message))
+            .or_insert(0usize) += 1;
+    }
     for finding in &after.findings {
-        if finding.code == "TP5005"
-            && !old_waivers.contains(&(&finding.fingerprint, &finding.message))
-        {
-            changed_sections.insert("waivers".into());
-            reason(
-                &mut reasons,
-                Blocking::Review,
-                "waiver",
-                format!("new explicit outcome waiver at {}", finding.primary.file),
-            );
+        if finding.code == "TP5005" {
+            let remaining = old_waivers
+                .entry((&finding.fingerprint, &finding.message))
+                .or_default();
+            if *remaining > 0 {
+                *remaining -= 1;
+            } else {
+                changed_sections.insert("waivers".into());
+                reason(
+                    &mut reasons,
+                    Blocking::Review,
+                    "waiver",
+                    format!(
+                        "new explicit outcome waiver at {}:{}",
+                        finding.primary.file, finding.primary.line
+                    ),
+                );
+            }
         }
         let corresponding = match find_site(&finding.fingerprint, &before_exact, &after_exact) {
             Match::Absent => finding

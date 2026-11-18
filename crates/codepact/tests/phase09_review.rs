@@ -18,6 +18,10 @@ const CLEANUP_SOURCE: &str = "from codepact import resource\n@resource(closed_by
 const FIX: &str = "    resource.close()\n";
 
 fn analyze(session: &mut AnalysisSession, source: &str) -> ReviewSnapshot {
+    analyze_sources(session, &[SourceFile::new("main.py", "main", source)])
+}
+
+fn analyze_sources(session: &mut AnalysisSession, files: &[SourceFile]) -> ReviewSnapshot {
     let path = std::env::current_dir().unwrap();
     let config = resolve_config(
         &path,
@@ -27,15 +31,7 @@ fn analyze(session: &mut AnalysisSession, source: &str) -> ReviewSnapshot {
         },
     )
     .unwrap();
-    capture(
-        session,
-        &[SourceFile::new("main.py", "main", source)],
-        &config,
-        CheckOptions::default(),
-        None,
-        None,
-    )
-    .unwrap()
+    capture(session, files, &config, CheckOptions::default(), None, None).unwrap()
 }
 
 #[test]
@@ -94,10 +90,12 @@ fn review_retains_inherited_findings_and_proves_same_operation_cleanup() {
 #[test]
 fn review_requires_recapture_of_legacy_contract_keys() {
     let mut snapshot = analyze(&mut AnalysisSession::default(), CLEANUP_SOURCE);
-    snapshot.descriptor.comparison_algorithm = 1;
-    let report = compare(&snapshot, &snapshot, &BTreeSet::new(), None).unwrap();
-    assert_eq!(report.verdict, ReviewVerdict::Inconclusive);
-    assert!(report.changed_sections.contains("semantics"));
+    for version in [1, 2] {
+        snapshot.descriptor.comparison_algorithm = version;
+        let report = compare(&snapshot, &snapshot, &BTreeSet::new(), None).unwrap();
+        assert_eq!(report.verdict, ReviewVerdict::Inconclusive);
+        assert!(report.changed_sections.contains("semantics"));
+    }
 }
 
 struct Sandbox(PathBuf);
@@ -289,11 +287,18 @@ fn cli_review_distinguishes_all_completed_verdicts_and_input_failure() {
 }
 
 fn package(version: &str, source: &str) -> ProviderPackage {
+    package_with_sources(
+        version,
+        vec![SourceFile::new("reviewed/__init__.py", "reviewed", source)],
+    )
+}
+
+fn package_with_sources(version: &str, sources: Vec<SourceFile>) -> ProviderPackage {
     let mut package = ProviderPackage {
         distribution: "reviewed".into(),
         version: version.into(),
         import_scope: "reviewed".into(),
-        sources: vec![SourceFile::new("reviewed/__init__.py", "reviewed", source)],
+        sources,
         marked: true,
         manifest: None,
     };
@@ -407,6 +412,90 @@ fn wheel_comparison_qualifies_caller_changes_and_evidence_boundaries() {
         .changes
         .iter()
         .any(|change| change.kind == ContractChangeKind::WeakenedGuarantee));
+}
+
+#[test]
+fn wheel_diff_preserves_resources_when_adding_a_public_alias() {
+    let sandbox = Sandbox::new();
+    let package = |version, source: &str| {
+        package_with_sources(version, vec![
+            SourceFile::new("reviewed/__init__.py", "reviewed", source),
+            SourceFile::new("reviewed/_impl.py", "reviewed._impl", "from codepact import resource\nfrom codepact.rust import Owned\n@resource(closed_by='close')\nclass Handle:\n    def close(self): pass\ndef acquire() -> Owned[Handle]: return Handle()\n"),
+        ])
+    };
+    let old = "from ._impl import Handle as Handle, acquire as acquire\n";
+    let before = package("1.0", old);
+    let after = package("1.1", &format!("{old}from ._impl import Handle as Alias\n"));
+    let before_path = wheel(&sandbox.0, &before);
+    let after_path = wheel(&sandbox.0, &after);
+    let output = sandbox.run(&[
+        "contracts",
+        "diff",
+        before_path.to_str().unwrap(),
+        after_path.to_str().unwrap(),
+        "--json",
+    ]);
+    let report: codepact::foundation::ContractDiff =
+        serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output.status.code(), Some(0), "{report:#?}");
+    assert!(report.compatible);
+    assert_eq!(report.changes.len(), 1);
+    assert_eq!(report.changes[0].public_symbol, "reviewed.Alias");
+}
+
+#[test]
+fn review_detects_an_added_waiver_with_an_identical_fingerprint() {
+    let producer = "from codepact import MustHandle, Ok, Result, discard_outcome\ndef read() -> MustHandle[Result[int, ValueError]]: return Ok(1)\ndef caller():\n";
+    let waived = "    value = read()\n    discard_outcome(value, reason='already logged')\n";
+    let mut session = AnalysisSession::default();
+    let before = analyze(&mut session, &format!("{producer}{waived}"));
+    let after = analyze(&mut session, &format!("{producer}{waived}{waived}"));
+    let after_waivers = after
+        .findings
+        .iter()
+        .filter(|finding| finding.code == "TP5005")
+        .collect::<Vec<_>>();
+    assert_eq!(after_waivers.len(), 2);
+    assert_eq!(after_waivers[0].fingerprint, after_waivers[1].fingerprint);
+    let report = compare(&before, &after, &BTreeSet::new(), None).unwrap();
+    assert_eq!(report.verdict, ReviewVerdict::ReviewRequired, "{report:#?}");
+    assert!(report.changed_sections.contains("waivers"));
+    assert_eq!(
+        compare(&after, &after, &BTreeSet::new(), None)
+            .unwrap()
+            .verdict,
+        ReviewVerdict::Passed
+    );
+}
+
+#[test]
+fn review_detects_an_outcome_contract_removed_by_redefinition() {
+    let imports = "from codepact import MustHandle, Ok, Result\n";
+    let plain = "def make(): return Ok(1)\n";
+    let marked = "def make() -> MustHandle[Result[int, ValueError]]: return Ok(1)\n";
+    let caller = SourceFile::new(
+        "caller.py",
+        "caller",
+        "from producer import make\ndef caller():\n    make()\n",
+    );
+    let mut session = AnalysisSession::default();
+    let mut capture = |source| {
+        analyze_sources(
+            &mut session,
+            &[
+                SourceFile::new("producer.py", "producer", source),
+                caller.clone(),
+            ],
+        )
+    };
+    let before = capture(format!("{imports}{plain}{marked}"));
+    let after = capture(format!("{imports}{marked}{plain}"));
+    assert_eq!(before.check_exit, 1);
+    assert_eq!(after.check_exit, 0);
+    let report = compare(&before, &after, &BTreeSet::new(), None).unwrap();
+    assert_eq!(report.verdict, ReviewVerdict::ReviewRequired, "{report:#?}");
+    assert_eq!(report.removed_contracts.len(), 1);
+    assert!(report.removed_contracts[0].contains("producer.make"));
 }
 
 #[test]

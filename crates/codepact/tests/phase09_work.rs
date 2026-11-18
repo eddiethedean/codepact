@@ -75,6 +75,43 @@ async def observed_future():
 }
 
 #[test]
+fn observed_local_future_has_complete_coverage() {
+    let source = r#"from asyncio import get_running_loop
+async def observed():
+    loop = get_running_loop()
+    future = loop.create_future()
+    future.set_result(1)
+    return await future
+"#;
+    let result = check(source);
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    assert!(observations(&result).is_empty(), "{result:#?}");
+
+    let source = source.replace("return await future", "return future.exception()");
+    let result = check(&source.replace("set_result(1)", "set_exception(ValueError())"));
+    assert_eq!(
+        result.coverage.status, "complete-for-supported-subset",
+        "{result:#?}"
+    );
+    assert!(observations(&result).is_empty(), "{result:#?}");
+    for invalid in ["1", "StopIteration()"] {
+        let result = check(&source.replace("set_result(1)", &format!("set_exception({invalid})")));
+        assert_eq!(result.coverage.status, "incomplete", "{result:#?}");
+        assert!(result
+            .foundations
+            .unwrap()
+            .model_uses
+            .iter()
+            .any(|usage| usage.symbol == "asyncio.Future"
+                && usage.effect == "set_exception"
+                && !usage.applicable));
+    }
+}
+
+#[test]
 fn bounded_wait_and_completion_iterator_do_not_observe_members() {
     let result = check(
         r#"from asyncio import as_completed, create_task, wait

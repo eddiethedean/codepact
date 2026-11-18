@@ -67,6 +67,16 @@ class HttpProfiles(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaises(RuntimeError):
                         client.get(url)
 
+                    client = api.Client(trust_env=False)
+                    try:
+                        with client.stream("GET", url) as stream:
+                            self.assertEqual(stream.read(), b"phase 0.9")
+                        with self.assertRaises(RuntimeError):
+                            with client:
+                                pass
+                    finally:
+                        client.close()
+
     async def test_both_clients_permit_live_shared_requests(self):
         with serving_http() as url:
             for package in ("httpx", "httpx2"):
@@ -333,6 +343,26 @@ def stream():
             pass
         response.read()
 
+def stream_before_client_context():
+    client = Client(trust_env=False)
+    try:
+        with client.stream("GET", "http://127.0.0.1") as response:
+            response.read()
+        with client:  # HTTPX client already started
+            pass
+    finally:
+        client.close()
+
+def other_stream_before_client_context():
+    client = OtherClient(trust_env=False)
+    try:
+        with client.stream("GET", "http://127.0.0.1") as response:
+            response.read()
+        with client:  # HTTPX2 client already started
+            pass
+    finally:
+        client.close()
+
 def database():
     engine = create_engine("sqlite:///fixture.sqlite")
     try:
@@ -489,9 +519,20 @@ async def direct_while_scheduled():
         closed_use = [
             item for item in report["diagnostics"] if item["code"] == "TP1001"
         ]
-        if len(closed_use) != 3 or any(
+        if len(closed_use) != 5 or any(
             item["certainty"] != "definite" for item in closed_use
         ):
+            raise AssertionError(closed_use)
+        reentry_lines = {
+            n
+            for n, line in enumerate(lines, 1)
+            if line.endswith("client already started")
+        }
+        if {
+            item["primary"]["line"]
+            for item in closed_use
+            if item["message"] == "reviewed HTTP client context requires a fresh client"
+        } != reentry_lines:
             raise AssertionError(closed_use)
         overlaps = [
             item

@@ -1,6 +1,6 @@
 //! Opt-in policy for declarations in the selected source scope.
 use super::{DeclarationKind, DeclarationMode, EffectiveConfig};
-use crate::frontend::{parse_frontend, Declaration};
+use crate::frontend::{final_definitions, parse_frontend, Declaration};
 use crate::{CheckDiagnostic, CheckResult, Contract, ProviderEvidence, SourceFile, Span};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -224,6 +224,7 @@ fn final_functions(
     declarations: &[Declaration],
     codepact_shadowed: bool,
 ) -> BTreeMap<&str, FunctionBinding<'_>> {
+    let definitions = final_definitions(declarations);
     let mut functions = BTreeMap::new();
     let mut imports = BTreeMap::new();
     for declaration in declarations {
@@ -234,18 +235,22 @@ fn final_functions(
                 returns,
                 ..
             } => {
-                let marker = crate::semantic::declaration_policy_must_use(
-                    decorators,
-                    returns.as_ref(),
-                    &imports,
-                );
-                functions.insert(name.as_str(), (declaration, marker));
+                if definitions
+                    .get(name.as_str())
+                    .is_some_and(|definition| std::ptr::eq(*definition, declaration))
+                {
+                    let marker = crate::semantic::declaration_policy_must_use(
+                        decorators,
+                        returns.as_ref(),
+                        &imports,
+                    );
+                    functions.insert(name.as_str(), (declaration, marker));
+                }
                 imports.remove(name);
             }
             Declaration::Import { names, .. } => {
                 for name in names {
                     let local = name.import_binding();
-                    functions.remove(local);
                     imports.remove(local);
                     if name.name == "typing"
                         || (!codepact_shadowed
@@ -268,12 +273,10 @@ fn final_functions(
             } => {
                 for name in names {
                     if name.name == "*" {
-                        functions.clear();
                         imports.clear();
                         continue;
                     }
                     let local = name.member_binding();
-                    functions.remove(local);
                     imports.remove(local);
                     if *level == 0
                         && (module == "typing"
@@ -299,17 +302,14 @@ fn final_functions(
             | Declaration::TypeAlias {
                 name: Some(name), ..
             } => {
-                functions.remove(name.as_str());
                 imports.remove(name);
             }
             Declaration::Delete { names, .. } => {
                 for name in names.iter().flatten() {
-                    functions.remove(name.as_str());
                     imports.remove(name);
                 }
             }
             Declaration::ModuleFlow { .. } | Declaration::Unsupported { .. } => {
-                functions.clear();
                 imports.clear();
             }
             _ => {}

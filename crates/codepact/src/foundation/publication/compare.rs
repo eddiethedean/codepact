@@ -95,7 +95,7 @@ pub struct ContractDiff {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 struct Fact {
-    resource: Option<String>,
+    resource: Option<BTreeSet<String>>,
     close_method: Option<String>,
     capabilities: BTreeSet<String>,
 }
@@ -109,13 +109,17 @@ struct PublicSymbol {
 
 fn normalize_publication(
     symbols: &BTreeMap<String, PublishedSymbol>,
+    retained_resource_names: Option<&BTreeSet<&str>>,
 ) -> BTreeMap<String, PublicSymbol> {
-    let mut resources = BTreeMap::new();
+    let mut resources = BTreeMap::<&str, BTreeSet<String>>::new();
     for (name, symbol) in symbols {
-        if symbol.symbol_kind == "resource" {
+        if symbol.symbol_kind == "resource"
+            && retained_resource_names.is_none_or(|retained| retained.contains(name.as_str()))
+        {
             resources
                 .entry(symbol.canonical_name.as_str())
-                .or_insert(name.as_str());
+                .or_default()
+                .insert(name.clone());
         }
     }
     symbols
@@ -128,7 +132,8 @@ fn normalize_publication(
                     let resource = fact.resource.as_ref().map(|resource| {
                         resources
                             .get(resource.as_str())
-                            .map_or_else(|| resource.clone(), |name| (*name).to_owned())
+                            .cloned()
+                            .unwrap_or_else(|| BTreeSet::from([resource.clone()]))
                     });
                     (
                         (fact.kind.clone(), fact.subject.clone()),
@@ -156,7 +161,7 @@ pub(crate) fn normalized_provider_agreements(
     package: &ProviderPackage,
     target: &str,
 ) -> BTreeSet<String> {
-    normalize_publication(&select_publication(package, target).exports)
+    normalize_publication(&select_publication(package, target).exports, None)
         .into_iter()
         .flat_map(|(symbol, properties)| {
             properties
@@ -184,8 +189,22 @@ pub fn diff_publications(
     use ContractChangeKind::{
         Compatible, InsufficientEvidence, NewCallerObligation, WeakenedGuarantee,
     };
-    let left = normalize_publication(&before.symbols);
-    let right = normalize_publication(&after.symbols);
+    // Use the public names that survive the upgrade. A new alias does not
+    // change an existing resource, and a split between aliases stays visible.
+    let retained_resource_names = before
+        .symbols
+        .iter()
+        .filter_map(|(name, symbol)| {
+            (symbol.symbol_kind == "resource"
+                && after
+                    .symbols
+                    .get(name)
+                    .is_some_and(|other| other.symbol_kind == "resource"))
+            .then_some(name.as_str())
+        })
+        .collect();
+    let left = normalize_publication(&before.symbols, Some(&retained_resource_names));
+    let right = normalize_publication(&after.symbols, Some(&retained_resource_names));
     let symbols = left.keys().chain(right.keys()).collect::<BTreeSet<_>>();
     let mut changes = BTreeSet::new();
     let mut add = |name: &str, kind, detail: String| {

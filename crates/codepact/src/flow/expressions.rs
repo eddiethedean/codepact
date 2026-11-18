@@ -83,7 +83,7 @@ pub(super) fn consume_expr(
 ) {
     env.outcomes.clear_value();
     if let Some(name) = expr_name(expr) {
-        env.outcomes.set_value(env.outcomes.read(name));
+        env.outcomes.set_value(env.outcomes.read_carrier(name));
         report_possibly_unbound_alias(name, expr.range, env, file, result);
     }
     if env.ownership.is_none() {
@@ -1570,7 +1570,7 @@ pub(super) fn consume_expr_impl(
                     child.outcomes.import_argument(
                         &env.outcomes,
                         &parameter,
-                        outcomes::argument_values(env, argument),
+                        outcomes::argument_carrier(env, argument),
                     );
                     if let Some(actual) = expr_name(argument) {
                         if let Some(targets) = env.places.get(actual) {

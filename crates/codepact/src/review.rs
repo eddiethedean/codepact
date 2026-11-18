@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const SNAPSHOT_SCHEMA_VERSION: u8 = 1;
 pub const REVIEW_SCHEMA_VERSION: u8 = 1;
 pub const MAX_REVIEW_BYTES: usize = 32 * 1024 * 1024;
-const COMPARISON_ALGORITHM_VERSION: u8 = 2;
+const COMPARISON_ALGORITHM_VERSION: u8 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -141,13 +141,25 @@ fn source_outcome_agreements(
                 );
             }
         };
-        for declaration in declarations {
+        for declaration in crate::frontend::final_definitions(&declarations).into_values() {
             match declaration {
                 Declaration::Function { name, range, .. } => {
                     add(format!("{module}.{name}"), range.start);
                 }
-                Declaration::Class { name, methods, .. } => {
-                    for method in methods {
+                Declaration::Class {
+                    name,
+                    methods,
+                    bound_methods,
+                    ..
+                } => {
+                    let latest = methods
+                        .iter()
+                        .map(|method| (&method.name, method))
+                        .collect::<BTreeMap<_, _>>();
+                    for method in latest
+                        .into_values()
+                        .filter(|method| bound_methods.contains(&method.name))
+                    {
                         add(
                             format!("{module}.{name}.{}", method.name),
                             method.range.start,

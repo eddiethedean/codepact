@@ -74,6 +74,66 @@ def handle():
 }
 
 #[test]
+fn outcome_matching_keeps_paths_without_a_tracked_outcome() {
+    let source = format!(
+        r#"{API}
+from codepact import resource
+@resource(closed_by='close')
+class Handle:
+    def close(self): pass
+
+def use(flag):
+    if flag:
+        value = make()
+    else:
+        value = None
+    alias = value
+    match alias:
+        case Ok() | Err():
+            return
+    handle = Handle()
+"#
+    );
+    let run = |source: &str| {
+        check_with_options(
+            &[SourceFile::new("example.py", "example", source)],
+            "3.13",
+            CheckOptions::default(),
+        )
+    };
+    let report = run(&source);
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP1002"),
+        "{report:#?}"
+    );
+    assert!(
+        !report
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP5002"),
+        "{report:#?}"
+    );
+
+    // A direct match is still exhaustive when both paths carry marked outcomes,
+    // even when each path produced a distinct identity.
+    let report = run(&source.replace("value = None", "value = make()"));
+    assert!(
+        !report
+            .diagnostics
+            .iter()
+            .any(|finding| matches!(finding.code.as_str(), "TP1002" | "TP5002")),
+        "{report:#?}"
+    );
+}
+
+#[test]
 fn helper_effects_and_qualified_returns_follow_actual_finally_exit() {
     let findings = diagnostics(
         r#"

@@ -15,7 +15,9 @@ fn execute_match_statement(
 ) -> FlowResult {
     let mut outcomes = FlowResult::default();
     consume_expr(subject, env, file, contracts, functions, result, 0);
-    let subject_outcomes = env.outcomes.take_value();
+    let subject_value = env.outcomes.take_carrier();
+    let subject_outcomes = &subject_value.ids;
+    let subject_fully_tracked = !subject_value.may_be_untracked();
     outcomes.raises.extend(take_pending_raises(env));
     if !env.alive {
         return outcomes;
@@ -68,11 +70,14 @@ fn execute_match_statement(
         };
         let mut matches_all = irrefutable;
         if let Some((mask, _)) = pattern {
-            if outcomes::narrow(&mut branch, &subject_outcomes, mask) == Some(0) {
+            if outcomes::narrow(&mut branch, subject_outcomes, mask) == Some(0)
+                && subject_fully_tracked
+            {
                 next_case = Some(incoming);
                 continue;
             }
-            matches_all |= outcomes::narrow(&mut incoming, &subject_outcomes, !mask) == Some(0);
+            matches_all |= outcomes::narrow(&mut incoming, subject_outcomes, !mask) == Some(0)
+                && subject_fully_tracked;
         }
         let mut captures = BTreeSet::new();
         case.pattern.binding_names(&mut captures);
@@ -80,7 +85,7 @@ fn execute_match_statement(
             rebind_match_capture(&mut branch, name);
         }
         if pattern.is_some() {
-            outcomes::bind_capture(&case.pattern, &subject_outcomes, &mut branch);
+            outcomes::bind_capture(&case.pattern, &subject_value, &mut branch);
         }
         if !matches_all && pattern.is_none() && !captures.is_empty() {
             // A failed pattern can leave partial bindings in place.
@@ -110,7 +115,7 @@ fn execute_match_statement(
         if branch.alive {
             if let Some((matched, wildcard)) = pattern {
                 if let Some(evidence) =
-                    outcomes::acknowledge(&mut branch, &subject_outcomes, matched, wildcard)
+                    outcomes::acknowledge(&mut branch, subject_outcomes, matched, wildcard)
                 {
                     evidence.report(file, case.pattern.range(), result);
                 }
@@ -148,7 +153,7 @@ fn execute_match_statement(
         joined.alive = true;
         joined.control_depth = original_control_depth;
         *env = *joined;
-        outcomes::lose(env, subject_outcomes, file, range, result);
+        outcomes::lose(env, subject_value.ids, file, range, result);
         ownership::cap_handles(env, file, range, result);
     } else {
         env.alive = false;
@@ -499,7 +504,7 @@ fn execute_with_outcomes(
     env.outcomes.clear_value();
     let assignment_outcome = match statement {
         FlowStatement::Assign { value, .. } | FlowStatement::EscapingAssign { value, .. } => {
-            expr_name(value).map(|name| env.outcomes.read(name))
+            expr_name(value).map(|name| env.outcomes.read_carrier(name))
         }
         _ => None,
     };
@@ -526,11 +531,11 @@ fn execute_with_outcomes(
         match statement {
             FlowStatement::Assign { name, range, .. }
             | FlowStatement::EscapingAssign { name, range, .. } => {
-                let value = assignment_outcome.unwrap_or_else(|| env.outcomes.take_value());
-                let previous = env.outcomes.bind(name, value.clone());
+                let value = assignment_outcome.unwrap_or_else(|| env.outcomes.take_carrier());
                 if matches!(statement, FlowStatement::EscapingAssign { .. }) {
-                    outcomes::escape(env, &value, file, *range, result);
+                    outcomes::escape(env, &value.ids, file, *range, result);
                 }
+                let previous = env.outcomes.bind_carrier(name, value);
                 outcomes::lose(env, previous, file, *range, result);
             }
             FlowStatement::Expression { range, .. } => {
@@ -2080,16 +2085,26 @@ pub(super) fn execute_non_if_statement(
                     return None;
                 }
                 env.places.remove(name);
-                env.unknown_places.insert(name.clone());
                 env.shadowed_classes.insert(name.clone());
                 env.class_bindings.remove(name);
                 env.shadowed_functions.insert(name.clone());
-                boundary(
-                    result,
-                    file,
-                    *range,
-                    "resource-valued call result is not tracked",
-                );
+                if env
+                    .ownership
+                    .as_ref()
+                    .is_some_and(|ownership| ownership.work.has_pending())
+                {
+                    env.unknown_places.remove(name);
+                    env.coroutine_aliases.remove(name);
+                    env.unknown_coroutine_aliases.remove(name);
+                } else {
+                    env.unknown_places.insert(name.clone());
+                    boundary(
+                        result,
+                        file,
+                        *range,
+                        "resource-valued call result is not tracked",
+                    );
+                }
                 ownership::assign_handle(name, None, false, env, file, *range, result);
                 return None;
             }
@@ -2195,7 +2210,7 @@ pub(super) fn execute_non_if_statement(
         FlowStatement::Pass { .. } | FlowStatement::AnnotatedDeclaration { .. } => {}
         FlowStatement::Return { value, .. } => {
             env.pending_return_targets = None;
-            env.outcomes.set_return(outcomes::Values::new());
+            env.outcomes.set_return(outcomes::Carrier::default());
             if let Some(value) = value {
                 let temporary = format!("__codepact_return_{}", value.range.start);
                 let constructor = match &value.kind {
@@ -2234,8 +2249,8 @@ pub(super) fn execute_non_if_statement(
                     work::escape_pending(env, file, value.range, result);
                 }
                 let returned_value = match expr_name(value) {
-                    Some(name) => env.outcomes.read(name),
-                    None => env.outcomes.take_value(),
+                    Some(name) => env.outcomes.read_carrier(name),
+                    None => env.outcomes.take_carrier(),
                 };
                 env.outcomes.set_return(returned_value);
             }

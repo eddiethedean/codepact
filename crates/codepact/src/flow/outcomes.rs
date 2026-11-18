@@ -456,6 +456,25 @@ pub(super) fn local_annotation(
 
 pub(super) type Values = BTreeSet<String>;
 
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub(super) struct Carrier {
+    pub(super) ids: Values,
+    // A joined value can carry known duties on some paths and none on others.
+    includes_untracked: bool,
+}
+
+impl Carrier {
+    pub(super) fn may_be_untracked(&self) -> bool {
+        self.ids.is_empty() || self.includes_untracked
+    }
+
+    pub(super) fn merge(&mut self, other: &Self) {
+        let includes_untracked = self.may_be_untracked() || other.may_be_untracked();
+        self.ids.extend(other.ids.iter().cloned());
+        self.includes_untracked = includes_untracked && !self.ids.is_empty();
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Duty {
     variant: u8,
@@ -475,17 +494,23 @@ pub(super) struct OutcomeState(Option<Box<TrackedOutcomes>>);
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub(super) struct TrackedOutcomes {
-    pub(super) value: Values,
-    pub(super) returned: Values,
-    aliases: BTreeMap<String, Values>,
-    evaluated_arguments: BTreeMap<(usize, usize), Values>,
+    value: Carrier,
+    pub(super) returned: Carrier,
+    aliases: BTreeMap<String, Carrier>,
+    evaluated_arguments: BTreeMap<(usize, usize), Carrier>,
     duties: BTreeMap<String, Duty>,
     overflowed: bool,
 }
 
 static NO_OUTCOMES: TrackedOutcomes = TrackedOutcomes {
-    value: Values::new(),
-    returned: Values::new(),
+    value: Carrier {
+        ids: Values::new(),
+        includes_untracked: false,
+    },
+    returned: Carrier {
+        ids: Values::new(),
+        includes_untracked: false,
+    },
     aliases: BTreeMap::new(),
     evaluated_arguments: BTreeMap::new(),
     duties: BTreeMap::new(),
@@ -508,29 +533,33 @@ impl DerefMut for OutcomeState {
 
 impl OutcomeState {
     pub(super) fn take_value(&mut self) -> Values {
+        self.take_carrier().ids
+    }
+
+    pub(super) fn take_carrier(&mut self) -> Carrier {
         self.0
             .as_mut()
-            .map_or_else(Values::new, |state| std::mem::take(&mut state.value))
+            .map_or_else(Carrier::default, |state| std::mem::take(&mut state.value))
     }
 
     pub(super) fn clear_value(&mut self) {
         if let Some(state) = &mut self.0 {
-            state.value.clear();
+            state.value = Carrier::default();
         }
     }
 
-    pub(super) fn set_value(&mut self, value: Values) {
-        if value.is_empty() {
+    pub(super) fn set_value(&mut self, value: Carrier) {
+        if value.ids.is_empty() {
             self.clear_value();
         } else {
             self.value = value;
         }
     }
 
-    pub(super) fn set_return(&mut self, value: Values) {
-        if value.is_empty() {
+    pub(super) fn set_return(&mut self, value: Carrier) {
+        if value.ids.is_empty() {
             if let Some(state) = &mut self.0 {
-                state.returned.clear();
+                state.returned = Carrier::default();
             }
         } else {
             self.returned = value;
@@ -538,19 +567,35 @@ impl OutcomeState {
     }
 
     pub(super) fn read(&self, name: &str) -> Values {
+        self.read_carrier(name).ids
+    }
+
+    pub(super) fn read_carrier(&self, name: &str) -> Carrier {
         self.aliases.get(name).cloned().unwrap_or_default()
     }
 
     pub(super) fn bind(&mut self, name: &str, value: Values) -> Values {
-        if value.is_empty() {
+        self.bind_carrier(
+            name,
+            Carrier {
+                ids: value,
+                includes_untracked: false,
+            },
+        )
+    }
+
+    pub(super) fn bind_carrier(&mut self, name: &str, value: Carrier) -> Values {
+        if value.ids.is_empty() {
             self.0
                 .as_mut()
                 .and_then(|state| state.aliases.remove(name))
                 .unwrap_or_default()
+                .ids
         } else {
             self.aliases
                 .insert(name.to_owned(), value)
                 .unwrap_or_default()
+                .ids
         }
     }
 
@@ -564,14 +609,19 @@ impl OutcomeState {
         }
         let mut joined = (**self).clone();
         joined.overflowed |= right.overflowed;
-        joined.value.extend(right.value.iter().cloned());
-        joined.returned.extend(right.returned.iter().cloned());
+        joined.value.merge(&right.value);
+        joined.returned.merge(&right.returned);
+        for (name, carrier) in &mut joined.aliases {
+            if !right.aliases.contains_key(name) {
+                carrier.includes_untracked = true;
+            }
+        }
         for (name, values) in &right.aliases {
             joined
                 .aliases
                 .entry(name.clone())
                 .or_default()
-                .extend(values.iter().cloned());
+                .merge(values);
         }
         for (identity, duty) in &mut joined.duties {
             if let Some(other) = right.duties.get(identity) {
@@ -604,7 +654,7 @@ impl OutcomeState {
         // If a name denotes this object on only one branch, reading or writing
         // that name cannot establish an unconditional effect on the object.
         for (name, values) in &joined.aliases {
-            for identity in values {
+            for identity in &values.ids {
                 let may_select_different = [self, right].iter().any(|side| {
                     side.duties
                         .get(identity)
@@ -612,7 +662,7 @@ impl OutcomeState {
                         && !side
                             .aliases
                             .get(name)
-                            .is_some_and(|values| values.contains(identity))
+                            .is_some_and(|values| values.ids.contains(identity))
                 });
                 if let Some(duty) = joined.duties.get_mut(identity) {
                     duty.uncertain_selection |= may_select_different;
@@ -624,7 +674,7 @@ impl OutcomeState {
 
     pub(super) fn remember_argument(&mut self, range: SourceRange) {
         let key = (range.start, range.end);
-        if self.value.is_empty() {
+        if self.value.ids.is_empty() {
             if let Some(state) = &mut self.0 {
                 state.evaluated_arguments.remove(&key);
             }
@@ -636,13 +686,13 @@ impl OutcomeState {
         }
     }
 
-    pub(super) fn import_argument(&mut self, parent: &Self, name: &str, values: Values) {
-        for identity in &values {
+    pub(super) fn import_argument(&mut self, parent: &Self, name: &str, values: Carrier) {
+        for identity in &values.ids {
             if let Some(duty) = parent.duties.get(identity) {
                 self.duties.insert(identity.clone(), duty.clone());
             }
         }
-        self.bind(name, values);
+        self.bind_carrier(name, values);
     }
 
     pub(super) fn apply_call(&mut self, child: &Self, copy_return: bool) {
@@ -655,7 +705,7 @@ impl OutcomeState {
             }
         }
         if copy_return {
-            for identity in &child.returned {
+            for identity in &child.returned.ids {
                 if self.duties.len() >= MAX_OUTCOMES && !self.duties.contains_key(identity) {
                     self.overflowed = true;
                     continue;
@@ -715,7 +765,7 @@ fn new_duty(
             origin: span(file, range),
             symbol: symbol.to_owned(),
         });
-    env.outcomes.value.insert(id);
+    env.outcomes.value.ids.insert(id);
 }
 
 pub(super) fn deliver_work(
@@ -770,9 +820,10 @@ pub(super) fn delivery_identity(env: &State, file: &SourceFile, range: SourceRan
 }
 
 pub(super) fn deliver_return(state: &mut State, delivery: &Delivery<'_>, result: &mut Inspection) {
+    let may_return_untracked = state.outcomes.returned.may_be_untracked();
     let mut renewed_variants = 0;
     if let Some(outcomes) = &mut state.outcomes.0 {
-        outcomes.returned.retain(|identity| {
+        outcomes.returned.ids.retain(|identity| {
             let Some(duty) = outcomes.duties.get(identity) else {
                 return false;
             };
@@ -780,7 +831,7 @@ pub(super) fn deliver_return(state: &mut State, delivery: &Delivery<'_>, result:
             duty.pending != 0
         });
     }
-    if state.outcomes.returned.is_empty() || renewed_variants != 0 {
+    if may_return_untracked || state.outcomes.returned.ids.is_empty() || renewed_variants != 0 {
         state.outcomes.clear_value();
         new_duty(
             state,
@@ -791,18 +842,25 @@ pub(super) fn deliver_return(state: &mut State, delivery: &Delivery<'_>, result:
             delivery.symbol,
             result,
         );
-        if renewed_variants != 0 {
+        if !may_return_untracked && renewed_variants != 0 {
             if let Some(duty) = state.outcomes.duties.get_mut(&delivery.identity) {
                 duty.variant &= renewed_variants;
                 duty.pending &= renewed_variants;
             }
         }
         let value = state.outcomes.take_value();
-        state.outcomes.returned.extend(value);
+        if !value.is_empty() {
+            state.outcomes.returned.ids.extend(value);
+            state.outcomes.returned.includes_untracked = false;
+        }
     }
 }
 
 pub(super) fn argument_values(env: &State, expression: &AstExpr) -> Values {
+    argument_carrier(env, expression).ids
+}
+
+pub(super) fn argument_carrier(env: &State, expression: &AstExpr) -> Carrier {
     expr_name(expression).map_or_else(
         || {
             env.outcomes
@@ -811,7 +869,7 @@ pub(super) fn argument_values(env: &State, expression: &AstExpr) -> Values {
                 .cloned()
                 .unwrap_or_default()
         },
-        |name| env.outcomes.read(name),
+        |name| env.outcomes.read_carrier(name),
     )
 }
 
@@ -847,12 +905,12 @@ pub(super) fn lose(
     result: &mut Inspection,
 ) {
     for identity in values {
-        if env.outcomes.returned.contains(&identity)
+        if env.outcomes.returned.ids.contains(&identity)
             || env
                 .outcomes
                 .aliases
                 .values()
-                .any(|live| live.contains(&identity))
+                .any(|live| live.ids.contains(&identity))
         {
             continue;
         }
@@ -923,7 +981,7 @@ pub(super) fn report_exit(
         if duty.pending == 0 || duty.reported || duty.escaped {
             continue;
         }
-        if matches!(kind, CompletionKind::Return(_)) && state.outcomes.returned.contains(id) {
+        if matches!(kind, CompletionKind::Return(_)) && state.outcomes.returned.ids.contains(id) {
             if !marked {
                 report(
                     result,
@@ -1213,12 +1271,12 @@ pub(super) fn acknowledge(
     evidence.filter(|item| !item.origins.is_empty())
 }
 
-pub(super) fn bind_capture(pattern: &AstPattern, values: &Values, env: &mut State) {
+pub(super) fn bind_capture(pattern: &AstPattern, carrier: &Carrier, env: &mut State) {
     let name = match pattern {
         AstPattern::Capture { name, .. } | AstPattern::As { name, .. } => name.as_deref(),
         _ => None,
     };
     if let Some(name) = name {
-        env.outcomes.bind(name, values.clone());
+        env.outcomes.bind_carrier(name, carrier.clone());
     }
 }

@@ -55,7 +55,7 @@ struct Entry {
     contract: Option<outcomes::OutcomeContract>,
     buffered: Option<BufferedValue>,
     delivered_buffered: bool,
-    stored_outcomes: outcomes::Values,
+    stored_outcomes: outcomes::Carrier,
     unclear_outcomes: bool,
 }
 
@@ -101,9 +101,7 @@ impl WorkState {
                 entry.delivered_buffered &= other.delivered_buffered;
                 entry.unclear_outcomes |=
                     other.unclear_outcomes || entry.stored_outcomes != other.stored_outcomes;
-                entry
-                    .stored_outcomes
-                    .extend(other.stored_outcomes.iter().cloned());
+                entry.stored_outcomes.merge(&other.stored_outcomes);
             } else {
                 entry.duty |= ABSENT;
             }
@@ -138,6 +136,10 @@ impl WorkState {
 
     pub(super) fn has_names(&self) -> bool {
         !self.names.is_empty()
+    }
+
+    pub(super) fn has_pending(&self) -> bool {
+        self.pending.is_some()
     }
 
     pub(super) fn snapshot(&mut self, from: &str, temporary: &str) -> bool {
@@ -251,7 +253,7 @@ pub(super) fn register(
             contract: None,
             buffered: None,
             delivered_buffered: false,
-            stored_outcomes: outcomes::Values::new(),
+            stored_outcomes: outcomes::Carrier::default(),
             unclear_outcomes: false,
         },
     );
@@ -416,7 +418,7 @@ pub(super) fn escape(
     let mut carried = outcomes::Values::new();
     for id in ids {
         if let Some(entry) = work.entries.get(&id) {
-            carried.extend(entry.stored_outcomes.iter().cloned());
+            carried.extend(entry.stored_outcomes.ids.iter().cloned());
         }
         escaped |= work.escape(&id);
     }
@@ -715,7 +717,7 @@ fn carry_future_result(
         return;
     }
     if entry.unclear_outcomes {
-        outcomes::escape(env, &entry.stored_outcomes, file, range, result);
+        outcomes::escape(env, &entry.stored_outcomes.ids, file, range, result);
     } else {
         env.outcomes.set_value(entry.stored_outcomes.clone());
     }
@@ -776,38 +778,39 @@ fn set_future(
     argument: &AstExpr,
     file: &SourceFile,
     range: SourceRange,
-) {
-    if entry.readiness & (READY | CANCELLED) != 0 {
-        named_raise(env, range, "asyncio.InvalidStateError");
-        if entry.readiness & WAITING == 0 {
-            env.alive = false;
-            return;
-        }
-    }
-    let mut stored = outcomes::Values::new();
-    let outcome = if method == "set_result" {
-        stored = outcomes::argument_values(env, argument);
-        outcomes::retain_for_work(env, &stored);
-        WorkerExit {
-            normal: true,
-            errors: BTreeSet::new(),
-        }
-    } else {
+) -> bool {
+    let exception = if method == "set_exception" {
         let callee = call_parts(argument).map_or(argument, |(callee, _, _)| callee);
-        // A snapshotted call argument can retain its source identity after
-        // evaluation of the known exception constructor.
+        // Call preparation can replace an already evaluated constructor with
+        // a primitive. Check its source spelling and the current binding.
         let constructor = || {
             let text = file.source.get(argument.range.start..argument.range.end)?;
             let (name, _) = text.split_once('(')?;
             Some(name.trim())
         };
-        WorkerExit {
-            normal: false,
-            errors: BTreeSet::from([expr_name(callee)
-                .or_else(constructor)
-                .filter(|name| is_unshadowed_builtin_exception(name, env))
-                .map(str::to_owned)]),
+        let Some(name) = expr_name(callee)
+            .or_else(constructor)
+            .filter(|name| *name != "StopIteration" && is_unshadowed_builtin_exception(name, env))
+        else {
+            return false;
+        };
+        Some(name.to_owned())
+    } else {
+        None
+    };
+    if entry.readiness & (READY | CANCELLED) != 0 {
+        named_raise(env, range, "asyncio.InvalidStateError");
+        if entry.readiness & WAITING == 0 {
+            env.alive = false;
+            return true;
         }
+    }
+    let stored = if exception.is_none() {
+        let stored = outcomes::argument_carrier(env, argument);
+        outcomes::retain_for_work(env, &stored.ids);
+        stored
+    } else {
+        outcomes::Carrier::default()
     };
     let entry = env
         .ownership
@@ -817,11 +820,15 @@ fn set_future(
         .entries
         .get_mut(id)
         .expect("tracked Future");
-    entry.outcome = outcome;
+    entry.outcome = WorkerExit {
+        normal: exception.is_none(),
+        errors: exception.into_iter().map(Some).collect(),
+    };
     entry.readiness = READY;
     entry.stored_outcomes = stored;
     entry.unclear_outcomes = false;
     env.outcomes.clear_value();
+    true
 }
 
 pub(super) fn call(
@@ -927,8 +934,7 @@ pub(super) fn call(
         (Kind::AsyncFuture, "set_result" | "set_exception")
             if arguments.len() == 1 && keywords.is_empty() =>
         {
-            set_future(env, &id, &entry, method, &arguments[0], file, range);
-            true
+            set_future(env, &id, &entry, method, &arguments[0], file, range)
         }
         (Kind::Pool(_), "get") | (Kind::Thread(_), "result" | "exception") => {
             timeout(arguments, keywords, file)

@@ -830,7 +830,10 @@ pub(super) fn await_combination(
             break;
         }
         deliver_member(member, mode, range, env, file, contracts, functions, result);
-        values.push((env.outcomes.take_value(), env.pending_return_targets.take()));
+        values.push((
+            env.outcomes.take_carrier(),
+            env.pending_return_targets.take(),
+        ));
     }
     if mode == Delivery::Join {
         // The first error is chosen by completion order, not argument order.
@@ -859,14 +862,14 @@ pub(super) fn await_combination(
                 if let Some(targets) = buffered {
                     env.places.insert(name.clone(), targets);
                 }
-                let old = env.outcomes.bind(name, value);
+                let old = env.outcomes.bind_carrier(name, value);
                 outcomes::lose(env, old, file, range, result);
             }
         } else {
             let mut carried = BTreeSet::new();
             let mut buffered = BTreeSet::new();
             for (value, targets) in values {
-                carried.extend(value);
+                carried.extend(value.ids);
                 buffered.extend(targets.into_iter().flatten());
             }
             outcomes::escape(env, &carried, file, range, result);

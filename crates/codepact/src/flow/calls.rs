@@ -327,7 +327,7 @@ fn snapshot_name(
     let executor = ownership.executor_names.get(source).cloned();
     let process = ownership.processes.has_handle(source);
     let work = ownership.work.has_name(source);
-    let outcome = env.outcomes.read(source);
+    let outcome = env.outcomes.read_carrier(source);
     // Captures restored by the coroutine executor already have value identity.
     if ownership.transfer_arguments.contains(source)
         || targets.is_none()
@@ -339,7 +339,7 @@ fn snapshot_name(
             && executor.is_none()
             && !process
             && !work
-            && outcome.is_empty()
+            && outcome.ids.is_empty()
     {
         return;
     }
@@ -370,7 +370,7 @@ fn snapshot_name(
         ownership.processes.bind_alias(&temporary, Some(source));
     }
     ownership.work.snapshot(source, &temporary);
-    env.outcomes.bind(&temporary, outcome);
+    env.outcomes.bind_carrier(&temporary, outcome);
     expression.kind = AstExprKind::Name(temporary.clone());
     temporaries.push(temporary);
 }
@@ -387,7 +387,7 @@ fn snapshot_result(
     let coroutine = env.pending_coroutine_result.take();
     let task = ownership.pending_task.take();
     let work = ownership.work.snapshot_pending(&temporary);
-    let outcome = env.outcomes.take_value();
+    let outcome = env.outcomes.take_carrier();
     let moved = std::mem::take(&mut ownership.pending_move);
     if let Some(targets) = targets {
         env.places.insert(temporary.clone(), targets);
@@ -401,7 +401,7 @@ fn snapshot_result(
         env.coroutine_aliases.insert(temporary.clone(), coroutine);
     } else if let Some(task) = task {
         ownership.task_names.insert(temporary.clone(), task);
-    } else if !work && outcome.is_empty() {
+    } else if !work && outcome.ids.is_empty() {
         // Keep unsupported argument shapes visible to the existing signature binder.
         if matches!(
             expression.kind,
@@ -411,7 +411,7 @@ fn snapshot_result(
         }
         return;
     }
-    env.outcomes.bind(&temporary, outcome);
+    env.outcomes.bind_carrier(&temporary, outcome);
     expression.kind = AstExprKind::Name(temporary.clone());
     temporaries.push(temporary);
 }

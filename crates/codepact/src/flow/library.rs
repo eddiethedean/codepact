@@ -922,7 +922,7 @@ impl Context {
     ) {
         let (callee, args, kwargs) = call_parts(expression).expect("recognized context call");
         queue_raise(env, expression.range, None);
-        let (scope, symbol, resource, status) = match self {
+        let (scope, symbol, resource, status, client) = match self {
             Self::Stream => {
                 let AstExprKind::Attribute(receiver, _) = &callee.kind else {
                     unreachable!("stream method")
@@ -944,6 +944,7 @@ impl Context {
                     format!("{scope}.Client.stream"),
                     Resource::Stream,
                     status,
+                    Some(object.to_owned()),
                 )
             }
             Self::Etl => {
@@ -957,6 +958,7 @@ impl Context {
                     "etlantic_sqlmodel.control_plane.session.session_scope".into(),
                     Resource::Session,
                     status,
+                    None,
                 )
             }
             _ => unreachable!("ordinary context goes through expression evaluation"),
@@ -977,6 +979,16 @@ impl Context {
                 scope
             }
             .to_owned();
+            if let Some(client) = client {
+                let already_started = env
+                    .protocol_states
+                    .get(&client)
+                    .is_some_and(|states| states.len() == 1 && states.contains("client-started"));
+                if !already_started {
+                    set_transaction(&client, "client-started", env);
+                    queue_raise(env, expression.range, None);
+                }
+            }
             allocate(&result_scope, resource, file, expression.range, env, result);
         }
     }
