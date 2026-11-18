@@ -174,10 +174,41 @@ jobs:
           path: target/test-evidence/semantic-properties*
           if-no-files-found: error
 
+  installed-provider-conformance:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: '3.13.16'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Replay the reviewed provider artifacts and runtime semantics
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo build --locked -p codepact
+          mkdir -p target/test-evidence
+          CODEPACT_PHASE09_CHECKER="$PWD/target/debug/codepact" \
+            uv run --no-project --python 3.13.16 --no-build \
+              --with-requirements tests/conformance/phase09-provider-requirements.txt \
+              python tests/conformance/phase09_provider_probe.py 2>&1 | \
+              tee target/test-evidence/phase09-provider-conformance.log
+      - name: Retain installed provider checks
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: phase09-provider-conformance
+          path: target/test-evidence/phase09-provider-conformance.log
+          if-no-files-found: error
+
   quality-gate:
     name: Required quality
     if: always() && github.event_name != 'schedule'
-    needs: [docs, quality, rust-quality, rust-dependencies, model-runtime-matrix, model-conformance]
+    needs: [docs, quality, rust-quality, rust-dependencies, model-runtime-matrix, model-conformance, installed-provider-conformance]
     runs-on: ubuntu-latest
     steps:
       - name: Require every qualification job to succeed

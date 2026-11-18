@@ -10,6 +10,7 @@ pub(super) struct FunctionBody {
     pub(super) contracts: Arc<[Contract]>,
     pub(super) parameter_contracts: BTreeMap<String, Contract>,
     pub(super) return_access: Option<String>,
+    pub(super) outcome_return: Option<outcomes::OutcomeContract>,
     pub(super) statements: Arc<[FlowStatement]>,
     pub(super) supported_binding: bool,
     pub(super) is_async: bool,
@@ -66,6 +67,7 @@ pub(super) type ProjectFunctionMap = BTreeMap<(String, String), FunctionBody>;
 #[derive(Clone, Default, PartialEq, Eq)]
 pub(super) struct State {
     pub(super) ownership: Option<Box<OwnershipState>>,
+    pub(super) outcomes: outcomes::OutcomeState,
     pub(super) places: BTreeMap<String, BTreeSet<String>>,
     pub(super) unknown_places: BTreeSet<String>,
     pub(super) possibly_unbound_places: BTreeSet<String>,
@@ -216,6 +218,7 @@ pub(super) struct JoinEffects {
 
 pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     let mut joined = left.clone();
+    joined.outcomes = left.outcomes.join(&right.outcomes);
     if let (Some(left), Some(right)) = (left.ownership.as_deref(), right.ownership.as_deref()) {
         joined.ownership = Some(Box::new(OwnershipState::join(left, right)));
     }
@@ -600,6 +603,8 @@ pub(super) fn project_call_exit(
     state.alive = true;
     state.pending_raises.clear();
     state.pending_return_targets = None;
+    state.outcomes.apply_call(&child.state.outcomes, false);
+    state.outcomes.clear_value();
     if let (Some(parent), Some(child)) = (state.ownership.as_mut(), child.state.ownership.as_ref())
     {
         parent.apply_runtime_effects(child);

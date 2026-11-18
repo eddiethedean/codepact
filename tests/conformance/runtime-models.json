@@ -110,6 +110,36 @@
         "test_phase08_model_conformance.Phase08SpawnConformance.test_timed_and_interrupted_untimed_join_can_leave_the_child_live",
         "test_phase08_model_conformance.Phase08SpawnConformance.test_worker_failure_can_terminate_a_process"
       ]
+    },
+    {
+      "id": "phase09-work-linux",
+      "models": [
+        "TPM-ASYNCIO-001",
+        "TPM-POOL-001",
+        "TPM-EXECUTOR-001"
+      ],
+      "python_versions": [
+        "3.13.16"
+      ],
+      "platform": "linux",
+      "machine": "x86_64",
+      "module": "test_phase09_work_model_conformance",
+      "upstream_modules": [
+        "asyncio.tasks",
+        "asyncio.futures",
+        "multiprocessing.pool",
+        "concurrent.futures._base",
+        "concurrent.futures.thread"
+      ],
+      "tests": [
+        "test_phase09_work_model_conformance.Phase09AsyncWorkConformance.test_gather_early_failure_and_internal_retrieval",
+        "test_phase09_work_model_conformance.Phase09AsyncWorkConformance.test_gather_fixed_slots_and_wait_members",
+        "test_phase09_work_model_conformance.Phase09AsyncWorkConformance.test_shielded_timeout_leaves_underlying_task_pending",
+        "test_phase09_work_model_conformance.Phase09ProcessWorkConformance.test_pool_reports_failed_result_delivery",
+        "test_phase09_work_model_conformance.Phase09ProcessWorkConformance.test_pool_wait_and_get_have_distinct_effects",
+        "test_phase09_work_model_conformance.Phase09ThreadWorkConformance.test_thread_timeout_cancel_rejection_and_context_join",
+        "test_phase09_work_model_conformance.Phase09ThreadWorkConformance.test_thread_worker_error_retains_identity"
+      ]
     }
   ]
 }

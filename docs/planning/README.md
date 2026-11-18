@@ -19,7 +19,7 @@ Planning baseline: 2026-10-31; release mapping updated 2026-11-17. These documen
 | [0.6 advanced contracts plan](phases/0.6-advanced-contracts.md) | Published preview of exclusive access, finite typestate and protocol models |
 | [0.7 typed outcomes plan](phases/0.7-typed-outcomes.md) | Published Result/Option, finite matches, install split and installed-wheel must-use preview; R01–R10, CS05 and G1–G8 passed. [Specification](phases/0.7/specification.md) · [V07 matrix](phases/0.7/validation.md) |
 | [0.8 foundations](phases/0.8-reviewed-concurrency-foundations.md) | Reviewed providers and first asyncio/multiprocessing lifecycle models. [Specification](phases/0.8/specification.md) · [V08 matrix](phases/0.8/validation.md) · [Implementation evidence](phases/0.8/implementation-evidence.md) |
-| [0.9 obligations and review](phases/0.9-obligations-and-change-review.md) | Persistent responsibilities, before/after comparison and separate HTTP/SQL profiles |
+| [0.9 obligations and review](phases/0.9-obligations-and-change-review.md) | Persistent responsibilities, before/after comparison and separate HTTP/SQL profiles. [Specification](phases/0.9/specification.md) · [V09 matrix](phases/0.9/validation.md) |
 | [0.10 queues and IPC](phases/0.10-queues-ipc-and-synchronization.md) | Queue accounting, process communication and bounded synchronization |
 | [0.11 shutdown and bridges](phases/0.11-shutdown-and-bridges.md) | Async resources, worker shutdown, executor bridges and bounded shared memory |
 | [0.12 integrations](phases/0.12-ecosystem-and-integrations.md) | Portfolio/native/framework adoption, caching, editors and MCP |
@@ -60,11 +60,11 @@ In planning documents, “must” describes an acceptance requirement and is not
 
 ## Repository baseline
 
-A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The predecessor TypePact's 0.1.0 and 0.2.0 releases are published and qualified under the `typepact` names. CodePact 0.3.0 was the first release using the renamed packages and crate. CodePact 0.4.0 published the adoption preview, and 0.5.0 introduced opt-in ownership. CodePact 0.6.0 adds the qualified advanced-contracts preview. CodePact 0.7.0 publishes typed outcomes, finite matches, the install split and installed-wheel must-use preview. [0.6.0 release evidence](../releases/0.6.0-evidence.md) · [0.7.0 release evidence](../releases/0.7.0-evidence.md)
+A Ruff AST-based inspector, Python helpers, package manifests and CI workflows now exist. The predecessor TypePact's 0.1.0 and 0.2.0 releases are published and qualified under the `typepact` names. CodePact 0.3.0 was the first release using the renamed packages and crate. CodePact 0.4.0 published the adoption preview, and 0.5.0 introduced opt-in ownership. CodePact 0.6.0 adds the qualified advanced-contracts preview. CodePact 0.7.0 publishes typed outcomes, finite matches, the install split and installed-wheel must-use preview. CodePact 0.8.0 adds reviewed provider contracts and bounded asyncio and multiprocessing models. [0.6.0 release evidence](../releases/0.6.0-evidence.md) · [0.7.0 release evidence](../releases/0.7.0-evidence.md) · [0.8.0 release evidence](../releases/0.8.0-evidence.md)
 
 ## Versioned release planning
 
-The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.13 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 through 0.7.0 passed their phase-specific and common release gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
+The [root ROADMAP](../../ROADMAP.md) defines the authoritative 0.1–0.13 sequence. The predecessor's 0.1.0 and 0.2.0 releases are complete. CodePact 0.3.0 through 0.8.0 passed their phase-specific and common release gates. Apply the [common release gates](release-gates.md) and retain a [release evidence record](release-evidence-template.md) for every candidate.
 
 ## Python helper and CLI distributions
 

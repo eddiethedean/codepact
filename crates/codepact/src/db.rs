@@ -400,12 +400,15 @@ impl AnalysisSession {
         self.check_cancellable_with_options(
             files,
             python_version,
-            false,
             crate::Ownership::Disabled,
-            false,
             None,
+            check::CheckFeatures {
+                must_use: false,
+                finite_matches: false,
+                review: false,
+            },
         )
-        .map(|(checked, _)| checked)
+        .map(|(checked, _, _)| checked)
     }
 
     pub fn check_with_must_use_cancellable(
@@ -416,12 +419,15 @@ impl AnalysisSession {
         self.check_cancellable_with_options(
             files,
             python_version,
-            true,
             crate::Ownership::Disabled,
-            false,
             None,
+            check::CheckFeatures {
+                must_use: true,
+                finite_matches: false,
+                review: false,
+            },
         )
-        .map(|(checked, _)| checked)
+        .map(|(checked, _, _)| checked)
     }
 
     pub fn check_with_ownership(
@@ -478,7 +484,8 @@ impl AnalysisSession {
         python_version: &str,
         options: crate::CheckOptions,
     ) -> Result<SessionCheckResult, AnalysisCancelled> {
-        self.run_check(files, python_version, options, None)
+        self.run_check(files, python_version, options, None, false)
+            .map(|(checked, _)| checked)
     }
 
     pub fn check_with_foundations(
@@ -505,7 +512,18 @@ impl AnalysisSession {
         options: crate::CheckOptions,
         inputs: crate::foundation::FoundationInputs,
     ) -> Result<SessionCheckResult, AnalysisCancelled> {
-        self.run_check(files, python_version, options, Some(&inputs))
+        self.run_check(files, python_version, options, Some(&inputs), false)
+            .map(|(checked, _)| checked)
+    }
+
+    pub(crate) fn check_with_review_data(
+        &mut self,
+        files: &[SourceFile],
+        python_version: &str,
+        options: crate::CheckOptions,
+        inputs: Option<&crate::foundation::FoundationInputs>,
+    ) -> Result<(SessionCheckResult, crate::review::operations::Journal), AnalysisCancelled> {
+        self.run_check(files, python_version, options, inputs, true)
     }
 
     /// Inspect files and return the session revision used to compute the result.

@@ -353,6 +353,34 @@ def main() -> int:
             "baseline-v1.schema.json",
             baseline_path.read_text(encoding="utf-8"),
         )
+        review_project = root / "review-project"
+        review_project.mkdir()
+        _ = (review_project / "main.py").write_text("value = 1\n", encoding="utf-8")
+        review_before = root / "review-before.json"
+        review_after = root / "review-after.json"
+        for label, path, options in (
+            ("before", review_before, []),
+            ("after", review_after, ["--fail-on", "warning"]),
+        ):
+            capture = cli_output(
+                [
+                    "review",
+                    "capture",
+                    "--no-config",
+                    "--root",
+                    str(review_project),
+                    *options,
+                ],
+            )
+            validate_emitted(
+                f"review capture {label}", "review-snapshot-v1.schema.json", capture
+            )
+            _ = path.write_text(capture, encoding="utf-8")
+        validate_emitted(
+            "review comparison",
+            "review-v1.schema.json",
+            cli_output(["review", str(review_before), str(review_after), "--json"], 1),
+        )
         validate_emitted(
             "inspection",
             "inspection-v0.schema.json",

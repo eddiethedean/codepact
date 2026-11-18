@@ -16,6 +16,9 @@ consumers should reject versions they do not support.
 | Rule explanation | [explanation schema 1](schemas/explanation-v1.schema.json) |
 | Resolved settings | [settings schema 2](schemas/settings-v2.schema.json), [0.8 settings schema 3](schemas/settings-v3.schema.json) |
 | 0.8 model evidence | [foundations evidence schema 1](schemas/foundations-evidence-v1.schema.json) |
+| Source review capture | [review snapshot schema 1](schemas/review-snapshot-v1.schema.json) |
+| Source review comparison | [review result schema 1](schemas/review-v1.schema.json) |
+| Wheel contract comparison | [contract diff schema 1](schemas/contract-diff-v1.schema.json) |
 
 Valid and invalid JSON fixtures are maintained in the
 [repository fixture directory](https://github.com/eddiethedean/codepact/tree/main/docs/schemas/fixtures).

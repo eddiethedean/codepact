@@ -2,10 +2,10 @@
 use super::{
     asyncio, boundary, call_parts, consume_expr, execute,
     execution::{execute_non_if_statement, push_exit},
-    expr_name, join_states, merge, ownership, process, queue_raise, runtime, synthetic_name,
-    take_flow_step, take_pending_raises, tasks, weaken, AstExpr, AstExprKind, CompletionKind,
-    Contract, FlowExit, FlowResult, FlowStatement, FlowWithItem, FunctionMap, Inspection,
-    SourceFile, SourceRange, State, MAX_EXIT_PARTITIONS, UNKNOWN,
+    expr_name, join_states, library, merge, ownership, process, queue_raise, runtime,
+    synthetic_name, take_flow_step, take_pending_raises, tasks, weaken, AstExpr, AstExprKind,
+    CompletionKind, Contract, FlowExit, FlowResult, FlowStatement, FlowWithItem, FunctionMap,
+    Inspection, SourceFile, SourceRange, State, MAX_EXIT_PARTITIONS, UNKNOWN,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -62,7 +62,12 @@ enum ContextCleanup {
     },
     TaskGroup(String),
     Pool(String),
+    Executor(String),
     Timeout(String),
+    Library {
+        receiver: String,
+        context: library::Context,
+    },
 }
 
 #[derive(Clone)]
@@ -111,7 +116,13 @@ impl ModeledCleanup {
             ContextCleanup::Pool(receiver) => {
                 process::finish_pool(receiver, env, file, range, result)
             }
+            ContextCleanup::Executor(receiver) => {
+                super::executor::leave_context(receiver, range, env, file, functions, result)
+            }
             ContextCleanup::Timeout(id) => asyncio::leave_timeout(id, env, range, incoming),
+            ContextCleanup::Library { receiver, context } => {
+                context.exit(receiver, incoming, env, file, range, result);
+            }
             ContextCleanup::Method { receiver, method } => {
                 let call = method.call(receiver, range);
                 consume_expr(&call, env, file, contracts, functions, result, 0);
@@ -455,6 +466,37 @@ pub(super) fn execute_with(
             }
         }
         if !asynchronous {
+            let executor = synthetic_name(env, "executor-context", item.range, index);
+            if runtime::runtime_profile(env)
+                .is_ok_and(|profile| profile.applicability(&env.target_python_version).is_ok())
+                && super::executor::enter_context(&executor, &item.context, env, file, result)
+            {
+                entry_raises.extend(
+                    take_pending_raises(env)
+                        .into_iter()
+                        .map(|exit| (exit, cleanups.len())),
+                );
+                if let Some(target) = &item.target {
+                    let source = AstExpr {
+                        range: item.range,
+                        kind: AstExprKind::Name(executor.clone()),
+                    };
+                    super::executor::enter_context(target, &source, env, file, result);
+                }
+                if item.unsupported_target {
+                    boundary(
+                        result,
+                        file,
+                        item.range,
+                        "executor context target is outside the qualified local subset",
+                    );
+                }
+                cleanups.push(ContextCleanupFrame::modeled(
+                    ContextCleanup::Executor(executor),
+                    item.range,
+                ));
+                continue;
+            }
             let receiver = synthetic_name(env, "pool-context", item.range, index);
             if let Some(active) = process::enter_pool(
                 &receiver,
@@ -489,6 +531,90 @@ pub(super) fn execute_with(
                 }
                 continue;
             }
+        }
+        if let Some(context) = library::context(&item.context, asynchronous, env) {
+            let receiver = synthetic_name(env, "library-context", item.range, index);
+            if context.special() {
+                if let Some((_, arguments, keywords)) = call_parts(&item.context) {
+                    for argument in arguments
+                        .iter()
+                        .chain(keywords.iter().map(|(_, value)| value))
+                    {
+                        consume_expr(argument, env, file, contracts, functions, result, 0);
+                    }
+                }
+                if env.alive {
+                    context.enter_special(&item.context, env, file, result);
+                    if let Some(targets) = env.pending_return_targets.take() {
+                        env.places.insert(receiver.clone(), targets);
+                    }
+                }
+            } else {
+                execute_non_if_statement(
+                    &FlowStatement::Assign {
+                        name: receiver.clone(),
+                        annotation: None,
+                        value: item.context.clone(),
+                        range: item.context.range,
+                    },
+                    env,
+                    file,
+                    contracts,
+                    functions,
+                    result,
+                );
+            }
+            if env.alive {
+                context.enter(&receiver, env, file, item.range, result);
+            }
+            entry_raises.extend(
+                take_pending_raises(env)
+                    .into_iter()
+                    .map(|exit| (exit, cleanups.len())),
+            );
+            if !env.alive {
+                break;
+            }
+            if let Some(targets) = env
+                .places
+                .get(&receiver)
+                .cloned()
+                .filter(|_| !env.unknown_places.contains(&receiver))
+            {
+                if item.unsupported_target {
+                    boundary(
+                        result,
+                        file,
+                        item.range,
+                        "reviewed context target destructuring is unsupported",
+                    );
+                }
+                if let Some(target) = &item.target {
+                    env.places.insert(target.clone(), targets);
+                    ownership::assign_handle(target, None, false, env, file, item.range, result);
+                    env.possibly_unbound_places.remove(target);
+                    env.unknown_places.remove(target);
+                    env.definitely_bound_names.insert(target.clone());
+                    env.shadowed_functions.insert(target.clone());
+                    env.shadowed_classes.insert(target.clone());
+                }
+                cleanups.push(ContextCleanupFrame::modeled(
+                    ContextCleanup::Library { receiver, context },
+                    item.range,
+                ));
+            } else {
+                boundary(
+                    result,
+                    file,
+                    item.range,
+                    "reviewed context receiver is unresolved",
+                );
+                cleanups.push(ContextCleanupFrame::Unknown {
+                    asynchronous,
+                    range: item.range,
+                });
+            }
+            continue;
         }
         let file_context = (!asynchronous)
             .then(|| runtime::TextFileContext::resolve(&item.context, env))

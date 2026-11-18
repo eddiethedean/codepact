@@ -28,6 +28,8 @@ pub(super) struct Baseline {
     pub(super) ownership: crate::Ownership,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) ownership_model_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) declaration_policy_sha256: Option<String>,
     pub(super) snapshot_id: String,
     pub(super) source_manifest: Vec<SnapshotFile>,
     pub(super) logical_root: String,
@@ -133,6 +135,10 @@ pub(super) fn validate_baseline_document(baseline: &Baseline) -> Result<(), Stri
         || baseline.update_reason.trim().is_empty()
         || baseline.update_reason.len() > 8 * 1024
         || !valid_sha256(&baseline.snapshot_id)
+        || baseline
+            .declaration_policy_sha256
+            .as_ref()
+            .is_some_and(|revision| !valid_sha256(revision))
     {
         return Err("baseline has invalid identity or update-reason fields".into());
     }
@@ -254,6 +260,14 @@ pub fn write_baseline(
     reason: &str,
 ) -> Result<BaselineUpdateSummary, String> {
     validate_analysis_scope(result, config)?;
+    let mut declaration_result;
+    let result = if config.declaration_policy.is_empty() {
+        result
+    } else {
+        declaration_result = result.clone();
+        super::declarations::apply(&mut declaration_result, files, config);
+        &declaration_result
+    };
     if reason.trim().is_empty() {
         return Err("baseline update requires a nonempty reason".into());
     }
@@ -362,6 +376,7 @@ pub fn write_baseline(
             &config.severity,
             config.mode.as_str(),
             config.fail_on.as_str(),
+            super::declarations::revision(result, files, config),
         ))
         .map_err(|error| format!("cannot encode baseline snapshot: {error}"))?
         .as_slice(),
@@ -375,6 +390,7 @@ pub fn write_baseline(
         model_catalog_version: result.model_catalog_version,
         ownership: config.ownership,
         ownership_model_revision: ownership_model_revision(result),
+        declaration_policy_sha256: super::declarations::revision(result, files, config),
         snapshot_id: snapshot_id.clone(),
         source_manifest: source_manifest.clone(),
         logical_root: ".".into(),

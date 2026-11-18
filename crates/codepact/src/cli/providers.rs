@@ -229,7 +229,12 @@ fn installed_package(
     }
     let paths = discovery::discover_provider_sources(package_root)
         .map_err(|error| format!("provider file discovery: {error}"))?;
-    let mut remaining = codepact::DEFAULT_MAX_SOURCE_BYTES;
+    let mut remaining = if !marked && !has_manifest && expected_unmarked {
+        foundation::reviewed_library_source_limit(scope)
+            .unwrap_or(codepact::DEFAULT_MAX_SOURCE_BYTES)
+    } else {
+        codepact::DEFAULT_MAX_SOURCE_BYTES
+    };
     for path in paths {
         let relative = path
             .strip_prefix(root)
@@ -237,7 +242,27 @@ fn installed_package(
             .to_str()
             .ok_or("provider source path is not UTF-8")?
             .replace('\\', "/");
-        let module = foundation::module_for_source(&relative, target).ok_or_else(|| {
+        let module = foundation::module_for_source(&relative, target);
+        if module.is_none()
+            && scope == "etlantic_sqlmodel"
+            && !marked
+            && expected_unmarked
+            && relative.starts_with("etlantic_sqlmodel/migrations/versions/")
+            && relative
+                .rsplit('/')
+                .next()
+                .is_some_and(|name| name.starts_with(|ch: char| ch.is_ascii_digit()))
+        {
+            let source = artifacts::read_text(&path, remaining)?;
+            if inventory.owner(&relative)?.0 != info {
+                return Err("ETLantic migration has a different installed owner".into());
+            }
+            record.verify_member(&relative, source.as_bytes())?;
+            remaining -= source.len();
+            files.insert(path);
+            continue;
+        }
+        let module = module.ok_or_else(|| {
             format!("provider source {relative} has an unresolved module identity")
         })?;
         if !record.contains(&relative) || inventory.owner(&relative)?.0 != info {
@@ -318,15 +343,25 @@ pub(super) fn discover(
     files: &[SourceFile],
     target: &str,
     models: &[foundation::ProjectResourceModel],
+    reviewed_libraries: bool,
 ) -> Discovered {
     if roots.is_empty() && models.is_empty() {
         return Discovered::default();
     }
-    let needed = files
+    let mut needed = files
         .iter()
         .flat_map(|file| foundation::static_imports(file, target))
         .filter_map(|module| module.split('.').next().map(str::to_owned))
         .collect::<BTreeSet<_>>();
+    let direct = needed.clone();
+    if reviewed_libraries {
+        needed.extend(
+            direct
+                .iter()
+                .flat_map(|scope| foundation::reviewed_library_dependencies(scope))
+                .map(|scope| (*scope).to_owned()),
+        );
+    }
     let project_modules = files
         .iter()
         .filter_map(|file| file.module.split('.').next())
@@ -347,6 +382,8 @@ pub(super) fn discover(
         {
             continue;
         }
+        let reviewed =
+            reviewed_libraries && foundation::reviewed_library_source_limit(&name).is_some();
         let expected = models.iter().any(|model| {
             model
                 .factory
@@ -363,7 +400,7 @@ pub(super) fn discover(
                 let has_metadata = [foundation::MARKER_FILENAME, foundation::MANIFEST_FILENAME]
                     .iter()
                     .any(|filename| fs::symlink_metadata(directory.join(filename)).is_ok());
-                if !has_metadata && !expected {
+                if !has_metadata && !expected && !reviewed {
                     return Ok(None);
                 }
                 let inventory = inventories
@@ -371,9 +408,16 @@ pub(super) fn discover(
                     .or_insert_with(|| Inventory::read(entries))
                     .as_ref()
                     .map_err(Clone::clone)?;
-                installed_package(root, &directory, &name, inventory, target, expected)
+                installed_package(
+                    root,
+                    &directory,
+                    &name,
+                    inventory,
+                    target,
+                    expected || reviewed,
+                )
             }
-            ResolvedImport::SingleModule if expected => {
+            ResolvedImport::SingleModule if expected || (reviewed && direct.contains(&name)) => {
                 Err("selected single-module provider is outside the regular package model".into())
             }
             ResolvedImport::Opaque => {
@@ -384,6 +428,9 @@ pub(super) fn discover(
             }
             ResolvedImport::Missing if expected => {
                 Err("project contract has no selected installed provider".into())
+            }
+            ResolvedImport::Missing if reviewed && direct.contains(&name) => {
+                Err("reviewed library has no selected installed provider".into())
             }
             ResolvedImport::SingleModule | ResolvedImport::Missing => Ok(None),
         })();

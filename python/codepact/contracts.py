@@ -40,7 +40,13 @@ class MustUseResult:
     """The declared result should be handled by its immediate caller."""
 
 
+@dataclass(frozen=True, slots=True)
+class MustHandleOutcome:
+    """The declared outcome requires acknowledgment after delivery."""
+
+
 MustUse: TypeAlias = Annotated[T, MustUseResult()]
+MustHandle: TypeAlias = Annotated[T, MustHandleOutcome()]
 
 
 Owned: TypeAlias = Annotated[T, OwnedAccess()]
@@ -55,7 +61,9 @@ __all__ = [
     "ExclusiveBorrow",
     "StateAccess",
     "MustUseResult",
+    "MustHandleOutcome",
     "MustUse",
+    "MustHandle",
     "Owned",
     "Borrowed",
     "BorrowedMut",

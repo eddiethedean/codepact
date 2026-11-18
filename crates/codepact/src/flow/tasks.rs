@@ -380,7 +380,8 @@ pub(super) fn task_call(
         env.alive = false;
         return true;
     }
-    let direct_function = matches!(&record.invocation.kind, AstExprKind::Call { function, .. } if expr_name(function).is_some());
+    let direct_function = matches!(&record.invocation.kind, AstExprKind::Call { function, .. } if expr_name(function).is_some())
+        || super::library::direct_task(record, env);
     if repeated || !direct_function || record.ambiguous {
         env.ownership
             .as_mut()
@@ -445,6 +446,7 @@ pub(super) fn task_call(
             group.incomplete = true;
         }
     }
+    super::library::check_scheduled_operation(&id, env, file, expression.range, result);
     env.ownership
         .as_mut()
         .expect("task ownership")
@@ -462,7 +464,8 @@ pub(super) fn task_call(
                 cancelled_before_start: false,
             },
         );
-    env.ownership.as_mut().expect("task ownership").pending_task = Some((group_id, id));
+    env.ownership.as_mut().expect("task ownership").pending_task = Some((group_id, id.clone()));
+    work::schedule_task(env, &id, file, expression.range, result);
     true
 }
 
@@ -513,16 +516,18 @@ pub(super) fn execute_scheduled_coroutine(
     restore_captures(record, &mut execution);
     // The parent may already have violated the borrow. The worker's
     // contracted entry is open; TP2006 retains the parent-side witness.
+    let provider_operation = super::library::direct_task(record, env);
     for object in record
         .captures
         .values()
         .filter(|place| !place.transferred)
         .flat_map(|place| &place.targets)
     {
-        if execution
-            .objects
-            .get(object)
-            .is_some_and(|mask| mask & CLOSED != 0)
+        if !provider_operation
+            && execution
+                .objects
+                .get(object)
+                .is_some_and(|mask| mask & CLOSED != 0)
         {
             execution.objects.insert(object.clone(), OPEN);
         }
@@ -611,6 +616,7 @@ pub(super) fn join_group(
                         errors: BTreeSet::from([Some("CancelledError".into())]),
                     });
                 }
+                work::cancel(continuation, task_id);
             }
             continue;
         }
@@ -730,12 +736,19 @@ pub(super) fn join_group(
                 "TaskGroup exit leaves escaped or unresolved capture lifetimes",
             );
         } else {
+            if normal_completion.normal && library::direct_task(&record, env) {
+                if let Some(normal) = &normal {
+                    work::retain_buffered(env, normal, task_id);
+                }
+            }
             if let Some(coroutine) = env.coroutines.get_mut(task_id) {
                 coroutine.complete_task(normal_completion);
             }
+            work::ready(env, task_id);
             if let Some(coroutine) = interrupted.coroutines.get_mut(task_id) {
                 coroutine.complete_task(interrupted_completion);
             }
+            work::ready(&mut interrupted, task_id);
         }
     }
     if group.incomplete {
@@ -790,6 +803,34 @@ pub(super) fn join_group(
         });
     }
     if !child_errors.is_empty() {
+        if child_errors.iter().all(|error| {
+            error
+                .as_deref()
+                .and_then(|error| builtin_exception_match(error, "Exception"))
+                == Some(true)
+        }) {
+            for task_id in group.tasks.keys() {
+                let Some(completion) = interrupted
+                    .coroutines
+                    .get(task_id)
+                    .and_then(|record| record.task_completion.as_ref())
+                else {
+                    continue;
+                };
+                if !completion
+                    .errors
+                    .iter()
+                    .any(|error| error.as_deref() != Some("CancelledError"))
+                {
+                    continue;
+                }
+                if completion.normal {
+                    work::may_observe(&mut interrupted, task_id);
+                } else {
+                    work::observe(&mut interrupted, task_id);
+                }
+            }
+        }
         queue_group_error(&mut interrupted, range, None, &child_errors);
         env.pending_raises
             .extend(take_pending_raises(&mut interrupted));

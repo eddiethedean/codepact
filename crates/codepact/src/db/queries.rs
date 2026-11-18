@@ -22,6 +22,7 @@ struct FlowFileContext {
     model_catalog: crate::model::FlowModelCatalog,
     cyclic_modules: BTreeSet<String>,
     ownership: crate::Ownership,
+    capture_review: bool,
 }
 #[salsa::tracked]
 pub fn parse_file(db: &dyn Db, file: FileInput, python_version: String) -> ParseSummary {
@@ -231,7 +232,11 @@ fn check_flow_file_query(
     flow_budget: usize,
     context: FlowFileContext,
     mut inspection: Inspection,
-) -> (Inspection, Vec<crate::foundation::ModelUse>) {
+) -> (
+    Inspection,
+    Vec<crate::foundation::ModelUse>,
+    crate::review::operations::Journal,
+) {
     db.unwind_if_revision_cancelled();
     let sources: Vec<_> = dependencies
         .iter()
@@ -253,28 +258,33 @@ fn check_flow_file_query(
         })
         .collect();
     crate::flow::reset_flow_budget(flow_budget);
-    let ((), uses) =
-        crate::foundation::collect_model_uses(context.model_catalog.foundations.is_some(), || {
-            crate::source::with_indexed_sources(
-                sources.iter().map(|source| source.source.as_str()),
+    let (((), uses), operations) =
+        crate::review::operations::collect(context.capture_review, || {
+            crate::foundation::collect_model_uses(
+                context.model_catalog.foundations.is_some(),
                 || {
-                    crate::flow::check_file_bodies(
-                        file.path(db),
-                        &sources,
-                        &summaries,
-                        &mut inspection,
-                        crate::flow::FlowOptions {
-                            python_version: &python_version,
-                            models: &context.model_catalog,
-                            cyclic_modules: &context.cyclic_modules,
-                            ownership: context.ownership,
+                    crate::source::with_indexed_sources(
+                        sources.iter().map(|source| source.source.as_str()),
+                        || {
+                            crate::flow::check_file_bodies(
+                                file.path(db),
+                                &sources,
+                                &summaries,
+                                &mut inspection,
+                                crate::flow::FlowOptions {
+                                    python_version: &python_version,
+                                    models: &context.model_catalog,
+                                    cyclic_modules: &context.cyclic_modules,
+                                    ownership: context.ownership,
+                                },
+                            );
                         },
-                    );
+                    )
                 },
             )
         });
     db.unwind_if_revision_cancelled();
-    (inspection, uses)
+    (inspection, uses, operations)
 }
 
 #[salsa::tracked(returns(ref))]
@@ -285,7 +295,12 @@ pub(super) fn check_flow_query(
     model_catalog: crate::model::FlowModelCatalog,
     mut inspection: Inspection,
     ownership: crate::Ownership,
-) -> (Inspection, Vec<crate::foundation::ModelUse>) {
+    capture_review: bool,
+) -> (
+    Inspection,
+    Vec<crate::foundation::ModelUse>,
+    crate::review::operations::Journal,
+) {
     db.unwind_if_revision_cancelled();
     let sources: Vec<_> = files
         .iter()
@@ -340,6 +355,7 @@ pub(super) fn check_flow_query(
     // receives a nonzero share and the sum of all per-file limits stays bounded.
     let flow_budget = crate::flow::MAX_FLOW_STEPS / files.len().max(1);
     let mut uses = BTreeSet::new();
+    let mut operations = crate::review::operations::Journal::default();
     for (target, source) in files.iter().copied().zip(&sources) {
         db.unwind_if_revision_cancelled();
         if target.path(db).starts_with(crate::DEPENDENCY_SOURCE_PREFIX) {
@@ -412,8 +428,9 @@ pub(super) fn check_flow_query(
             model_catalog: scoped_models,
             cyclic_modules: cyclic_modules.clone(),
             ownership,
+            capture_review,
         };
-        let (flow, file_uses) = check_flow_file_query(
+        let (flow, file_uses, file_operations) = check_flow_file_query(
             db,
             target,
             dependencies,
@@ -423,6 +440,7 @@ pub(super) fn check_flow_query(
             flow_input,
         );
         uses.extend(file_uses.iter().cloned());
+        operations.append(file_operations);
         inspection
             .diagnostics
             .extend(flow.diagnostics.iter().cloned());
@@ -436,5 +454,5 @@ pub(super) fn check_flow_query(
         }
     }
     db.unwind_if_revision_cancelled();
-    (inspection, uses.into_iter().collect())
+    (inspection, uses.into_iter().collect(), operations)
 }

@@ -18,6 +18,8 @@ mod contexts;
 mod execution;
 mod executor;
 mod expressions;
+mod library;
+pub(crate) mod outcomes;
 mod ownership;
 mod process;
 mod providers;
@@ -27,6 +29,7 @@ mod resolution;
 mod runtime;
 mod state;
 mod tasks;
+mod work;
 use calls::{bind_arguments, binding_failure, evaluate_call_arguments, BindingFailure};
 use execution::{
     builtin_exception_match, completion_exception_name, execute, is_unshadowed_builtin_exception,
@@ -693,6 +696,7 @@ fn call_may_return_resource(
     if tasks::returns_task_handle_or_status(expression, env)
         || asyncio::returns_task(expression, env)
         || process::returns_status(expression, env)
+        || outcomes::call_contract(expression, env, functions).is_some()
     {
         return false;
     }
@@ -1519,6 +1523,7 @@ pub(crate) fn check_file_bodies(
         .collect::<BTreeSet<_>>();
     let mut project_functions = ProjectFunctionMap::new();
     let mut historical_functions = FunctionMap::new();
+    let mut outcome_declarations = BTreeMap::new();
     let mut class_generations = BTreeMap::<(String, String), usize>::new();
     for file in files {
         if file.path.starts_with(crate::DEPENDENCY_SOURCE_PREFIX)
@@ -1535,6 +1540,10 @@ pub(crate) fn check_file_bodies(
         else {
             continue;
         };
+        let outcome_contracts = outcomes::scan_declarations(declarations, &supplied_modules);
+        if file.path == target_path {
+            outcome_contracts.report_issues(result, file);
+        }
         let module_contracts: Arc<[Contract]> = contracts_for_module(
             file,
             files,
@@ -1586,6 +1595,7 @@ pub(crate) fn check_file_bodies(
                                     && contract.lifecycle.is_some()
                             })
                             .map(|contract| contract.access.clone()),
+                        outcome_return: outcome_contracts.returns.get(&range.start).copied(),
                         statements: Arc::from(body.clone()),
                         supported_binding: true,
                         is_async: *is_async,
@@ -1644,6 +1654,10 @@ pub(crate) fn check_file_bodies(
                             contracts: Arc::clone(&module_contracts),
                             parameter_contracts: BTreeMap::new(),
                             return_access: None,
+                            outcome_return: outcome_contracts
+                                .returns
+                                .get(&method.range.start)
+                                .copied(),
                             statements: Arc::from(method.body.clone()),
                             supported_binding: (!method.decorated || method.must_use_decorator)
                                 && !method.is_generator,
@@ -1667,6 +1681,7 @@ pub(crate) fn check_file_bodies(
                 _ => {}
             }
         }
+        outcome_declarations.insert(file.path.clone(), outcome_contracts.returns);
     }
     let mut qualified_functions: FunctionMap = project_functions
         .iter()
@@ -2347,6 +2362,19 @@ pub(crate) fn check_file_bodies(
                 })
                 .map(|contract| contract.access.as_str());
             let flow_outcomes = execute(body, &mut env, file, &contracts, functions, result, 0);
+            let marked = outcome_declarations
+                .get(&file.path)
+                .is_some_and(|returns| returns.contains_key(&range.start));
+            outcomes::report_scope(
+                &env,
+                &flow_outcomes,
+                file,
+                *range,
+                result,
+                marked,
+                &outcomes::Values::new(),
+            );
+            work::report_scope(&env, &flow_outcomes, file, *range, result);
             let suggest_owned =
                 suggests_owned_handoff(&flow_outcomes.returns, env.alive, return_access);
             let exits = flow_outcomes.all_abrupt().cloned().collect::<Vec<_>>();
@@ -2482,6 +2510,19 @@ pub(crate) fn check_file_bodies(
                     result,
                     0,
                 );
+                let marked = outcome_declarations
+                    .get(&file.path)
+                    .is_some_and(|returns| returns.contains_key(&method.range.start));
+                self::outcomes::report_scope(
+                    &env,
+                    &outcomes,
+                    file,
+                    method.range,
+                    result,
+                    marked,
+                    &self::outcomes::Values::new(),
+                );
+                work::report_scope(&env, &outcomes, file, method.range, result);
                 let suggest_owned = suggests_owned_handoff(&outcomes.returns, env.alive, None);
                 let exits = outcomes.all_abrupt().cloned().collect::<Vec<_>>();
                 for exit in grouped_exits(&exits) {
@@ -2634,6 +2675,17 @@ pub(crate) fn check_file_bodies(
             );
             report_module_scope_lifetimes(result, &module, &outcomes);
             report_unawaited_coroutines(&module, file, result);
+            if let Some(last) = summary.module_body.last() {
+                self::outcomes::report_scope(
+                    &module,
+                    &outcomes,
+                    file,
+                    statement_range(last),
+                    result,
+                    false,
+                    &self::outcomes::Values::new(),
+                );
+            }
         }
     }
 }

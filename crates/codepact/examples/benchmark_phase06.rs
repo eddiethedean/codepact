@@ -111,6 +111,7 @@ fn measure(workload: &str, size: usize) {
         uv_lock: None,
         severity: Default::default(),
         settings_origins: Default::default(),
+        declaration_policy: Vec::new(),
     };
     let mut cold_ms = Vec::new();
     let mut warm_ms = Vec::new();

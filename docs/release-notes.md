@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.9.0 preview
+
+- `MustHandle` tracks explicit acknowledgment after assignment, aliases and
+  supported handoffs. The existing immediate `MustUse` checks still apply.
+- `codepact review` compares captured source analyses and reports preservation
+  verdicts. `codepact contracts diff` compares two reviewed wheel publications.
+- Declaration policy can preview or enforce requirements on selected APIs.
+- The exact-runtime models add work result observation and reviewed HTTP and
+  SQL provider effects. [Project policy](adopting.md) · [Provider profiles](reviewed-contracts.md)
+
 ## 0.8.0 — reviewed contracts and concurrency
 
 CodePact 0.8.0 extends checking across installed packages and adds bounded

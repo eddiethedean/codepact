@@ -47,6 +47,7 @@ fn config() -> EffectiveConfig {
         uv_lock: None,
         severity: Default::default(),
         settings_origins: Default::default(),
+        declaration_policy: Vec::new(),
     }
 }
 

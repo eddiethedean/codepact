@@ -156,3 +156,24 @@ foundations report explicitly. These checks emit CLI JSON report schema 4
 with model applicability, artifact digests, source scope, and exhausted limits.
 Rust hosts can supply the equivalent inputs through `check_with_foundations`.
 [Output schemas](schemas.md) · [Rust integration](rust-api.md#check-with-reviewed-models)
+
+## HTTP and SQL preview for 0.9
+
+The checker selects reviewed effects from the installed source in configured
+`dependency-roots`. The initial profiles target CPython 3.13.16 on Linux
+x86-64 with Python 3.13 source. Declare the runtime as shown above. For async
+profiles, enable experimental ownership and set the default task-factory
+assumption for an event loop you control.
+
+| Distribution | Reviewed operations |
+| --- | --- |
+| HTTPX 0.28.1 and HTTPX2 2.16.2 | Separate sync client and direct-await async client profiles. Use `trust_env=False` and literal `http://` requests. The sync profile also covers lexical streaming. |
+| SQLAlchemy 2.0.58 | The reviewed pure Python wheel, with local scoped SQLite engines, connections and sessions. The async profile uses aiosqlite 0.22.1. |
+| SQLModel 0.0.44 | Separate sync and direct-await `exec` behavior on the selected SQLAlchemy stack. |
+| ETLantic SQLModel 0.59.0 | The installed `session_scope` contract for normal commit, modeled exception rollback, and close. |
+
+Inspect `foundations.providers` and `foundations.model_uses` in the JSON report
+for selected artifacts, applied effects and coverage boundaries. An async HTTP
+client can serve two known requests while both tasks hold it open. SQL uses one
+session per concurrent task. Awaiting cleanup and observing a task's result are
+distinct obligations, and a database result has its own consumption behavior.

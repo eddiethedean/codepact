@@ -9,16 +9,16 @@ For every gate marked Pass, record the accountable maintainer's name and ISO dat
 ## Candidate
 
 - Version and phase:
-- Candidate commit:
+- Candidate commit: `<40-character commit>`
 - Previous release / comparison base:
-- Accountable maintainer (phase owner, validator, reviewer and release approver):
+- Accountable maintainer (phase owner, validator, reviewer and release approver): `<maintainer>`
 - Supported Python/checker/platform matrix:
 - Artifact names and hashes:
 - Scope changes and accepted decision links:
 
 ## Common gates
 
-| Gate | Status | Evidence | Reviewer / date |
+| Gate | Status | Evidence | Maintainer / date |
 | --- | --- | --- | --- |
 | G1 Scope | Pending | | |
 | G2 Correctness / interoperability | Pending | | |
@@ -31,11 +31,12 @@ For every gate marked Pass, record the accountable maintainer's name and ISO dat
 
 ## Phase-specific gates
 
-Copy every gate ID from the applicable phase plan into this table.
+Copy every gate ID from the applicable phase plan into this table. Include the
+fixture or command, revision and environment in the evidence column.
 
-| Gate ID | Status | Command, fixture or review evidence | Revision / environment | Reviewer |
-| --- | --- | --- | --- | --- |
-| Replace with actual gate | Pending | | | |
+| Gate ID | Status | Evidence | Maintainer / date |
+| --- | --- | --- | --- |
+| Replace with actual gate | Pending | | |
 
 ## Findings and decisions
 

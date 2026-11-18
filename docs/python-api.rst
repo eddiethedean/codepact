@@ -74,6 +74,23 @@ the supplied callable in the current task. ``Some(None)`` converts to
 ``None`` with ``to_nullable``, so absence and an explicit ``None`` payload
 cannot both be recovered after conversion.
 
+Persistent outcome acknowledgment
+---------------------------------
+
+.. py:data:: codepact.MustHandle
+
+   Aliases ``Annotated[T, MustHandleOutcome()]``. Apply it to the outer
+   ``Result`` or ``Option`` in a callable's return annotation. The checker
+   tracks the delivered duty through supported assignments and aliases.
+
+.. autoclass:: codepact.contracts.MustHandleOutcome
+
+.. autofunction:: codepact.discard_outcome
+
+Use a nonempty literal ``reason`` to include the waiver in static review.
+The helper validates the reason and returns ``None``. See :doc:`contracts`
+for a complete persistent-outcome example.
+
 ``codepact.move``
 -----------------
 

@@ -54,6 +54,7 @@ The unmarked status has no must-use obligation and the check exits `0`.
 | `TP4001` | 0.1.0 | The selected Python grammar could not parse the file | Fix the syntax error or select the source target matching the code. |
 | `TP4002` | 0.1.0 | A declaration is invalid or metadata conflicts | Compare the primary and related spans; make the lifecycle/access declarations for that view consistent. |
 | `TP9001` | 0.1.0 | An unsupported or unresolved construct leaves coverage incomplete | Supply a missing supported input or reduce the pilot to a documented subset. Do not treat the boundary as a pass. |
+| `TP3003` | 0.9 preview | A local task, future, or pool job exits without observation under the selected runtime profile | Observe the result or worker exception through a supported await or retrieval. Completion and shutdown preserve this duty. |
 | `TP9002` | Rust inspection convenience API | Cancellation produced an incomplete report; cancellable APIs return `AnalysisCancelled` | Treat the result as cancelled and retry only if the host still needs the current revision. |
 
 The CLI uses TP3001 at warning severity by default. Its result-use
@@ -80,14 +81,30 @@ provide unconditional coverage. Resource payloads do not establish cleanup,
 ownership transfer, or task completion. See the
 [outcome API and preview limits](contracts.md#typed-outcomes).
 
+## Persistent outcome duties
+
+These rules apply when a callable opts in with a `MustHandle` return or an
+applicable published outcome contract.
+
+| Code | Meaning |
+| --- | --- |
+| `TP5002` | A pending outcome loses its last tracked carrier. |
+| `TP5003` | A declaration or discard reason falls outside the supported form. |
+| `TP5004` | A pending outcome escapes through a return lacking a `MustHandle` contract. |
+| `TP5005` | A pending outcome was intentionally discarded with the recorded reason. |
+
+Handle the outcome with a supported variant match, forward it through a marked
+return, or record a deliberate discard. The informational TP5005 finding keeps
+the reason visible during review. [Example](contracts.md#acknowledge-a-persistent-outcome)
+
 ## Informational review hints
 
 TP6001 suggests a `@resource(closed_by="close")` declaration for a local
 class with a supported `close` method passed to resolved `contextlib.closing`.
 TP6002 suggests `@must_use` on a synchronous wrapper that directly returns a
-resolved must-use call. Both hints have `info` severity, are not selectable or
-baseline eligible, and do not affect coverage or exit status. Review the
-declaration and implementation before adopting either suggestion.
+resolved must-use call. TP6003 records the sole remaining variant acknowledged
+by a wildcard and links its producer. The checker records these hints as
+`info` review evidence outside the configurable rule set.
 
 (tp3001)=
 ## TP3001: Discarded must-use result

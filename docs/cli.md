@@ -11,6 +11,8 @@ The analyzer reads Python source without importing or executing the project.
 | Preview effective project policy | `codepact check --show-settings --json` |
 | Emit a report for CI | `codepact check --root src --mode strict --json` |
 | Verify a provider wheel | `codepact contracts verify WHEEL` |
+| Compare two provider wheels | `codepact contracts diff BEFORE_WHEEL AFTER_WHEEL` |
+| Compare captured source analyses | `codepact review BEFORE AFTER` |
 | Look up the installed rules and limits | `codepact capabilities --json` |
 
 ## Commands
@@ -42,6 +44,54 @@ codepact contracts verify WHEEL
 and returns inspection schema 0. `check --json` uses adoption report schema 3
 for source-only checks and schema 4 when foundations are enabled.
 [JSON output reference](output.md)
+
+## Compare captured source analyses
+
+Run `codepact review capture` in each project revision. It accepts the check
+options and writes a versioned JSON capture of the full selected root. Save a
+capture even when its standalone check exits `1`. A capture retains policy,
+source and provider identities, checked contracts, coverage and raw findings.
+The comparison uses the same checker and analyzed Python target for both sides.
+
+```sh
+codepact review capture --root src > before.json
+# Apply the source edit.
+codepact review capture --root src > after.json
+codepact review before.json after.json --json
+```
+
+Supply `--repair FINGERPRINT` for each finding the change is expected to
+resolve. A preserved repair requires supported correspondence to the same
+obligation and complete compatible evidence. Passing a review can leave an
+inherited violation in the standalone after check. The report includes the
+after check's exit status.
+
+To verify the after capture against the current workspace, supply
+`--current DIR` and repeat the after capture options after `--`. Paths in those
+options resolve from `DIR`. The checker rebuilds the capture from current
+inputs before claiming a workspace result.
+
+```sh
+codepact review before.json after.json --current . --json -- --root src
+```
+
+An after capture can also be reviewed as historical evidence with the two
+capture files. Completed review exits are `0` for `passed` and `1` for
+`failed`, `review-required` or `inconclusive`. Invalid input and execution
+failures exit `2`. [Trusted CI capture](ci-reporting.md#review-a-change)
+
+## Compare published wheel contracts
+
+Run `codepact contracts diff BEFORE_WHEEL AFTER_WHEEL` on two local pure-Python
+wheels with CodePact manifests. Read the result by public import path. The
+comparison reports new caller obligations, weakened guarantees and unavailable
+evidence. A retained public contract can keep its compatibility when its
+implementation moves behind an explicit re-export. Add `--python-version` to
+require a particular analyzed target or `--json` for the structured result.
+
+The command exits `0` for a compatible comparison, `1` for a breaking change
+or insufficient evidence, and `2` for invalid input or execution failure. It
+reads wheel contents without installing or executing the provider.
 
 ## Project configuration and scope
 

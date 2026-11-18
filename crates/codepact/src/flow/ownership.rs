@@ -29,6 +29,7 @@ pub(super) struct OwnershipState {
     pub(super) executor_names: BTreeMap<String, String>,
     pub(super) executors: BTreeMap<String, ExecutorState>,
     pub(super) processes: process::LocalProcesses,
+    pub(super) work: work::WorkState,
     pub(super) task_names: BTreeMap<String, (String, String)>,
     pub(super) pending_task: Option<(String, String)>,
     pub(super) active_timeouts: BTreeMap<String, bool>,
@@ -81,6 +82,7 @@ impl OwnershipState {
 
     pub(super) fn join(left: &Self, right: &Self) -> Self {
         let mut joined = left.clone();
+        joined.work.join(&right.work);
         joined
             .owners
             .retain(|name, object| right.owners.get(name) == Some(object));
@@ -237,6 +239,7 @@ impl OwnershipState {
     }
 
     pub(super) fn rebind(&mut self, name: &str) {
+        self.work.rebind(name);
         self.moved.remove(name);
         self.owners.remove(name);
         self.alias_origins.remove(name);
@@ -298,9 +301,12 @@ impl OwnershipState {
         // Save the process alias before the other binding domains are cleared.
         let mut processes = std::mem::take(&mut self.processes);
         processes.bind_alias(name, source);
+        let mut work = std::mem::take(&mut self.work);
+        work.assign(name, source);
         if source != Some(name) {
             self.rebind(name);
         }
+        self.work = work;
         self.processes = processes;
         if let Some(moved) = moved {
             self.moved.insert(name.to_owned(), moved);
@@ -337,6 +343,9 @@ impl OwnershipState {
 }
 
 pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str> {
+    if let Some(identity) = outcomes::member(module, member) {
+        return Some(identity);
+    }
     match (module, member) {
         ("codepact", "move") => Some(MOVE),
         ("codepact" | "codepact.rust" | "codepact.outcomes", "Ok") => Some("external:codepact.Ok"),
@@ -362,6 +371,9 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
         ("asyncio", "TaskGroup") => Some(TASK_GROUP),
         ("builtins", "open") => Some("external:builtins.open"),
         ("asyncio", "create_task") => Some("external:asyncio.create_task"),
+        ("asyncio", "gather") => Some("external:asyncio.gather"),
+        ("asyncio", "wait") => Some("external:asyncio.wait"),
+        ("asyncio", "as_completed") => Some("external:asyncio.as_completed"),
         ("asyncio", "shield") => Some("external:asyncio.shield"),
         ("asyncio", "timeout") => Some("external:asyncio.timeout"),
         ("asyncio", "sleep") => Some("external:asyncio.sleep"),
@@ -369,6 +381,14 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
         ("asyncio", "get_event_loop") => Some("external:asyncio.get_event_loop"),
         ("asyncio", "set_event_loop") => Some("external:asyncio.set_event_loop"),
         ("asyncio", "CancelledError") => Some("external:asyncio.CancelledError"),
+        ("asyncio", "InvalidStateError") => Some("external:asyncio.InvalidStateError"),
+        ("concurrent.futures", "CancelledError") => {
+            Some("external:concurrent.futures.CancelledError")
+        }
+        ("concurrent.futures", "TimeoutError") => Some("external:concurrent.futures.TimeoutError"),
+        ("multiprocessing" | "multiprocessing.context", "TimeoutError") => {
+            Some("external:multiprocessing.TimeoutError")
+        }
         ("asyncio", "set_event_loop_policy") => Some("external:asyncio.set_event_loop_policy"),
         ("multiprocessing", "get_context") => Some("external:multiprocessing.get_context"),
         ("multiprocessing", "Process") => Some("external:multiprocessing.Process"),
@@ -513,6 +533,7 @@ pub(super) fn escape_task_handles(
     range: SourceRange,
     result: &mut Inspection,
 ) {
+    work::escape(env, names, file, range, result);
     let Some(ownership) = env.ownership.as_mut() else {
         return;
     };
@@ -1173,6 +1194,7 @@ pub(super) fn escape_pending_value(
     range: SourceRange,
     result: &mut Inspection,
 ) {
+    work::escape_pending(env, file, range, result);
     let mut objects = env.pending_return_targets.take().unwrap_or_default();
     if let Some(record) = env
         .pending_coroutine_result

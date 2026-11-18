@@ -15,6 +15,7 @@ fn execute_match_statement(
 ) -> FlowResult {
     let mut outcomes = FlowResult::default();
     consume_expr(subject, env, file, contracts, functions, result, 0);
+    let subject_outcomes = env.outcomes.take_value();
     outcomes.raises.extend(take_pending_raises(env));
     if !env.alive {
         return outcomes;
@@ -51,16 +52,41 @@ fn execute_match_statement(
 
         let irrefutable = pattern_is_irrefutable(&case.pattern);
         let mut branch = Box::new(incoming.as_ref().clone());
+        let pattern = if subject_outcomes.is_empty() {
+            None
+        } else {
+            let pattern = outcomes::select_pattern(&case.pattern, &branch);
+            if pattern.is_none() {
+                boundary(
+                    result,
+                    file,
+                    case.range,
+                    "persistent outcome pattern is not resolved",
+                );
+            }
+            pattern
+        };
+        let mut matches_all = irrefutable;
+        if let Some((mask, _)) = pattern {
+            if outcomes::narrow(&mut branch, &subject_outcomes, mask) == Some(0) {
+                next_case = Some(incoming);
+                continue;
+            }
+            matches_all |= outcomes::narrow(&mut incoming, &subject_outcomes, !mask) == Some(0);
+        }
         let mut captures = BTreeSet::new();
         case.pattern.binding_names(&mut captures);
         for name in &captures {
             rebind_match_capture(&mut branch, name);
         }
-        if !irrefutable && !captures.is_empty() {
+        if pattern.is_some() {
+            outcomes::bind_capture(&case.pattern, &subject_outcomes, &mut branch);
+        }
+        if !matches_all && pattern.is_none() && !captures.is_empty() {
             // A failed pattern can leave partial bindings in place.
             incoming = merge_match_states(Some(incoming), branch.clone(), file, case.range, result);
         }
-        next_case = (!irrefutable).then_some(incoming);
+        next_case = (!matches_all).then_some(incoming);
 
         branch.control_depth = original_control_depth.saturating_add(1);
         if let Some(guard) = &case.guard {
@@ -82,6 +108,13 @@ fn execute_match_statement(
             }
         }
         if branch.alive {
+            if let Some((matched, wildcard)) = pattern {
+                if let Some(evidence) =
+                    outcomes::acknowledge(&mut branch, &subject_outcomes, matched, wildcard)
+                {
+                    evidence.report(file, case.pattern.range(), result);
+                }
+            }
             outcomes.append(execute(
                 &case.body,
                 &mut branch,
@@ -115,6 +148,7 @@ fn execute_match_statement(
         joined.alive = true;
         joined.control_depth = original_control_depth;
         *env = *joined;
+        outcomes::lose(env, subject_outcomes, file, range, result);
         ownership::cap_handles(env, file, range, result);
     } else {
         env.alive = false;
@@ -191,7 +225,8 @@ pub(super) fn execute(
         } = statement
         {
             let termination = process::termination_test(test, env, file, result);
-            if termination.is_none() {
+            let work_test = work::test(test, env, file, result);
+            if termination.is_none() && work_test.is_none() {
                 consume_expr(test, env, file, contracts, functions, result, 0);
             }
             outcomes.raises.extend(take_pending_raises(env));
@@ -243,6 +278,10 @@ pub(super) fn execute(
             if let Some(test) = &termination {
                 process::refine_test(&mut left, test, true);
                 process::refine_test(&mut right, test, false);
+            }
+            if let Some(test) = &work_test {
+                work::refine(&mut left, test, true);
+                work::refine(&mut right, test, false);
             }
             let left_outcomes = execute(
                 body,
@@ -315,6 +354,7 @@ pub(super) fn execute(
                     outcomes.append(try_outcomes);
                 }
                 FlowStatement::Loop {
+                    asynchronous,
                     test,
                     iterator,
                     target,
@@ -322,6 +362,22 @@ pub(super) fn execute(
                     alternate,
                     range,
                 } => {
+                    if *asynchronous {
+                        outcomes.append(execute_async_for(
+                            iterator.as_ref(),
+                            target.as_deref(),
+                            body,
+                            alternate,
+                            *range,
+                            env,
+                            file,
+                            contracts,
+                            functions,
+                            result,
+                            depth + 1,
+                        ));
+                        continue;
+                    }
                     let loop_outcomes = execute_loop(
                         test.as_ref(),
                         iterator.as_ref(),
@@ -359,9 +415,8 @@ pub(super) fn execute(
                     outcomes.append(with_outcomes);
                 }
                 _ => {
-                    let returned = execute_non_if_statement(
-                        statement, env, file, contracts, functions, result,
-                    );
+                    let returned =
+                        execute_with_outcomes(statement, env, file, contracts, functions, result);
                     if env.alive && !env.module_scope {
                         if let FlowStatement::EscapingAssign { name, range, .. } = statement {
                             let targets = env.places.get(name).cloned().unwrap_or_default();
@@ -390,7 +445,7 @@ pub(super) fn execute(
                     outcomes.raises.extend(take_pending_raises(env));
                     if let Some(returned) = returned {
                         outcomes.returns.push(FlowExit {
-                            state: returned,
+                            state: *returned,
                             range: statement_range(statement),
                             kind: match statement {
                                 FlowStatement::Return { value, .. } => {
@@ -431,6 +486,83 @@ pub(super) fn execute(
         }
     }
     outcomes
+}
+
+fn execute_with_outcomes(
+    statement: &FlowStatement,
+    env: &mut State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+) -> Option<Box<State>> {
+    env.outcomes.clear_value();
+    let assignment_outcome = match statement {
+        FlowStatement::Assign { value, .. } | FlowStatement::EscapingAssign { value, .. } => {
+            expr_name(value).map(|name| env.outcomes.read(name))
+        }
+        _ => None,
+    };
+    match statement {
+        FlowStatement::Assign {
+            annotation: Some(annotation),
+            ..
+        }
+        | FlowStatement::EscapingAssign {
+            annotation: Some(annotation),
+            ..
+        }
+        | FlowStatement::Store {
+            annotation: Some(annotation),
+            ..
+        }
+        | FlowStatement::AnnotatedDeclaration { annotation, .. } => {
+            outcomes::local_annotation(annotation, env, result, file);
+        }
+        _ => {}
+    }
+    let returned = execute_non_if_statement(statement, env, file, contracts, functions, result);
+    if env.alive {
+        match statement {
+            FlowStatement::Assign { name, range, .. }
+            | FlowStatement::EscapingAssign { name, range, .. } => {
+                let value = assignment_outcome.unwrap_or_else(|| env.outcomes.take_value());
+                let previous = env.outcomes.bind(name, value.clone());
+                if matches!(statement, FlowStatement::EscapingAssign { .. }) {
+                    outcomes::escape(env, &value, file, *range, result);
+                }
+                outcomes::lose(env, previous, file, *range, result);
+            }
+            FlowStatement::Expression { range, .. } => {
+                let value = env.outcomes.take_value();
+                outcomes::lose(env, value, file, *range, result);
+            }
+            FlowStatement::BindFunction { name, range, .. }
+            | FlowStatement::ClosureDefinition { name, range, .. } => {
+                if let FlowStatement::ClosureDefinition { captures, .. } = statement {
+                    let escaped = captures
+                        .iter()
+                        .flat_map(|name| env.outcomes.read(name))
+                        .collect();
+                    outcomes::escape(env, &escaped, file, *range, result);
+                }
+                let previous = env.outcomes.bind(name, outcomes::Values::new());
+                outcomes::lose(env, previous, file, *range, result);
+            }
+            FlowStatement::DeleteLocal { names, range } => {
+                for name in names {
+                    let previous = env.outcomes.bind(name, outcomes::Values::new());
+                    outcomes::lose(env, previous, file, *range, result);
+                }
+            }
+            FlowStatement::Store { value, range, .. } => {
+                let escaped = outcomes::escaping_expression(env, value);
+                outcomes::escape(env, &escaped, file, *range, result);
+            }
+            _ => {}
+        }
+    }
+    returned.map(Box::new)
 }
 
 fn pattern_is_irrefutable(pattern: &crate::frontend::AstPattern) -> bool {
@@ -482,6 +614,7 @@ fn execute_finally_for_exit(
     outcomes: &mut FlowResult,
 ) {
     let pending_return_targets = exit.state.pending_return_targets.clone();
+    let pending_outcome_return = exit.state.outcomes.returned.clone();
     let preserves_return_value = matches!(exit.kind, CompletionKind::Return(_));
     let mut state = exit.state;
     state.alive = true;
@@ -497,6 +630,7 @@ fn execute_finally_for_exit(
     if state.alive {
         if preserves_return_value {
             state.pending_return_targets = pending_return_targets;
+            state.outcomes.set_return(pending_outcome_return);
         }
         push_exit(outcomes, FlowExit { state, ..exit });
     }
@@ -511,10 +645,20 @@ pub(super) enum ExceptionMatch {
 }
 
 fn resolved_exception_name<'a>(expression: &'a AstExpr, state: &State) -> Option<&'a str> {
-    if ownership::external_identity(expression, state).as_deref()
-        == Some("external:asyncio.CancelledError")
-    {
-        return Some("CancelledError");
+    match ownership::external_identity(expression, state).as_deref() {
+        Some("external:asyncio.CancelledError") => return Some("CancelledError"),
+        Some("external:asyncio.InvalidStateError") => return Some("asyncio.InvalidStateError"),
+        Some("external:concurrent.futures.CancelledError") => {
+            return Some("concurrent.futures.CancelledError")
+        }
+        Some("external:concurrent.futures.TimeoutError") => return Some("TimeoutError"),
+        Some("external:multiprocessing.TimeoutError") => {
+            return Some("multiprocessing.TimeoutError")
+        }
+        _ => {}
+    }
+    if let Some(name) = expr_name(expression).and_then(|name| name.strip_prefix(":work-error:")) {
+        return known_exception_for_match(name).then_some(name);
     }
     expr_name(expression).filter(|name| is_unshadowed_exception_handler_name(name, state))
 }
@@ -561,12 +705,22 @@ fn known_builtin_exception(name: &str) -> bool {
 }
 
 fn known_exception_for_match(name: &str) -> bool {
-    known_builtin_exception(name) || name == "CancelledError"
+    known_builtin_exception(name)
+        || matches!(
+            name,
+            "CancelledError"
+                | "asyncio.InvalidStateError"
+                | "concurrent.futures.CancelledError"
+                | "multiprocessing.TimeoutError"
+        )
 }
 
 fn builtin_exception_parents(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "CancelledError" => &["BaseException"],
+        "asyncio.InvalidStateError"
+        | "concurrent.futures.CancelledError"
+        | "multiprocessing.TimeoutError" => &["Exception"],
         "BaseException" => &[],
         "Exception" | "BaseExceptionGroup" => &["BaseException"],
         "ExceptionGroup" => &["BaseExceptionGroup", "Exception"],
@@ -699,6 +853,7 @@ pub(super) fn exception_handler_match(
 }
 
 fn clear_local_binding(state: &mut State, name: &str) {
+    state.outcomes.bind(name, outcomes::Values::new());
     state.possibly_unbound_places.remove(name);
     state.definitely_bound_names.remove(name);
     if let Some(ownership) = state.ownership.as_mut() {
@@ -1175,6 +1330,156 @@ fn execute_loop(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn execute_async_for(
+    iterator: Option<&AstExpr>,
+    target: Option<&str>,
+    body: &[FlowStatement],
+    alternate: &[FlowStatement],
+    range: SourceRange,
+    env: &mut State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+    depth: usize,
+) -> FlowResult {
+    fn orders(names: &[String]) -> Vec<Vec<String>> {
+        if names.is_empty() {
+            return vec![Vec::new()];
+        }
+        let mut permutations = Vec::new();
+        for (index, name) in names.iter().enumerate() {
+            let remaining = names
+                .iter()
+                .enumerate()
+                .filter(|(position, _)| *position != index)
+                .map(|(_, name)| name.clone())
+                .collect::<Vec<_>>();
+            for mut order in orders(&remaining) {
+                order.insert(0, name.clone());
+                permutations.push(order);
+            }
+        }
+        permutations
+    }
+
+    let mut outcomes = FlowResult::default();
+    let applicable = iterator.zip(target).and_then(|(iterator, target)| {
+        let members = asyncio::as_completed_members(iterator, env)?;
+        (depth < MAX_CONTROL_FLOW_DEPTH && env.control_depth < MAX_CONTROL_FLOW_DEPTH)
+            .then_some((target, members))
+    });
+    let Some((target, members)) = applicable else {
+        execute_non_if_statement(
+            &FlowStatement::Unsupported { range },
+            env,
+            file,
+            contracts,
+            functions,
+            result,
+        );
+        outcomes.raises.extend(take_pending_raises(env));
+        return outcomes;
+    };
+    runtime::use_model(
+        "asyncio.as_completed",
+        "iterate-known-members",
+        "TPM-ASYNCIO-001",
+        Ok(()),
+        file,
+        range,
+        result,
+    );
+    let captured = members
+        .iter()
+        .enumerate()
+        .map(|(index, member)| {
+            let alias = synthetic_name(env, "as-completed-member", range, index);
+            ownership::assign_handle(&alias, Some(member), false, env, file, range, result);
+            alias
+        })
+        .collect::<Vec<_>>();
+    let mut normal = Vec::new();
+    for order in orders(&captured) {
+        let mut path = env.clone();
+        for member in order {
+            if !path.alive {
+                break;
+            }
+            let mut interrupted = path.clone();
+            interrupted.pending_raises.clear();
+            outcomes.raises.push(FlowExit {
+                state: interrupted,
+                range,
+                kind: CompletionKind::Cancelled(None),
+            });
+            asyncio::deliver_member(
+                &member,
+                asyncio::Delivery::WaitOnly,
+                range,
+                &mut path,
+                file,
+                contracts,
+                functions,
+                result,
+            );
+            outcomes.raises.extend(take_pending_raises(&mut path));
+            if !path.alive {
+                break;
+            }
+            path.bind_runtime_handle(target);
+            ownership::assign_handle(target, Some(&member), false, &mut path, file, range, result);
+            let old = path.outcomes.bind(target, outcomes::Values::new());
+            outcomes::lose(&mut path, old, file, range, result);
+            let mut iteration = execute(
+                body,
+                &mut path,
+                file,
+                contracts,
+                functions,
+                result,
+                depth + 1,
+            );
+            normal.extend(iteration.breaks.drain(..).map(|exit| exit.state));
+            let mut continuing = iteration
+                .continues
+                .drain(..)
+                .map(|exit| exit.state)
+                .collect::<Vec<_>>();
+            if path.alive {
+                continuing.push(path.clone());
+            }
+            outcomes.append(iteration);
+            if let Some(next) = join_states(continuing) {
+                path = next;
+            } else {
+                path.alive = false;
+            }
+        }
+        if path.alive {
+            outcomes.append(execute(
+                alternate,
+                &mut path,
+                file,
+                contracts,
+                functions,
+                result,
+                depth + 1,
+            ));
+            if path.alive {
+                normal.push(path);
+            }
+        }
+    }
+    if let Some(joined) = join_states(normal) {
+        *env = joined;
+    } else {
+        env.alive = false;
+    }
+    outcomes
+}
+
+#[allow(clippy::too_many_arguments)]
 fn execute_static_for_loop(
     items: &[AstExpr],
     target: &str,
@@ -1391,6 +1696,7 @@ pub(super) fn execute_non_if_statement(
             env.pending_return_targets = None;
             if let Some(ownership) = env.ownership.as_mut() {
                 ownership.pending_task = None;
+                ownership.work.clear_pending();
                 ownership.pending_move = false;
             }
             let source_coroutine = expr_name(value)
@@ -1882,10 +2188,14 @@ pub(super) fn execute_non_if_statement(
         FlowStatement::Expression { value, .. } => {
             consume_expr(value, env, file, contracts, functions, result, 0);
             env.pending_coroutine_result = None;
+            if let Some(ownership) = &mut env.ownership {
+                ownership.work.clear_pending();
+            }
         }
         FlowStatement::Pass { .. } | FlowStatement::AnnotatedDeclaration { .. } => {}
         FlowStatement::Return { value, .. } => {
             env.pending_return_targets = None;
+            env.outcomes.set_return(outcomes::Values::new());
             if let Some(value) = value {
                 let temporary = format!("__codepact_return_{}", value.range.start);
                 let constructor = match &value.kind {
@@ -1921,7 +2231,13 @@ pub(super) fn execute_non_if_statement(
                     env.pending_return_targets = env.places.get(name).cloned();
                 } else {
                     consume_expr(value, env, file, contracts, functions, result, 0);
+                    work::escape_pending(env, file, value.range, result);
                 }
+                let returned_value = match expr_name(value) {
+                    Some(name) => env.outcomes.read(name),
+                    None => env.outcomes.take_value(),
+                };
+                env.outcomes.set_return(returned_value);
             }
             if let Some(ownership) = env.ownership.as_ref() {
                 if ownership.return_owned && env.pending_return_targets.is_none() && value.is_some()
@@ -2024,7 +2340,36 @@ pub(super) fn execute_non_if_statement(
             value,
             target,
             range,
+            ..
         } if env.ownership.is_some() => {
+            if asyncio::is_gather(value, env) {
+                if let (
+                    AstExprKind::Await(awaited),
+                    Some(AstExpr {
+                        kind: AstExprKind::Tuple(targets) | AstExprKind::Collection(targets),
+                        ..
+                    }),
+                ) = (&value.kind, target)
+                {
+                    if let Some(names) = targets
+                        .iter()
+                        .map(|target| expr_name(target).map(str::to_owned))
+                        .collect::<Option<Vec<_>>>()
+                    {
+                        asyncio::await_combination(
+                            awaited,
+                            value.range,
+                            Some(&names),
+                            env,
+                            file,
+                            contracts,
+                            functions,
+                            result,
+                        );
+                        return None;
+                    }
+                }
+            }
             let names = ownership::stored_names(value);
             if expr_name(value).is_none() {
                 consume_expr(value, env, file, contracts, functions, result, 0);
@@ -2032,6 +2377,9 @@ pub(super) fn execute_non_if_statement(
             if !env.alive {
                 return None;
             }
+            let mut escaped = outcomes::escaping_expression(env, value);
+            escaped.append(&mut env.outcomes.take_value());
+            outcomes::escape(env, &escaped, file, *range, result);
             ownership::borrow_escape(
                 env,
                 names,
@@ -2078,6 +2426,13 @@ pub(super) fn execute_non_if_statement(
                 "field or container storage has unresolved ownership effects",
             );
         }
+        FlowStatement::Store { value, range, .. }
+            if outcomes::call_contract(value, env, functions).is_some() =>
+        {
+            consume_expr(value, env, file, contracts, functions, result, 0);
+            let escaped = env.outcomes.take_value();
+            outcomes::escape(env, &escaped, file, *range, result);
+        }
         FlowStatement::ClosureDefinition {
             name,
             captures,
@@ -2123,6 +2478,21 @@ pub(super) fn execute_non_if_statement(
                 env.function_bindings.remove(name);
                 env.class_bindings.remove(name);
                 env.ownership.as_mut().expect("local deletion").rebind(name);
+                env.shadowed_functions.insert(name.clone());
+                env.shadowed_classes.insert(name.clone());
+            }
+        }
+        FlowStatement::DeleteLocal { names, .. }
+            if names.iter().all(|name| {
+                !env.outcomes.read(name).is_empty() && !env.places.contains_key(name)
+            }) =>
+        {
+            for name in names {
+                env.definitely_bound_names.remove(name);
+                env.unknown_places.remove(name);
+                env.possibly_unbound_places.remove(name);
+                env.function_bindings.remove(name);
+                env.class_bindings.remove(name);
                 env.shadowed_functions.insert(name.clone());
                 env.shadowed_classes.insert(name.clone());
             }

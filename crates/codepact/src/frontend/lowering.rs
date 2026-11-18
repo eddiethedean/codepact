@@ -483,12 +483,14 @@ fn flow_statements_at(
                             .targets
                             .first()
                             .map(|target| expression(target, budget, 0)),
+                        annotation: None,
                         range: source_range(statement),
                     },
                 },
                 Stmt::Assign(assign) => FlowStatement::Store {
                     value: expression(&assign.value, budget, 0),
                     target: None,
+                    annotation: None,
                     range: source_range(statement),
                 },
                 Stmt::AnnAssign(assign) => match assign.target.as_ref() {
@@ -532,6 +534,7 @@ fn flow_statements_at(
                                 kind: AstExprKind::NoneLiteral,
                             }),
                         target: Some(expression(&assign.target, budget, 0)),
+                        annotation: Some(expression(&assign.annotation, budget, 0)),
                         range: source_range(statement),
                     },
                 },
@@ -675,15 +678,13 @@ fn flow_statements_at(
                     ),
                     range: source_range(attempt),
                 },
-                Stmt::For(loop_) if loop_.is_async => FlowStatement::Unsupported {
-                    range: source_range(statement),
-                },
                 Stmt::For(loop_) if !matches!(loop_.target.as_ref(), Expr::Name(_)) => {
                     FlowStatement::Unsupported {
                         range: source_range(statement),
                     }
                 }
                 Stmt::For(loop_) => FlowStatement::Loop {
+                    asynchronous: loop_.is_async,
                     test: None,
                     iterator: Some(expression(&loop_.iter, budget, 0)),
                     target: match loop_.target.as_ref() {
@@ -695,6 +696,7 @@ fn flow_statements_at(
                     range: source_range(loop_),
                 },
                 Stmt::While(loop_) => FlowStatement::Loop {
+                    asynchronous: false,
                     test: Some(expression(&loop_.test, budget, 0)),
                     iterator: None,
                     target: None,

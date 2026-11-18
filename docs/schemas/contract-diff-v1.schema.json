@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codepact.dev/schemas/contract-diff-v1.schema.json",
+  "title": "CodePact public contract comparison",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_diff_schema_version",
+    "before",
+    "after",
+    "compatible",
+    "changes"
+  ],
+  "properties": {
+    "contract_diff_schema_version": {
+      "const": 1
+    },
+    "before": {
+      "$ref": "#/$defs/publication"
+    },
+    "after": {
+      "$ref": "#/$defs/publication"
+    },
+    "compatible": {
+      "type": "boolean"
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "public_symbol",
+          "kind",
+          "detail"
+        ],
+        "properties": {
+          "public_symbol": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "compatible",
+              "new-caller-obligation",
+              "weakened-guarantee",
+              "insufficient-evidence"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distribution",
+        "version",
+        "import_scope",
+        "python_version",
+        "artifact_sha256"
+      ],
+      "properties": {
+        "distribution": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "import_scope": {
+          "type": "string"
+        },
+        "python_version": {
+          "type": "string"
+        },
+        "artifact_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

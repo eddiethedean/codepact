@@ -5,9 +5,9 @@ Importing this module never loads the Rust inspector or executes analysis.
 
 import keyword
 from collections.abc import Callable, Iterable
-from typing import ParamSpec, TypeVar, overload
+from typing import ParamSpec, TypeVar, cast, overload
 
-from .contracts import MustUseResult, Resource, State
+from .contracts import MustHandle, MustHandleOutcome, MustUseResult, Resource, State
 from .outcomes import (
     Err,
     Nothing,
@@ -86,6 +86,15 @@ def discard(value: object) -> None:
     del value
 
 
+def discard_outcome(
+    value: Result[object, object] | Option[object], *, reason: str
+) -> None:
+    """Document intentional abandonment of an outcome and its reason."""
+    if not isinstance(cast(object, reason), str) or not reason.strip():
+        raise ValueError("discard_outcome requires a nonempty reason")
+    del value
+
+
 def state_machine(
     *, states: Iterable[str], initial: str
 ) -> Callable[[type[T]], type[T]]:
@@ -155,8 +164,11 @@ __all__ = [
     "State",
     "must_use",
     "discard",
+    "discard_outcome",
     "move",
     "MustUseResult",
+    "MustHandle",
+    "MustHandleOutcome",
     "Ok",
     "Err",
     "Some",

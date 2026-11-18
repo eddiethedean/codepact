@@ -81,6 +81,36 @@ contains generated or unsupported code.
 
 ## Introduce checks gradually
 
+### Require a declaration on a selected API
+
+The 0.9 preview supports independent declaration policies for synchronous,
+top-level functions. Select one function by name or omit `function` to cover
+the public synchronous functions in the named module.
+
+```toml
+[[tool.codepact.declaration-policy]]
+module = "app.connections"
+requirement = "resource-access"
+mode = "preview"
+
+[[tool.codepact.declaration-policy]]
+module = "app.connections"
+function = "connect"
+requirement = "owned-return"
+mode = "enforce"
+```
+
+`resource-access` requires explicit access on known resource parameters.
+`owned-return` requires an `Owned` return on APIs that hand off cleanup.
+`must-use` requires the immediate-use decorator or annotation. The rules are
+`TP4101`, `TP4102` and `TP4103`, respectively. `preview` records informational
+findings, and `enforce` uses the configured failure threshold. An exact function
+entry takes precedence over a module entry for the same requirement.
+
+Use `codepact check --show-settings --json` to inspect the effective policy.
+Baseline matching uses the effective declarations and dependency contracts.
+Strict checks still fail when analysis coverage is incomplete.
+
 Start with the default advisory policy and inspect a JSON report:
 
 ```sh

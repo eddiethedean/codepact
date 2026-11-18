@@ -1,5 +1,6 @@
 //! ThreadPoolExecutor protocol transitions and worker admission.
 use super::ownership::external_identity;
+use super::work;
 use super::{
     bind_arguments, boundary, called_method, expr_name, queue_raise, report, span, AstExpr,
     AstExprKind, CallKeyword, CompletionKind, FlowExit, FunctionMap, Inspection, SourceFile, Span,
@@ -9,6 +10,51 @@ use super::{
 const THREAD_POOL_EXECUTOR: &str = "external:concurrent.futures.ThreadPoolExecutor";
 const THREAD_POOL_MODEL: &str = "TPM-EXECUTOR-001@v3.13.16";
 const MAX_EXECUTORS: usize = 32;
+
+pub(super) fn enter_context(
+    name: &str,
+    expression: &AstExpr,
+    env: &mut State,
+    file: &SourceFile,
+    result: &mut Inspection,
+) -> bool {
+    let Some(id) = expr_name(expression)
+        .and_then(|source| env.ownership.as_ref()?.executor_names.get(source))
+        .cloned()
+    else {
+        return initialize_handle(name, expression, env, file, result);
+    };
+    env.bind_runtime_handle(name)
+        .executor_names
+        .insert(name.into(), id);
+    true
+}
+
+pub(super) fn leave_context(
+    name: &str,
+    range: super::SourceRange,
+    env: &mut State,
+    file: &SourceFile,
+    functions: &FunctionMap,
+    result: &mut Inspection,
+) {
+    let receiver = AstExpr {
+        range,
+        kind: AstExprKind::Name(name.into()),
+    };
+    let expression = AstExpr {
+        range,
+        kind: AstExprKind::Call {
+            function: Box::new(AstExpr {
+                range,
+                kind: AstExprKind::Attribute(Box::new(receiver), "shutdown".into()),
+            }),
+            arguments: Vec::new(),
+            keywords: Vec::new(),
+        },
+    };
+    call(&expression, env, file, functions, result);
+}
 
 pub(super) const EXECUTOR_ACCEPTING: u8 = 1;
 pub(super) const EXECUTOR_SHUTDOWN: u8 = 2;
@@ -248,13 +294,24 @@ pub(super) fn call(
                     range: expression.range,
                     kind: CompletionKind::Raise(None),
                 });
+                let outcome = work::for_worker(env, &arguments[0], functions);
+                work::register(
+                    env,
+                    None,
+                    work::Kind::Thread(id.clone()),
+                    file,
+                    expression.range,
+                    outcome,
+                    result,
+                );
+                work::bind_worker_contract(env, &arguments[0], functions);
             } else {
                 queue_raise(env, expression.range, None);
             }
             true
         }
         "shutdown" => {
-            let Some(wait) = shutdown_wait(arguments, keywords) else {
+            let Some((wait, cancel_queued)) = shutdown_options(arguments, keywords) else {
                 if let Some(executor) = env
                     .ownership
                     .as_mut()
@@ -310,6 +367,13 @@ pub(super) fn call(
                 range: expression.range,
                 kind: CompletionKind::Raise(None),
             });
+            let owner = work::Kind::Thread(id);
+            if cancel_queued {
+                work::owner_may_cancel_waiting(env, &owner);
+            }
+            if wait && next_states == EXECUTOR_SHUTDOWN {
+                work::owner_finished(env, &owner);
+            }
             true
         }
         _ => {
@@ -369,7 +433,7 @@ fn supported_submit(
     })
 }
 
-fn shutdown_wait(arguments: &[AstExpr], keywords: &[CallKeyword]) -> Option<bool> {
+fn shutdown_options(arguments: &[AstExpr], keywords: &[CallKeyword]) -> Option<(bool, bool)> {
     if arguments.len() > 1
         || keywords
             .iter()
@@ -378,6 +442,7 @@ fn shutdown_wait(arguments: &[AstExpr], keywords: &[CallKeyword]) -> Option<bool
         return None;
     }
     let mut wait = true;
+    let mut cancel_queued = false;
     if let Some(argument) = arguments.first() {
         let AstExprKind::Boolean(value) = argument.kind else {
             return None;
@@ -399,13 +464,17 @@ fn shutdown_wait(arguments: &[AstExpr], keywords: &[CallKeyword]) -> Option<bool
                 saw_wait = true;
             }
             "cancel_futures" => {
-                if saw_cancel || !matches!(value.kind, AstExprKind::Boolean(_)) {
+                let AstExprKind::Boolean(value) = value.kind else {
+                    return None;
+                };
+                if saw_cancel {
                     return None;
                 }
+                cancel_queued = value;
                 saw_cancel = true;
             }
             _ => return None,
         }
     }
-    Some(wait)
+    Some((wait, cancel_queued))
 }

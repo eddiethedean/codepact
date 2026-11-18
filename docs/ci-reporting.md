@@ -50,6 +50,40 @@ Share a minimized reproduction or a reviewed excerpt outside that audience.
 Keep the original report private when consumers need its complete identity
 and audit metadata. [Security and data handling](security.md)
 
+## Review a change
+
+The trusted host workflow selects the base revision, the checker artifact and
+the policy. Check out the base and candidate in separate directories. Retain
+each revision's dependency artifacts and capture the full selected root in
+both checkouts. Use the same pinned binary and analyzed Python target.
+
+Set `CODEPACT` and `CODEPACT_POLICY` to absolute paths to the verified CLI
+and the host-selected policy file. Keep the capture files in the host job's
+working directory, alongside the two checkouts.
+
+```sh
+capture() {
+    checkout=$1
+    snapshot=$2
+    status=0
+    (cd "$checkout" && "$CODEPACT" review capture \
+        --root . --config "$CODEPACT_POLICY" --python-version 3.13) > "$snapshot" || status=$?
+    case "$status" in
+        0|1) return 0 ;;
+        *) return "$status" ;;
+    esac
+}
+
+capture base-checkout before.json || exit $?
+capture candidate-checkout after.json || exit $?
+"$CODEPACT" review before.json after.json --json > review.json
+```
+
+An exit of `1` from capture can contain findings relevant to preservation
+review. Keep the comparator's exit status for the CI gate. A hash binds a
+capture to its content. Authority for the reference and policy comes from the
+host job. [Review options and exits](cli.md#compare-captured-source-analyses)
+
 ## Older releases
 
 CodePact 0.3.0 lifecycle checks emit checker schema 1.

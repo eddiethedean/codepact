@@ -857,6 +857,23 @@ impl HandleCall<'_> {
                         .get_mut(id)
                         .unwrap()
                         .admitted_work = true;
+                    let outcome = if args.is_some_and(prelaunch_failure) {
+                        work::WorkerExit {
+                            normal: false,
+                            errors: BTreeSet::from([None]),
+                        }
+                    } else {
+                        work::for_worker(env, submission["func"], functions)
+                    };
+                    work::register(
+                        env,
+                        None,
+                        work::Kind::Pool(id.into()),
+                        file,
+                        range,
+                        outcome,
+                        result,
+                    );
                     let effect = if args.is_some_and(prelaunch_failure) {
                         "submission-admitted-with-serialization-failure"
                     } else {
@@ -902,6 +919,7 @@ impl HandleCall<'_> {
                         _ => "shutdown-joined-with-mixed-provenance",
                     };
                     if graceful && !forced && handle.admitted_work {
+                        work::owner_finished(env, &work::Kind::Pool(id.into()));
                         runtime::use_model(
                             handle.kind.symbol(),
                             "admitted-work-drained-results-unobserved",

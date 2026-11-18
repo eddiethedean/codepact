@@ -18,7 +18,8 @@ fn write_stderr(value: &str) -> Result<(), String> {
 
 fn usage() {
     stderr_line!("Usage: codepact inspect-contracts [--root DIR] [--python-version VERSION] [--json] FILE...\n       codepact check [--root DIR] [--dependency-root DIR] [--config PYPROJECT|--no-config] [--python-version VERSION] [--experimental-ownership|--no-experimental-ownership] [--experimental-advanced-contracts|--no-experimental-advanced-contracts] [--experimental-finite-matches|--no-experimental-finite-matches] [--mode advisory|strict] [--fail-on error|warning] [--rules CODE[,CODE...]] [--severity CODE=LEVEL] [--json|--output-format text|json|concise] [--baseline FILE] [--max-diagnostics N] [FILE...]\n       codepact baseline update --output FILE --reason TEXT [--replace] [--json] [check options]\n       codepact capabilities --json\n       codepact explain RULE --json\n       codepact --version");
-    stderr_line!("       codepact contracts export --root DIR --distribution NAME --version VERSION --import-scope PACKAGE [--python-version VERSION]\n       codepact contracts verify WHEEL [--python-version VERSION]");
+    stderr_line!("       codepact contracts export --root DIR --distribution NAME --version VERSION --import-scope PACKAGE [--python-version VERSION]\n       codepact contracts verify WHEEL [--python-version VERSION]\n       codepact contracts diff BEFORE_WHEEL AFTER_WHEEL [--python-version VERSION] [--json]");
+    stderr_line!("       codepact review capture [check options]\n       codepact review BEFORE AFTER [--repair FINGERPRINT] [--current DIR] [--json]");
 }
 
 fn emit_failure(format: &str, message: String) -> ExitCode {
@@ -65,6 +66,7 @@ mod metadata;
 mod output;
 mod providers;
 mod publications;
+mod review;
 #[cfg(test)]
 use discovery::{discover_python_files, discover_python_files_with_limits, DiscoveryLimits};
 #[cfg(test)]
@@ -149,10 +151,25 @@ pub(super) fn run() -> ExitCode {
                 .ok_or_else(|| format!("unknown rule identifier {rule}"));
             emit(result, "json")
         }
-        "contracts" => emit(
-            publications::run(args).map(|output| CommandOutput::stdout(output, 0)),
-            "text",
-        ),
+        "contracts" => {
+            let args = args.collect::<Vec<_>>();
+            let format = if args.first().is_some_and(|arg| arg == "diff")
+                && args.iter().any(|arg| arg == "--json")
+            {
+                "json"
+            } else {
+                "text"
+            };
+            emit(publications::run(args.into_iter()), format)
+        }
+        "review" => {
+            let args = args.collect::<Vec<_>>();
+            let format = review::failure_format(&args);
+            let output = env::current_dir()
+                .map_err(|error| format!("cannot determine current directory: {error}"))
+                .and_then(|cwd| review::run(args, &cwd));
+            emit(output, format)
+        }
         "inspect-contracts" => run_project(args, ProjectCommand::Inspect),
         "check" => run_project(args, ProjectCommand::Check),
         "baseline" if args.next().as_deref() == Some("update") => {

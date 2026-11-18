@@ -297,7 +297,15 @@ pub(super) fn report_cleanup_exit(
         if returned_owned.contains(object) || escaped_return.contains(object) {
             continue;
         }
+        let resource = exit.state.resources.get(object);
         let mask = exit.state.objects.get(object).copied().unwrap_or(UNKNOWN);
+        crate::review::operations::record(|| crate::review::operations::CleanupSite {
+            kind: "TP1002",
+            origin: origin.clone(),
+            contract: contract_identity(resource),
+            completion: exit_kind.into(),
+            closed: mask == CLOSED,
+        });
         if mask & OPEN == 0 {
             if mask & UNKNOWN != 0 {
                 boundary(
@@ -309,7 +317,6 @@ pub(super) fn report_cleanup_exit(
             }
             continue;
         }
-        let resource = exit.state.resources.get(object);
         let has_finalizer = resource
             .is_some_and(|resource| resource_method(resource, "__del__", functions).is_some());
         let has_unresolved_bases = resource
@@ -387,6 +394,7 @@ pub(super) fn report_module_scope_lifetimes(
     }
 
     for state in states {
+        work::report_module_scope(state, result);
         let unresolved_origins = state
             .duty_origins
             .iter()

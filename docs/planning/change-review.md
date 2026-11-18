@@ -95,13 +95,14 @@ when a single verdict is selected.
 | `inconclusive` | Evidence cannot establish the requested conclusion, including insufficient coverage or comparability. | `1` |
 | Input/execution failure | Invalid input, unsupported schema or execution failure prevents comparison. | `2` |
 
-A known disallowed violation can establish failure despite unrelated
-uncertainty. Otherwise insufficient comparability or coverage prevents a
-preservation pass; known changes and all nonpassing reasons remain visible.
-Completing or rendering a comparison does not itself produce a passing review.
-A supported report with truncated required evidence is inconclusive, whereas
-an invalid schema is an input failure. Engine mismatch can produce insufficient
-comparability and guidance to rerun both sides.
+For completed comparisons, select `failed` when a failure is conclusive from
+the available evidence, including a known disallowed regression alongside
+unrelated uncertainty. Otherwise select `inconclusive` if required evidence is
+insufficient, `review-required` if a known change needs approval, and `passed`
+when the policy is satisfied. Retain all nonpassing reasons. Truncated required
+evidence in a supported report is inconclusive. An invalid schema is an input
+failure. Engine mismatch can produce insufficient comparability and guidance
+to rerun both sides.
 
 A completed `check` report with exit `1` remains a valid comparison input;
 automation must retain a before report containing the violation to repair.

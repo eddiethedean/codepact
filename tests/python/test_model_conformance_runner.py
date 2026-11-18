@@ -324,6 +324,10 @@ class ModelConformanceRunnerTests(unittest.TestCase):
                     ),
                     ("3.13.16",),
                 ),
+                "phase09-work-linux": (
+                    ("TPM-ASYNCIO-001", "TPM-POOL-001", "TPM-EXECUTOR-001"),
+                    ("3.13.16",),
+                ),
             },
         )
 

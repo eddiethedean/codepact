@@ -51,6 +51,12 @@ fn rejected_check_input(files: &[SourceFile]) -> Option<Inspection> {
     None
 }
 
+pub(super) struct CheckFeatures {
+    pub(super) must_use: bool,
+    pub(super) finite_matches: bool,
+    pub(super) review: bool,
+}
+
 impl AnalysisSession {
     pub(super) fn run_check(
         &mut self,
@@ -58,7 +64,8 @@ impl AnalysisSession {
         python_version: &str,
         options: CheckOptions,
         inputs: Option<&FoundationInputs>,
-    ) -> Result<SessionCheckResult, AnalysisCancelled> {
+        capture_review: bool,
+    ) -> Result<(SessionCheckResult, crate::review::operations::Journal), AnalysisCancelled> {
         let mut analysis_files = files.to_vec();
         analysis_files.extend(
             options
@@ -69,13 +76,16 @@ impl AnalysisSession {
         let prepared = inputs
             .map(|inputs| self.prepare_foundations(&mut analysis_files, python_version, inputs))
             .transpose()?;
-        let (checked, model_uses) = self.check_cancellable_with_options(
+        let (checked, model_uses, review_operations) = self.check_cancellable_with_options(
             &analysis_files,
             python_version,
-            true,
             options.ownership,
-            options.experimental_finite_matches,
             prepared.clone(),
+            CheckFeatures {
+                must_use: true,
+                finite_matches: options.experimental_finite_matches,
+                review: capture_review,
+            },
         )?;
         let mut result = build_check_result(
             checked.inspection,
@@ -95,10 +105,13 @@ impl AnalysisSession {
                 model_uses,
             );
         }
-        Ok(SessionCheckResult {
-            revision: checked.revision,
-            result,
-        })
+        Ok((
+            SessionCheckResult {
+                revision: checked.revision,
+                result,
+            },
+            review_operations,
+        ))
     }
 
     fn prepare_foundations(
@@ -111,6 +124,7 @@ impl AnalysisSession {
             let mut prepared = PreparedFoundations::new(inputs);
             let mut provider_files = Vec::new();
             let mut session_bytes = files.iter().map(|file| file.source.len()).sum::<usize>();
+            let mut reviewed_bytes = 0usize;
             let mut top_levels = files
                 .iter()
                 .filter_map(|file| file.module.split('.').next().map(str::to_owned))
@@ -125,6 +139,30 @@ impl AnalysisSession {
                     .iter()
                     .map(|file| file.source.len())
                     .sum::<usize>();
+                if provider.reviewed_library_limit().is_some()
+                    && !inputs.project_models.iter().any(|model| {
+                        model
+                            .factory
+                            .strip_prefix(&provider.import_scope)
+                            .is_some_and(|tail| tail.starts_with('.'))
+                    })
+                {
+                    reviewed_bytes = reviewed_bytes.saturating_add(bytes);
+                    let validation = if reviewed_bytes > 16_000_000 {
+                        Err("reviewed library source byte budget exceeded".into())
+                    } else {
+                        provider.validate(python_version)
+                    };
+                    if let Err(reason) = validation {
+                        prepared.issues.push(ProviderIssue {
+                            import_scope: provider.import_scope.clone(),
+                            reason,
+                        });
+                    } else {
+                        prepared.load_reviewed_library(provider, inputs);
+                    }
+                    continue;
+                }
                 let file_count = files
                     .len()
                     .saturating_add(provider_files.len())
@@ -185,7 +223,19 @@ impl AnalysisSession {
                             imports
                         })
                         .unwrap_or_default();
-                    foundation::scope_entry(file, imports, &modules)
+                    let mut entry = foundation::scope_entry(file, imports, &modules);
+                    entry.unresolved_imports.retain(|module| {
+                        if prepared.providers.get(module).is_some_and(|provider| {
+                            provider.origin == "reviewed-library" && provider.reason.is_none()
+                        }) {
+                            entry.recognized_imports.push(module.clone());
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    entry.recognized_imports.sort();
+                    entry
                 })
                 .collect::<Vec<_>>()
         })
@@ -198,11 +248,22 @@ impl AnalysisSession {
         &mut self,
         files: &[SourceFile],
         python_version: &str,
-        run_must_use: bool,
         ownership: crate::Ownership,
-        finite_matches: bool,
         inputs: Option<Arc<crate::foundation::PreparedFoundations>>,
-    ) -> Result<(SessionInspection, Vec<crate::foundation::ModelUse>), AnalysisCancelled> {
+        features: CheckFeatures,
+    ) -> Result<
+        (
+            SessionInspection,
+            Vec<ModelUse>,
+            crate::review::operations::Journal,
+        ),
+        AnalysisCancelled,
+    > {
+        let CheckFeatures {
+            must_use: run_must_use,
+            finite_matches,
+            review: capture_review,
+        } = features;
         if let Some(mut inspection) = rejected_check_input(files) {
             inspection.assurance = if ownership.includes_advanced_contracts() {
                 crate::ADVANCED_ASSURANCE
@@ -220,6 +281,7 @@ impl AnalysisSession {
                     inspection,
                 },
                 Vec::new(),
+                crate::review::operations::Journal::default(),
             ));
         }
         if self.model_catalog.foundations != inputs {
@@ -273,9 +335,11 @@ impl AnalysisSession {
                 models,
                 inspection,
                 ownership,
+                capture_review,
             )
         });
-        let (mut result, model_uses) = checked.map_err(|_| AnalysisCancelled)?.clone();
+        let (mut result, model_uses, review_operations) =
+            checked.map_err(|_| AnalysisCancelled)?.clone();
         result.contracts.retain(|contract| {
             !contract
                 .source
@@ -325,6 +389,7 @@ impl AnalysisSession {
                 inspection: result,
             },
             model_uses,
+            review_operations,
         ))
     }
 }

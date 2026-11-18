@@ -1159,29 +1159,44 @@ fn capabilities_and_rule_explanations_publish_the_supported_surface_and_limits()
     assert_eq!(capabilities["services"]["persistent_cache"], false);
 
     let rules = capabilities["rules"].as_array().unwrap();
-    assert_eq!(
-        rules.len(),
-        9 + codepact::adoption::OWNERSHIP_RULES.len()
-            + codepact::adoption::ADVANCED_RULES.len()
-            + codepact::adoption::FINITE_MATCH_RULES.len()
-            + 2
-    );
     let rule_codes: Vec<_> = rules
         .iter()
         .map(|rule| rule["code"].as_str().unwrap())
         .collect();
     let unique_rule_codes: std::collections::HashSet<_> = rule_codes.iter().copied().collect();
     assert_eq!(unique_rule_codes.len(), rule_codes.len());
+    let expected: std::collections::HashSet<_> = [
+        codepact::adoption::DEFAULT_RULES,
+        codepact::adoption::OWNERSHIP_RULES,
+        codepact::adoption::ADVANCED_RULES,
+        codepact::adoption::FINITE_MATCH_RULES,
+        codepact::adoption::DECLARATION_RULES,
+        codepact::adoption::OUTCOME_RULES,
+        &[
+            "TP3003", "TP4001", "TP4002", "TP6001", "TP6002", "TP6003", "TP9001", "TP9002",
+        ],
+    ]
+    .into_iter()
+    .flatten()
+    .copied()
+    .collect();
+    assert_eq!(unique_rule_codes, expected);
     for rule in rules {
         let code = rule["code"].as_str().unwrap();
         if codepact::adoption::OWNERSHIP_RULES.contains(&code)
             || codepact::adoption::ADVANCED_RULES.contains(&code)
             || codepact::adoption::FINITE_MATCH_RULES.contains(&code)
+            || codepact::adoption::DECLARATION_RULES.contains(&code)
+            || code == "TP3003"
         {
             assert_eq!(rule["tier"], "experimental");
             assert_eq!(rule["enabled_by_default"], false);
         }
-        if ["TP6001", "TP6002"].contains(&code) {
+        if codepact::adoption::OUTCOME_RULES.contains(&code) {
+            assert_eq!(rule["tier"], "experimental");
+            assert_eq!(rule["enabled_by_default"], true);
+        }
+        if ["TP6001", "TP6002", "TP6003"].contains(&code) {
             assert_eq!(rule["tier"], "review-hint");
             assert_eq!(rule["enabled_by_default"], true);
         }

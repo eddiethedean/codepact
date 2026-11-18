@@ -204,18 +204,24 @@ fn same_fact(left: &PublishedContract, right: &PublishedContract) -> bool {
         && left.resource == right.resource
         && left.close_method == right.close_method
         && left.evidence == right.evidence
+        && (left.kind != "must-handle-return"
+            || left.required_capabilities == right.required_capabilities)
 }
 
 fn supports(fact: &PublishedContract) -> bool {
     fact.version == 1
         && matches!(
             fact.kind.as_str(),
-            "must-use" | "resource" | "owned-return" | "owned-parameter"
+            "must-use" | "must-handle-return" | "resource" | "owned-return" | "owned-parameter"
         )
         && fact.required_capabilities.iter().all(|capability| {
             matches!(
                 capability.as_str(),
-                "synchronous-result-use" | "synchronous-resource-v1" | "synchronous-ownership-v1"
+                "synchronous-result-use"
+                    | "synchronous-resource-v1"
+                    | "synchronous-ownership-v1"
+                    | "persistent-result-v1"
+                    | "persistent-option-v1"
             )
         })
 }

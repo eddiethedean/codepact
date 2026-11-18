@@ -1,6 +1,7 @@
 import asyncio
 import concurrent.futures
 from dataclasses import FrozenInstanceError
+from typing import get_type_hints
 import unittest
 
 import codepact
@@ -37,9 +38,22 @@ class OutcomesTests(unittest.TestCase):
             "to_nullable",
             "capture",
             "capture_async",
+            "MustHandle",
         ):
             with self.subTest(name=name):
                 self.assertIs(getattr(codepact, name), getattr(rust_api, name))
+
+    def test_persistent_metadata_and_reasoned_discard(self) -> None:
+        def producer() -> codepact.MustHandle[Option[int]]:
+            return Some(3)
+
+        metadata = get_type_hints(producer, include_extras=True)["return"].__metadata__
+        self.assertEqual(metadata, (codepact.MustHandleOutcome(),))
+        value = producer()
+        self.assertIsNone(codepact.discard_outcome(value, reason="cached result"))
+        self.assertEqual(value, Some(3))
+        with self.assertRaisesRegex(ValueError, "nonempty reason"):
+            codepact.discard_outcome(value, reason="  ")
 
     def test_variants_keep_payload_identity_freeze_fields_and_support_matching(self) -> None:
         payload = object()

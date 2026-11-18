@@ -81,7 +81,9 @@ pub(super) fn consume_expr(
     result: &mut Inspection,
     depth: usize,
 ) {
+    env.outcomes.clear_value();
     if let Some(name) = expr_name(expr) {
+        env.outcomes.set_value(env.outcomes.read(name));
         report_possibly_unbound_alias(name, expr.range, env, file, result);
     }
     if env.ownership.is_none() {
@@ -113,6 +115,7 @@ pub(super) fn consume_expr(
     if let Some(ownership) = env.ownership.as_mut() {
         ownership.pending_move = false;
         ownership.pending_task = None;
+        ownership.work.clear_pending();
         env.pending_return_targets = None;
         env.pending_coroutine_result = None;
         if let AstExprKind::Call { function, .. } = &expr.kind {
@@ -247,7 +250,15 @@ pub(super) fn consume_expr_impl(
                 }
             }
         }
+        if asyncio::await_combination(
+            awaited, expr.range, None, env, file, contracts, functions, result,
+        ) {
+            return;
+        }
         if asyncio::await_local(awaited, expr.range, env, file, contracts, functions, result) {
+            return;
+        }
+        if work::await_future(awaited, env, result, file) {
             return;
         }
         if env.ownership.is_some()
@@ -298,6 +309,7 @@ pub(super) fn consume_expr_impl(
             .unwrap_or_else(|| modeled_close_for_call(awaited, env));
         let resolved = coroutine.is_some()
             || modeled_close.is_some()
+            || super::library::direct_await(awaited, env)
             || resolved_await_call(awaited, file, env, functions);
         if let (Some(id), Some(record)) = (&coroutine_id, &coroutine) {
             if record.consumed {
@@ -388,7 +400,8 @@ pub(super) fn consume_expr_impl(
             .as_ref()
             .and_then(|(_, model)| model.cancelled);
         let has_modeled_cancellation = modeled_close.is_some();
-        let exact_source_coroutine = env.ownership.is_some() && coroutine.as_ref().is_some_and(|record| {
+        let exact_source_coroutine = (outcomes::call_contract(awaited, env, functions).is_some() && resolved)
+            || env.ownership.is_some() && coroutine.as_ref().is_some_and(|record| {
             !record.ambiguous && matches!(&record.invocation.kind, AstExprKind::Call { function, .. } if expr_name(function).is_some())
         });
         if !exact_source_coroutine
@@ -553,7 +566,36 @@ pub(super) fn consume_expr_impl(
     if !env.alive {
         return;
     }
+    if let AstExprKind::Call {
+        function,
+        arguments,
+        keywords,
+    } = &expr.kind
+    {
+        env.outcomes.clear_value();
+        if outcomes::resolved_discard(function, env) {
+            let value = match (arguments.as_slice(), keywords.as_slice()) {
+                ([value], [(Some(reason), _)]) if reason == "reason" => Some(value),
+                ([], [(Some(a), value), (Some(b), _)]) if a == "value" && b == "reason" => {
+                    Some(value)
+                }
+                ([], [(Some(a), _), (Some(b), value)]) if a == "reason" && b == "value" => {
+                    Some(value)
+                }
+                _ => None,
+            };
+            let values = value.map_or_else(outcomes::Values::new, |value| {
+                outcomes::argument_values(env, value)
+            });
+            let reason = value.and_then(|_| named_keyword(keywords, "reason"));
+            outcomes::discard(env, &values, reason, file, expr.range, result);
+            return;
+        }
+    }
     providers::record_call(expr, env, file, result);
+    if asyncio::task_result(expr, env, file, contracts, functions, result) {
+        return;
+    }
     if calls::dispatch_runtime_call(expr, env, file, functions, result) {
         return;
     }
@@ -567,6 +609,7 @@ pub(super) fn consume_expr_impl(
             !ownership.group_names.is_empty()
                 || !ownership.task_names.is_empty()
                 || !ownership.executor_names.is_empty()
+                || ownership.work.has_names()
                 || ownership.processes.has_aliases()
         }) {
             let names = arguments
@@ -579,6 +622,12 @@ pub(super) fn consume_expr_impl(
         }
     }
     if let Some((receiver, method, arguments, keywords)) = called_method(expr) {
+        let escaped = std::iter::once(receiver)
+            .chain(arguments)
+            .chain(keywords.iter().map(|(_, argument)| argument))
+            .flat_map(|argument| outcomes::argument_values(env, argument))
+            .collect();
+        outcomes::escape(env, &escaped, file, expr.range, result);
         if let Some(name) = expr_name(receiver) {
             if let Some(targets) = env.places.get(name).cloned() {
                 let has_open_alternative = targets.iter().any(|object| {
@@ -1321,12 +1370,10 @@ pub(super) fn consume_expr_impl(
                     ([], [(name, value)]) if name.as_deref() == Some("value") => Some(value),
                     _ => None,
                 };
-                for argument in arguments {
-                    consume_expr(argument, env, file, contracts, functions, result, depth + 1);
-                }
-                for (_, argument) in keywords {
-                    consume_expr(argument, env, file, contracts, functions, result, depth + 1);
-                }
+                let ignored = value.map_or_else(outcomes::Values::new, |value| {
+                    outcomes::argument_values(env, value)
+                });
+                outcomes::lose(env, ignored, file, expr.range, result);
                 if value.is_none() {
                     boundary(
                         result,
@@ -1375,6 +1422,8 @@ pub(super) fn consume_expr_impl(
                         }),
                     ),
                 }
+                let escaped = env.outcomes.take_value();
+                outcomes::escape(env, &escaped, file, expr.range, result);
                 return;
             }
             let known_function = if env.shadowed_functions.contains(callee) {
@@ -1518,6 +1567,11 @@ pub(super) fn consume_expr_impl(
                 let mut bound_accesses = BTreeMap::<String, (String, Span)>::new();
                 let mut reported_exclusive_conflicts = BTreeSet::new();
                 for (parameter, argument) in bindings {
+                    child.outcomes.import_argument(
+                        &env.outcomes,
+                        &parameter,
+                        outcomes::argument_values(env, argument),
+                    );
                     if let Some(actual) = expr_name(argument) {
                         if let Some(targets) = env.places.get(actual) {
                             child.places.insert(parameter.clone(), targets.clone());
@@ -1696,8 +1750,22 @@ pub(super) fn consume_expr_impl(
                     .ambiguous_borrowed_owned_aliases
                     .extend(ambiguous_borrowed_owned_aliases.iter().cloned());
                 let diagnostic_start = result.diagnostics.len();
-                let returned =
+                let inherited_outcomes = outcomes::tracked(&child);
+                let mut returned =
                     recursion::execute_function(definition, &mut child, functions, result);
+                let definition_range = definition
+                    .statements
+                    .first()
+                    .map_or(expr.range, statement_range);
+                outcomes::report_scope(
+                    &child,
+                    &returned,
+                    &definition.file,
+                    definition_range,
+                    result,
+                    definition.outcome_return.is_some(),
+                    &inherited_outcomes,
+                );
                 let mut forbidden_borrowed_closes = child
                     .forbidden_borrowed_closes
                     .iter()
@@ -1789,6 +1857,31 @@ pub(super) fn consume_expr_impl(
                     })
                     .collect::<Vec<_>>();
                 env.pending_raises.extend(propagated_raises);
+                if let Some(contract) = definition.outcome_return {
+                    let symbol = definition
+                        .binding_key
+                        .as_deref()
+                        .and_then(|key| key.rsplit_once(':').map(|(symbol, _)| symbol))
+                        .unwrap_or(callee);
+                    let delivery = outcomes::Delivery {
+                        contract,
+                        file,
+                        range: expr.range,
+                        symbol,
+                        identity: outcomes::delivery_identity(env, file, expr.range),
+                    };
+                    for exit in &mut returned.returns {
+                        outcomes::deliver_return(&mut exit.state, &delivery, result);
+                    }
+                    if child.alive {
+                        boundary(
+                            result,
+                            file,
+                            expr.range,
+                            "a MustHandle callable can fall through without delivering an outcome",
+                        );
+                    }
+                }
                 let child = join_normal_exits(
                     child,
                     returned
@@ -1856,10 +1949,22 @@ pub(super) fn consume_expr_impl(
                     result.diagnostics.push(diagnostic);
                 }
                 apply_call_effects(env, &child, &owned_return_targets);
+                env.outcomes.apply_call(&child.outcomes, true);
                 if !child.alive {
                     env.alive = false;
                 }
             } else {
+                if callee != "print"
+                    || env.shadowed_functions.contains(callee)
+                    || env.function_bindings.contains_key(callee)
+                {
+                    let escaped = arguments
+                        .iter()
+                        .chain(keywords.iter().map(|(_, argument)| argument))
+                        .flat_map(|argument| outcomes::argument_values(env, argument))
+                        .collect();
+                    outcomes::escape(env, &escaped, file, expr.range, result);
+                }
                 let mut affected = Vec::new();
                 for argument in arguments {
                     if let Some(name) = expr_name(argument) {
@@ -1941,6 +2046,9 @@ pub(super) fn consume_expr_impl(
                 if !env.alive {
                     return;
                 }
+                let mut outcomes = outcomes::escaping_expression(env, item);
+                outcomes.append(&mut env.outcomes.take_value());
+                self::outcomes::escape(env, &outcomes, file, item.range, result);
                 ownership::borrow_escape(
                     env,
                     names,
@@ -1995,6 +2103,11 @@ pub(super) fn consume_expr_impl(
         AstExprKind::Tuple(items) => {
             for item in items {
                 consume_expr(item, env, file, contracts, functions, result, depth + 1);
+                let escaped = env.outcomes.take_value();
+                outcomes::escape(env, &escaped, file, item.range, result);
+                if !env.alive {
+                    break;
+                }
             }
         }
         AstExprKind::Other
@@ -2005,6 +2118,13 @@ pub(super) fn consume_expr_impl(
         | AstExprKind::Attribute(_, _)
         | AstExprKind::Subscript(_, _)
         | AstExprKind::DepthLimit => {
+            if matches!(
+                &expr.kind,
+                AstExprKind::Collection(_) | AstExprKind::Closure(_)
+            ) {
+                let captured = outcomes::escaping_expression(env, expr);
+                outcomes::escape(env, &captured, file, expr.range, result);
+            }
             env.unknown_places.extend(env.places.keys().cloned());
             weaken(
                 env,
