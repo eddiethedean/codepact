@@ -1,7 +1,6 @@
 # Command-line reference
 
-This reference covers the 0.7 analyzer, experimental finite matches, and the
-advanced-contract preview.
+This reference covers the CodePact 0.8.0 analyzer and its opt-in check modes.
 The analyzer reads Python source without importing or executing the project.
 [Release availability](availability.md)
 
@@ -11,6 +10,7 @@ The analyzer reads Python source without importing or executing the project.
 | Inspect declarations in supplied files | `codepact inspect-contracts --root src src/models.py src/client.py` |
 | Preview effective project policy | `codepact check --show-settings --json` |
 | Emit a report for CI | `codepact check --root src --mode strict --json` |
+| Verify a provider wheel | `codepact contracts verify WHEEL` |
 | Look up the installed rules and limits | `codepact capabilities --json` |
 
 ## Commands
@@ -33,12 +33,14 @@ codepact baseline update [project/policy options]
                         --output FILE --reason TEXT [--replace] [--json] [FILE...]
 codepact capabilities --json
 codepact explain RULE --json
+codepact contracts export --root DIR --distribution NAME --version VERSION
+                          --import-scope PACKAGE [--python-version 3.11|3.12|3.13]
+codepact contracts verify WHEEL
 ```
 
 `inspect-contracts` keeps the inspection interface: it requires explicit files
-and returns inspection schema 0. `check --json` uses the CLI adoption
-report, schema 3. The Rust `check` API returns `Inspection` (schema 0), and
-`check_report` returns `CheckResult` (schema 1).
+and returns inspection schema 0. `check --json` uses adoption report schema 3
+for source-only checks and schema 4 when foundations are enabled.
 [JSON output reference](output.md)
 
 ## Project configuration and scope
@@ -80,7 +82,10 @@ Create the baseline with `baseline update` before adding its path.
 Unknown keys, invalid patterns or rule codes, unsupported targets, and
 severity overrides for mandatory or disabled rules fail configuration.
 `--show-settings --json` reports each setting's origin without reading
-source. It accepts no file operands or detail limit and emits settings schema 2.
+source. It accepts no file operands or detail limit. It emits settings schema 3
+when a runtime profile, project contracts, `uv-lock`, or
+`experimental-foundations = true` is set. Other settings reports use schema 2,
+including reports with only dependency roots configured.
 
 ## Experimental finite matches
 
@@ -95,14 +100,18 @@ identity.
 
 Add explicit installed environment roots under `[tool.codepact.dependencies]`
 or repeat `--dependency-root DIR`. CLI roots replace configured roots. The
-analyzer reads regular pure-Python wheels that contain a `py.codepact` marker
-inside a package and whose `.dist-info` `RECORD` owns both that marker and the
-source. It recognizes supported must-use declarations and same-distribution
-re-exports. It reads selected source as text and never imports or executes the
-package. Local project modules and earlier dependency roots shadow later
-ones. Use `required-providers` when an unresolved installed provider should be
-reported as incomplete coverage. Reports include selected roots and required
-distribution names.
+analyzer checks supported declarations and re-exports from installed regular
+pure Python wheels with a `py.codepact` marker and matching `RECORD` entries.
+A verified manifest can select public exports and publish supported contracts.
+Project models can supply a reviewed factory and cleanup contract for an exact
+installed version, including for an unmarked wheel. Local project modules and
+earlier dependency roots shadow later ones.
+
+Use `required-providers` to require a selected distribution's inline or
+manifest publication. If the publication cannot be resolved, coverage is
+incomplete. A project model can supply applicable effects for an unmarked
+wheel while the publication requirement remains unsatisfied.
+[Publish a manifest or configure a project model](reviewed-contracts.md)
 
 For a nested project, select the intended policy explicitly. For example,
 from the repository root, if `services/billing/pyproject.toml` contains the
@@ -129,6 +138,14 @@ descends at most 256 directories below the root. Exceeding a discovery limit
 fails with status 2 and does not produce a completed check. Installed
 packages are considered only through the explicit provider roots described
 above.
+
+## Reviewed runtime models
+
+Configure `[tool.codepact.runtime-profile]` in `pyproject.toml` to select the
+analyzed program's runtime. The 0.8 models target CPython 3.13.16 on Linux
+x86-64 with source target `3.13`. The asyncio and multiprocessing models
+also need the applicable ownership settings and runtime assumptions.
+[Runtime profile and supported operations](reviewed-contracts.md#select-the-runtime-profile)
 
 ## Output modes
 

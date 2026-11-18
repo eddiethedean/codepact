@@ -126,7 +126,7 @@ pub(super) fn consume_expr(
                 // Call preparation can replace the receiver after evaluating it.
                 let changes_task_factory = tasks::sets_task_factory_on_loop(expr, env);
                 let prepared =
-                    ownership::prepare_call(expr, env, file, contracts, functions, result, depth);
+                    calls::prepare_call(expr, env, file, contracts, functions, result, depth);
                 if env.alive && !prepared.invalid_receiver {
                     if changes_task_factory {
                         tasks::invalidate_task_factory(env, file, expr.range, result);
@@ -554,48 +554,7 @@ pub(super) fn consume_expr_impl(
         return;
     }
     providers::record_call(expr, env, file, result);
-    if runtime::open_resource(expr, env, file, result) {
-        return;
-    }
-    if asyncio::call(expr, env, file, result) {
-        return;
-    }
-    if let AstExprKind::Call {
-        function,
-        arguments,
-        keywords,
-    } = &expr.kind
-    {
-        if expr_name(function).is_some_and(|name| is_unshadowed_builtin_exception(name, env)) {
-            let modeled_arguments = keywords.is_empty()
-                && arguments.iter().all(|argument| {
-                    matches!(
-                        argument.kind,
-                        AstExprKind::String(_)
-                            | AstExprKind::Boolean(_)
-                            | AstExprKind::Primitive
-                            | AstExprKind::NoneLiteral
-                    )
-                });
-            if !modeled_arguments {
-                boundary(
-                    result,
-                    file,
-                    expr.range,
-                    "computed built-in exception constructor arguments are not modeled",
-                );
-                queue_raise(env, expr.range, None);
-            }
-            return;
-        }
-    }
-    if env.ownership.is_some() && tasks::task_call(expr, env, file, result) {
-        return;
-    }
-    if env.ownership.is_some() && tasks::executor_call(expr, env, file, functions, result) {
-        return;
-    }
-    if process::call(expr, env, file, functions, result) {
+    if calls::dispatch_runtime_call(expr, env, file, functions, result) {
         return;
     }
     if let AstExprKind::Call {

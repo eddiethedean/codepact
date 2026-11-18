@@ -9,6 +9,7 @@ Planning baseline: 2026-10-31; release mapping updated 2026-11-17. These documen
 | [Vision](vision.md) | Audiences, goals, adoption, and success measures |
 | [API design](apis.md) | Pythonic and explicit APIs, interoperability, examples |
 | [Architecture](architecture.md) | Components, dependencies, execution and packaging |
+| [SOLID refactor plan](solid-refactor.md) | Behavior-preserving changes across the analyzer, Python helpers, tooling, and release delivery |
 | [Analyzer migration](analyzer-migration.md) | Ruff AST, declaration identities, Salsa query graph and AM01–AM06 acceptance |
 | [0.1 implementation repair](phases/0.1/remediation.md) | Archived file-level repair plan; see the release evidence for completed work |
 | [0.2 lifecycle plan](phases/0.2-lifecycle.md) | LC01–LC07 work, released scope, V02 matrix and performance record |

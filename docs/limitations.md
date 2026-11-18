@@ -2,9 +2,9 @@
 
 CodePact checks supported flow under declared resource models. Read the
 report’s certainty and coverage alongside any finding, especially when you
-use advisory mode in CI. The 0.5.0 release was qualified against synthetic
-bug, repair, and coverage controls.
-[Release evidence](availability.md) · [Report fields](output.md)
+use advisory mode in CI. The analyzer uses synthetic bug, repair, and coverage
+controls and pinned runtime conformance probes.
+[Release scope](availability.md) · [Report fields](output.md)
 
 ## Common boundaries
 
@@ -13,10 +13,15 @@ bug, repair, and coverage controls.
   incomplete. Unknown calls do not establish purity.
 - **Resources and aliases.** Custom `__new__`, dynamic dispatch, and aliases
   stored in arbitrary fields or containers can prevent a lifecycle proof.
-- **Recursion and concurrency.** The published checker leaves recursive
-  effects and general task lifetimes unresolved. The 0.5 ownership opt-in adds
-  bounded support for selected recursive summaries and TaskGroup patterns.
-  [Experimental ownership scope](ownership.md#scope-and-report-migration)
+- **Recursion and concurrency.** CodePact supports selected recursive
+  summaries and bounded local task, process, and pool lifetimes. Dynamic
+  scheduling, escaping handles, arbitrary worker effects, and general
+  concurrency safety remain outside that scope.
+  [Reviewed runtime models](reviewed-contracts.md#select-the-runtime-profile)
+- **Installed providers.** The analyzer requires an explicit dependency root
+  and a supported regular pure Python wheel. Native or dynamic import
+  layouts, stale manifests, and unverifiable project model inputs can leave
+  caller coverage incomplete. [Provider selection](reviewed-contracts.md)
 
 CodePact 0.3.0 caps total nested control-flow depth at 64 (the historical
 0.2 limit was 128 nested `if` regions), possible objects for one local alias
@@ -104,10 +109,10 @@ and the [0.3 validation map](https://github.com/eddiethedean/codepact/blob/main/
 
 ## Provisional interfaces
 
-The helper API, CLI flags, and diagnostics can change during 0.x. Inspection
-JSON uses schema 0. The CLI check report introduced in 0.4 uses schema 2, and the
-Rust `check_report` result uses schema 1. Pin matching package versions and read the
-schema identifier before consuming a report.
+The helper API, CLI flags, and diagnostics can change during 0.x. In 0.8.0,
+completed CLI check reports use schema 3 or 4, depending on whether
+foundations are enabled. Pin matching package versions and read the schema
+identifier before consuming a report.
 [Schema reference](schemas.md) · [Upgrade guide](upgrading.md)
 
 See the [roadmap](roadmap.md) for planned phases and release acceptance gates.

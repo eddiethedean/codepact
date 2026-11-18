@@ -115,6 +115,26 @@ pub(super) struct State {
     pub(super) alive: bool,
 }
 
+impl State {
+    /// Replace a local binding with a protocol handle kept in ownership state.
+    pub(super) fn bind_runtime_handle(&mut self, name: &str) -> &mut OwnershipState {
+        let ownership = self
+            .ownership
+            .as_deref_mut()
+            .expect("modeled runtime handle");
+        ownership.rebind(name);
+        self.places.remove(name);
+        self.unknown_places.remove(name);
+        self.coroutine_aliases.remove(name);
+        self.unknown_coroutine_aliases.remove(name);
+        self.possibly_unbound_places.remove(name);
+        self.definitely_bound_names.insert(name.to_owned());
+        self.shadowed_functions.insert(name.to_owned());
+        self.shadowed_classes.insert(name.to_owned());
+        ownership
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct CoroutineRecord {
     pub(super) invocation: AstExpr,
@@ -162,23 +182,6 @@ pub(super) struct FlowExit {
     pub(super) state: State,
     pub(super) range: SourceRange,
     pub(super) kind: CompletionKind,
-}
-
-#[derive(Clone)]
-pub(super) struct ContextCleanup {
-    pub(super) receiver: String,
-    pub(super) method: &'static str,
-    pub(super) asynchronous: bool,
-    pub(super) range: SourceRange,
-}
-
-#[derive(Clone)]
-pub(super) enum ContextCleanupFrame {
-    Modeled(ContextCleanup),
-    Unknown {
-        asynchronous: bool,
-        range: SourceRange,
-    },
 }
 
 #[derive(Default)]
@@ -229,6 +232,20 @@ pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     } else {
         Some(returned_targets)
     };
+    merge_coroutines(&mut joined, left, right);
+    joined.pending_raises = merge_pending_raises(&left.pending_raises, &right.pending_raises);
+    merge_bindings(&mut joined, left, right, &mut effects);
+    merge_resources(&mut joined, left, right);
+    merge_access(&mut joined, right);
+    merge_protocols(&mut joined, left, right);
+    joined.alive |= right.alive;
+    joined.loop_depth = left.loop_depth.max(right.loop_depth);
+    (joined, effects)
+}
+
+// A join may weaken resource masks when an alias or coroutine drops out of
+// the bounded domain. Preserve those writes when unioning the object masks.
+fn merge_coroutines(joined: &mut State, left: &State, right: &State) {
     joined.pending_coroutine_result =
         if left.pending_coroutine_result == right.pending_coroutine_result {
             left.pending_coroutine_result.clone()
@@ -340,7 +357,9 @@ pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
         joined.coroutine_budget_overflow =
             Some(joined.coroutine_budget_overflow.unwrap_or(record.range));
     }
-    joined.pending_raises = merge_pending_raises(&left.pending_raises, &right.pending_raises);
+}
+
+fn merge_bindings(joined: &mut State, left: &State, right: &State, effects: &mut JoinEffects) {
     let binding_names: BTreeSet<_> = left
         .function_bindings
         .keys()
@@ -430,6 +449,9 @@ pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
             joined.places.insert(place, targets);
         }
     }
+}
+
+fn merge_resources(joined: &mut State, left: &State, right: &State) {
     for (object, state) in &right.objects {
         let path_optional = !left.objects.contains_key(object) && state & OPEN != 0;
         *joined.objects.entry(object.clone()).or_default() |=
@@ -441,6 +463,22 @@ pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
         }
     }
     joined.resources.extend(right.resources.clone());
+    joined.escaped.extend(right.escaped.iter().cloned());
+    for (object, origin) in &right.close_origins {
+        joined
+            .close_origins
+            .entry(object.clone())
+            .or_insert_with(|| origin.clone());
+    }
+    for (object, origin) in &right.duty_origins {
+        joined
+            .duty_origins
+            .entry(object.clone())
+            .or_insert_with(|| origin.clone());
+    }
+}
+
+fn merge_access(joined: &mut State, right: &State) {
     joined.borrowed.extend(right.borrowed.iter().cloned());
     joined.exclusive.extend(right.exclusive.iter().cloned());
     for (object, origin) in &right.exclusive_origins {
@@ -456,6 +494,21 @@ pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
             .or_default()
             .extend(names.iter().cloned());
     }
+    joined
+        .forbidden_borrowed_closes
+        .extend(right.forbidden_borrowed_closes.iter().cloned());
+    joined
+        .ambiguous_borrowed_owned_aliases
+        .extend(right.ambiguous_borrowed_owned_aliases.iter().cloned());
+    for (object, origin) in &right.borrowed_origins {
+        joined
+            .borrowed_origins
+            .entry(object.clone())
+            .or_insert_with(|| origin.clone());
+    }
+}
+
+fn merge_protocols(joined: &mut State, left: &State, right: &State) {
     joined
         .protocol_machines
         .extend(right.protocol_machines.clone());
@@ -477,34 +530,6 @@ pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     joined
         .protocol_unknown
         .extend(right.protocol_unknown.iter().cloned());
-    joined
-        .forbidden_borrowed_closes
-        .extend(right.forbidden_borrowed_closes.iter().cloned());
-    joined
-        .ambiguous_borrowed_owned_aliases
-        .extend(right.ambiguous_borrowed_owned_aliases.iter().cloned());
-    for (object, origin) in &right.borrowed_origins {
-        joined
-            .borrowed_origins
-            .entry(object.clone())
-            .or_insert_with(|| origin.clone());
-    }
-    joined.escaped.extend(right.escaped.iter().cloned());
-    for (object, origin) in &right.close_origins {
-        joined
-            .close_origins
-            .entry(object.clone())
-            .or_insert_with(|| origin.clone());
-    }
-    for (object, origin) in &right.duty_origins {
-        joined
-            .duty_origins
-            .entry(object.clone())
-            .or_insert_with(|| origin.clone());
-    }
-    joined.alive |= right.alive;
-    joined.loop_depth = left.loop_depth.max(right.loop_depth);
-    (joined, effects)
 }
 
 fn completion_tag(kind: &CompletionKind) -> u8 {

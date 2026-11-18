@@ -1,6 +1,6 @@
 # CodePact
 
-![CodePact banner](https://raw.githubusercontent.com/eddiethedean/codepact/v0.7.0/docs/_static/codepact-banner.png)
+![CodePact banner](https://raw.githubusercontent.com/eddiethedean/codepact/v0.8.0/docs/_static/codepact-banner.png)
 
 CodePact finds Python resource bugs before runtime. Declare how an object
 closes and which functions own or borrow it. CodePact reads source and can flag
@@ -18,10 +18,12 @@ discarded must-use result. Run it alongside your type checker and tests.
 [Rule catalog](https://codepact.readthedocs.io/en/latest/rules.html) ·
 [Roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md)
 
-**New in 0.7.0.** Add typed `Result` and `Option` values, opt in to finite
-outcome-match checks, and install the pure-Python helpers separately from the
-native CLI. [Typed outcomes](https://codepact.readthedocs.io/en/latest/contracts.html#typed-outcomes) ·
-[Installation options](https://codepact.readthedocs.io/en/latest/install.html)
+**New in 0.8.0.** Check resource contracts across installed Python packages,
+export and verify wheel contract manifests, and supply reviewed models for an
+exact dependency version. Opt in to models for local text files, asyncio task
+lifetimes, and multiprocessing with an explicit spawn context.
+[Release notes](https://codepact.readthedocs.io/en/latest/release-notes.html) ·
+[Reviewed contracts and runtime models](https://codepact.readthedocs.io/en/latest/reviewed-contracts.html)
 
 ## Quick start
 
@@ -30,12 +32,14 @@ and Python 3.11 or later, start a project.
 
 ```sh
 uv init --bare --name codepact-demo
-uv add 'codepact[cli]==0.7.0'
+uv add 'codepact[cli]==0.8.0'
 uv run --locked codepact --version
 mkdir src
 ```
 
-Save the complete [connection example](https://github.com/eddiethedean/codepact/blob/v0.7.0/examples/lifecycle.py)
+Expect `codepact 0.8.0`.
+
+Save the complete [connection example](https://github.com/eddiethedean/codepact/blob/v0.8.0/examples/lifecycle.py)
 as `src/connection.py` and run the check.
 
 ```sh
@@ -83,6 +87,11 @@ checker reports later use of the old handle. The TaskGroup model requires a
 separate default-task-factory assumption.
 [Ownership examples and scope](https://codepact.readthedocs.io/en/latest/ownership.html)
 
+The new runtime models require an explicit profile for CPython 3.13.16 on
+Linux x86-64. The profile describes the program you analyze. You can run the
+checker on any supported CLI platform.
+[Configure a runtime profile](https://codepact.readthedocs.io/en/latest/reviewed-contracts.html#select-the-runtime-profile)
+
 ## Run in CI
 
 Start with a narrow source root. Use strict mode when incomplete coverage
@@ -101,6 +110,8 @@ uv run --locked codepact check --root src --mode strict --json > codepact-report
 Advisory mode can pass with incomplete coverage. The coverage field describes
 which parts of the program the checker could analyze. Teams can configure rule
 severity, review a baseline, and record line-level exceptions with a reason.
+Checks with installed dependency roots or a runtime profile emit report schema
+4 with provider selection and model applicability details.
 [Adoption guide](https://codepact.readthedocs.io/en/latest/adopting.html) ·
 [CI workflow](https://codepact.readthedocs.io/en/latest/automation.html)
 

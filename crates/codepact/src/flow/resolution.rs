@@ -775,51 +775,6 @@ pub(super) fn resolve_imported_function(
     None
 }
 
-pub(super) fn evaluate_call_arguments(
-    expr: &AstExpr,
-    env: &mut State,
-    file: &SourceFile,
-    contracts: &[Contract],
-    functions: &FunctionMap,
-    result: &mut Inspection,
-    depth: usize,
-) {
-    let AstExprKind::Call {
-        arguments,
-        keywords,
-        ..
-    } = &expr.kind
-    else {
-        return;
-    };
-    for argument in arguments
-        .iter()
-        .chain(keywords.iter().map(|(_, value)| value))
-    {
-        if !env.alive {
-            break;
-        }
-        let is_possibly_unbound_name = matches!(
-            &argument.kind,
-            AstExprKind::Name(name) if env.possibly_unbound_places.contains(name)
-        );
-        if is_possibly_unbound_name {
-            if let Some(name) = expr_name(argument) {
-                report_possibly_unbound_alias(name, argument.range, env, file, result);
-            }
-        } else if !matches!(
-            argument.kind,
-            AstExprKind::Name(_)
-                | AstExprKind::String(_)
-                | AstExprKind::Boolean(_)
-                | AstExprKind::NoneLiteral
-                | AstExprKind::Primitive
-        ) {
-            consume_expr(argument, env, file, contracts, functions, result, depth + 1);
-        }
-    }
-}
-
 fn capture_coroutine_place(
     expression: &mut AstExpr,
     env: &State,

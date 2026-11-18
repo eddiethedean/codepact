@@ -37,6 +37,15 @@ def _is_state_name(value: str) -> bool:
     return _is_identifier(value) and not keyword.iskeyword(value)
 
 
+def _validate_state_names(
+    names: tuple[str, ...], *, invalid: str, duplicate: str
+) -> None:
+    if not names or any(not _is_state_name(name) for name in names):
+        raise ValueError(invalid)
+    if len(set(names)) != len(names):
+        raise ValueError(duplicate)
+
+
 @overload
 def resource(*, closed_by: str) -> Callable[[type[T]], type[T]]: ...
 
@@ -82,10 +91,11 @@ def state_machine(
 ) -> Callable[[type[T]], type[T]]:
     """Declare a finite protocol state set and its initial state."""
     state_names = tuple(states)
-    if not state_names or any(not _is_state_name(name) for name in state_names):
-        raise ValueError("states must contain valid, nonempty state names")
-    if len(set(state_names)) != len(state_names):
-        raise ValueError("states must be unique")
+    _validate_state_names(
+        state_names,
+        invalid="states must contain valid, nonempty state names",
+        duplicate="states must be unique",
+    )
     if initial not in state_names:
         raise ValueError("initial must name one of the declared states")
 
@@ -109,10 +119,11 @@ def transition(
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Declare protocol preconditions and completion states for a method."""
     from_states = (from_state,) if isinstance(from_state, str) else tuple(from_state)
-    if not from_states or any(not _is_state_name(name) for name in from_states):
-        raise ValueError("from_state must contain valid state names")
-    if len(set(from_states)) != len(from_states):
-        raise ValueError("from_state values must be unique")
+    _validate_state_names(
+        from_states,
+        invalid="from_state must contain valid state names",
+        duplicate="from_state values must be unique",
+    )
     if not _is_state_name(to_state):
         raise ValueError("to_state must be a valid state name")
     if on_raise is not None and not _is_state_name(on_raise):

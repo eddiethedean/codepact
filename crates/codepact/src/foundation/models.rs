@@ -1,3 +1,8 @@
+mod lock;
+mod selection;
+pub(crate) use selection::ApplicableFactory;
+use selection::ModelApplicability;
+
 use super::{publication, FoundationInputs, ProviderPackage, RuntimeProfile};
 use crate::{db::ParseSummary, frontend::Declaration};
 use crate::{SourceFile, Span};
@@ -60,12 +65,7 @@ pub fn validate_project_models(
     models: &[ProjectResourceModel],
     target: &str,
 ) -> Result<(), String> {
-    let symbol = |value: &str| {
-        value.contains('.')
-            && value
-                .split('.')
-                .all(|name| crate::is_python_identifier(name, target))
-    };
+    let symbol = |value: &str| value.contains('.') && publication::qualified(value, target);
     let mut factories = BTreeSet::new();
     let mut resources = BTreeMap::new();
     for model in models {
@@ -132,12 +132,6 @@ pub struct ProviderSelection {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct ApplicableFactory {
-    pub model: ProjectResourceModel,
-    pub origin: ProviderOrigin,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PreparedFoundations {
     pub runtime: Option<RuntimeProfile>,
     pub providers: BTreeMap<String, ProviderSelection>,
@@ -194,88 +188,21 @@ impl PreparedFoundations {
         self.importable_children
             .extend(selected.importable_children.iter().cloned());
         self.unavailable.extend(selected.unavailable.clone());
-        let lock = inputs.uv_lock.as_deref().map(LockVersions::parse);
-        let validation = validate_project_models(&inputs.project_models, target);
+        let checks = ModelApplicability::new(inputs, target);
+        let public_prefix = format!("{}.", package.import_scope);
         for model in &inputs.project_models {
-            if !model
-                .factory
-                .starts_with(&format!("{}.", package.import_scope))
-            {
+            if !model.factory.starts_with(&public_prefix) {
                 continue;
             }
-            let outcome = (|| {
-                validation.as_ref().map_err(Clone::clone)?;
-                if model.distribution != package.distribution || model.version != package.version {
-                    return Err(format!(
-                        "project model expects {}=={} but the selected provider is {}=={}",
-                        model.distribution, model.version, package.distribution, package.version
-                    ));
+            let publication = self.exports.get(&model.factory);
+            match checks.select_factory(model, selected, publication) {
+                Ok(Some(factory)) => {
+                    self.factories.insert(model.factory.clone(), factory);
                 }
-                if let Some(lock) = &lock {
-                    lock.as_ref()
-                        .map_err(Clone::clone)?
-                        .verify(&package.distribution, &package.version)?;
+                Ok(None) => {}
+                Err(reason) => {
+                    self.unavailable.insert(model.factory.clone(), reason);
                 }
-                let definition = selected.source_exports.get(&model.factory)
-                    .filter(|definition| definition.symbol_kind == "function")
-                    .ok_or("project model factory does not resolve to a synchronous public function in this artifact")?;
-                let class = selected.source_exports.values().any(|definition| {
-                    definition.canonical_name == model.resource
-                        && definition.symbol_kind == "resource"
-                });
-                if !class {
-                    return Err(
-                        "project model resource does not resolve to a class in this artifact"
-                            .into(),
-                    );
-                }
-                if !selected
-                    .cleanup_methods
-                    .get(&model.resource)
-                    .is_some_and(|methods| methods.contains(&model.close_method))
-                {
-                    return Err(format!("project model cleanup method {}.{} does not resolve to a supported synchronous instance method", model.resource, model.close_method));
-                }
-                let existing = self.exports.get(&model.factory).and_then(|symbol| {
-                    symbol
-                        .contracts
-                        .iter()
-                        .find(|fact| fact.kind == "owned-return")
-                });
-                if existing.is_some() && !model.override_publication {
-                    if existing.is_some_and(|fact| {
-                        fact.resource.as_ref() != Some(&model.resource)
-                            || fact.close_method.as_ref() != Some(&model.close_method)
-                    }) {
-                        return Err(
-                            "project model conflicts with the published factory effect".into()
-                        );
-                    }
-                    return Ok(());
-                }
-                if model.override_publication && existing.is_none() {
-                    return Err("project model override has no applicable published factory effect to replace".into());
-                }
-                let origin = ProviderOrigin {
-                    public_symbol: model.factory.clone(),
-                    canonical_symbol: definition.canonical_name.clone(),
-                    distribution: package.distribution.clone(),
-                    version: package.version.clone(),
-                    artifact_sha256: selected.digest.clone(),
-                    location: existing.map(|fact| provider_location(package, &fact.evidence)),
-                    replaced_origin: existing.map(|_| selected.origin.to_owned()),
-                };
-                self.factories.insert(
-                    model.factory.clone(),
-                    ApplicableFactory {
-                        model: model.clone(),
-                        origin,
-                    },
-                );
-                Ok(())
-            })();
-            if let Err(reason) = outcome {
-                self.unavailable.insert(model.factory.clone(), reason);
             }
         }
     }
@@ -519,68 +446,5 @@ pub(crate) fn scope_entry(
         supplied_imports,
         recognized_imports,
         unresolved_imports,
-    }
-}
-
-struct LockVersions(BTreeMap<String, Vec<Option<String>>>);
-
-impl LockVersions {
-    fn parse(raw: &str) -> Result<Self, String> {
-        if raw.len() > publication::MAX_METADATA_BYTES {
-            return Err("uv.lock exceeds the metadata byte limit".into());
-        }
-        let lock: toml::Value =
-            toml::from_str(raw).map_err(|error| format!("cannot read uv.lock: {error}"))?;
-        if lock.get("version").and_then(toml::Value::as_integer) != Some(1)
-            || lock.get("revision").and_then(toml::Value::as_integer) != Some(3)
-        {
-            return Err("unsupported uv.lock version or revision".into());
-        }
-        let packages = lock
-            .get("package")
-            .and_then(toml::Value::as_array)
-            .ok_or("uv.lock has no package inventory")?;
-        let mut names = BTreeMap::<String, Vec<Option<String>>>::new();
-        for package in packages {
-            let name = package
-                .get("name")
-                .and_then(toml::Value::as_str)
-                .and_then(publication::normalized_distribution)
-                .ok_or("uv.lock contains an invalid package name")?;
-            let supported = package.get("resolution-markers").is_none()
-                && package
-                    .get("source")
-                    .and_then(toml::Value::as_table)
-                    .is_some_and(|source| {
-                        source.len() == 1
-                            && source
-                                .get("registry")
-                                .and_then(toml::Value::as_str)
-                                .is_some()
-                    });
-            let version = supported
-                .then(|| {
-                    package
-                        .get("version")
-                        .and_then(toml::Value::as_str)
-                        .map(str::to_owned)
-                })
-                .flatten();
-            names.entry(name).or_default().push(version);
-        }
-        Ok(Self(names))
-    }
-
-    fn verify(&self, distribution: &str, installed: &str) -> Result<(), String> {
-        match self.0.get(distribution).map(Vec::as_slice) {
-            Some([Some(locked)]) if locked == installed => Ok(()),
-            Some([Some(locked)]) => Err(format!(
-                "uv.lock version {locked} disagrees with installed {distribution}=={installed}"
-            )),
-            None => Err(format!("uv.lock has no entry for installed {distribution}")),
-            _ => Err(format!(
-                "uv.lock entry for {distribution} is ambiguous or conditional"
-            )),
-        }
     }
 }

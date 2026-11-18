@@ -1,9 +1,10 @@
-# Reviewed contracts and concurrency preview
+# Reviewed contracts and runtime models
 
-Phase 0.8 adds an experimental path for publishing and checking installed
-contracts and for modeling selected standard-library operations. The
-qualification target for the new runtime models is CPython 3.13.16 on
-Linux x86_64. Reports identify the analyzed runtime and applicable effects.
+CodePact 0.8.0 checks contracts from installed pure Python wheels. Package
+authors can publish a manifest, and application teams can supply reviewed
+contracts for an exact dependency version. The opt-in standard library
+models target CPython 3.13.16 on Linux x86-64. Reports identify the selected
+artifacts, runtime assumptions, and effects the checker could apply.
 
 ## Publish and verify a provider
 
@@ -31,9 +32,12 @@ source or an applicable reviewed model.
 The pure-Python provider profile rejects native extension files that could
 change import resolution.
 
-Use `codepact check --dependency-root PATH` or set ordered dependency roots
-in project configuration. The first regular package or module that wins
-import resolution determines which facts can apply. A manifest listed in the
+Install the wheel into the analysis environment. Pass the directory containing
+the installed package and its `.dist-info` to
+`codepact check --root src --dependency-root PATH`, or set ordered dependency
+roots in project configuration. Local project modules resolve first, followed
+by dependency roots in order. The first matching regular package or module
+determines which facts can apply. A manifest listed in the
 wheel's `RECORD` stays required after installation. Marked wheels built for
 inline publication continue to publish from source.
 
@@ -49,9 +53,13 @@ source and distribution metadata against the wheel's `RECORD` hashes. The
 configured close method must resolve to a synchronous instance method on the
 selected resource class.
 
+This example scans application source in `src` and resolves installed
+dependencies from the separate `installed` directory.
+
 ```toml
 [tool.codepact]
 config-version = 1
+root = "src"
 python-version = "3.13"
 
 [tool.codepact.dependencies]
@@ -81,6 +89,9 @@ need them. Malformed or conflicting project model files exit with status 2.
 
 ## Select the runtime profile
 
+Set the source target and analyzed runtime explicitly in `pyproject.toml`.
+The runtime profile applies even when the CLI runs on a different host.
+
 ```toml
 [tool.codepact]
 config-version = 1
@@ -99,9 +110,29 @@ start-method = "spawn"
 assume-standard-process-wait = true
 ```
 
-The file pack checks local text files opened with supported literal arguments.
+The file model checks ordinary local text paths opened in default mode,
+`"r"`, or `"w"`, with supported literal arguments and the default opener.
 Both `with open(...)` and `with handle` close the tracked file for all aliases
 on successful context exit. Explicit close has the same alias effect.
+
+With the profile above, save this example as `src/read_settings.py` and run
+`codepact check --root src`.
+
+```python
+def read_settings():
+    with open("settings.txt", "r") as handle:
+        handle.read()
+    handle.read()  # TP1001
+```
+
+CodePact reports TP1001 on the second read and relates it to the context
+exit. Remove the second read to clear TP1001 and pass in the default advisory
+mode. Strict mode can still flag incomplete coverage on the exceptional
+cleanup path. The analyzer checks the Python source without opening
+`settings.txt`.
+
+### Asyncio and multiprocessing
+
 Ownership mode adds local `asyncio.create_task`, direct task await,
 `asyncio.shield(task)` and `asyncio.timeout` in the default event loop.
 Advanced mode adds local Process and Pool lifecycle checks with an explicit
@@ -119,10 +150,9 @@ Keep worker resources local and send plain values across the process
 boundary. Alternate start methods, live-handle serialization, escaping
 identities and unresolved runtime settings produce coverage boundaries.
 
-Set `experimental-foundations = true` to request the 0.8 analysis envelope
-without supplying a runtime. Selecting dependency roots or a runtime enables
-the envelope automatically. Those checks emit CLI JSON report schema 4 with
-a model-use ledger, selected artifact digests, named source scope and exhausted
-limits. Rust hosts can
-provide the equivalent inputs through `check_with_foundations` or an
-`AnalysisSession`. [Output schemas](schemas.md)
+Select dependency roots, project models, or a runtime profile to enable
+foundations checks. Set `experimental-foundations = true` to request the
+foundations report explicitly. These checks emit CLI JSON report schema 4
+with model applicability, artifact digests, source scope, and exhausted limits.
+Rust hosts can supply the equivalent inputs through `check_with_foundations`.
+[Output schemas](schemas.md) · [Rust integration](rust-api.md#check-with-reviewed-models)

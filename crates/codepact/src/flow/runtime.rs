@@ -64,7 +64,7 @@ pub(super) fn use_model(
     true
 }
 
-pub(super) fn is_builtin_open(expression: &AstExpr, env: &State) -> bool {
+fn is_builtin_open(expression: &AstExpr, env: &State) -> bool {
     if env.models.foundations.is_none() {
         return false;
     }
@@ -79,7 +79,7 @@ pub(super) fn is_builtin_open(expression: &AstExpr, env: &State) -> bool {
             && !env.class_bindings.contains_key("open"))
 }
 
-pub(super) fn tracked_text_file<'a>(expression: &AstExpr, env: &'a State) -> Option<&'a str> {
+fn tracked_text_file<'a>(expression: &AstExpr, env: &'a State) -> Option<&'a str> {
     let name = expr_name(expression)?;
     if env.unknown_places.contains(name) || env.possibly_unbound_places.contains(name) {
         return None;
@@ -90,6 +90,52 @@ pub(super) fn tracked_text_file<'a>(expression: &AstExpr, env: &'a State) -> Opt
         .get(target)
         .is_some_and(|resource| resource.base_symbol == FILE_RESOURCE)
         .then_some(target.as_str())
+}
+
+pub(super) enum TextFileContext {
+    OpenCall,
+    Existing(String),
+}
+
+impl TextFileContext {
+    pub(super) fn resolve(expression: &AstExpr, env: &State) -> Option<Self> {
+        if let Some(object) = tracked_text_file(expression, env) {
+            Some(Self::Existing(object.to_owned()))
+        } else {
+            is_builtin_open(expression, env).then_some(Self::OpenCall)
+        }
+    }
+
+    /// Refine entry after the manager expression has been evaluated. A closed
+    /// file queues ValueError, and only a possibly open file can enter.
+    pub(super) fn enter(self, env: &mut State, range: SourceRange) {
+        let Self::Existing(object) = self else {
+            return;
+        };
+        let Some(mask) = env
+            .objects
+            .get(&object)
+            .copied()
+            .filter(|mask| mask & CLOSED != 0)
+        else {
+            return;
+        };
+        env.objects
+            .insert(object.clone(), CLOSED | (mask & UNKNOWN));
+        queue_raise(
+            env,
+            range,
+            Some(AstExpr {
+                range,
+                kind: AstExprKind::Name("ValueError".into()),
+            }),
+        );
+        if mask == CLOSED {
+            env.alive = false;
+        } else {
+            env.objects.insert(object, mask & !CLOSED);
+        }
+    }
 }
 
 fn open_mode(arguments: &[AstExpr], keywords: &[CallKeyword]) -> Option<&'static str> {
@@ -131,9 +177,9 @@ pub(super) fn open_resource(
     env: &mut State,
     file: &SourceFile,
     result: &mut Inspection,
-) -> bool {
+) -> calls::ModelCall {
     if !is_builtin_open(expression, env) {
-        return false;
+        return calls::ModelCall::Unrecognized;
     }
     let (_, arguments, keywords) = call_parts(expression).expect("resolved open call");
     let mode = open_mode(arguments, keywords);
@@ -167,8 +213,10 @@ pub(super) fn open_resource(
             }],
         };
         allocate_modeled_resource(env, contract, file, expression.range, result);
+        calls::ModelCall::Applied
+    } else {
+        calls::ModelCall::Declined
     }
-    true
 }
 
 pub(super) fn allocate_modeled_resource(

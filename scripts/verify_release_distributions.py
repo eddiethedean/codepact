@@ -1,6 +1,7 @@
 """Verify the pure helper and complete native CLI release inventory."""
 
 import argparse
+from email.message import Message
 from email.parser import BytesParser
 from pathlib import Path
 import tarfile
@@ -38,6 +39,34 @@ def verify(directory: Path, version: str) -> None:
         raise ValueError(
             "Expected eight CLI wheels, one pure helper wheel and two source archives"
         )
+    verify_wheels(wheels, version, license_text)
+    verify_sdists(sources, version, license_text)
+    print(
+        f"Verified eight CLI wheels, one pure wheel and two source archives: {version}"
+    )
+
+
+def licensed_wheel_metadata(
+    archive: zipfile.ZipFile,
+    names: list[str],
+    license_text: bytes,
+    invalid_license: str,
+) -> Message:
+    metadata_file = next(name for name in names if name.endswith(".dist-info/METADATA"))
+    metadata = BytesParser().parsebytes(archive.read(metadata_file))
+    license_files = [
+        name for name in names if name.endswith(".dist-info/licenses/LICENSE")
+    ]
+    if (
+        len(license_files) != 1
+        or normalize_license_text(archive.read(license_files[0])) != license_text
+        or "LICENSE" not in metadata.get_all("License-File", [])
+    ):
+        raise ValueError(invalid_license)
+    return metadata
+
+
+def verify_wheels(wheels: list[Path], version: str, license_text: bytes) -> None:
     found: set[str] = set()
     pure = 0
     for wheel in wheels:
@@ -61,22 +90,12 @@ def verify(directory: Path, version: str) -> None:
                 ):
                     if f"codepact/{module}" not in names:
                         raise ValueError(f"Missing helper: {module}")
-                metadata_file = next(
-                    name for name in names if name.endswith(".dist-info/METADATA")
+                metadata = licensed_wheel_metadata(
+                    archive,
+                    names,
+                    license_text,
+                    "Helper wheel must include the MIT license text",
                 )
-                metadata = BytesParser().parsebytes(archive.read(metadata_file))
-                license_files = [
-                    name
-                    for name in names
-                    if name.endswith(".dist-info/licenses/LICENSE")
-                ]
-                if (
-                    len(license_files) != 1
-                    or normalize_license_text(archive.read(license_files[0]))
-                    != license_text
-                    or "LICENSE" not in metadata.get_all("License-File", [])
-                ):
-                    raise ValueError("Helper wheel must include the MIT license text")
                 requirements = [
                     Requirement(value)
                     for value in metadata.get_all("Requires-Dist", [])
@@ -116,22 +135,12 @@ def verify(directory: Path, version: str) -> None:
             executable = "codepact.exe" if "win_" in wheel.name else "codepact"
             if not any(name.endswith(f".data/scripts/{executable}") for name in names):
                 raise ValueError(f"Missing Rust CLI: {wheel.name}")
-            metadata_file = next(
-                name for name in names if name.endswith(".dist-info/METADATA")
+            metadata = licensed_wheel_metadata(
+                archive,
+                names,
+                license_text,
+                f"CLI wheel must include the MIT license text: {wheel.name}",
             )
-            metadata = BytesParser().parsebytes(archive.read(metadata_file))
-            license_files = [
-                name for name in names if name.endswith(".dist-info/licenses/LICENSE")
-            ]
-            if (
-                len(license_files) != 1
-                or normalize_license_text(archive.read(license_files[0]))
-                != license_text
-                or "LICENSE" not in metadata.get_all("License-File", [])
-            ):
-                raise ValueError(
-                    f"CLI wheel must include the MIT license text: {wheel.name}"
-                )
             if (
                 metadata["Version"] != version
                 or metadata["Requires-Python"] != ">=3.11"
@@ -141,6 +150,9 @@ def verify(directory: Path, version: str) -> None:
         raise ValueError("Expected one pure codepact wheel")
     if found != PLATFORMS:
         raise ValueError(f"Missing platforms: {PLATFORMS - found}")
+
+
+def verify_sdists(sources: list[Path], version: str, license_text: bytes) -> None:
     source_names: set[str] = set()
     for source in sources:
         name, artifact_version = parse_sdist_filename(source.name)
@@ -182,9 +194,6 @@ def verify(directory: Path, version: str) -> None:
                 raise ValueError(
                     f"Source archive lacks the repository MIT license: {source.name}"
                 )
-    print(
-        f"Verified eight CLI wheels, one pure wheel and two source archives: {version}"
-    )
 
 
 class Arguments(argparse.Namespace):

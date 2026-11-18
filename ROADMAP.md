@@ -24,7 +24,8 @@ This document is the authoritative release sequence. The original [feature miles
 
 ## Sequence and dependencies
 
-Published 0.1–0.7 scope is unchanged. Future release acceptance follows these dependencies:
+The released 0.8 foundations are the basis for the upcoming obligations,
+change review, and library model work. Release acceptance follows these dependencies:
 
 | Phase | Dependency and completion |
 | --- | --- |

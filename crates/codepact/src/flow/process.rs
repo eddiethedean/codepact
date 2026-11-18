@@ -314,10 +314,7 @@ pub(super) fn initialize(
     if let Some(Some(method)) = context_expression(expression, env) {
         let method = method.to_owned();
         queue_raise(env, expression.range, None);
-        bind_handle_name(env, name);
-        env.ownership
-            .as_mut()
-            .unwrap()
+        env.bind_runtime_handle(name)
             .processes
             .contexts
             .insert(name.into(), method);
@@ -364,8 +361,7 @@ pub(super) fn initialize(
         return false;
     }
     queue_raise(env, expression.range, None);
-    bind_handle_name(env, name);
-    let processes = &mut env.ownership.as_mut().unwrap().processes;
+    let processes = &mut env.bind_runtime_handle(name).processes;
     processes.aliases.insert(name.into(), id.clone());
     processes.handles.insert(
         id,
@@ -387,25 +383,10 @@ pub(super) fn initialize(
 pub(super) fn alias_pool(env: &mut State, name: &str, source: &str) {
     let processes = &mut env.ownership.as_mut().expect("local Pool").processes;
     let id = processes.aliases.get(source).expect("entered Pool").clone();
-    bind_handle_name(env, name);
-    env.ownership
-        .as_mut()
-        .unwrap()
+    env.bind_runtime_handle(name)
         .processes
         .aliases
         .insert(name.into(), id);
-}
-
-fn bind_handle_name(env: &mut State, name: &str) {
-    env.ownership.as_mut().unwrap().rebind(name);
-    env.places.remove(name);
-    env.unknown_places.remove(name);
-    env.possibly_unbound_places.remove(name);
-    env.coroutine_aliases.remove(name);
-    env.unknown_coroutine_aliases.remove(name);
-    env.definitely_bound_names.insert(name.into());
-    env.shadowed_classes.insert(name.into());
-    env.shadowed_functions.insert(name.into());
 }
 
 fn handle(env: &State, alias: &str) -> Option<(String, LocalHandle)> {
@@ -414,12 +395,34 @@ fn handle(env: &State, alias: &str) -> Option<(String, LocalHandle)> {
     Some((id.clone(), processes.handles.get(id)?.clone()))
 }
 
-pub(super) fn pool_context(expression: &AstExpr, env: &State) -> bool {
+fn pool_context(expression: &AstExpr, env: &State) -> bool {
     modeled_mode(env)
         && (constructor(expression, env).is_some_and(|(kind, ..)| kind == HandleKind::Pool)
             || expr_name(expression)
                 .and_then(|name| handle(env, name))
                 .is_some_and(|(_, handle)| handle.kind == HandleKind::Pool))
+}
+
+// None leaves generic context handling in charge. Some(false) means the
+// recognized handle declined to enter and has already queued its failure.
+pub(super) fn enter_pool(
+    receiver: &str,
+    expression: &AstExpr,
+    env: &mut State,
+    file: &SourceFile,
+    range: SourceRange,
+    functions: &FunctionMap,
+    result: &mut Inspection,
+) -> Option<bool> {
+    if !pool_context(expression, env) {
+        return None;
+    }
+    if let Some(source) = expr_name(expression) {
+        alias_pool(env, receiver, source);
+        Some(live_pool(env, receiver, file, range, result))
+    } else {
+        initialize(receiver, expression, env, file, functions, result).then_some(true)
+    }
 }
 
 fn raise_named(env: &mut State, range: SourceRange, kind: &str) {
@@ -497,280 +500,431 @@ fn permit(
     true
 }
 
+enum ProcessOperation {
+    Start,
+    Join(JoinTimeout),
+    Close,
+    IsAlive,
+}
+
+enum JoinTimeout {
+    Untimed,
+    Timed,
+    Unresolved,
+}
+
+enum PoolOperation<'a> {
+    Submit(BTreeMap<String, &'a AstExpr>),
+    Close,
+    Terminate,
+    Join,
+}
+
+enum Operation<'a> {
+    Process(ProcessOperation),
+    Pool(PoolOperation<'a>),
+}
+
+enum RejectedOperation {
+    InvalidBinding { effect: &'static str },
+    UnknownJoinBinding,
+    UnknownSubmissionBinding,
+    Unsupported,
+}
+
+impl Operation<'_> {
+    fn compatible_states(&self) -> (u8, &'static str) {
+        match self {
+            Self::Process(ProcessOperation::Start) => (NEW, "AssertionError"),
+            Self::Process(ProcessOperation::Join(_)) => (STARTED | ENDED, "AssertionError"),
+            Self::Process(ProcessOperation::Close) => {
+                (NEW | STARTED | ENDED | CLOSED, "ValueError")
+            }
+            Self::Process(ProcessOperation::IsAlive) => (NEW | STARTED | ENDED, "ValueError"),
+            Self::Pool(PoolOperation::Close | PoolOperation::Terminate) => (
+                STARTED | DRAINING | FORCED | JOINED | FORCED_JOINED,
+                "ValueError",
+            ),
+            Self::Pool(PoolOperation::Join) => {
+                (DRAINING | FORCED | JOINED | FORCED_JOINED, "ValueError")
+            }
+            Self::Pool(PoolOperation::Submit(_)) => (STARTED, "ValueError"),
+        }
+    }
+}
+
+fn prepare_operation<'a>(
+    kind: HandleKind,
+    method: &str,
+    arguments: &'a [AstExpr],
+    keywords: &'a [CallKeyword],
+) -> Result<Operation<'a>, RejectedOperation> {
+    let no_args = arguments.is_empty() && keywords.is_empty();
+    let operation = match (kind, method) {
+        (HandleKind::Process, "start") if no_args => Operation::Process(ProcessOperation::Start),
+        (HandleKind::Process, "close") if no_args => Operation::Process(ProcessOperation::Close),
+        (HandleKind::Process, "is_alive") if no_args => {
+            Operation::Process(ProcessOperation::IsAlive)
+        }
+        (HandleKind::Process, "join") => {
+            // Join accepts computed timeout values at binding time. They can
+            // still leave the wait effect unknown.
+            let unpacked = arguments
+                .iter()
+                .any(|arg| matches!(arg.kind, AstExprKind::Starred(_)))
+                || keywords.iter().any(|(name, _)| name.is_none());
+            if unpacked {
+                return Err(RejectedOperation::UnknownJoinBinding);
+            }
+            if arguments.len() + keywords.len() > 1
+                || keywords
+                    .iter()
+                    .any(|(name, _)| name.as_deref() != Some("timeout"))
+            {
+                return Err(RejectedOperation::InvalidBinding {
+                    effect: "join-binding-rejected",
+                });
+            }
+            let value = arguments
+                .first()
+                .or_else(|| keywords.first().map(|(_, value)| value));
+            let timeout = match value.map(|value| &value.kind) {
+                None | Some(AstExprKind::NoneLiteral) => JoinTimeout::Untimed,
+                Some(AstExprKind::Primitive) => JoinTimeout::Timed,
+                _ => JoinTimeout::Unresolved,
+            };
+            Operation::Process(ProcessOperation::Join(timeout))
+        }
+        (HandleKind::Pool, "apply_async") => {
+            let submission = bind_arguments(pool_submission_signature(), arguments, keywords, true)
+                .map_err(|failure| match failure {
+                    BindingFailure::Invalid => RejectedOperation::InvalidBinding {
+                        effect: "submission-rejected",
+                    },
+                    BindingFailure::Unknown => RejectedOperation::UnknownSubmissionBinding,
+                })?;
+            Operation::Pool(PoolOperation::Submit(submission))
+        }
+        (HandleKind::Pool, "close") if no_args => Operation::Pool(PoolOperation::Close),
+        (HandleKind::Pool, "terminate") if no_args => Operation::Pool(PoolOperation::Terminate),
+        (HandleKind::Pool, "join") if no_args => Operation::Pool(PoolOperation::Join),
+        _ => return Err(RejectedOperation::Unsupported),
+    };
+    Ok(operation)
+}
+
+struct OperationEffect {
+    name: &'static str,
+    applicability: Result<(), &'static str>,
+}
+
+impl OperationEffect {
+    fn applied(name: &'static str) -> Self {
+        Self {
+            name,
+            applicability: Ok(()),
+        }
+    }
+
+    fn declined(name: &'static str, reason: &'static str) -> Self {
+        Self {
+            name,
+            applicability: Err(reason),
+        }
+    }
+}
+
 pub(super) fn call(
     expression: &AstExpr,
     env: &mut State,
     file: &SourceFile,
     functions: &FunctionMap,
     result: &mut Inspection,
-) -> bool {
+) -> calls::ModelCall {
     if !modeled_mode(env) {
-        return false;
+        return calls::ModelCall::Unrecognized;
     }
     if let Some((function, _, _)) = call_parts(expression) {
         if ownership::external_identity(function, env).as_deref() == Some("external:signal.signal")
         {
             env.ownership.as_mut().unwrap().processes.custom_wait = true;
-            return false;
+            return calls::ModelCall::Unrecognized;
         }
     }
     let Some((receiver, method, arguments, keywords)) = called_method(expression) else {
-        return false;
+        return calls::ModelCall::Unrecognized;
     };
     let Some((id, handle)) = expr_name(receiver).and_then(|name| handle(env, name)) else {
-        return false;
+        return calls::ModelCall::Unrecognized;
     };
-    let no_args = arguments.is_empty() && keywords.is_empty();
-    if handle.kind == HandleKind::Process && method == "join" {
-        let unpacked = arguments
-            .iter()
-            .any(|arg| matches!(arg.kind, AstExprKind::Starred(_)))
-            || keywords.iter().any(|(name, _)| name.is_none());
-        if unpacked {
-            runtime::use_model(
-                handle.kind.symbol(),
-                method,
-                PROCESS_MODEL,
-                Err("Process.join does not resolve unpacked arguments"),
-                file,
-                expression.range,
-                result,
-            );
-            queue_raise(env, expression.range, None);
-            return true;
-        }
-        if arguments.len() + keywords.len() > 1
-            || keywords
-                .iter()
-                .any(|(name, _)| name.as_deref() != Some("timeout"))
-        {
-            raise_named(env, expression.range, "TypeError");
-            env.alive = false;
-            runtime::use_model(
-                handle.kind.symbol(),
-                "join-binding-rejected",
-                PROCESS_MODEL,
-                Ok(()),
-                file,
-                expression.range,
-                result,
-            );
-            return true;
-        }
-    }
-    let submission = if handle.kind == HandleKind::Pool && method == "apply_async" {
-        match bind_arguments(pool_submission_signature(), arguments, keywords, true) {
-            Ok(bindings) => bindings,
-            Err(BindingFailure::Invalid) => {
-                raise_named(env, expression.range, "TypeError");
-                env.alive = false;
-                runtime::use_model(
-                    handle.kind.symbol(),
-                    "submission-rejected",
-                    POOL_MODEL,
-                    Ok(()),
-                    file,
-                    expression.range,
-                    result,
-                );
-                return true;
-            }
-            Err(BindingFailure::Unknown) => {
-                queue_raise(env, expression.range, None);
-                runtime::use_model(
-                    handle.kind.symbol(),
-                    method,
-                    POOL_MODEL,
-                    Err("Pool.apply_async argument binding is unresolved"),
-                    file,
-                    expression.range,
-                    result,
-                );
-                return true;
-            }
-        }
-    } else {
-        BTreeMap::new()
+    let call = HandleCall {
+        id: &id,
+        handle: &handle,
+        file,
+        range: expression.range,
     };
-    let (allowed, exception) = match (handle.kind, method) {
-        (HandleKind::Process, "start") if no_args => (NEW, "AssertionError"),
-        (HandleKind::Process, "join") => (STARTED | ENDED, "AssertionError"),
-        (HandleKind::Process, "close") if no_args => (NEW | STARTED | ENDED | CLOSED, "ValueError"),
-        (HandleKind::Process, "is_alive") if no_args => (NEW | STARTED | ENDED, "ValueError"),
-        (HandleKind::Pool, "close" | "terminate") if no_args => (
-            STARTED | DRAINING | FORCED | JOINED | FORCED_JOINED,
-            "ValueError",
-        ),
-        (HandleKind::Pool, "join") if no_args => {
-            (DRAINING | FORCED | JOINED | FORCED_JOINED, "ValueError")
-        }
-        (HandleKind::Pool, "apply_async") => (STARTED, "ValueError"),
-        _ => {
-            runtime::use_model(
-                handle.kind.symbol(),
-                method,
-                handle.kind.model(),
-                Err("operation or arguments are outside the local multiprocessing model"),
-                file,
-                expression.range,
-                result,
-            );
-            states(env, &id, handle.states | UNCERTAIN);
-            queue_raise(env, expression.range, None);
-            return true;
-        }
+    let operation = match prepare_operation(handle.kind, method, arguments, keywords) {
+        Ok(operation) => operation,
+        Err(rejected) => return call.apply_rejection(rejected, method, env, result),
     };
-    let range = expression.range;
+    let (allowed, exception) = operation.compatible_states();
     if !permit(
         env,
-        &id,
-        &handle,
+        call.id,
+        call.handle,
         (method, allowed, exception),
-        file,
-        range,
+        call.file,
+        call.range,
         result,
     ) {
-        return true;
+        return calls::ModelCall::Applied;
     }
-    let handle_state = env.ownership.as_ref().unwrap().processes.handles[&id].states;
-    let mut applies = Ok(());
-    let mut effect = method;
-    match (handle.kind, method) {
-        (HandleKind::Process, "start") if handle.prelaunch_failure => {
-            effect = "serialization-rejected-before-launch";
-            raise_named(env, range, "AttributeError");
-            env.alive = false;
+    let effect = match operation {
+        Operation::Process(operation) => call.apply_process(operation, env, result),
+        Operation::Pool(operation) => call.apply_pool(operation, env, functions, result),
+    };
+    call.record_effect(effect.name, effect.applicability, result)
+}
+
+struct HandleCall<'a> {
+    id: &'a str,
+    handle: &'a LocalHandle,
+    file: &'a SourceFile,
+    range: SourceRange,
+}
+
+impl HandleCall<'_> {
+    fn state(&self, env: &State) -> u8 {
+        env.ownership.as_ref().unwrap().processes.handles[self.id].states
+    }
+
+    fn record_effect(
+        &self,
+        effect: &str,
+        applicability: Result<(), &str>,
+        result: &mut Inspection,
+    ) -> calls::ModelCall {
+        if runtime::use_model(
+            self.handle.kind.symbol(),
+            effect,
+            self.handle.kind.model(),
+            applicability,
+            self.file,
+            self.range,
+            result,
+        ) {
+            calls::ModelCall::Applied
+        } else {
+            calls::ModelCall::Declined
         }
-        (HandleKind::Process, "start") => {
-            states(env, &id, handle_state | UNCERTAIN);
-            queue_raise(env, range, None);
-            states(env, &id, STARTED | (handle_state & UNCERTAIN));
-        }
-        (HandleKind::Process, "join") => {
-            let timeout = arguments
-                .first()
-                .or_else(|| keywords.first().map(|(_, value)| value));
-            let untimed =
-                timeout.is_none_or(|value| matches!(value.kind, AstExprKind::NoneLiteral));
-            let timed = timeout.is_some_and(|value| matches!(value.kind, AstExprKind::Primitive));
-            queue_raise(env, range, None);
-            if untimed && qualified_child_wait(env) {
-                states(env, &id, ENDED | (handle_state & UNCERTAIN));
-            } else if untimed {
-                applies = Err(
-                    "untimed Process.join requires qualified child reaping and signal handling",
-                );
-            } else if !timed {
-                applies = Err("Process.join timeout is outside the qualified literal arguments");
+    }
+
+    fn apply_rejection(
+        &self,
+        rejected: RejectedOperation,
+        method: &str,
+        env: &mut State,
+        result: &mut Inspection,
+    ) -> calls::ModelCall {
+        let reason = match rejected {
+            RejectedOperation::InvalidBinding { effect } => {
+                raise_named(env, self.range, "TypeError");
+                env.alive = false;
+                return self.record_effect(effect, Ok(()), result);
             }
-        }
-        (HandleKind::Process, "close") => {
-            if handle_state & STARTED != 0 {
-                report(
+            RejectedOperation::UnknownJoinBinding => {
+                "Process.join does not resolve unpacked arguments"
+            }
+            RejectedOperation::UnknownSubmissionBinding => {
+                queue_raise(env, self.range, None);
+                return self.record_effect(
+                    method,
+                    Err("Pool.apply_async argument binding is unresolved"),
                     result,
-                    "TP2102",
-                    "Process.close may run while the child is still alive",
-                    span(file, range),
-                    vec![handle.origin.clone()],
-                    "possible",
-                    vec![format!(
-                        "{PROCESS_MODEL}@{}",
-                        crate::foundation::CATALOG_REVISION
-                    )],
                 );
-                states(env, &id, STARTED | (handle_state & UNCERTAIN));
-                raise_named(env, range, "ValueError");
             }
-            states(env, &id, CLOSED | (handle_state & UNCERTAIN));
-        }
-        (HandleKind::Pool, "apply_async") => {
-            let args = submission.get("args").copied();
-            let supported = submission
-                .keys()
-                .all(|name| matches!(name.as_str(), "func" | "args"))
-                && worker_is_local(submission["func"], env, functions)
-                && args.is_none_or(|args| {
-                    matches!(args.kind, AstExprKind::Tuple(_))
-                        && (plain_values(args) || prelaunch_failure(args))
-                });
-            queue_raise(env, range, None);
-            if supported {
-                env.ownership
-                    .as_mut()
-                    .unwrap()
-                    .processes
-                    .handles
-                    .get_mut(&id)
-                    .unwrap()
-                    .admitted_work = true;
-                effect = if args.is_some_and(prelaunch_failure) {
-                    "submission-admitted-with-serialization-failure"
-                } else {
-                    "submission-admitted-result-unobserved"
-                };
-            } else {
-                applies = Err("Pool.apply_async requires a resolved local worker, plain arguments and no callbacks");
+            RejectedOperation::Unsupported => {
+                "operation or arguments are outside the local multiprocessing model"
             }
+        };
+        let effect = self.record_effect(method, Err(reason), result);
+        if matches!(rejected, RejectedOperation::Unsupported) {
+            states(env, self.id, self.handle.states | UNCERTAIN);
         }
-        (HandleKind::Pool, "close") => {
-            queue_raise(env, range, None);
-            states(
-                env,
-                &id,
-                (handle_state & !STARTED)
-                    | if handle_state & STARTED != 0 {
-                        DRAINING
-                    } else {
-                        0
-                    },
-            );
-        }
-        (HandleKind::Pool, "terminate") => {
-            states(env, &id, FORCED | UNCERTAIN);
-            queue_raise(env, range, None);
-            states(env, &id, FORCED | (handle_state & UNCERTAIN));
-        }
-        (HandleKind::Pool, "join") => {
-            states(env, &id, handle_state | UNCERTAIN);
-            queue_raise(env, range, None);
-            if qualified_child_wait(env) {
-                let graceful = handle_state & (DRAINING | JOINED) != 0;
-                let forced = handle_state & (FORCED | FORCED_JOINED) != 0;
-                effect = match (graceful, forced) {
-                    (true, false) => "orderly-shutdown-joined",
-                    (false, true) => "forced-shutdown-joined",
-                    _ => "shutdown-joined-with-mixed-provenance",
-                };
-                if graceful && !forced && handle.admitted_work {
-                    runtime::use_model(
-                        handle.kind.symbol(),
-                        "admitted-work-drained-results-unobserved",
-                        POOL_MODEL,
-                        Ok(()),
-                        file,
-                        range,
-                        result,
-                    );
-                }
-                let joined =
-                    (if graceful { JOINED } else { 0 }) | (if forced { FORCED_JOINED } else { 0 });
-                states(env, &id, joined | (handle_state & UNCERTAIN));
-            } else {
-                applies = Err("Pool.join requires qualified child reaping and signal handling");
-            }
-        }
-        _ => {}
+        queue_raise(env, self.range, None);
+        effect
     }
-    runtime::use_model(
-        handle.kind.symbol(),
-        effect,
-        handle.kind.model(),
-        applies,
-        file,
-        range,
-        result,
-    );
-    true
+
+    fn apply_process(
+        &self,
+        operation: ProcessOperation,
+        env: &mut State,
+        result: &mut Inspection,
+    ) -> OperationEffect {
+        let Self {
+            id,
+            handle,
+            file,
+            range,
+        } = *self;
+        let handle_state = self.state(env);
+        match operation {
+            ProcessOperation::Start if handle.prelaunch_failure => {
+                raise_named(env, range, "AttributeError");
+                env.alive = false;
+                OperationEffect::applied("serialization-rejected-before-launch")
+            }
+            ProcessOperation::Start => {
+                states(env, id, handle_state | UNCERTAIN);
+                queue_raise(env, range, None);
+                states(env, id, STARTED | (handle_state & UNCERTAIN));
+                OperationEffect::applied("start")
+            }
+            ProcessOperation::Join(timeout) => {
+                queue_raise(env, range, None);
+                match timeout {
+                    JoinTimeout::Untimed if qualified_child_wait(env) => {
+                        states(env, id, ENDED | (handle_state & UNCERTAIN));
+                        OperationEffect::applied("join")
+                    }
+                    JoinTimeout::Untimed => OperationEffect::declined(
+                        "join",
+                        "untimed Process.join requires qualified child reaping and signal handling",
+                    ),
+                    JoinTimeout::Timed => OperationEffect::applied("join"),
+                    JoinTimeout::Unresolved => OperationEffect::declined(
+                        "join",
+                        "Process.join timeout is outside the qualified literal arguments",
+                    ),
+                }
+            }
+            ProcessOperation::Close => {
+                if handle_state & STARTED != 0 {
+                    report(
+                        result,
+                        "TP2102",
+                        "Process.close may run while the child is still alive",
+                        span(file, range),
+                        vec![handle.origin.clone()],
+                        "possible",
+                        vec![format!(
+                            "{PROCESS_MODEL}@{}",
+                            crate::foundation::CATALOG_REVISION
+                        )],
+                    );
+                    states(env, id, STARTED | (handle_state & UNCERTAIN));
+                    raise_named(env, range, "ValueError");
+                }
+                states(env, id, CLOSED | (handle_state & UNCERTAIN));
+                OperationEffect::applied("close")
+            }
+            ProcessOperation::IsAlive => OperationEffect::applied("is_alive"),
+        }
+    }
+
+    fn apply_pool(
+        &self,
+        operation: PoolOperation<'_>,
+        env: &mut State,
+        functions: &FunctionMap,
+        result: &mut Inspection,
+    ) -> OperationEffect {
+        let Self {
+            id,
+            handle,
+            file,
+            range,
+        } = *self;
+        let handle_state = self.state(env);
+        match operation {
+            PoolOperation::Submit(submission) => {
+                let args = submission.get("args").copied();
+                let supported = submission
+                    .keys()
+                    .all(|name| matches!(name.as_str(), "func" | "args"))
+                    && worker_is_local(submission["func"], env, functions)
+                    && args.is_none_or(|args| {
+                        matches!(args.kind, AstExprKind::Tuple(_))
+                            && (plain_values(args) || prelaunch_failure(args))
+                    });
+                queue_raise(env, range, None);
+                if supported {
+                    env.ownership
+                        .as_mut()
+                        .unwrap()
+                        .processes
+                        .handles
+                        .get_mut(id)
+                        .unwrap()
+                        .admitted_work = true;
+                    let effect = if args.is_some_and(prelaunch_failure) {
+                        "submission-admitted-with-serialization-failure"
+                    } else {
+                        "submission-admitted-result-unobserved"
+                    };
+                    OperationEffect::applied(effect)
+                } else {
+                    OperationEffect::declined(
+                    "apply_async",
+                    "Pool.apply_async requires a resolved local worker, plain arguments and no callbacks",
+                )
+                }
+            }
+            PoolOperation::Close => {
+                queue_raise(env, range, None);
+                states(
+                    env,
+                    id,
+                    (handle_state & !STARTED)
+                        | if handle_state & STARTED != 0 {
+                            DRAINING
+                        } else {
+                            0
+                        },
+                );
+                OperationEffect::applied("close")
+            }
+            PoolOperation::Terminate => {
+                states(env, id, FORCED | UNCERTAIN);
+                queue_raise(env, range, None);
+                states(env, id, FORCED | (handle_state & UNCERTAIN));
+                OperationEffect::applied("terminate")
+            }
+            PoolOperation::Join => {
+                states(env, id, handle_state | UNCERTAIN);
+                queue_raise(env, range, None);
+                if qualified_child_wait(env) {
+                    let graceful = handle_state & (DRAINING | JOINED) != 0;
+                    let forced = handle_state & (FORCED | FORCED_JOINED) != 0;
+                    let effect = match (graceful, forced) {
+                        (true, false) => "orderly-shutdown-joined",
+                        (false, true) => "forced-shutdown-joined",
+                        _ => "shutdown-joined-with-mixed-provenance",
+                    };
+                    if graceful && !forced && handle.admitted_work {
+                        runtime::use_model(
+                            handle.kind.symbol(),
+                            "admitted-work-drained-results-unobserved",
+                            POOL_MODEL,
+                            Ok(()),
+                            file,
+                            range,
+                            result,
+                        );
+                    }
+                    let joined = (if graceful { JOINED } else { 0 })
+                        | (if forced { FORCED_JOINED } else { 0 });
+                    states(env, id, joined | (handle_state & UNCERTAIN));
+                    OperationEffect::applied(effect)
+                } else {
+                    OperationEffect::declined(
+                        "join",
+                        "Pool.join requires qualified child reaping and signal handling",
+                    )
+                }
+            }
+        }
+    }
 }
 
 pub(super) fn finish_pool(
@@ -808,7 +962,7 @@ pub(super) fn finish_pool(
     );
 }
 
-pub(super) fn live_pool(
+fn live_pool(
     env: &mut State,
     name: &str,
     file: &SourceFile,

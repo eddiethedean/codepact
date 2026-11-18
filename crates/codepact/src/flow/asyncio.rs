@@ -1,4 +1,4 @@
-use super::ownership::{ScheduledTask, TaskGroup};
+use super::tasks::{ScheduledTask, TaskGroup};
 use super::*;
 
 const ASYNC_MODEL: &str = "TPM-ASYNCIO-001";
@@ -53,9 +53,9 @@ pub(super) fn call(
     env: &mut State,
     file: &SourceFile,
     result: &mut Inspection,
-) -> bool {
+) -> calls::ModelCall {
     if !enabled(env) {
-        return false;
+        return calls::ModelCall::Unrecognized;
     }
     match identity(expression, env).as_deref() {
         Some("external:asyncio.set_event_loop" | "external:asyncio.set_event_loop_policy") => {
@@ -73,7 +73,7 @@ pub(super) fn call(
                 "event loop mutation invalidates the declared asyncio profile",
             );
             queue_raise(env, expression.range, None);
-            true
+            calls::ModelCall::Declined
         }
         Some(CREATE_TASK) => {
             let id = simple_argument(expression).and_then(|argument| schedule_id(env, argument));
@@ -108,7 +108,7 @@ pub(super) fn call(
                 queue_raise(env, range, error);
                 // On rejection the coroutine and any already evaluated ownership
                 // moves remain with the caller's pending obligations.
-                return true;
+                return calls::ModelCall::Declined;
             }
             let id = id.expect("applicable scheduling arguments");
             let group = format!("{STANDALONE}{id}");
@@ -130,9 +130,9 @@ pub(super) fn call(
                 },
             );
             ownership.pending_task = Some((group, id));
-            true
+            calls::ModelCall::Applied
         }
-        _ => false,
+        _ => calls::ModelCall::Unrecognized,
     }
 }
 

@@ -22,10 +22,11 @@ Valid and invalid JSON fixtures are maintained in the
 The fixtures illustrate version boundaries and rejection behavior; they do not
 qualify release or pilot gates. Schema 2 reports and failures remain available
 for older consumers. Schema 3 adds explicit provider selection and the
-finite-match setting. Phase 0.8 checks use CLI schema 4 and Rust schema 2
-when the 0.8 input envelope is enabled. The new schemas carry the
-resolved scope, provider and model-use evidence and the versioned comparison
-descriptor. [Configuring the preview](phase08-preview.md)
+finite-match setting. CodePact 0.8.0 emits CLI report schema 4 and Rust result
+schema 2 for foundations checks. These schemas carry the resolved scope,
+provider and model-use evidence, and versioned comparison descriptor.
+Execution failures still use the schema 3 failure envelope.
+[Configure foundations checks](reviewed-contracts.md)
 
 
 ## Experimental ownership scope

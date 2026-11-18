@@ -13,49 +13,80 @@ pub(super) struct LoadedInputs {
     pub(super) foundations: Option<codepact::foundation::FoundationInputs>,
 }
 
-pub(super) fn resolve_root(
-    effective: Option<&adoption::EffectiveConfig>,
+pub(super) fn load_inspection(
+    paths: Vec<PathBuf>,
     explicit_root: Option<PathBuf>,
-    inspecting: bool,
+    python_version: &str,
     cwd: &Path,
-) -> Result<Option<PathBuf>, String> {
-    if let Some(config) = effective {
-        return super::discovery::resolve_project_root(&config.root).map(Some);
-    }
-    if let Some(root) = explicit_root {
-        let root = if root.is_absolute() {
-            root
-        } else {
-            cwd.join(root)
-        };
-        adoption::reject_symlink_components(&root, "project root")?;
-        return fs::canonicalize(&root)
-            .map(Some)
-            .map_err(|error| format!("cannot resolve module root {}: {error}", root.display()));
-    }
-    Ok((!inspecting).then(|| cwd.to_path_buf()))
+) -> Result<Vec<SourceFile>, String> {
+    let root = explicit_root
+        .map(|root| {
+            let root = if root.is_absolute() {
+                root
+            } else {
+                cwd.join(root)
+            };
+            adoption::reject_symlink_components(&root, "project root")?;
+            fs::canonicalize(&root)
+                .map_err(|error| format!("cannot resolve module root {}: {error}", root.display()))
+        })
+        .transpose()?;
+    let loaded = collect_files(
+        paths,
+        InputScope::Inspection(root.as_deref()),
+        python_version,
+        cwd,
+    )?;
+    Ok(loaded.files)
 }
 
-pub(super) fn collect_files(
-    mut paths: Vec<PathBuf>,
-    root: Option<&Path>,
-    python_version: &str,
-    checking: bool,
-    inspecting: bool,
-    effective: Option<&adoption::EffectiveConfig>,
+pub(super) fn load_project(
+    paths: Vec<PathBuf>,
+    config: &adoption::EffectiveConfig,
     cwd: &Path,
 ) -> Result<LoadedInputs, String> {
-    if inspecting && paths.is_empty() {
-        return Err("inspect-contracts requires at least one file".into());
-    }
-    if checking {
-        let project_root = root.expect("checks resolve an effective project root");
+    let root = super::discovery::resolve_project_root(&config.root)?;
+    collect_files(
+        paths,
+        InputScope::Project {
+            root: &root,
+            config,
+        },
+        &config.python_version,
+        cwd,
+    )
+}
+
+enum InputScope<'a> {
+    Inspection(Option<&'a Path>),
+    Project {
+        root: &'a Path,
+        config: &'a adoption::EffectiveConfig,
+    },
+}
+
+fn collect_files(
+    mut paths: Vec<PathBuf>,
+    scope: InputScope<'_>,
+    python_version: &str,
+    cwd: &Path,
+) -> Result<LoadedInputs, String> {
+    let (root, project) = match scope {
+        InputScope::Inspection(root) => {
+            if paths.is_empty() {
+                return Err("inspect-contracts requires at least one file".into());
+            }
+            (root, None)
+        }
+        InputScope::Project { root, config } => (Some(root), Some((root, config))),
+    };
+    if let Some((project_root, config)) = project {
         let mut discovered = Vec::new();
         discover_python_files(
             project_root,
             &mut discovered,
             codepact::DEFAULT_MAX_INPUT_FILES,
-            &|path| effective.is_none_or(|config| adoption::included(config, project_root, path)),
+            &|path| adoption::included(config, project_root, path),
         )?;
         if paths.is_empty() && discovered.is_empty() {
             return Err(format!(
@@ -78,7 +109,7 @@ pub(super) fn collect_files(
         } else {
             cwd.join(path)
         };
-        if checking {
+        if project.is_some() {
             adoption::reject_symlink_components(&physical_path, "source input")?;
         }
         let canonical_path = fs::canonicalize(&physical_path)
@@ -106,10 +137,7 @@ pub(super) fn collect_files(
                 .map(PathBuf::from)
                 .ok_or_else(|| "cannot derive module name from source path".to_owned())?,
         };
-        if checking
-            && effective.is_some_and(|config| {
-                !adoption::included(config, root.expect("check root exists"), &canonical_path)
-            })
+        if project.is_some_and(|(root, config)| !adoption::included(config, root, &canonical_path))
         {
             return Err(format!(
                 "explicit input {} is excluded or skipped by project configuration",
@@ -164,7 +192,7 @@ pub(super) fn collect_files(
         ));
     }
 
-    let foundations = if let (Some(config), Some(project_root)) = (effective, root) {
+    let foundations = if let Some((project_root, config)) = project {
         let super::providers::ProjectInputs {
             models: project_models,
             lock: uv_lock,

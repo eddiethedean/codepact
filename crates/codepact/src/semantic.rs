@@ -223,10 +223,7 @@ fn inspect_inner(
                 }
                 Declaration::Import { names, .. } => {
                     for item in names {
-                        let local = item
-                            .alias
-                            .as_deref()
-                            .unwrap_or_else(|| item.name.split('.').next().unwrap_or(&item.name));
+                        let local = item.import_binding();
                         state.clear_name(local, &file.module, &mut bindings);
                         if module_context
                             .is_some_and(|context| context.provider_modules.contains(&item.name))
@@ -1008,23 +1005,20 @@ fn summary_uses_contract_wrapper(summary: &ParseSummary) -> bool {
                 ..
             } => {
                 for name in names {
-                    let local = name.alias.as_deref().unwrap_or(&name.name);
+                    let local = name.member_binding();
                     state.clear_name(local, "", &mut bindings);
                     register_import(&name.name, local, module, &mut state);
                 }
             }
             Declaration::ImportFrom { names, .. } => {
                 for name in names {
-                    let local = name.alias.as_deref().unwrap_or(&name.name);
+                    let local = name.member_binding();
                     state.clear_name(local, "", &mut bindings);
                 }
             }
             Declaration::Import { names, .. } => {
                 for name in names {
-                    let local = name
-                        .alias
-                        .as_deref()
-                        .unwrap_or_else(|| name.name.split('.').next().unwrap_or(&name.name));
+                    let local = name.import_binding();
                     state.clear_name(local, "", &mut bindings);
                 }
             }
@@ -1397,7 +1391,7 @@ fn process_import_from(
 ) {
     if level != 0 {
         for item in names {
-            let local = item.alias.as_deref().unwrap_or(&item.name);
+            let local = item.member_binding();
             state.clear_name(local, &file.module, bindings);
         }
         unsupported(
@@ -1414,7 +1408,7 @@ fn process_import_from(
         return;
     }
     for item in names {
-        let local = item.alias.as_deref().unwrap_or(&item.name);
+        let local = item.member_binding();
         state.clear_name(local, &file.module, bindings);
         register_import(&item.name, local, module, state);
         register_supplied_module_import(

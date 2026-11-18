@@ -1,24 +1,30 @@
 use crate::{CheckDiagnostic, CheckResult, SourceFile, Span};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
-use std::io::{self, Write};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 mod baseline;
 mod config;
 mod fingerprint;
+mod policy;
+mod render;
+mod scope;
+mod snapshot;
 #[cfg(test)]
 use baseline::install_baseline_atomically;
-use baseline::{load_baseline_file, BaselineEntry, BaselineKey};
+use baseline::load_baseline_file;
 pub use baseline::{validate_baseline_file, write_baseline};
-use config::{eligible_code, scoped_rules, validate_pattern, validate_rule};
+use config::scoped_rules;
 #[cfg(test)]
 use config::{glob_match, read_configuration, MAX_CONFIG_BYTES};
 pub use config::{
     included, reject_symlink_components, resolve_config, DependenciesConfig, EffectiveConfig,
     Overrides, ProjectConfig, ADVANCED_RULES, DEFAULT_RULES, FINITE_MATCH_RULES, OWNERSHIP_RULES,
 };
-use fingerprint::{code_before_comment, fingerprint, hash, source_comments, AnchorCache};
+#[cfg(test)]
+use render::serialize_pretty_limited;
+pub use render::serialize_report;
+use scope::validate_analysis_scope;
 
 pub const ADOPTION_SCHEMA_VERSION: u8 = 3;
 pub const FOUNDATION_ADOPTION_SCHEMA_VERSION: u8 = 4;
@@ -118,596 +124,42 @@ pub struct BaselineUpdateSummary {
     pub snapshot_id: String,
     pub coverage_status: String,
 }
-fn eligible(d: &CheckDiagnostic) -> bool {
-    eligible_code(&d.code)
-}
-
-fn bound_diagnostic_text(text: &mut String, maximum_bytes: usize) -> usize {
-    if text.len() <= maximum_bytes {
-        return 0;
-    }
-    let original_length = text.len();
-    let ellipsis_length = '…'.len_utf8();
-    let mut end = if maximum_bytes >= ellipsis_length {
-        maximum_bytes - ellipsis_length
-    } else {
-        maximum_bytes
-    };
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    text.truncate(end);
-    if maximum_bytes >= ellipsis_length {
-        text.push('…');
-    }
-    original_length.saturating_sub(end)
-}
-
-struct LimitedVecWriter {
-    bytes: Vec<u8>,
-    limit: usize,
-    exceeded: bool,
-}
-
-impl Write for LimitedVecWriter {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        if bytes.len() > self.limit.saturating_sub(self.bytes.len()) {
-            self.exceeded = true;
-            return Err(io::Error::other(
-                "serialized document exceeds its byte limit",
-            ));
-        }
-        self.bytes.extend_from_slice(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-fn serialize_pretty_limited<T: Serialize>(
-    value: &T,
-    limit: usize,
-    label: &str,
-) -> Result<Vec<u8>, String> {
-    let mut writer = LimitedVecWriter {
-        bytes: Vec::with_capacity(8192),
-        limit,
-        exceeded: false,
-    };
-    serde_json::to_writer_pretty(&mut writer, value).map_err(|error| {
-        if writer.exceeded {
-            format!("{label} exceeds the {} byte limit", writer.limit)
-        } else {
-            format!("cannot serialize {label}: {error}")
-        }
-    })?;
-    Ok(writer.bytes)
-}
-
-pub fn serialize_report(report: &AdoptionReport) -> Result<String, String> {
-    String::from_utf8(serialize_pretty_limited(
-        report,
-        32 * 1024 * 1024,
-        "checker report",
-    )?)
-    .map_err(|error| format!("checker report is not UTF-8: {error}"))
-}
-
-fn parse_suppression(line: &str) -> Result<Option<(Vec<String>, String)>, String> {
-    let comment = code_before_comment(line);
-    let Some(hash) = line[comment.len()..]
-        .find('#')
-        .map(|i| &line[comment.len() + i + 1..])
-    else {
-        return Ok(None);
-    };
-    let directive = hash.trim_start();
-    let Some(directive) = directive.strip_prefix("codepact: ignore[") else {
-        return if directive.starts_with("codepact:") {
-            Err("unsupported CodePact comment; use `codepact: ignore[CODE] -- reason`".into())
-        } else {
-            Ok(None)
-        };
-    };
-    let Some(close) = directive.find(']') else {
-        return Err("malformed CodePact suppression; expected a closing ]".into());
-    };
-    let codes = directive[..close]
-        .split(',')
-        .map(str::trim)
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    if codes.is_empty() || codes.iter().any(String::is_empty) {
-        return Err("CodePact suppression requires at least one rule code".into());
-    }
-    let rest = directive[close + 1..].trim();
-    let Some(reason) = rest.strip_prefix("--").map(str::trim) else {
-        return Err("CodePact suppression requires `-- reason`".into());
-    };
-    if reason.is_empty() {
-        return Err("CodePact suppression reason must not be empty".into());
-    }
-    let mut seen = BTreeSet::new();
-    for code in &codes {
-        validate_rule(code).map_err(|_| format!("unknown suppression rule {code}"))?;
-        if !eligible_code(code) {
-            return Err(format!("rule {code} cannot be suppressed"));
-        }
-        if !seen.insert(code) {
-            return Err(format!("duplicate suppression rule {code}"));
-        }
-    }
-    Ok(Some((codes, reason.to_string())))
-}
-fn ownership_model_revision(result: &CheckResult) -> Option<String> {
-    let mut selected = result
-        .available_models
-        .iter()
-        .filter(|model| matches!(model.id.as_str(), "TPM-TASK-001" | "TPM-EXECUTOR-001"))
-        .filter_map(|model| {
-            model
-                .source_revisions
-                .first()
-                .map(|revision| (model.id.as_str(), revision.as_str()))
-        })
-        .collect::<Vec<_>>();
-    selected.sort_by_key(|(id, _)| *id);
-    match selected.as_slice() {
-        [] => None,
-        [("TPM-TASK-001", revision)] => Some((*revision).to_owned()),
-        [(id, revision)] => Some(format!("{id}={revision}")),
-        selected => Some(
-            selected
-                .iter()
-                .map(|(id, revision)| format!("{id}={revision}"))
-                .collect::<Vec<_>>()
-                .join(";"),
-        ),
-    }
-}
-
-fn expected_ownership_model_revision(config: &EffectiveConfig) -> Option<String> {
-    let mut selected = Vec::new();
-    if config.ownership.assumes_default_task_factory() {
-        if let Some(revision) = crate::model::task_group_revision(&config.python_version) {
-            selected.push(("TPM-TASK-001", revision));
-        }
-    }
-    if config.ownership.includes_advanced_contracts() {
-        if let Some(revision) = crate::model::thread_pool_executor_revision(&config.python_version)
-        {
-            selected.push(("TPM-EXECUTOR-001", revision));
-        }
-    }
-    selected.sort_by_key(|(id, _)| *id);
-    match selected.as_slice() {
-        [] => None,
-        [("TPM-TASK-001", revision)] => Some((*revision).to_owned()),
-        [(id, revision)] => Some(format!("{id}={revision}")),
-        selected => Some(
-            selected
-                .iter()
-                .map(|(id, revision)| format!("{id}={revision}"))
-                .collect::<Vec<_>>()
-                .join(";"),
-        ),
-    }
-}
-
-fn validate_analysis_scope(result: &CheckResult, config: &EffectiveConfig) -> Result<(), String> {
-    if result.target_python_version != config.python_version {
-        return Err("report Python target differs from the analyzed target".into());
-    }
-    if result.diagnostics.iter().any(|d| d.code == "TP9002") {
-        return Err(
-            "analysis was cancelled; no completed report or baseline can be published".into(),
-        );
-    }
-    if !matches!(
-        result.assurance.as_str(),
-        crate::ADOPTION_ASSURANCE
-            | crate::LIFECYCLE_ASSURANCE
-            | crate::OWNERSHIP_ASSURANCE
-            | crate::ADVANCED_ASSURANCE
-    ) {
-        return Err("lifecycle analysis was not executed; declaration inspection alone cannot produce a check report".into());
-    }
-    if config.enabled_rules.contains("TP3001") && result.assurance == crate::LIFECYCLE_ASSURANCE {
-        return Err("must-use rules were requested but not analyzed; use check_with_must_use before building an adoption report or baseline".into());
-    }
-    let ownership_enabled = matches!(
-        result.assurance.as_str(),
-        crate::OWNERSHIP_ASSURANCE | crate::ADVANCED_ASSURANCE
-    );
-    if ownership_enabled != config.ownership.is_enabled()
-        || (result.assurance == crate::ADVANCED_ASSURANCE)
-            != config.ownership.includes_advanced_contracts()
-        || ownership_model_revision(result) != expected_ownership_model_revision(config)
-    {
-        return Err("report ownership scope differs from the analyzed scope".into());
-    }
-    Ok(())
-}
-
 pub fn build_report(
-    mut result: CheckResult,
+    result: CheckResult,
     files: &[SourceFile],
     config: &EffectiveConfig,
     baseline_path: Option<&Path>,
     max: Option<usize>,
 ) -> Result<AdoptionReport, String> {
     validate_analysis_scope(&result, config)?;
-    let mut baseline_content_hash = String::new();
-    let baseline = if let Some(path) = baseline_path {
+    let (baseline, baseline_content_hash) = if let Some(path) = baseline_path {
         let (loaded, content_hash) = load_baseline_file(path, "baseline")?;
-        baseline_content_hash = content_hash;
-        let unique = loaded
-            .entries
-            .iter()
-            .map(BaselineKey::from)
-            .collect::<BTreeSet<_>>();
-        let compatible = loaded.target_python_version == result.target_python_version
-            && loaded.model_catalog_version == result.model_catalog_version
-            && loaded.rule_semantic_version == RULE_SEMANTIC_VERSION
-            && loaded.ownership == config.ownership
-            && loaded.ownership_model_revision.as_deref()
-                == ownership_model_revision(&result).as_deref()
-            && loaded.engine_version == env!("CARGO_PKG_VERSION");
-        Some((unique, compatible, loaded.update_reason))
+        (
+            Some(policy::BaselinePolicy::new(loaded, &result, config)),
+            content_hash,
+        )
     } else {
-        None
+        (None, String::new())
     };
-
-    let mut contents = BTreeMap::new();
-    for file in files {
-        contents.insert(file.path.as_str(), file.source.as_str());
-    }
-    let mut files_by_path = files.iter().collect::<Vec<_>>();
-    files_by_path.sort_by(|a, b| (&a.path, &a.module).cmp(&(&b.path, &b.module)));
-    let mut snapshot_manifest = files_by_path
+    let snapshot = snapshot::identify(&result, files, config, &baseline_content_hash)?;
+    let selected_files = snapshot
+        .manifest
         .iter()
-        .map(|file| SnapshotFile {
-            logical_path: file.path.clone(),
-            sha256: hash(file.source.as_bytes()),
-        })
-        .collect::<Vec<_>>();
-    let module_manifest = files_by_path
-        .iter()
-        .map(|file| (&file.path, &file.module))
-        .collect::<Vec<_>>();
-    if let Some(evidence) = &result.foundations {
-        snapshot_manifest = evidence
-            .scope
-            .iter()
-            .map(|file| SnapshotFile {
-                logical_path: file.path.clone(),
-                sha256: file.sha256.clone(),
-            })
-            .collect();
-    }
-    let semantic_fingerprint = hash(
-        serde_json::to_vec(&(
-            env!("CARGO_PKG_VERSION"),
-            result.check_schema_version,
-            RULE_SEMANTIC_VERSION,
-            FINGERPRINT_ALGORITHM_VERSION,
-            &result.assurance,
-            config.python_version.as_str(),
-            result.model_catalog_version,
-            config.finite_matches,
-            &snapshot_manifest,
-            &module_manifest,
-        ))
-        .map_err(|error| format!("cannot encode semantic fingerprint: {error}"))?
-        .as_slice(),
+        .map(|entry| entry.logical_path.clone())
+        .collect();
+    let policy = policy::apply(
+        result.diagnostics,
+        &result.coverage,
+        files,
+        config,
+        baseline.as_ref(),
     );
-    let model_fingerprint = hash(
-        if let Some(evidence) = &result.foundations {
-            serde_json::to_vec(&(
-                result.model_catalog_version,
-                &result.available_models,
-                &evidence.comparison,
-                &evidence.runtime,
-                &evidence.providers,
-                &evidence.provider_issues,
-                &evidence.lock_sha256,
-                &evidence.project_models_sha256,
-            ))
-        } else {
-            serde_json::to_vec(&(result.model_catalog_version, &result.available_models))
-        }
-        .map_err(|error| format!("cannot encode model fingerprint: {error}"))?
-        .as_slice(),
-    );
-    let suppression_policy = files_by_path
-        .iter()
-        .flat_map(|file| {
-            source_comments(&file.source)
-                .into_iter()
-                .filter(|(_, comment)| {
-                    comment
-                        .strip_prefix('#')
-                        .is_some_and(|text| text.trim_start().starts_with("codepact:"))
-                })
-                .map(move |(line, comment)| format!("{}:{line}:{comment}", file.path))
-        })
-        .collect::<Vec<_>>();
-    let policy_fingerprint = hash(
-        serde_json::to_vec(&(
-            &config.enabled_rules,
-            &config.severity,
-            config.mode.as_str(),
-            config.fail_on.as_str(),
-            config.finite_matches,
-            &config.include,
-            &config.exclude,
-            &config.required_providers,
-            &baseline_content_hash,
-            &suppression_policy,
-        ))
-        .map_err(|error| format!("cannot encode policy fingerprint: {error}"))?
-        .as_slice(),
-    );
-    let snapshot_id = hash(
-        format!(
-            "{}\0{}\0{}",
-            semantic_fingerprint, policy_fingerprint, model_fingerprint
-        )
-        .as_bytes(),
-    );
-
-    let mut anchors = AnchorCache::default();
-    let mut candidates = BTreeMap::<String, usize>::new();
-    for diagnostic in &result.diagnostics {
-        *candidates
-            .entry(fingerprint(diagnostic, &contents, &mut anchors))
-            .or_default() += 1;
-    }
-
-    let mut policy_failures = Vec::<String>::new();
-    let mut policy_warnings = Vec::<String>::new();
-    let mut suppression_records = BTreeMap::<(String, usize), (Vec<String>, String)>::new();
-    for file in files {
-        for (line_number, comment) in source_comments(&file.source) {
-            if !comment
-                .strip_prefix('#')
-                .is_some_and(|text| text.trim_start().starts_with("codepact:"))
-            {
-                continue;
-            }
-            match parse_suppression(comment) {
-                Err(message) => {
-                    policy_failures.push(format!("TP4002 {}:{line_number}: {message}", file.path));
-                    result.diagnostics.push(suppression_diagnostic(
-                        &file.path,
-                        line_number,
-                        1,
-                        message,
-                    ));
-                }
-                Ok(Some((codes, reason))) => {
-                    suppression_records.insert((file.path.clone(), line_number), (codes, reason));
-                }
-                Ok(None) => {}
-            }
-        }
-    }
-    let mut unused_suppressions = Vec::new();
-    for ((path, line), (codes, _)) in &suppression_records {
-        if !result.diagnostics.iter().any(|diagnostic| {
-            diagnostic.primary.file == *path
-                && diagnostic.primary.line == *line
-                && codes.iter().any(|code| code == &diagnostic.code)
-        }) {
-            unused_suppressions.push(format!("{path}:{line}"));
-        }
-    }
-    unused_suppressions.sort();
-
-    let mut counts = BTreeMap::new();
-    let mut counts_by_certainty = BTreeMap::new();
-    let mut counts_by_disposition = BTreeMap::new();
-    let mut matched_entries = BTreeSet::new();
-    let mut actionable_count = 0usize;
-    let mut raw = Vec::new();
-    for mut diagnostic in result.diagnostics {
-        let fp = fingerprint(&diagnostic, &contents, &mut anchors);
-        let is_eligible = eligible(&diagnostic);
-        let mut disposition = "active".to_string();
-        let mut reason = None;
-        if is_eligible && !config.enabled_rules.contains(&diagnostic.code) {
-            disposition = "rule-disabled".into();
-            reason = Some("rule disabled by effective configuration".into());
-        }
-        if is_eligible && disposition == "active" {
-            if let Some((codes, suppression_reason)) =
-                suppression_records.get(&(diagnostic.primary.file.clone(), diagnostic.primary.line))
-            {
-                if codes.iter().any(|code| code == &diagnostic.code) {
-                    disposition = "suppressed-inline".into();
-                    reason = Some(suppression_reason.clone());
-                }
-            }
-        }
-        let baseline_entry = BaselineEntry {
-            fingerprint: fp.clone(),
-            code: diagnostic.code.clone(),
-            logical_path: diagnostic.primary.file.clone(),
-            certainty: diagnostic.certainty.clone(),
-            trust: diagnostic.trust.clone(),
-            completion: diagnostic.completion.clone(),
-            explanation: diagnostic.message.clone(),
-        };
-        let baseline_key = BaselineKey {
-            fingerprint: baseline_entry.fingerprint.clone(),
-            code: baseline_entry.code.clone(),
-            logical_path: baseline_entry.logical_path.clone(),
-            certainty: baseline_entry.certainty.clone(),
-            trust: baseline_entry.trust.clone(),
-            completion: baseline_entry.completion.clone(),
-        };
-        if is_eligible
-            && !diagnostic.semantic_identity.is_empty()
-            && disposition == "active"
-            && baseline.as_ref().is_some_and(|(entries, compatible, _)| {
-                *compatible && candidates.get(&fp) == Some(&1) && entries.contains(&baseline_key)
-            })
-        {
-            disposition = "suppressed-baseline".into();
-            reason = Some("matching finding in configured baseline".into());
-            matched_entries.insert(baseline_key);
-        }
-        let base = if diagnostic.code == "TP3001" {
-            "warning".to_string()
-        } else {
-            diagnostic.severity.clone()
-        };
-        let effective = config
-            .severity
-            .get(&diagnostic.code)
-            .map(String::as_str)
-            .unwrap_or(&base)
-            .to_string();
-        let threshold = if config.fail_on == "error" {
-            effective == "error"
-        } else {
-            matches!(effective.as_str(), "error" | "warning")
-        };
-        let actionable = disposition == "active"
-            && ((threshold && diagnostic.certainty != "unknown")
-                || (config.mode == "strict" && diagnostic.certainty == "possible")
-                || (!is_eligible && diagnostic.severity == "error"));
-        if actionable {
-            actionable_count += 1;
-            policy_failures.push(format!("{} {}", diagnostic.code, diagnostic.message));
-        }
-        let related_sites_omitted = diagnostic.related.len().saturating_sub(32);
-        diagnostic.related.sort_by(|a, b| {
-            (&a.file, a.line, a.column, a.end_line, a.end_column).cmp(&(
-                &b.file,
-                b.line,
-                b.column,
-                b.end_line,
-                b.end_column,
-            ))
-        });
-        if related_sites_omitted > 0 {
-            diagnostic.related.truncate(32);
-        }
-        let mut explanation_budget = 8 * 1024;
-        let message_omitted_bytes =
-            bound_diagnostic_text(&mut diagnostic.message, explanation_budget);
-        explanation_budget = explanation_budget.saturating_sub(diagnostic.message.len());
-        let repair_omitted_bytes = diagnostic.repair.as_mut().map_or(0, |repair| {
-            bound_diagnostic_text(repair, explanation_budget)
-        });
-        let explanation_id = format!("{}.R001", diagnostic.code);
-        *counts.entry(diagnostic.code.clone()).or_insert(0) += 1;
-        *counts_by_certainty
-            .entry(diagnostic.certainty.clone())
-            .or_insert(0) += 1;
-        *counts_by_disposition
-            .entry(disposition.clone())
-            .or_insert(0) += 1;
-        raw.push(AdoptionDiagnostic {
-            diagnostic,
-            fingerprint: fp,
-            base_severity: base,
-            effective_severity: effective,
-            disposition,
-            disposition_reason: reason,
-            explanation_id,
-            actionable,
-            message_omitted_bytes,
-            repair_omitted_bytes,
-            related_sites_omitted,
-        });
-    }
-    if config.mode == "strict" && result.coverage.status != "complete-for-supported-subset" {
-        policy_failures.push("analysis coverage is incomplete".into());
-    }
-
-    let baseline_summary =
-        baseline
-            .as_ref()
-            .map_or_else(BaselineSummary::default, |(entries, compatible, reason)| {
-                let unmatched = entries.len().saturating_sub(matched_entries.len());
-                if !compatible {
-                    policy_warnings
-                        .push("baseline is stale or incompatible; entries were not applied".into());
-                } else if unmatched > 0 {
-                    policy_warnings.push(format!(
-                        "{unmatched} baseline entries no longer match current findings"
-                    ));
-                }
-                BaselineSummary {
-                    configured: true,
-                    compatible: Some(*compatible),
-                    entries: entries.len(),
-                    matched: matched_entries.len(),
-                    unmatched,
-                    update_reason: Some(reason.clone()),
-                }
-            });
-
-    raw.sort_by(|a, b| {
-        let location_order = (
-            &a.diagnostic.primary.file,
-            a.diagnostic.primary.line,
-            a.diagnostic.primary.column,
-            a.diagnostic.primary.end_line,
-            a.diagnostic.primary.end_column,
-            &a.diagnostic.code,
-            &a.diagnostic.completion,
-            &a.fingerprint,
-        )
-            .cmp(&(
-                &b.diagnostic.primary.file,
-                b.diagnostic.primary.line,
-                b.diagnostic.primary.column,
-                b.diagnostic.primary.end_line,
-                b.diagnostic.primary.end_column,
-                &b.diagnostic.code,
-                &b.diagnostic.completion,
-                &b.fingerprint,
-            ));
-        if max.is_some() {
-            let rank = |item: &AdoptionDiagnostic| {
-                if item.actionable {
-                    0
-                } else {
-                    match item.disposition.as_str() {
-                        "active" => 1,
-                        "rule-disabled" => 2,
-                        _ => 3,
-                    }
-                }
-            };
-            rank(a).cmp(&rank(b)).then(location_order)
-        } else {
-            location_order
-        }
-    });
-    let max = max.unwrap_or(usize::MAX);
-    if max == 0 {
-        return Err("--max-diagnostics must be positive".into());
-    }
-    let total_diagnostics = raw.len();
-    let truncated = total_diagnostics > max;
-    let diagnostics = raw.into_iter().take(max).collect::<Vec<_>>();
-    let details_truncated = truncated
-        || diagnostics.iter().any(|diagnostic| {
-            diagnostic.related_sites_omitted > 0
-                || diagnostic.message_omitted_bytes > 0
-                || diagnostic.repair_omitted_bytes > 0
-        });
+    let details = render::present_details(policy.diagnostics, max)?;
     let disabled_rules = scoped_rules(config.ownership, config.finite_matches)
         .filter(|rule| !config.enabled_rules.contains(*rule))
         .map(str::to_owned)
         .collect();
-    let exit_code = if policy_failures.is_empty() { 0 } else { 1 };
+    let exit_code = u8::from(!policy.failures.is_empty());
     let project_root = config
         .root
         .canonicalize()
@@ -729,34 +181,33 @@ pub fn build_report(
         assurance: result.assurance,
         contracts: result.contracts,
         coverage: result.coverage,
-        diagnostics,
-        counts,
-        counts_by_certainty,
-        counts_by_disposition,
-        total_diagnostics,
-        actionable_diagnostics: actionable_count,
-        returned_diagnostics: max.min(total_diagnostics),
-        audit_diagnostics: total_diagnostics.saturating_sub(actionable_count),
-        policy_failures,
-        policy_warnings,
-        unused_suppressions,
-        details_truncated,
+        returned_diagnostics: details.diagnostics.len(),
+        diagnostics: details.diagnostics,
+        counts: policy.counts,
+        counts_by_certainty: policy.counts_by_certainty,
+        counts_by_disposition: policy.counts_by_disposition,
+        total_diagnostics: details.total_diagnostics,
+        actionable_diagnostics: policy.actionable_count,
+        audit_diagnostics: details
+            .total_diagnostics
+            .saturating_sub(policy.actionable_count),
+        policy_failures: policy.failures,
+        policy_warnings: policy.warnings,
+        unused_suppressions: policy.unused_suppressions,
+        details_truncated: details.truncated,
         snapshot_algorithm_version: if has_foundations { 2 } else { 1 },
-        snapshot_id,
-        semantic_fingerprint,
-        policy_fingerprint,
-        model_fingerprint,
-        snapshot_manifest: snapshot_manifest.clone(),
+        snapshot_id: snapshot.id,
+        semantic_fingerprint: snapshot.semantic,
+        policy_fingerprint: snapshot.policy,
+        model_fingerprint: snapshot.model,
+        snapshot_manifest: snapshot.manifest,
         project_root: project_root.to_string_lossy().into_owned(),
         logical_root: ".".into(),
         config_file: config
             .source
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned()),
-        selected_files: snapshot_manifest
-            .iter()
-            .map(|entry| entry.logical_path.clone())
-            .collect(),
+        selected_files,
         dependency_roots: config
             .dependency_roots
             .iter()
@@ -771,7 +222,7 @@ pub fn build_report(
         fail_on: config.fail_on.clone(),
         experimental_finite_matches: config.finite_matches,
         settings_origins: config.settings_origins.clone(),
-        baseline: baseline_summary,
+        baseline: policy.baseline,
         exit_code,
     };
     Ok(report)

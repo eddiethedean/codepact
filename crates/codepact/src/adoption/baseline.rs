@@ -1,5 +1,16 @@
-use super::*;
-use std::collections::BTreeSet;
+use super::{
+    config::{eligible_code, validate_pattern, validate_rule},
+    fingerprint::{fingerprint, hash, source_comments, AnchorCache},
+    policy::{eligible, parse_suppression},
+    reject_symlink_components,
+    render::serialize_pretty_limited,
+    scope::{ownership_model_revision, validate_analysis_scope},
+    BaselineUpdateSummary, EffectiveConfig, SnapshotFile, BASELINE_SCHEMA_VERSION,
+    FINGERPRINT_ALGORITHM_VERSION, RULE_SEMANTIC_VERSION,
+};
+use crate::{CheckDiagnostic, CheckResult, SourceFile};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -35,23 +46,48 @@ fn ownership_disabled(ownership: &crate::Ownership) -> bool {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(deny_unknown_fields)]
 pub(super) struct BaselineEntry {
-    pub(super) fingerprint: String,
-    pub(super) code: String,
-    pub(super) logical_path: String,
-    pub(super) certainty: String,
-    pub(super) trust: String,
-    pub(super) completion: Option<String>,
-    pub(super) explanation: String,
+    fingerprint: String,
+    code: String,
+    logical_path: String,
+    certainty: String,
+    trust: String,
+    completion: Option<String>,
+    explanation: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct BaselineKey {
-    pub(super) fingerprint: String,
-    pub(super) code: String,
-    pub(super) logical_path: String,
-    pub(super) certainty: String,
-    pub(super) trust: String,
-    pub(super) completion: Option<String>,
+    fingerprint: String,
+    code: String,
+    logical_path: String,
+    certainty: String,
+    trust: String,
+    completion: Option<String>,
+}
+
+impl BaselineKey {
+    pub(super) fn for_diagnostic(diagnostic: &CheckDiagnostic, fingerprint: String) -> Self {
+        Self {
+            fingerprint,
+            code: diagnostic.code.clone(),
+            logical_path: diagnostic.primary.file.clone(),
+            certainty: diagnostic.certainty.clone(),
+            trust: diagnostic.trust.clone(),
+            completion: diagnostic.completion.clone(),
+        }
+    }
+
+    fn into_entry(self, explanation: String) -> BaselineEntry {
+        BaselineEntry {
+            fingerprint: self.fingerprint,
+            code: self.code,
+            logical_path: self.logical_path,
+            certainty: self.certainty,
+            trust: self.trust,
+            completion: self.completion,
+            explanation,
+        }
+    }
 }
 
 impl From<&BaselineEntry> for BaselineKey {
@@ -240,8 +276,8 @@ pub fn write_baseline(
             let suppression = parse_suppression(comment).map_err(|message| {
                 format!("invalid suppression at {}:{line}: {message}", source.path)
             })?;
-            if let Some((codes, _)) = suppression.filter(|_| first_on_line) {
-                suppressions_by_line.insert(line, codes);
+            if let Some(suppression) = suppression.filter(|_| first_on_line) {
+                suppressions_by_line.insert(line, suppression.codes);
             }
         }
         suppressions_by_path.insert(source.path.as_str(), suppressions_by_line);
@@ -293,15 +329,9 @@ pub fn write_baseline(
             skipped_ambiguous += 1;
             continue;
         }
-        entries.insert(BaselineEntry {
-            fingerprint: finding_fingerprint,
-            code: d.code.clone(),
-            logical_path: d.primary.file.clone(),
-            certainty: d.certainty.clone(),
-            trust: d.trust.clone(),
-            completion: d.completion.clone(),
-            explanation: d.message.clone(),
-        });
+        entries.insert(
+            BaselineKey::for_diagnostic(d, finding_fingerprint).into_entry(d.message.clone()),
+        );
     }
     if entries.len() > 100_000 {
         return Err("generated baseline exceeds the 100,000 entry limit".into());

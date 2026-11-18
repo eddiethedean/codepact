@@ -1,5 +1,31 @@
 # Release notes
 
+## 0.8.0 — reviewed contracts and concurrency
+
+CodePact 0.8.0 extends checking across installed packages and adds bounded
+models for standard library resource lifetimes.
+
+- **Installed providers.** Marked pure Python wheels can publish supported
+  must-use, resource factory, cleanup, and ownership contracts. Authors can
+  generate a manifest with `codepact contracts export` and verify the built
+  archive with `codepact contracts verify`. The analyzer uses the selected
+  wheel and checked source to decide which effects apply.
+- **Project models.** Supply a reviewed synchronous factory and cleanup
+  contract for an exact installed distribution version. CodePact checks the
+  artifact and can verify the selected version against `uv.lock`.
+- **Runtime models.** Select CPython 3.13.16 on Linux x86-64 to check supported
+  local text files. Experimental ownership adds local asyncio tasks, waits,
+  cancellation, timeouts, and shielding under the default task factory.
+  Experimental advanced contracts add local Process and Pool lifecycles in
+  an explicit spawn context.
+- **Reports and Rust API.** Foundations checks emit CLI report schema 4 and
+  Rust result schema 2. Reports record model applicability, selected provider
+  digests, scope, and a versioned comparison descriptor. Existing source-only
+  checks retain their report formats unless foundations are explicitly enabled.
+
+[Install 0.8.0](install.md) · [Upgrade from 0.7](upgrading.md) ·
+[Configure reviewed contracts and runtime models](reviewed-contracts.md)
+
 ## 0.7.0 — typed outcomes and finite-match preview
 
 The 0.7.0 implementation adds pure-Python result and optional outcome values,

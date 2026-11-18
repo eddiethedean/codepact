@@ -102,75 +102,7 @@ pub(crate) fn context_for_module(
                             .get(&file.module)
                             .is_some_and(|selected| selected == provider);
                         if !internal {
-                            let mut must_use = if provider.origin == "inline-source"
-                                && provider.reason.is_none()
-                            {
-                                exports.must_use_callables.clone()
-                            } else {
-                                BTreeMap::new()
-                            };
-                            for (public, symbol) in inputs.exports.range(format!("{module}.")..) {
-                                if !public.starts_with(&format!("{module}.")) {
-                                    break;
-                                }
-                                let Some((from_module, name)) = public.rsplit_once('.') else {
-                                    continue;
-                                };
-                                if from_module != module {
-                                    continue;
-                                }
-                                if let Some(fact) = symbol
-                                    .contracts
-                                    .iter()
-                                    .find(|contract| contract.kind == "must-use")
-                                {
-                                    let origin = crate::foundation::publication_origin(
-                                        provider, symbol, fact,
-                                    );
-                                    let span = exports
-                                        .must_use_callables
-                                        .get(name)
-                                        .filter(|previous| {
-                                            previous.canonical_symbol == origin.canonical_symbol
-                                                && provider.origin == "inline-source"
-                                        })
-                                        .map(|previous| previous.span.clone())
-                                        .or(origin.location)
-                                        .expect("published fact location");
-                                    must_use.insert(
-                                        name.to_owned(),
-                                        MustUseCallable {
-                                            span,
-                                            public_symbol: public.clone(),
-                                            canonical_symbol: origin.canonical_symbol,
-                                            distribution: Some(provider.distribution.clone()),
-                                            version: Some(provider.version.clone()),
-                                            manifest: provider.origin == "manifest",
-                                        },
-                                    );
-                                }
-                            }
-                            exports.must_use_callables = must_use;
-                            for (name, view) in &mut exports.names {
-                                if !inputs.exports.get(&format!("{module}.{name}")).is_some_and(
-                                    |symbol| {
-                                        symbol.contracts.iter().any(|fact| fact.kind == "resource")
-                                    },
-                                ) {
-                                    view.closed_by = None;
-                                    view.closed_by_span = None;
-                                }
-                            }
-                            for (symbol, class) in &mut exports.classes {
-                                if !exports
-                                    .names
-                                    .values()
-                                    .any(|view| view.symbol == *symbol && view.closed_by.is_some())
-                                {
-                                    class.closed_by = None;
-                                    class.closed_by_span = None;
-                                }
-                            }
+                            restrict_provider_exports(module, inputs, provider, &mut exports);
                         }
                     }
                     exports
@@ -210,6 +142,80 @@ pub(crate) fn context_for_module(
         None => {}
     }
     context
+}
+
+/// Apply the selected publication at the boundary between different artifacts.
+fn restrict_provider_exports(
+    module: &str,
+    inputs: &crate::foundation::PreparedFoundations,
+    provider: &crate::foundation::ProviderSelection,
+    exports: &mut SemanticExports,
+) {
+    let mut must_use = if provider.origin == "inline-source" && provider.reason.is_none() {
+        exports.must_use_callables.clone()
+    } else {
+        BTreeMap::new()
+    };
+    for (public, symbol) in inputs.exports.range(format!("{module}.")..) {
+        if !public.starts_with(&format!("{module}.")) {
+            break;
+        }
+        let Some((from_module, name)) = public.rsplit_once('.') else {
+            continue;
+        };
+        if from_module != module {
+            continue;
+        }
+        if let Some(fact) = symbol
+            .contracts
+            .iter()
+            .find(|contract| contract.kind == "must-use")
+        {
+            let origin = crate::foundation::publication_origin(provider, symbol, fact);
+            let span = exports
+                .must_use_callables
+                .get(name)
+                .filter(|previous| {
+                    previous.canonical_symbol == origin.canonical_symbol
+                        && provider.origin == "inline-source"
+                })
+                .map(|previous| previous.span.clone())
+                .or(origin.location)
+                .expect("published fact location");
+            must_use.insert(
+                name.to_owned(),
+                MustUseCallable {
+                    span,
+                    public_symbol: public.clone(),
+                    canonical_symbol: origin.canonical_symbol,
+                    distribution: Some(provider.distribution.clone()),
+                    version: Some(provider.version.clone()),
+                    manifest: provider.origin == "manifest",
+                },
+            );
+        }
+    }
+    exports.must_use_callables = must_use;
+    for (name, view) in &mut exports.names {
+        if !inputs
+            .exports
+            .get(&format!("{module}.{name}"))
+            .is_some_and(|symbol| symbol.contracts.iter().any(|fact| fact.kind == "resource"))
+        {
+            view.closed_by = None;
+            view.closed_by_span = None;
+        }
+    }
+    for (symbol, class) in &mut exports.classes {
+        if !exports
+            .names
+            .values()
+            .any(|view| view.symbol == *symbol && view.closed_by.is_some())
+        {
+            class.closed_by = None;
+            class.closed_by_span = None;
+        }
+    }
 }
 
 pub(super) fn order_project_files<'a>(

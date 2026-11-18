@@ -8,26 +8,26 @@ do not imply schema versions.
 | --- | --- |
 | `inspect-contracts --json` and Rust `Inspection` | [inspection schema 0](schemas/inspection-v0.schema.json) |
 | Rust `CheckResult` from `check_report` | [checker result schema 1](schemas/check-result-v1.schema.json) |
-| CLI `check --json` | [adoption report schema 3](schemas/check-report-v3.schema.json) |
+| Rust `CheckResult` from `check_with_foundations` | [checker result schema 2](schemas/check-result-v2.schema.json) |
+| CLI `check --json` | [adoption report schema 3](schemas/check-report-v3.schema.json) or [foundations report schema 4](schemas/check-report-v4.schema.json) |
 | Baseline file | [baseline schema 1](schemas/baseline-v1.schema.json) |
 | `capabilities --json` | [capabilities schema 1](schemas/capabilities-v1.schema.json) |
 | `explain RULE --json` | [explanation schema 1](schemas/explanation-v1.schema.json) |
-| `check --show-settings --json` | [settings schema 2](schemas/settings-v2.schema.json) |
+| `check --show-settings --json` | [settings schema 2](schemas/settings-v2.schema.json) or [settings schema 3](schemas/settings-v3.schema.json) |
 | `baseline update --json` summary | [baseline-update schema 1](schemas/baseline-update-v1.schema.json) |
 | CLI execution/configuration error in JSON mode | [failure envelope for report schema 3](schemas/failure-v3.schema.json) |
 
 Downloadable schemas and fixture links are listed in the [schema reference](schemas.md).
-The CLI adoption-report schema changes do not alter inspection schema 0 or the
-Rust checker API's schema 1 result. Consumers should reject unknown schema
-versions and treat a failed execution envelope as an error, never as an empty
-completed report.
+Consumers should dispatch on the schema version and treat a failed execution
+envelope as an error. [Settings schema selection](cli.md#project-configuration-and-scope)
 
 ## CLI adoption report
 
 `codepact check --json` writes one adoption report to stdout. A completed
-report has `execution_status: "completed"`, report schema version 3 and check
-schema version 1,
-findings, policy, coverage, source identities and a calculated `exit_code`.
+report has `execution_status: "completed"`, schema versions, findings, policy,
+coverage, source identities, and a calculated `exit_code`. Source-only checks
+use report schema 3 and check schema 1 by default. Foundations checks use
+report schema 4 and check schema 2.
 The process status matches the report's exit code. A failure has
 `execution_status: "failed"`, version identities, and an `error` object with
 category and message; it has no partial findings or clean-check claim.
@@ -66,20 +66,36 @@ The snapshot manifest includes per-file source hashes.
 
 ## Experimental finite matches and provider scope
 
-Schema 3 records `experimental_finite_matches`, the ordered `dependency_roots`,
-and `required_providers`. The finite-match setting participates in semantic
+Schemas 3 and 4 record `experimental_finite_matches`, the ordered
+`dependency_roots`, and `required_providers`. The finite-match setting participates in semantic
 and baseline identity. Provider roots and distribution ownership are included
 in the selected source manifest. TP6001 and TP6002 are informational-only
 review hints with `info` severity; they are not eligible for policy, inline
 suppression, or baseline disposition. They do not change coverage or the exit
 code.
 
+## Reviewed contracts and runtime evidence
+
+Schema 4 includes a `foundations` object. Read `providers` and
+`provider_issues` to review selected artifacts and discovery problems, and
+`model_uses` for the effect, origin, applicability, and source location of
+each recorded model decision. The `scope` and `exhausted_limits` fields show
+where the checker gathered evidence and where it reached its bounds. The
+`comparison` descriptor identifies the semantics used for the check.
+[Foundations evidence schema](schemas/foundations-evidence-v1.schema.json) ·
+[Configuration guide](reviewed-contracts.md)
+
 ## Experimental ownership scope
 
-With ownership enabled, schema 3 reports use the assurance value
-`experimental-ownership-checking-for-supported-exit-flow`. The selected
-rules can include TP2002–TP2006. The settings and snapshot identify the
-semantic scope. When the TaskGroup model is selected, `available_models`
+Read `assurance` to distinguish the two ownership scopes.
+
+| Enabled checks | Assurance value |
+| --- | --- |
+| Experimental ownership | `experimental-ownership-checking-for-supported-exit-flow` |
+| Experimental ownership and advanced contracts | `experimental-advanced-contract-checking-for-supported-exit-flow` |
+
+The selected rules can include TP2002–TP2006. The settings and snapshot identify
+the semantic scope. When the TaskGroup model is selected, `available_models`
 includes its runtime assumption and CPython pin. Read its coverage alongside
 the diagnostics. Baseline matching includes the ownership scope and selected
 model revision. [Ownership guide](ownership.md) · [Schema downloads](schemas.md)
@@ -188,9 +204,13 @@ in JSON. Use JSON when a consumer needs the complete policy/audit contract.
 ## Validate retained reports before using them
 
 The source checkout includes a [reference consumer](https://github.com/eddiethedean/codepact/blob/main/scripts/consume_check_report.py)
-for CLI agents and external tools. With the development dependencies installed,
-run it against the current workspace and a trusted snapshot ID from the latest
-completed analysis of that workspace:
+for CLI agents and external tools. It accepts completed schema 3 reports and
+schema 3 failure envelopes. It rejects schema 4 reports from foundations
+checks, even when the report is current and passes policy.
+
+With the development dependencies installed, run it against the current
+workspace and a trusted snapshot ID from the latest completed schema 3
+analysis of that workspace:
 
 ```sh
 uv run --locked python scripts/consume_check_report.py report.json \

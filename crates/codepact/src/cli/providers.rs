@@ -1,4 +1,4 @@
-use super::{discovery, publications};
+use super::{artifacts, discovery};
 use codepact::foundation::{self, ProviderIssue, ProviderPackage, MAX_METADATA_BYTES};
 use codepact::{adoption, SourceFile};
 use std::{
@@ -91,7 +91,7 @@ fn candidate(root: &Path, entries: &[PathBuf], name: &str) -> Result<Option<Cand
 
 #[derive(Default)]
 struct Inventory {
-    records: Vec<(PathBuf, publications::Record)>,
+    records: Vec<(PathBuf, artifacts::Record)>,
 }
 
 impl Inventory {
@@ -109,24 +109,26 @@ impl Inventory {
                 Err(error) => return Err(format!("cannot inspect installed RECORD: {error}")),
                 Ok(_) => {}
             }
-            let raw = publications::read_regular(
-                &path,
-                remaining.min(publications::MAX_RECORD_BYTES),
-            )
-            .map_err(|error| {
-                format!("installed RECORD discovery failed or exceeded its byte budget: {error}")
-            })?;
+            let raw = artifacts::read_regular(&path, remaining.min(artifacts::MAX_RECORD_BYTES))
+                .map_err(|error| {
+                    format!(
+                        "installed RECORD discovery failed or exceeded its byte budget: {error}"
+                    )
+                })?;
             remaining -= raw.len();
-            records.push((directory.clone(), publications::read_record(&raw, true)?));
+            records.push((
+                directory.clone(),
+                artifacts::read_record(&raw, artifacts::RecordLayout::Installed)?,
+            ));
         }
         Ok(Self { records })
     }
 
-    fn owner(&self, name: &str) -> Result<(&Path, &publications::Record), String> {
+    fn owner(&self, name: &str) -> Result<(&Path, &artifacts::Record), String> {
         let owners = self
             .records
             .iter()
-            .filter(|(_, record)| record.entries.contains_key(name))
+            .filter(|(_, record)| record.contains(name))
             .collect::<Vec<_>>();
         let [(directory, record)] = owners.as_slice() else {
             let reason = if owners.is_empty() {
@@ -151,7 +153,7 @@ fn installed_package(
     let marker = package_root.join(foundation::MARKER_FILENAME);
     let manifest_path = package_root.join(foundation::MANIFEST_FILENAME);
     let marked = match fs::symlink_metadata(&marker) {
-        Ok(_) if publications::read_regular(&marker, 1)?.is_empty() => true,
+        Ok(_) if artifacts::read_regular(&marker, 1)?.is_empty() => true,
         Ok(_) => return Err("installed py.codepact marker must be empty".into()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
         Err(error) => return Err(error.to_string()),
@@ -168,11 +170,7 @@ fn installed_package(
         return Ok(None);
     }
     let (info, record) = inventory.owner(&format!("{scope}/__init__.py"))?;
-    if !has_manifest
-        && record
-            .entries
-            .contains_key(&format!("{scope}/{}", foundation::MANIFEST_FILENAME))
-    {
+    if !has_manifest && record.contains(&format!("{scope}/{}", foundation::MANIFEST_FILENAME)) {
         return Err("installed contract manifest listed in RECORD is missing".into());
     }
     let mut files = BTreeSet::from([
@@ -180,8 +178,8 @@ fn installed_package(
         info.join("WHEEL"),
         info.join("RECORD"),
     ]);
-    let metadata = publications::read_text(&info.join("METADATA"), 64 * 1024)?;
-    let wheel = publications::read_text(&info.join("WHEEL"), 64 * 1024)?;
+    let metadata = artifacts::read_text(&info.join("METADATA"), 64 * 1024)?;
+    let wheel = artifacts::read_text(&info.join("WHEEL"), 64 * 1024)?;
     if expected_unmarked {
         let directory = info
             .file_name()
@@ -190,14 +188,14 @@ fn installed_package(
         record.verify_member(&format!("{directory}/METADATA"), metadata.as_bytes())?;
         record.verify_member(&format!("{directory}/WHEEL"), wheel.as_bytes())?;
     }
-    let (distribution, version) = publications::metadata_identity(&metadata)?;
-    if !publications::pure_wheel(&wheel) {
+    let (distribution, version) = artifacts::metadata_identity(&metadata)?;
+    if !artifacts::pure_wheel(&wheel) {
         return Err("selected provider is outside the regular pure-Python wheel profile".into());
     }
     let direct_url = info.join("direct_url.json");
     if fs::symlink_metadata(&direct_url).is_ok() {
         let metadata: serde_json::Value =
-            serde_json::from_str(&publications::read_text(&direct_url, 64 * 1024)?)
+            serde_json::from_str(&artifacts::read_text(&direct_url, 64 * 1024)?)
                 .map_err(|error| format!("invalid installed direct_url.json: {error}"))?;
         if metadata["dir_info"]["editable"] == true {
             return Err("editable install is outside the provider profile".into());
@@ -224,7 +222,7 @@ fn installed_package(
         }
     }
     if has_manifest {
-        let content = publications::read_text(&manifest_path, MAX_METADATA_BYTES)?;
+        let content = artifacts::read_text(&manifest_path, MAX_METADATA_BYTES)?;
         record.verify_member(&package.marker_path(), b"")?;
         record.verify_member(&package.manifest_path(), content.as_bytes())?;
         package.manifest = Some(content);
@@ -242,12 +240,12 @@ fn installed_package(
         let module = foundation::module_for_source(&relative, target).ok_or_else(|| {
             format!("provider source {relative} has an unresolved module identity")
         })?;
-        if !record.entries.contains_key(&relative) || inventory.owner(&relative)?.0 != info {
+        if !record.contains(&relative) || inventory.owner(&relative)?.0 != info {
             return Err(format!(
                 "selected provider does not uniquely own source file {relative}"
             ));
         }
-        let source = publications::read_text(&path, remaining)?;
+        let source = artifacts::read_text(&path, remaining)?;
         if expected_unmarked {
             record.verify_member(&relative, source.as_bytes())?;
         }
@@ -259,7 +257,7 @@ fn installed_package(
     }
     if expected_unmarked {
         let prefix = format!("{scope}/");
-        if let Some(path) = record.entries.keys().find(|path| {
+        if let Some(path) = record.paths().find(|path| {
             path.starts_with(&prefix) && path.ends_with(".py") && !files.contains(&root.join(path))
         }) {
             return Err(format!(
@@ -268,6 +266,50 @@ fn installed_package(
         }
     }
     Ok(Some((package, files)))
+}
+
+enum ResolvedImport<'a> {
+    Package {
+        root_index: usize,
+        root: &'a Path,
+        entries: &'a [PathBuf],
+        directory: PathBuf,
+    },
+    SingleModule,
+    Opaque,
+    Namespace,
+    Missing,
+}
+
+/// Select the first importable identity before considering its metadata.
+fn resolve_import<'a>(
+    roots: &'a [PathBuf],
+    root_entries: &'a [Result<Vec<PathBuf>, String>],
+    name: &str,
+) -> Result<ResolvedImport<'a>, String> {
+    let mut namespace = false;
+    for (root_index, (root, entries)) in roots.iter().zip(root_entries).enumerate() {
+        let entries = entries.as_ref().map_err(Clone::clone)?;
+        match candidate(root, entries, name)? {
+            None => continue,
+            Some(Candidate::Namespace) => namespace = true,
+            Some(Candidate::Package(directory)) => {
+                return Ok(ResolvedImport::Package {
+                    root_index,
+                    root,
+                    entries,
+                    directory,
+                });
+            }
+            Some(Candidate::Module) => return Ok(ResolvedImport::SingleModule),
+            Some(Candidate::Opaque) => return Ok(ResolvedImport::Opaque),
+        }
+    }
+    Ok(if namespace {
+        ResolvedImport::Namespace
+    } else {
+        ResolvedImport::Missing
+    })
 }
 
 pub(super) fn discover(
@@ -311,83 +353,50 @@ pub(super) fn discover(
                 .strip_prefix(&name)
                 .is_some_and(|remainder| remainder.starts_with('.'))
         });
-        let mut namespace = false;
-        let mut resolved = false;
-        for (index, (root, entries)) in roots.iter().zip(&root_entries).enumerate() {
-            let candidate = entries
-                .as_ref()
-                .map_err(Clone::clone)
-                .and_then(|entries| candidate(root, entries, &name));
-            match candidate {
-                Ok(None) => continue,
-                Ok(Some(Candidate::Namespace)) => {
-                    namespace = true;
-                    continue;
+        let outcome = (|| match resolve_import(roots, &root_entries, &name)? {
+            ResolvedImport::Package {
+                root_index,
+                root,
+                entries,
+                directory,
+            } => {
+                let has_metadata = [foundation::MARKER_FILENAME, foundation::MANIFEST_FILENAME]
+                    .iter()
+                    .any(|filename| fs::symlink_metadata(directory.join(filename)).is_ok());
+                if !has_metadata && !expected {
+                    return Ok(None);
                 }
-                Ok(Some(Candidate::Module)) => {
-                    if expected {
-                        result.issues.push(ProviderIssue { import_scope: name.clone(), reason: "selected single-module provider is outside the regular package model".into() });
-                    }
-                }
-                Ok(Some(Candidate::Opaque)) => {
-                    result.issues.push(ProviderIssue {
-                        import_scope: name.clone(),
-                        reason:
-                            "selected provider has an unsupported native, symbolic or opaque layout"
-                                .into(),
-                    });
-                }
-                Ok(Some(Candidate::Package(package_root))) => {
-                    let has_metadata = [foundation::MARKER_FILENAME, foundation::MANIFEST_FILENAME]
-                        .iter()
-                        .any(|filename| fs::symlink_metadata(package_root.join(filename)).is_ok());
-                    if has_metadata || expected {
-                        let inventory = inventories.entry(index).or_insert_with(|| {
-                            Inventory::read(entries.as_ref().expect("candidate root"))
-                        });
-                        match inventory
-                            .as_ref()
-                            .map_err(Clone::clone)
-                            .and_then(|inventory| {
-                                installed_package(
-                                    root,
-                                    &package_root,
-                                    &name,
-                                    inventory,
-                                    target,
-                                    expected,
-                                )
-                            }) {
-                            Ok(Some((package, files))) => {
-                                result.packages.push(package);
-                                result.files.extend(files);
-                            }
-                            Ok(None) => {}
-                            Err(reason) => result.issues.push(ProviderIssue {
-                                import_scope: name.clone(),
-                                reason,
-                            }),
-                        }
-                    }
-                }
-                Err(reason) => result.issues.push(ProviderIssue {
-                    import_scope: name.clone(),
-                    reason,
-                }),
+                let inventory = inventories
+                    .entry(root_index)
+                    .or_insert_with(|| Inventory::read(entries))
+                    .as_ref()
+                    .map_err(Clone::clone)?;
+                installed_package(root, &directory, &name, inventory, target, expected)
             }
-            resolved = true;
-            break;
-        }
-        if !resolved && (expected || namespace) {
-            let reason = if namespace {
-                "selected namespace provider is outside the regular package profile"
-            } else {
-                "project contract has no selected installed provider"
-            };
-            result.issues.push(ProviderIssue {
+            ResolvedImport::SingleModule if expected => {
+                Err("selected single-module provider is outside the regular package model".into())
+            }
+            ResolvedImport::Opaque => {
+                Err("selected provider has an unsupported native, symbolic or opaque layout".into())
+            }
+            ResolvedImport::Namespace => {
+                Err("selected namespace provider is outside the regular package profile".into())
+            }
+            ResolvedImport::Missing if expected => {
+                Err("project contract has no selected installed provider".into())
+            }
+            ResolvedImport::SingleModule | ResolvedImport::Missing => Ok(None),
+        })();
+        match outcome {
+            Ok(Some((package, files))) => {
+                result.packages.push(package);
+                result.files.extend(files);
+            }
+            Ok(None) => {}
+            Err(reason) => result.issues.push(ProviderIssue {
                 import_scope: name,
-                reason: reason.into(),
-            });
+                reason,
+            }),
         }
     }
     result
@@ -407,7 +416,7 @@ pub(super) fn project_inputs(
     let mut models = Vec::new();
     let mut remaining = MAX_METADATA_BYTES;
     for path in &config.project_contracts {
-        let raw = publications::read_text(path, remaining)?;
+        let raw = artifacts::read_text(path, remaining)?;
         remaining -= raw.len();
         models.extend(
             foundation::parse_project_models(&raw, target)
@@ -420,7 +429,7 @@ pub(super) fn project_inputs(
         .uv_lock
         .as_ref()
         .map(|path| {
-            publications::read_text(path, MAX_METADATA_BYTES).inspect(|_| {
+            artifacts::read_text(path, MAX_METADATA_BYTES).inspect(|_| {
                 files.insert(path.clone());
             })
         })

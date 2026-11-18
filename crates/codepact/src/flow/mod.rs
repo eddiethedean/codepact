@@ -13,7 +13,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 mod asyncio;
+mod calls;
+mod contexts;
 mod execution;
+mod executor;
 mod expressions;
 mod ownership;
 mod process;
@@ -24,6 +27,7 @@ mod resolution;
 mod runtime;
 mod state;
 mod tasks;
+use calls::{bind_arguments, binding_failure, evaluate_call_arguments, BindingFailure};
 use execution::{
     builtin_exception_match, completion_exception_name, execute, is_unshadowed_builtin_exception,
     join_states, raised_exception_name,
@@ -38,9 +42,9 @@ use reporting::{
     report_module_scope_lifetimes, span, suggests_owned_handoff, take_flow_step,
 };
 use resolution::{
-    await_call_captures, contracts_for_module, evaluate_call_arguments, external_module_bindings,
-    final_class_bindings, final_function_bindings, register_pending_coroutine,
-    resolve_imported_contracts, resolve_imported_function, resolved_await_call,
+    await_call_captures, contracts_for_module, external_module_bindings, final_class_bindings,
+    final_function_bindings, register_pending_coroutine, resolve_imported_contracts,
+    resolve_imported_function, resolved_await_call,
 };
 use state::*;
 
@@ -622,121 +626,6 @@ fn contract_inside_range(contract: &Contract, file: &SourceFile, range: SourceRa
     (contract.source.line, contract.source.column) >= (container.line, container.column)
         && (contract.source.end_line, contract.source.end_column)
             <= (container.end_line, container.end_column)
-}
-
-#[derive(Debug)]
-enum BindingFailure {
-    Invalid,
-    Unknown,
-}
-
-fn bind_arguments<'a>(
-    signature: &CallSignature,
-    arguments: &'a [AstExpr],
-    keywords: &'a [CallKeyword],
-    receiver: bool,
-) -> Result<BTreeMap<String, &'a AstExpr>, BindingFailure> {
-    if keywords.iter().any(|(name, _)| name.is_none())
-        || arguments.iter().any(|arg| {
-            matches!(
-                arg.kind,
-                AstExprKind::Other
-                    | AstExprKind::OtherCalls(..)
-                    | AstExprKind::Yield(_)
-                    | AstExprKind::Starred(_)
-                    | AstExprKind::DepthLimit
-            )
-        })
-    {
-        return Err(BindingFailure::Unknown);
-    }
-    let positional: Vec<_> = signature
-        .positional_only
-        .iter()
-        .chain(&signature.positional_or_keyword)
-        .collect();
-    if receiver && positional.is_empty() {
-        return Err(if signature.vararg.is_some() {
-            BindingFailure::Unknown
-        } else {
-            BindingFailure::Invalid
-        });
-    }
-    let mut supplied = BTreeSet::new();
-    if receiver {
-        supplied.insert(positional[0].clone());
-    }
-    let mut bindings = BTreeMap::new();
-    let mut unknown = false;
-    for (index, argument) in arguments.iter().enumerate() {
-        if let Some(parameter) = positional.get(index + usize::from(receiver)) {
-            supplied.insert((*parameter).clone());
-            bindings.insert((*parameter).clone(), argument);
-        } else if signature.vararg.is_some() {
-            unknown = true;
-        } else {
-            return Err(BindingFailure::Invalid);
-        }
-    }
-    for (name, argument) in keywords {
-        let name = name.as_ref().expect("expanded keywords handled above");
-        if signature.positional_or_keyword.contains(name) || signature.keyword_only.contains(name) {
-            if !supplied.insert(name.clone()) {
-                return Err(BindingFailure::Invalid);
-            }
-            bindings.insert(name.clone(), argument);
-        } else if signature.kwarg.is_some() {
-            unknown = true;
-        } else {
-            return Err(BindingFailure::Invalid);
-        }
-    }
-    for parameter in positional.into_iter().chain(signature.keyword_only.iter()) {
-        if !supplied.contains(parameter) {
-            if signature.optional.contains(parameter) {
-                // Default objects and variadic containers do not have tracked aliases.
-                unknown |= signature.unknown_defaults.contains(parameter);
-            } else {
-                return Err(BindingFailure::Invalid);
-            }
-        }
-    }
-    if unknown {
-        Err(BindingFailure::Unknown)
-    } else {
-        Ok(bindings)
-    }
-}
-
-fn binding_failure(
-    failure: BindingFailure,
-    env: &mut State,
-    file: &SourceFile,
-    range: SourceRange,
-    result: &mut Inspection,
-) {
-    let message = match failure {
-        BindingFailure::Invalid => {
-            env.alive = false;
-            queue_raise(
-                env,
-                range,
-                Some(AstExpr {
-                    range,
-                    kind: AstExprKind::Name("TypeError".into()),
-                }),
-            );
-            "invalid call argument binding ends normal lifecycle flow"
-        }
-        BindingFailure::Unknown => {
-            let affected: Vec<_> = env.places.values().flatten().cloned().collect();
-            weaken(env, affected.into_iter());
-            env.escaped.extend(env.places.values().flatten().cloned());
-            queue_raise(env, range, None);
-            "call argument binding is not modeled"
-        }
-    };
-    boundary(result, file, range, message);
 }
 
 fn expression_may_return_resource(expression: &AstExpr) -> bool {
