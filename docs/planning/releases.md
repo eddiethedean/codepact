@@ -52,8 +52,10 @@ Replay first-run and CI commands using the candidate wheels. Check that release
 notes describe defaults, opt-ins, and any report or baseline migration.
 After publication, download and verify registry artifacts, smoke-test a clean
 install, and verify the hosted revision, source-example downloads, and install
-paths using the [docs publishing checklist](../documentation.md#deploy-a-documentation-revision).
-Record the public URLs and exact revisions in the evidence record.
+paths using [the hosted release verifier](../release-verification.md#verify-hosted-docs-after-publication).
+Activate the tagged version in Read the Docs, then record its permanent URL and
+exact revision in the evidence record. Update the maintained docs' published
+pin after verifying the registry artifacts.
 
 ## Planned TypePact combined product
 

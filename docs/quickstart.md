@@ -19,7 +19,9 @@ mkdir src
 Expect `codepact 0.9.0`. In an existing uv project, skip `uv init` and create
 `src` only if it is absent. For a disposable trial inside an existing project,
 use the [standalone command](install.md#standalone-command) and an empty
-directory. The [installation guide](install.md) also covers pip and PowerShell.
+directory. The setup and check blocks work in PowerShell as well. Use
+[pip with a virtual environment](install.md#pip-environment) if that is how
+you install tools. [Compatibility and fit](compatibility.md)
 
 ## Save the example
 
@@ -56,8 +58,17 @@ connection.py:23:1: error TP1001: Borrowed call requires an open resource
 ```
 
 The check exits `1`. The primary location is the call on line 23 and the
-related location is the close on line 22. Delete line 23 and rerun in strict
-mode.
+related location is the close on line 22. Delete line 23 or replace the file
+with the {download}`repaired sample <_examples/quickstart/repaired.py>`.
+If you downloaded `repaired.py` to the demo directory, copy it over the
+original file.
+
+```sh
+cp repaired.py src/connection.py
+```
+
+In PowerShell use `Copy-Item repaired.py src/connection.py -Force`. Rerun in
+strict mode.
 
 <!-- smoke: repair -->
 ```sh
@@ -73,5 +84,5 @@ the exit status.
 - [Check multiple modules](project-guide.md) in the same `src/` directory.
 - [Inspect declaration facts](inspector.md#try-declaration-inspection) with a
   separate declaration-only file and a passing result.
-- [Evaluate an existing project](adopting.md#evaluate-one-package) before
+- [Run a first-package pilot](pilot.md) or [evaluate an existing project](adopting.md#evaluate-one-package) before
   choosing a CI policy.

@@ -1,0 +1,15 @@
+[tool.codepact]
+config-version = 1
+root = "src"
+python-version = "3.13"
+experimental-ownership = true
+experimental-advanced-contracts = true
+
+[tool.codepact.runtime-profile]
+implementation = "cpython"
+python-version = "3.13.16"
+os = "linux"
+architecture = "x86_64"
+start-method = "spawn"
+spawn-main-script = "main.py"
+assume-standard-process-wait = true

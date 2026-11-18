@@ -17,9 +17,9 @@ DOCS = Path(__file__).resolve().parents[1] / "docs"
 EXAMPLES = DOCS / "_examples"
 
 
-def snippet(page: str, name: str, language: str = "sh") -> str:
+def snippet(page: str, name: str, language: str = "sh", marker: str = "smoke") -> str:
     text = (DOCS / page).read_text(encoding="utf-8")
-    block = rf"<!-- smoke: {name} -->\n```{language}\n(.*?)\n```"
+    block = rf"<!-- {marker}: {name} -->\n```{language}\n(.*?)\n```"
     match = re.search(block, text, re.DOTALL)
     if match is None:
         raise ValueError(f"{page} has no {language} snippet named {name}")
@@ -54,12 +54,58 @@ def report(path: Path) -> dict[str, object]:
     return json_object(path.read_text(encoding="utf-8"))
 
 
+def replay_first_package(
+    workspace: Path, published_version: str, selected_version: str
+) -> None:
+    readme = workspace / "readme"
+    readme.mkdir()
+    demo = snippet("../README.md", "readme-demo", marker="generated")
+    demo = demo.replace(
+        f"codepact[cli]=={published_version}", f"codepact[cli]=={selected_version}"
+    )
+    assert "TP1001" in shell(readme, demo, 1)
+    assert shell(readme, snippet("../README.md", "readme-repair")).strip() == "0"
+
+    pilot = workspace / "pilot"
+    _ = shutil.copytree(EXAMPLES / "pilot", pilot)
+
+    def command(name: str) -> str:
+        return snippet("pilot.md", name).replace(
+            f"codepact-cli=={published_version}", f"codepact-cli=={selected_version}"
+        )
+
+    settings = json_object(shell(pilot, command("pilot-settings")))
+    assert settings["root"] == str((pilot / "src").resolve())
+    assert settings["python_version"] == "3.13"
+    assert settings["mode"] == "advisory"
+    assert settings["dependency_roots"] == []
+    cases = (
+        (None, "pilot-advisory", 1, "complete-for-supported-subset", "TP1001"),
+        ("repaired.py", "pilot-strict", 0, "complete-for-supported-subset", None),
+        ("boundary.py", "pilot-advisory", 0, "incomplete", "TP9001"),
+        ("boundary.py", "pilot-strict", 1, "incomplete", "TP9001"),
+    )
+    for variant, policy, status, coverage_status, expected_rule in cases:
+        if variant is not None:
+            _ = shutil.copyfile(pilot / "variants" / variant, pilot / "src/job.py")
+        _ = shell(pilot, command(policy), status)
+        result = report(pilot / "report.json")
+        assert result["report_schema_version"] == 3
+        assert result["check_schema_version"] == 1
+        coverage = cast(dict[str, object], result["coverage"])
+        assert coverage["status"] == coverage_status, coverage
+        findings = cast(list[dict[str, object]], result["diagnostics"])
+        codes = {finding["code"] for finding in findings}
+        assert codes == ({expected_rule} if expected_rule is not None else set()), codes
+
+
 def replay(workspace: Path, checkout_version: str | None) -> None:
     setup = snippet("quickstart.md", "setup")
     version = re.search(r"uv add ['\"]codepact\[cli\]==([^'\"\s]+)['\"]", setup)
     assert version is not None, "Quick start should pin the helper and CLI extra"
     published_version = version[1]
     selected_version = checkout_version or published_version
+    replay_first_package(workspace, published_version, selected_version)
     setup = setup.replace(
         f"codepact[cli]=={published_version}",
         f"codepact[cli]=={selected_version}",
@@ -72,9 +118,14 @@ def replay(workspace: Path, checkout_version: str | None) -> None:
     finding = shell(workspace, snippet("quickstart.md", "finding"), 1)
     expected = snippet("quickstart.md", "finding-output", "text")
     assert finding.rstrip() == expected, finding
+    lifecycle = json_object(
+        shell(workspace, snippet("lifecycle.md", "lifecycle-json"), 1)
+    )
+    assert lifecycle["report_schema_version"] == 3
+    assert lifecycle["check_schema_version"] == 1
     lines = connection.read_text(encoding="utf-8").splitlines(keepends=True)
     assert len(lines) == 23
-    _ = connection.write_text("".join(lines[:-1]), encoding="utf-8")
+    _ = shutil.copyfile(EXAMPLES / "quickstart/repaired.py", connection)
     assert shell(workspace, snippet("quickstart.md", "repair")) == ""
 
     shutil.copyfile(EXAMPLES / "connection.py", workspace / "connection.py")
@@ -171,6 +222,22 @@ def replay(workspace: Path, checkout_version: str | None) -> None:
     _ = shell(workspace, ci.replace("--mode strict", "--mode advisory"))
     coverage = cast(dict[str, object], report(output)["coverage"])
     assert coverage["status"] == "incomplete"
+    boundary.unlink()
+
+    _ = (source / "unused.py").write_text(
+        "from codepact import must_use\n\n@must_use\ndef status() -> int:\n"
+        "    return 1\n\nstatus()\n",
+        encoding="utf-8",
+    )
+    _ = shell(workspace, ci)
+    warnings = report(output)
+    assert warnings["actionable_diagnostics"] == 0
+    diagnostics = cast(list[dict[str, object]], warnings["diagnostics"])
+    assert [(item["code"], item["effective_severity"]) for item in diagnostics] == [
+        ("TP3001", "warning"),
+    ]
+    _ = shell(workspace, f"{ci} --fail-on warning", 1)
+    assert report(output)["actionable_diagnostics"] == 1
 
 
 def main() -> None:
@@ -187,7 +254,7 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="codepact-docs-") as temp:
         replay(Path(temp), checkout_version)
-    print("Replayed the first check, project tutorial, inspection, and CI report cases")
+    print("Replayed README, quick start, first-package pilot, inspection, and CI cases")
 
 
 if __name__ == "__main__":

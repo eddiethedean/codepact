@@ -54,6 +54,21 @@ to produce JSON, text, or concise output and the corresponding exit status.
 Rust callers can use canonical results or the adoption report builder.
 [Report reference](output.md) · [Rust integration](rust-api.md)
 
+## Locate a change
+
+| Change | Start in |
+| --- | --- |
+| Parsed syntax, bindings, or declaration facts | `crates/codepact/src/frontend/, crates/codepact/src/lib.rs` |
+| Stateful checks, calls, cleanup, and concurrency | `crates/codepact/src/flow/` |
+| Installed providers, artifact verification, and model selection | `crates/codepact/src/foundation/` and `foundation.rs` |
+| Rule policy, root and configuration resolution, or report construction | `crates/codepact/src/adoption/` and `adoption.rs` |
+| Before-and-after semantic comparison | `crates/codepact/src/review/` and `review.rs` |
+| CLI rendering and command behavior | `crates/codepact/src/cli/` and `main.rs` |
+| Incremental queries and invalidation | `crates/codepact/src/db.rs` |
+
+Most analyzer fixtures are in `crates/codepact/tests/`. For a worked path
+from a diagnostic to a fixture, see [Make a first rule change](development.md#make-a-first-rule-change).
+
 ## Incremental sessions
 
 Salsa tracks parsing, declaration summaries, and flow queries with their input

@@ -93,6 +93,8 @@ check-inspector:
 	if test -e "$$tmp/marker"; then echo "inspected Python source was executed" >&2; exit 1; fi
 
 check-docs:
+	$(PYTHON) scripts/sync_docs_reference.py --check
 	$(UV) run --no-project --with-requirements docs/requirements.txt python scripts/check_schema_fixtures.py
 	$(PYTHON) scripts/check_docs_links.py
 	$(UV) run --no-project --with-requirements docs/requirements.txt sphinx-build -E -a -b html -n -W --keep-going docs "$(DOCS_BUILD_DIR)"
+	$(PYTHON) scripts/verify_docs_release.py "$(DOCS_BUILD_DIR)"

@@ -68,4 +68,5 @@ consumption and unsupported nested expressions remain boundaries. See
 The analyzer currently accepts source targets 3.11, 3.12, and 3.13. This is
 separate from the interpreter running the command, and the default target is
 3.11. Helper runtime support begins at Python 3.11. The reviewed standard library
-models use the explicitly selected [runtime profile](reviewed-contracts.md#select-the-runtime-profile).
+models use the explicitly selected [runtime profile](runtime-models.md).
+[Compare all three versions](compatibility.md)

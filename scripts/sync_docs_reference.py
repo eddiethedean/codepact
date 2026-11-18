@@ -1,0 +1,278 @@
+"""Refresh release pins and reference tables from the CLI and schema files."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import tomllib
+from pathlib import Path
+from typing import cast
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs"
+GENERATED = DOCS / "_generated"
+
+# These pages describe current published recipes. Historical guides and
+# candidate build instructions intentionally keep their own version numbers.
+PINNED_PAGES = (
+    "README.md",
+    "cli/README.md",
+    "docs/adopting.md",
+    "docs/automation.md",
+    "docs/availability.md",
+    "docs/ci-reporting.md",
+    "docs/cli.md",
+    "docs/consume-providers.md",
+    "docs/evaluation.md",
+    "docs/examples.md",
+    "docs/faq.md",
+    "docs/install.md",
+    "docs/inspector.md",
+    "docs/lifecycle.md",
+    "docs/ownership.md",
+    "docs/pilot.md",
+    "docs/publish-provider.md",
+    "docs/quickstart.md",
+    "docs/rules.md",
+    "docs/runtime-models.md",
+    "docs/rust-api.md",
+    "docs/support.md",
+    "docs/troubleshooting.md",
+)
+
+VERSION = r"\d+\.\d+\.\d+"
+PIN = re.compile(
+    r"(?P<prefix>codepact(?:\[cli\]|-cli)?==|codepact@=|"
+    r'codepact = "=|cargo install codepact --version |--branch v|'
+    r"docs\.rs/codepact/|"
+    r"pypi\.org/project/codepact(?:-cli)?/|crates\.io/crates/codepact/)"
+    rf"{VERSION}\b"
+)
+RELEASE = cast(
+    dict[str, object], tomllib.loads((DOCS / "versions.toml").read_text("utf-8"))
+)
+PUBLISHED = cast(str, RELEASE["published_version"])
+CHECKOUT = cast(
+    "dict[str, dict[str, str]]",
+    tomllib.loads((ROOT / "pyproject.toml").read_text("utf-8")),
+)["project"]["version"]
+PROTOCOLS_PUBLISHED = tuple(map(int, PUBLISHED.split("."))) >= (0, 10, 0)
+CANDIDATE_PROTOCOL_CONFIG = re.compile(
+    r"^[ \t]*(?:\[\[[ \t]*tool\.codepact\.async-guards[ \t]*\]\]"
+    r"|['\"]?spawn-main-script['\"]?[ \t]*=)",
+    re.MULTILINE,
+)
+
+# Each row names an interface; its actual version value comes from the schema.
+SCHEMAS = (
+    (
+        "Declaration inspection and Rust `Inspection`",
+        ("inspection-v0", "schema_version"),
+    ),
+    (
+        "Rust `CheckResult`",
+        ("check-result-v1", "check_schema_version"),
+        ("check-result-v2", "check_schema_version"),
+    ),
+    (
+        "CLI `check --json`",
+        ("check-report-v3", "report_schema_version"),
+        ("check-report-v4", "report_schema_version"),
+    ),
+    ("CLI execution failure", ("failure-v3", "report_schema_version")),
+    (
+        "Resolved settings",
+        ("settings-v2", "settings_schema_version"),
+        ("settings-v3", "settings_schema_version"),
+    ),
+    ("Baseline file", ("baseline-v1", "baseline_schema_version")),
+    ("Baseline update summary", ("baseline-update-v1", "baseline_schema_version")),
+    ("Capability list", ("capabilities-v1", "capability_schema_version")),
+    ("Rule explanation", ("explanation-v1", "explanation_schema_version")),
+    ("Reviewed model evidence", ("foundations-evidence-v1", "")),
+    ("Source review capture", ("review-snapshot-v1", "review_snapshot_schema_version")),
+    ("Source review comparison", ("review-v1", "review_schema_version")),
+    ("Wheel contract comparison", ("contract-diff-v1", "contract_diff_schema_version")),
+)
+
+
+def published_recipes(path: Path) -> str:
+    text = PIN.sub(lambda match: match["prefix"] + PUBLISHED, path.read_text("utf-8"))
+    text = re.sub(rf"`codepact {VERSION}`", f"`codepact {PUBLISHED}`", text)
+    if path == ROOT / "README.md":
+        sample = (ROOT / "examples/lifecycle.py").read_text("utf-8").rstrip()
+        demo = (
+            "<!-- generated: readme-demo -->\n"
+            "```sh\nuv init --bare --name codepact-demo\n"
+            f"uv add 'codepact[cli]=={PUBLISHED}'\nmkdir src\n"
+            f"cat > src/connection.py <<'PYTHON'\n{sample}\nPYTHON\n"
+            "uv run --locked codepact check --root src\n```\n"
+            "<!-- /generated: readme-demo -->"
+        )
+        text, count = re.subn(
+            r"<!-- generated: readme-demo -->.*?<!-- /generated: readme-demo -->",
+            lambda _: demo,
+            text,
+            flags=re.DOTALL,
+        )
+        if count != 1:
+            raise ValueError("README must have one generated first-check block")
+    return text
+
+
+def validate_protocol_examples() -> None:
+    if PROTOCOLS_PUBLISHED:
+        return
+    examples = DOCS / "_examples"
+    stable_pages = [ROOT / "README.md", *DOCS.glob("*.md")]
+    for path in [*stable_pages, *examples.rglob("*.toml")]:
+        if path == DOCS / "concurrency.md" or examples / "concurrency" in path.parents:
+            continue
+        if CANDIDATE_PROTOCOL_CONFIG.search(path.read_text("utf-8")):
+            raise ValueError(
+                f"{path.relative_to(ROOT)} uses candidate settings. "
+                "Put the example in the 0.10 concurrency guide."
+            )
+
+
+def schema_table() -> str:
+    lines = [
+        "<!-- Generated by scripts/sync_docs_reference.py from docs/schemas. -->",
+        "",
+        "| Interface | Schema version and download |",
+        "| --- | --- |",
+    ]
+    for interface, *versions in SCHEMAS:
+        links: list[str] = []
+        for stem, field in versions:
+            filename = f"{stem}.schema.json"
+            schema = cast(
+                "dict[str, dict[str, dict[str, int]]]",
+                json.loads((DOCS / "schemas" / filename).read_text("utf-8")),
+            )
+            if field:
+                label = f"`{field}: {schema['properties'][field]['const']}`"
+            else:
+                label = f"Foundations evidence schema {stem.rsplit('-v', 1)[-1]}"
+            links.append(f"[{label}](schemas/{filename})")
+        lines.append(f"| {interface} | {' · '.join(links)} |")
+    return "\n".join(lines) + "\n"
+
+
+def cli_json(binary: Path, *args: str) -> dict[str, object]:
+    response = subprocess.run(
+        [str(binary.resolve()), *args, "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return cast(dict[str, object], json.loads(response.stdout))
+
+
+def cli_rules(binary: Path, version: str) -> dict[str, dict[str, object]]:
+    about = cli_json(binary, "capabilities")
+    if about["engine_version"] != version:
+        raise ValueError(
+            f"Expected CLI {version}, got {about['engine_version']} from {binary}"
+        )
+    rules = cast(list[dict[str, object]], about["rules"])
+    return {cast(str, rule["code"]): rule for rule in rules}
+
+
+def rule_table(
+    binary: Path,
+    version: str,
+    rules: dict[str, dict[str, object]],
+    introduced: dict[str, str],
+) -> str:
+    lines = [
+        f"<!-- Generated from CodePact {version} by sync_docs_reference.py. -->",
+        "",
+    ]
+    if not rules:
+        return "\n".join([*lines, "This checkout adds no rule codes.", ""])
+    lines.extend(
+        ["| Rule | Introduced | Selection | Meaning |", "| --- | --- | --- | --- |"]
+    )
+    for code, rule in sorted(rules.items()):
+        tier = rule["tier"]
+        if tier == "review-hint":
+            selection = "Informational hint"
+        elif tier == "mandatory":
+            selection = "Mandatory"
+        else:
+            selection = "Default" if rule["enabled_by_default"] else "Opt-in"
+        summary = cast(str, cli_json(binary, "explain", code)["summary"]).replace(
+            "|", r"\|"
+        )
+        lines.append(f"| `{code}` | {introduced[code]} | {selection} | {summary} |")
+    return "\n".join(lines) + "\n"
+
+
+def outputs(published_cli: Path | None, checkout_cli: Path | None) -> dict[Path, str]:
+    files = {ROOT / name: published_recipes(ROOT / name) for name in PINNED_PAGES}
+    files[GENERATED / "schema-table.inc"] = schema_table()
+    original = (
+        (ROOT / "examples/lifecycle.py").read_text("utf-8").splitlines(keepends=True)
+    )
+    files[DOCS / "_examples/quickstart/repaired.py"] = "".join(original[:-1])
+    if published_cli is not None and checkout_cli is not None:
+        published_rules = cli_rules(published_cli, PUBLISHED)
+        checkout_rules = cli_rules(checkout_cli, CHECKOUT)
+        introduced = cast(dict[str, str], RELEASE["rules"])
+        if set(introduced) != published_rules.keys() | checkout_rules.keys():
+            raise ValueError("Update rule introduction metadata in docs/versions.toml")
+        candidate_rules = {
+            code: checkout_rules[code]
+            for code in checkout_rules
+            if code not in published_rules
+        }
+        files[GENERATED / "published-rules.inc"] = rule_table(
+            published_cli, PUBLISHED, published_rules, introduced
+        )
+        files[GENERATED / "candidate-rules.inc"] = rule_table(
+            checkout_cli, CHECKOUT, candidate_rules, introduced
+        )
+    return files
+
+
+class Arguments(argparse.Namespace):
+    check: bool
+    published_version: bool
+    published_cli: Path | None
+    checkout_cli: Path | None
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    _ = parser.add_argument("--check", action="store_true")
+    _ = parser.add_argument("--published-version", action="store_true")
+    _ = parser.add_argument("--published-cli", type=Path)
+    _ = parser.add_argument("--checkout-cli", type=Path)
+    args = parser.parse_args(namespace=Arguments())
+    if args.published_version:
+        print(PUBLISHED)
+        return 0
+    if (args.published_cli is None) != (args.checkout_cli is None):
+        parser.error("supply both binaries to check rule metadata")
+    validate_protocol_examples()
+    stale: list[Path] = []
+    for path, expected in outputs(args.published_cli, args.checkout_cli).items():
+        if path.is_file() and path.read_text("utf-8") == expected:
+            continue
+        if args.check:
+            stale.append(path.relative_to(ROOT))
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _ = path.write_text(expected, "utf-8")
+    if stale:
+        print("Refresh with scripts/sync_docs_reference.py:", *stale, sep="\n")
+        return 1
+    print("Documentation pins and reference data agree")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

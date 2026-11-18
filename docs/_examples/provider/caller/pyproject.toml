@@ -1,0 +1,8 @@
+[tool.codepact]
+config-version = 1
+root = "src"
+python-version = "3.13"
+fail-on = "warning"
+
+[tool.codepact.dependencies]
+required-providers = ["acme-storage"]

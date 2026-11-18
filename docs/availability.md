@@ -7,12 +7,16 @@ and a Rust crate. [PyPI helper](https://pypi.org/project/codepact/0.9.0/) ·
 [Source tag](https://github.com/eddiethedean/codepact/tree/v0.9.0)
 
 Read the guides in the [hosted documentation](https://codepact.readthedocs.io/en/latest/index.html)
-or open the [stable documentation](https://codepact.readthedocs.io/en/stable/index.html) for the current release tag. [Build a local HTML preview](documentation.md)
+or open the [stable documentation](https://codepact.readthedocs.io/en/stable/index.html) for the current release tag.
+For a permanent link to 0.9.0 instructions, use the
+[release's immutable documentation index](https://github.com/eddiethedean/codepact/blob/7b17a494f7d98cfa7f9dc27db5dc7d88b1214e78/docs/README.md).
+[Verify release artifacts and hosted docs](release-verification.md)
 
 ## Releases
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
+| CodePact 0.10.0 | Candidate checkout | Source build | [Queues, IPC, guards, and direct-script spawn](concurrency.md) |
 | CodePact 0.9.0 | Current release | `codepact`, `codepact-cli`, Rust crate `codepact` | Persistent outcome and work duties, declaration policy, source and wheel comparison, and reviewed HTTP and SQL profiles |
 | CodePact 0.8.0 | [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.8.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Reviewed installed contracts, wheel manifests, and opt-in file, asyncio, and multiprocessing models |
 | CodePact 0.7.0 | [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.7.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Typed outcomes, opt-in finite matches, and marked installed-provider checking |

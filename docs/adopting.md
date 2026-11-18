@@ -40,38 +40,19 @@ untouched.
 
 ## Configure a project
 
-Add a validated `[tool.codepact]` table to `pyproject.toml`:
+Start with a source-only policy. Set `root` to the directory containing both
+the resource declaration and its callers. Set `python-version` to your
+[supported source target](compatibility.md). This example uses the installed
+checker's default rule selection and error threshold.
 
-```toml
-[tool.codepact]
-config-version = 1
-root = "src"
-python-version = "3.12"
-include = ["**/*.py"]
-exclude = ["generated/**"]
-enabled-rules = ["TP1001", "TP1002", "TP1003", "TP2001", "TP3001"]
-mode = "advisory"
-fail-on = "error"
-experimental-finite-matches = true
-
-[tool.codepact.dependencies]
-roots = [".venv/lib/python3.12/site-packages"]
-required-providers = ["billing-sdk"]
-
-[tool.codepact.severity]
-TP3001 = "warning"
+```{literalinclude} _examples/pilot/pyproject.toml
+:language: toml
 ```
 
-Finite matches are off by default; enable them only when the outcome types and
-supported patterns are in scope. Dependency roots are explicit. Add a provider
-to `required-providers` when an unresolved installation should leave a visible
-coverage boundary. Local source and earlier roots keep normal import priority.
-
-This initial policy does not require a baseline. A baseline file is created explicitly after reviewing the first report, as described below.
-Use `--show-settings --json` to see the effective values and their origins
-without analyzing source. CLI scalar options override file settings; arrays
-replace file values. See [configuration lookup and precedence](cli.md#project-configuration-and-scope)
-for nested projects and explicit config files.
+Run `codepact check --show-settings --json` from the project directory to see
+the effective root, target, policy, and where each setting came from. Use the
+[runnable first-package pilot](pilot.md) to compare a finding, its repair, and
+an incomplete check before applying the configuration to your own sources.
 
 Patterns are root-relative: `*` and `?` match within a path component, `**`
 crosses components, and excludes win. Discovery scans the root in sorted order
@@ -80,6 +61,12 @@ files to discovery rather than narrowing it. Use a narrow root when a project
 contains generated or unsupported code.
 
 ## Introduce checks gradually
+
+Add [rule selection and severity overrides](configuration.md#check-policy)
+after the first report. Add [installed provider roots](consume-providers.md)
+when your project actually needs them. Enable
+[finite matches](cli.md#experimental-finite-matches) when you use the
+supported outcome types and patterns.
 
 ### Require a declaration on a selected API
 

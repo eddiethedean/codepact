@@ -1,5 +1,12 @@
 {% extends "!layout.html" %}
 
+{% block extrahead %}
+  {{ super() }}
+  <meta name="codepact-docs-version" content="{{ docs_version }}">
+  <meta name="codepact-docs-channel" content="{{ docs_channel }}">
+  {% if docs_revision %}<meta name="codepact-docs-revision" content="{{ docs_revision }}">{% endif %}
+{% endblock %}
+
 {% block extrabody %}
   <a class="cp-skip-link" href="#cp-main">Skip to content</a>
 {% endblock %}
@@ -29,6 +36,19 @@
 
 {% block document %}
   <div id="cp-main" tabindex="-1"{% if pagename == "index" %} class="cp-home"{% endif %}>
+    <p class="cp-docs-version">
+      <strong>{{ docs_channel }} docs {{ docs_version }}</strong>
+      <span aria-hidden="true"> · </span>
+      <a href="{{ archive_source }}">Permanent {{ archive_version }} sources</a>
+      {% if docs_version != published_version %}
+        <span aria-hidden="true"> · </span>
+        Standard install examples use {{ published_version }}
+      {% endif %}
+      {% if docs_channel == "Candidate" %}
+        <span aria-hidden="true"> · </span>
+        <a href="https://codepact.readthedocs.io/en/stable/">Stable docs</a>
+      {% endif %}
+    </p>
     {{ super() }}
   </div>
 {% endblock %}

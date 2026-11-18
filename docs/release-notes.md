@@ -28,6 +28,7 @@
 
 [Install 0.9.0](install.md) · {ref}`Upgrade to 0.9.0 <upgrade-09>` ·
 [Review a change](ci-reporting.md#review-a-change) · [Provider profiles](reviewed-contracts.md)
+· [Permanent 0.9.0 guide sources](https://github.com/eddiethedean/codepact/blob/7b17a494f7d98cfa7f9dc27db5dc7d88b1214e78/docs/README.md)
 
 ## 0.8.0 — reviewed contracts and concurrency
 

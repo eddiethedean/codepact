@@ -1,62 +1,75 @@
 # CodePact
 
-![CodePact banner](https://raw.githubusercontent.com/eddiethedean/codepact/v0.9.0/docs/_static/codepact-banner.png)
-
 CodePact finds Python resource bugs before runtime. Declare how an object
 closes and which functions own or borrow it. CodePact reads source and can flag
 a connection used after close, cleanup skipped on a supported exit, or a
 discarded must-use result. Run it alongside your type checker and tests.
 
 [![Quality](https://github.com/eddiethedean/codepact/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/eddiethedean/codepact/actions/workflows/quality.yml)
-[![Docs](https://app.readthedocs.org/projects/codepact/badge/?version=latest)](https://codepact.readthedocs.io/en/latest/index.html)
+[![Docs](https://app.readthedocs.org/projects/codepact/badge/?version=stable)](https://codepact.readthedocs.io/en/stable/index.html)
 [![PyPI helper](https://img.shields.io/pypi/v/codepact?label=PyPI%20helper)](https://pypi.org/project/codepact/)
 [![PyPI CLI](https://img.shields.io/pypi/v/codepact-cli?label=PyPI%20CLI)](https://pypi.org/project/codepact-cli/)
 [![MIT license](https://img.shields.io/badge/License-MIT-blue)](https://github.com/eddiethedean/codepact/blob/main/LICENSE)
 
-[Documentation](https://codepact.readthedocs.io/en/latest/index.html) ·
-[Install options](https://codepact.readthedocs.io/en/latest/install.html) ·
-[Rule catalog](https://codepact.readthedocs.io/en/latest/rules.html) ·
+[Documentation](https://codepact.readthedocs.io/en/stable/index.html) ·
+[Install options](https://codepact.readthedocs.io/en/stable/install.html) ·
+[Rule catalog](https://codepact.readthedocs.io/en/stable/rules.html) ·
 [Roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md)
-
-**New in 0.9.0.** Track persistent outcome duties with `MustHandle`, require
-declarations on selected APIs, and compare code changes or two published
-wheels. Reviewed HTTP and SQL profiles add bounded client and session checks,
-and work models track when a task or future result remains unobserved.
-[Release notes](https://codepact.readthedocs.io/en/latest/release-notes.html) ·
-[Review a change](https://codepact.readthedocs.io/en/latest/ci-reporting.html#review-a-change) ·
-[Reviewed provider profiles](https://codepact.readthedocs.io/en/latest/reviewed-contracts.html)
 
 ## Quick start
 
-In an empty directory with [uv](https://docs.astral.sh/uv/getting-started/installation/)
-and Python 3.11 or later, start a project.
+Use an empty directory with [uv](https://docs.astral.sh/uv/getting-started/installation/)
+and Python 3.11 or later. This POSIX-shell example installs the published
+release, writes the sample, and checks it as source text.
 
+<!-- generated: readme-demo -->
 ```sh
 uv init --bare --name codepact-demo
 uv add 'codepact[cli]==0.9.0'
-uv run --locked codepact --version
 mkdir src
-```
+cat > src/connection.py <<'PYTHON'
+"""Small lifecycle example with a borrowed use after close."""
 
-Expect `codepact 0.9.0`.
+from codepact import resource
+from codepact.rust import Borrowed
 
-Save the complete [connection example](https://github.com/eddiethedean/codepact/blob/v0.9.0/examples/lifecycle.py)
-as `src/connection.py` and run the check.
 
-```sh
+@resource(closed_by="close")
+class Connection:
+    def status(self) -> str:
+        return "ready"
+
+    def close(self) -> None:
+        pass
+
+
+def inspect_connection(conn: Borrowed[Connection]) -> str:
+    return conn.status()
+
+
+conn = Connection()
+inspect_connection(conn)
+conn.close()
+inspect_connection(conn)  # TP1001 at this call; close is the related location.
+PYTHON
 uv run --locked codepact check --root src
 ```
+<!-- /generated: readme-demo -->
 
-Expect exit `1` with a related location pointing to the close.
+Expect exit `1` with `TP1001` on the last call and a related location on the
+preceding close. Remove the last call and confirm the repair.
 
-```text
-connection.py:23:1: error TP1001: Borrowed call requires an open resource
-  related: connection.py:22:1
+<!-- smoke: readme-repair -->
+```sh
+sed '$d' src/connection.py > connection-repaired.py
+mv connection-repaired.py src/connection.py
+uv run --locked codepact check --root src --mode strict
+echo "$?"
 ```
 
-Delete the final line and rerun with `--mode strict` to confirm exit `0`.
-[Full walkthrough](https://codepact.readthedocs.io/en/latest/quickstart.html) ·
-[Install with pip or run the standalone command](https://codepact.readthedocs.io/en/latest/install.html)
+Expect `0`. [Quick start with PowerShell instructions](https://codepact.readthedocs.io/en/stable/quickstart.html) ·
+[Install with pip or use the standalone checker](https://codepact.readthedocs.io/en/stable/install.html) ·
+[Check whether your project fits](https://github.com/eddiethedean/codepact/blob/main/docs/compatibility.md)
 
 ## What you can check
 
@@ -71,8 +84,11 @@ Delete the final line and rerun with `--mode strict` to confirm exit `0`.
 The helpers use `typing.Annotated`, so ordinary types remain available to mypy
 and Pyright. The checker follows supported branches, aliases, calls, exceptions,
 and cleanup paths. Check reports include primary and related source locations,
-certainty, and coverage. [Contract syntax](https://codepact.readthedocs.io/en/latest/contracts.html) ·
-[Supported syntax](https://codepact.readthedocs.io/en/latest/supported-syntax.html)
+certainty, and coverage. [Contract syntax](https://codepact.readthedocs.io/en/stable/contracts.html) ·
+[Supported syntax](https://codepact.readthedocs.io/en/stable/supported-syntax.html)
+
+[See what changed in the published release](https://codepact.readthedocs.io/en/stable/release-notes.html)
+for persistent outcomes, change review, and reviewed HTTP and SQL profiles.
 
 ## Try experimental ownership
 
@@ -87,12 +103,12 @@ experimental-ownership = true
 Use `move(value)` to transfer a tracked handle and its cleanup duty. The
 checker reports later use of the old handle. The TaskGroup model requires a
 separate default-task-factory assumption.
-[Ownership examples and scope](https://codepact.readthedocs.io/en/latest/ownership.html)
+[Ownership examples and scope](https://codepact.readthedocs.io/en/stable/ownership.html)
 
 The new runtime models require an explicit profile for CPython 3.13.16 on
 Linux x86-64. The profile describes the program you analyze. You can run the
 checker on any supported CLI platform.
-[Configure a runtime profile](https://codepact.readthedocs.io/en/latest/reviewed-contracts.html#select-the-runtime-profile)
+[Configure a runtime profile](https://codepact.readthedocs.io/en/stable/reviewed-contracts.html#select-the-runtime-profile)
 
 ## Run in CI
 
@@ -114,8 +130,8 @@ which parts of the program the checker could analyze. Teams can configure rule
 severity, review a baseline, and record line-level exceptions with a reason.
 Checks with installed dependency roots or a runtime profile emit report schema
 4 with provider selection and model applicability details.
-[Adoption guide](https://codepact.readthedocs.io/en/latest/adopting.html) ·
-[CI workflow](https://codepact.readthedocs.io/en/latest/automation.html)
+[Adoption guide](https://codepact.readthedocs.io/en/stable/adopting.html) ·
+[CI workflow](https://codepact.readthedocs.io/en/stable/automation.html)
 
 ## Compatibility
 
@@ -123,8 +139,9 @@ The helper package runs on Python 3.11 and later, with CI on CPython 3.11–3.14
 The analyzer supports Python **3.11–3.13 source targets**. Native CLI wheels are
 available for Linux, macOS, and Windows on x86-64 and ARM64. Building from
 source requires Rust 1.96 or later and a linker.
-[Platform matrix](https://codepact.readthedocs.io/en/latest/availability.html) ·
-[Standalone CLI and Rust library](https://codepact.readthedocs.io/en/latest/install.html)
+[Compare installation, source, and runtime versions](https://github.com/eddiethedean/codepact/blob/main/docs/compatibility.md) ·
+[Platform matrix](https://codepact.readthedocs.io/en/stable/availability.html) ·
+[Standalone CLI and Rust library](https://codepact.readthedocs.io/en/stable/install.html)
 
 ## Contribute
 
@@ -132,5 +149,5 @@ Run `uv sync --locked --extra cli` and `uv run --locked make check` after instal
 repository's pinned Cargo audit tools. The contributor guide lists the setup
 and focused check targets.
 [Contributing](https://github.com/eddiethedean/codepact/blob/main/CONTRIBUTING.md) ·
-[Build the docs](https://codepact.readthedocs.io/en/latest/documentation.html) ·
+[Build the docs](https://codepact.readthedocs.io/en/stable/documentation.html) ·
 [MIT license](https://github.com/eddiethedean/codepact/blob/main/LICENSE)

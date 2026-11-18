@@ -1,8 +1,8 @@
 # Contributing to CodePact
 
-Start with one focused change. CodePact 0.5.0 is the published release.
-See the [current docs](https://codepact.readthedocs.io/en/latest/index.html)
-and [release evidence](docs/releases/0.5.0-evidence.md) for its scope.
+Start with one focused change. [Release availability](docs/availability.md)
+links the published packages, their scope, and the candidate's status.
+Use the tracked guide sources in your checkout when changing documentation.
 
 ## Make a first change
 
@@ -36,7 +36,8 @@ Use Python 3.11 or later, Rust 1.96 or later, uv, Make, and a linker.
 lives in `crates/codepact/src`, typed helpers in `python/codepact`, and analyzer
 fixtures in `crates/codepact/tests`.
 
-For an analyzer change, include a minimal supported or boundary fixture with
+For an analyzer change, follow the [first rule change](docs/development.md#make-a-first-rule-change).
+Include a minimal supported or boundary fixture with
 an expected result. If the analyzer cannot resolve a construct, keep that
 boundary visible. Analyze fixture source as text. Follow the
 [rule catalog](docs/rules.md) and [supported syntax](docs/supported-syntax.md).
@@ -64,5 +65,5 @@ uv run --locked make check
 Use the [release checklist](docs/planning/releases.md#release-checklist) and
 [maintainer authority policy](docs/planning/release-gates.md#maintainer-authority).
 The tag workflow validates the exact artifact set before publication.
-[0.5.0 release evidence](docs/releases/0.5.0-evidence.md) ·
-[Docs publishing](docs/documentation.md#deploy-a-documentation-revision)
+Use the [release documentation verification](docs/release-verification.md)
+guide to record source, artifact, and hosted docs evidence for the same release.
