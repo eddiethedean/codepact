@@ -11,6 +11,56 @@ use std::collections::BTreeSet;
 const MODEL: &str = "TPM-SYNC-001";
 const RULE: &str = "TP7002";
 
+#[derive(Clone, PartialEq, Eq)]
+pub(super) struct GuardBinding {
+    model: AsyncGuardModel,
+    objects: BTreeSet<String>,
+    exact: bool,
+    lock: Option<String>,
+}
+
+fn local_binding(env: &State, model: &AsyncGuardModel) -> GuardBinding {
+    let objects = env.places.get(&model.resource).cloned().unwrap_or_default();
+    GuardBinding {
+        model: model.clone(),
+        exact: objects.len() == 1
+            && !env.unknown_places.contains(&model.resource)
+            && !env.possibly_unbound_places.contains(&model.resource),
+        objects,
+        lock: async_protocols::lock_binding(env, &model.lock).map(str::to_owned),
+    }
+}
+
+pub(super) fn inherit(parent: &State, child: &mut State) {
+    let bindings = parent
+        .async_guard_models
+        .iter()
+        .map(|model| local_binding(parent, model))
+        .chain(parent.inherited_async_guards.iter().cloned());
+    for mut binding in bindings {
+        if !child
+            .places
+            .values()
+            .any(|objects| !objects.is_disjoint(&binding.objects))
+        {
+            continue;
+        }
+        if let Some(id) = &binding.lock {
+            if matches!(
+                async_protocols::held_lock_by_id(parent, id),
+                async_protocols::HeldLock::Unknown
+            ) {
+                binding.lock = None;
+            } else if let (Some(parent), Some(child)) = (&parent.ownership, &mut child.ownership) {
+                child
+                    .async_protocols
+                    .copy_from(&parent.async_protocols, &BTreeSet::from([id.clone()]));
+            }
+        }
+        child.inherited_async_guards.push(binding);
+    }
+}
+
 pub(super) fn validate_coroutines(
     models: &[AsyncGuardModel],
     declarations: &[super::Declaration],
@@ -115,7 +165,7 @@ pub(super) fn check(
     functions: &FunctionMap,
     result: &mut Inspection,
 ) {
-    if env.async_guard_models.is_empty() {
+    if env.async_guard_models.is_empty() && env.inherited_async_guards.is_empty() {
         return;
     }
     let Some((receiver, method, _, _)) = called_method(expression) else {
@@ -126,27 +176,32 @@ pub(super) fn check(
     };
     let origin = span(file, expression.range);
     let receiver_objects = env.places.get(receiver);
-    for model in env
+    let local = env
         .async_guard_models
         .iter()
         .filter(|model| model.method == method)
-    {
-        let selected = env.places.get(&model.resource);
-        if receiver != model.resource
-            && receiver_objects
-                .zip(selected)
-                .is_none_or(|(actual, selected)| actual.is_disjoint(selected))
+        .map(|model| (true, local_binding(env, model)));
+    let inherited = env
+        .inherited_async_guards
+        .iter()
+        .filter(|binding| binding.model.method == method)
+        .cloned()
+        .map(|binding| (false, binding));
+    for (local, binding) in local.chain(inherited) {
+        let model = &binding.model;
+        if !(local && receiver == model.resource)
+            && receiver_objects.is_none_or(|objects| objects.is_disjoint(&binding.objects))
         {
             continue;
         }
-        let exact = selected
-            .filter(|objects| objects.len() == 1 && receiver_objects == Some(*objects))
-            .and_then(BTreeSet::first)
+        let exact = (binding.exact && receiver_objects == Some(&binding.objects))
+            .then(|| binding.objects.first())
+            .flatten()
             .filter(|object| !env.escaped.contains(*object))
             .and_then(|object| env.resources.get(object));
         let resolved = exact.and_then(|resource| resource_method(resource, method, functions));
         if env.unknown_places.contains(receiver)
-            || env.unknown_places.contains(&model.resource)
+            || env.possibly_unbound_places.contains(receiver)
             || resolved.is_none()
         {
             incomplete(
@@ -163,7 +218,12 @@ pub(super) fn check(
         {
             continue;
         }
-        let lock = async_protocols::held_lock(env, &model.lock);
+        let lock = binding
+            .lock
+            .as_deref()
+            .map_or(async_protocols::HeldLock::Unknown, |id| {
+                async_protocols::held_lock_by_id(env, id)
+            });
         let (guard, held) = match lock {
             async_protocols::HeldLock::Held(guard) => (guard, true),
             async_protocols::HeldLock::Unheld(guard) => (guard, false),

@@ -260,6 +260,114 @@ if __name__ == "__main__":
 }
 
 #[test]
+fn spawn_checks_the_captured_targets_current_module_export() {
+    let source = r#"from multiprocessing import get_context
+def worker():
+    pass
+
+if __name__ == "__main__":
+    ctx = get_context("spawn")
+    process = ctx.Process(target=worker)
+    worker = 0
+    process.start()
+    process.join()
+    process.close()
+"#;
+    let valid = inspect(&source.replace("    worker = 0\n", ""), Some("entry.py"));
+    assert!(model(&valid, "qualified-worker-entry", true), "{valid:#?}");
+    assert!(model(&valid, "join", true), "{valid:#?}");
+
+    let conditional = source.replace("    worker = 0", "    if unknown:\n        worker = 0");
+    let through_helper = source
+        .replace(
+            "if __name__",
+            "def reset():\n    global worker\n    worker = 0\n\nif __name__",
+        )
+        .replace(
+            "    worker = 0\n    process.start()",
+            "    reset()\n    process.start()",
+        );
+    for source in [source, &conditional, &through_helper] {
+        let report = inspect(source, Some("entry.py"));
+        assert!(model(&report, "start", false), "{report:#?}");
+        assert!(model(&report, "worker-entry", false), "{report:#?}");
+        assert!(
+            !model(&report, "qualified-worker-entry", true),
+            "{report:#?}"
+        );
+    }
+}
+
+#[test]
+fn process_join_leaves_worker_completion_unproved_when_receive_blocks() {
+    let source = r#"from multiprocessing import get_context
+def worker(queue):
+    queue.get()
+    queue.close()
+
+if __name__ == "__main__":
+    ctx = get_context("spawn")
+    queue = ctx.SimpleQueue()
+    process = ctx.Process(target=worker, args=(queue,))
+    process.start()
+    process.join()
+    process.close()
+    queue.close()
+    queue.put(1)
+"#;
+    let report = inspect(source, Some("entry.py"));
+    assert!(
+        model(&report, "qualified-worker-entry", true),
+        "{report:#?}"
+    );
+    assert!(model(&report, "receive", false), "{report:#?}");
+    assert!(model(&report, "join", false), "{report:#?}");
+    assert!(!model(&report, "close", true), "{report:#?}");
+    assert!(
+        !has_finding(&report, "TP7003", "uses a closed local endpoint"),
+        "{report:#?}"
+    );
+
+    let delivered = source
+        .replace("    process.join()", "    queue.put(1)\n    process.join()")
+        .replace("    queue.close()\n    queue.put(1)", "    queue.close()");
+    let report = inspect(&delivered, Some("entry.py"));
+    assert!(model(&report, "receive", true), "{report:#?}");
+    assert!(model(&report, "join", true), "{report:#?}");
+    assert!(model(&report, "close", true), "{report:#?}");
+}
+
+#[test]
+fn a_blocked_worker_can_deliver_a_message_sent_before_its_wait() {
+    let report = inspect(
+        r#"from multiprocessing import get_context
+def worker(reply, incoming):
+    reply.put(1)
+    incoming.get()
+    incoming.close()
+    reply.close()
+
+if __name__ == "__main__":
+    ctx = get_context("spawn")
+    reply = ctx.SimpleQueue()
+    incoming = ctx.SimpleQueue()
+    process = ctx.Process(target=worker, args=(reply, incoming))
+    process.start()
+    reply.get()
+    process.join()
+    process.close()
+    reply.close()
+    incoming.close()
+"#,
+        Some("entry.py"),
+    );
+    assert!(model(&report, "receive", true), "{report:#?}");
+    assert!(model(&report, "receive", false), "{report:#?}");
+    assert!(model(&report, "join", false), "{report:#?}");
+    assert!(!model(&report, "close", true), "{report:#?}");
+}
+
+#[test]
 fn feeder_failure_keeps_accounting_while_caller_failure_delivers_nothing() {
     let report = inspect(
         r#"from multiprocessing import get_context

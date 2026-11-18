@@ -1024,6 +1024,9 @@ fn receive(
     }
     let range = expr.range;
     if !live_endpoint(&ep, &primitive, method, env, file, range, result) {
+        if primitive.unknown {
+            super::stop_at_worker_wait(env);
+        }
         return Some(false);
     }
     if !ep.reader {
@@ -1068,7 +1071,9 @@ fn receive(
             range,
             result,
         );
-        queue_raise(env, range, None);
+        if !super::stop_at_worker_wait(env) {
+            queue_raise(env, range, None);
+        }
         return Some(false);
     }
     if ep.kind == IpcKind::JoinableQueue {
@@ -1154,6 +1159,7 @@ fn ipc_call(
             }
             let pending = &protocol(env).unwrap().channels[&ep.channel];
             if ep.feeder && (pending.unknown || pending.buffered[0].len() > 1) {
+                super::stop_at_worker_wait(env);
                 return ipc_effect(
                     &ep,
                     "feeder-completion",
@@ -1259,6 +1265,9 @@ fn ipc_call(
                 .chain(&channel.dropped)
                 .any(|item| item.origin == origin);
             if channel.unknown || full || repeated || message_count >= MAX_MESSAGES {
+                if full || channel.unknown {
+                    super::stop_at_worker_wait(env);
+                }
                 protocol_mut(env)
                     .channels
                     .get_mut(&ep.channel)
@@ -1385,6 +1394,9 @@ fn ipc_call(
                         "possible",
                         result,
                     );
+                }
+                if primitive.unknown || channel.unknown || channel.unfinished != 0 {
+                    super::stop_at_worker_wait(env);
                 }
                 return ipc_effect(
                     &ep,
@@ -1578,9 +1590,11 @@ fn blocking_acquire(
             range,
             result,
         );
-        // The attempted acquisition cannot establish a cleanup duty for this
-        // context. Retain the earlier acquired contexts in the exceptional state.
-        queue_raise(env, range, None);
+        if !super::stop_at_worker_wait(env) {
+            // The attempted acquisition cannot establish a cleanup duty for this
+            // context. Retain the earlier acquired contexts in the exceptional state.
+            queue_raise(env, range, None);
+        }
         return Some(false);
     }
     set_counts(env, &id, counts.unwrap());
@@ -2297,12 +2311,18 @@ fn project_worker_guards_and_close_copies(parent: &mut State, child: &LocalProto
 pub(super) struct WorkerEffects {
     before: BTreeMap<String, Channel>,
     after: LocalProtocol,
+    pub(super) complete: bool,
 }
 
-pub(super) fn worker_effects(parent: &State, after: LocalProtocol) -> WorkerEffects {
+pub(super) fn worker_effects(
+    parent: &State,
+    after: LocalProtocol,
+    complete: bool,
+) -> WorkerEffects {
     WorkerEffects {
         before: protocol(parent).unwrap().channels.clone(),
         after,
+        complete,
     }
 }
 
@@ -2324,18 +2344,23 @@ pub(super) fn spawn_channels(
         .collect()
 }
 
-pub(super) fn project_channel(parent: &mut State, effects: &WorkerEffects, id: &str) {
+pub(super) fn project_channel(parent: &mut State, effects: &WorkerEffects, id: &str) -> bool {
     let state = protocol_mut(parent);
     let Some(current) = state.channels.get_mut(id) else {
-        return;
+        return false;
     };
     if let (Some(before), Some(after)) = (effects.before.get(id), effects.after.channels.get(id)) {
+        if before == after {
+            return false;
+        }
         if before == current {
             *current = after.clone();
-        } else if before != after {
+        } else {
             current.unknown = true;
         }
+        return true;
     }
+    false
 }
 
 pub(super) fn complete_worker(

@@ -39,6 +39,7 @@ pub(super) struct OwnershipState {
     inherited_captures: BTreeMap<String, Vec<CaptureSite>>,
     pub(super) imported_callables: BTreeMap<(usize, String), String>,
     invalidated_modules: BTreeSet<String>,
+    invalidated_function_exports: BTreeSet<String>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -83,6 +84,7 @@ impl OwnershipState {
             .inherit_entry(&parent.processes, parent_is_module_scope);
         child.async_protocols.inherit_actor(&parent.async_protocols);
         child.invalidated_modules = parent.invalidated_modules.clone();
+        child.invalidated_function_exports = parent.invalidated_function_exports.clone();
         Some(child)
     }
 
@@ -124,6 +126,9 @@ impl OwnershipState {
         joined
             .invalidated_modules
             .extend(right.invalidated_modules.iter().cloned());
+        joined
+            .invalidated_function_exports
+            .extend(right.invalidated_function_exports.iter().cloned());
         for (name, captures) in &right.closures {
             joined
                 .closures
@@ -243,10 +248,24 @@ impl OwnershipState {
         self.processes.custom_wait |= other.processes.custom_wait;
         self.invalidated_modules
             .extend(other.invalidated_modules.iter().cloned());
+        self.invalidated_function_exports
+            .extend(other.invalidated_function_exports.iter().cloned());
     }
 
     pub(super) fn invalidate_module(&mut self, binding: String) {
         self.invalidated_modules.insert(binding);
+    }
+
+    pub(super) fn module_invalidated(&self, binding: &str) -> bool {
+        self.invalidated_modules.contains(binding)
+    }
+
+    pub(super) fn invalidate_function_export(&mut self, binding: String) {
+        self.invalidated_function_exports.insert(binding);
+    }
+
+    pub(super) fn function_export_invalidated(&self, binding: &str) -> bool {
+        self.invalidated_function_exports.contains(binding)
     }
 
     pub(super) fn rebind(&mut self, name: &str) {

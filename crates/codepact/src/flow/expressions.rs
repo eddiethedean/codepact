@@ -1754,6 +1754,7 @@ pub(super) fn consume_expr_impl(
                 child
                     .ambiguous_borrowed_owned_aliases
                     .extend(ambiguous_borrowed_owned_aliases.iter().cloned());
+                super::guarded_access::inherit(env, &mut child);
                 let diagnostic_start = result.diagnostics.len();
                 let inherited_outcomes = outcomes::tracked(&child);
                 let mut returned =

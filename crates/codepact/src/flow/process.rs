@@ -1,4 +1,6 @@
 use super::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 mod protocol;
 pub(super) use protocol::{
@@ -20,6 +22,10 @@ const FORCED: u8 = 32;
 const JOINED: u8 = 64;
 const UNCERTAIN: u8 = 128;
 const FORCED_JOINED: u8 = CLOSED;
+
+// Flow branches share this accumulator so a suspended path can retain its IPC
+// prefix even when execution discards its state as a normal continuation.
+type WorkerWaits = Rc<RefCell<Option<protocol::LocalProtocol>>>;
 
 fn pool_submission_signature() -> &'static CallSignature {
     static SIGNATURE: std::sync::OnceLock<CallSignature> = std::sync::OnceLock::new();
@@ -45,6 +51,7 @@ pub(super) struct LocalProcesses {
     protocol: protocol::LocalProtocol,
     entry_path: EntryPath,
     workers: BTreeMap<String, PendingWorker>,
+    worker_waits: Option<WorkerWaits>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -443,9 +450,7 @@ fn spawn_candidate(
             env.function_bindings.get(name).cloned()
         }
         AstExprKind::Attribute(receiver, member) => expr_name(receiver)
-            .and_then(|name| env.function_bindings.get(name))
-            .and_then(|binding| binding.strip_prefix("module:"))
-            .map(|module| format!("{module}::{member}")),
+            .and_then(|name| ownership::qualified_function_key(name, member, env)),
         _ => None,
     };
     let Some(key) = target_key else {
@@ -502,6 +507,53 @@ fn spawn_candidate(
         },
         None => WorkerCandidate::Unknown,
     }
+}
+
+fn validate_worker_target(
+    target: &str,
+    env: &State,
+    functions: &FunctionMap,
+) -> Result<(), &'static str> {
+    const UNRESOLVED: &str = "the captured spawn target's module export is unresolved at start";
+    let definition = functions.get(target).ok_or(UNRESOLVED)?;
+    let module = &definition.file.module;
+    let canonical = definition.binding_key.as_deref().ok_or(UNRESOLVED)?;
+    let (name, _) = canonical
+        .split_once("::")
+        .and_then(|(_, member)| member.rsplit_once(':'))
+        .ok_or(UNRESOLVED)?;
+    let binding = |exports: &BTreeMap<String, String>| {
+        exports
+            .get(name)
+            .and_then(|key| functions.get(key))
+            .and_then(|current| current.binding_key.as_deref())
+    };
+    if env.ownership.as_ref().is_some_and(|ownership| {
+        ownership.function_export_invalidated(canonical)
+            || ownership.module_invalidated(&format!("module:{module}"))
+    }) {
+        return Err(UNRESOLVED);
+    }
+    let exports = if &env.scope_module == module {
+        if env.module_scope {
+            // A flow join may retain the old binding while recording that one
+            // branch shadowed it.
+            if env.shadowed_functions.contains(name) {
+                return Err(UNRESOLVED);
+            }
+            &env.function_bindings
+        } else {
+            &env.module_function_bindings
+        }
+    } else if launch_matches(env, &definition.file) {
+        return Err(UNRESOLVED);
+    } else {
+        &definition.module_bindings.functions
+    };
+    if binding(exports) != Some(canonical) {
+        return Err(UNRESOLVED);
+    }
+    Ok(())
 }
 
 fn valid_start_arguments(
@@ -1092,6 +1144,14 @@ impl HandleCall<'_> {
                     env.alive = false;
                     return OperationEffect::applied("context-mismatch-before-launch");
                 }
+                if let Some(WorkerCandidate::Ready { target, .. }) = &handle.worker {
+                    if let Err(reason) = validate_worker_target(target, env, functions) {
+                        record_spawn(file, range, "worker-entry", Err(reason), result);
+                        queue_raise(env, range, None);
+                        states(env, id, handle_state | STARTED | UNCERTAIN);
+                        return OperationEffect::declined("start", reason);
+                    }
+                }
                 states(env, id, handle_state | UNCERTAIN);
                 queue_raise(env, range, None);
                 states(env, id, STARTED | (handle_state & UNCERTAIN));
@@ -1104,7 +1164,18 @@ impl HandleCall<'_> {
                 queue_raise(env, range, None);
                 match timeout {
                     JoinTimeout::Untimed if qualified_child_wait(env) => {
-                        complete_worker(id, env, file, range, functions, result);
+                        if handle_state & STARTED != 0
+                            && matches!(handle.worker, Some(WorkerCandidate::Ready { .. }))
+                            && env.ownership.as_ref().unwrap().processes.entry_path
+                                == EntryPath::Protected
+                            && !complete_worker(id, env, file, range, functions, result)
+                        {
+                            env.alive = false;
+                            return OperationEffect::declined(
+                                "join",
+                                "untimed Process.join requires established worker completion",
+                            );
+                        }
                         states(env, id, ENDED | (handle_state & UNCERTAIN));
                         OperationEffect::applied("join")
                     }
@@ -1626,6 +1697,8 @@ fn evaluate_worker(
         return None;
     }
     let mut ownership = OwnershipState::for_child(parent, false)?;
+    let waits = Rc::new(RefCell::new(None));
+    ownership.processes.worker_waits = Some(Rc::clone(&waits));
     ownership.processes.protocol = protocol::child_protocol(parent, id, &worker.bindings);
     ownership.processes.entry_path = EntryPath::Unknown;
     let (function_bindings, class_bindings) = module_bindings_for_child(parent, definition);
@@ -1698,11 +1771,38 @@ fn evaluate_worker(
             &BTreeSet::new(),
         );
     }
-    let merged = join_states(final_paths.into_iter().map(|exit| exit.state).collect())?;
-    Some(protocol::worker_effects(
-        parent,
-        merged.ownership?.processes.protocol,
-    ))
+    let completed =
+        join_states(final_paths.into_iter().map(|exit| exit.state).collect()).and_then(|state| {
+            state
+                .ownership
+                .map(|ownership| ownership.processes.protocol)
+        });
+    let waiting = waits.borrow_mut().take();
+    let complete = waiting.is_none() && completed.is_some();
+    let after = match (waiting, completed) {
+        (Some(mut waiting), Some(completed)) => {
+            waiting.join(&completed);
+            waiting
+        }
+        (Some(waiting), None) => waiting,
+        (None, completed) => completed?,
+    };
+    Some(protocol::worker_effects(parent, after, complete))
+}
+
+fn stop_at_worker_wait(env: &mut State) -> bool {
+    let processes = &env.ownership.as_ref().expect("worker protocol").processes;
+    let Some(waits) = &processes.worker_waits else {
+        return false;
+    };
+    let mut waits = waits.borrow_mut();
+    if let Some(waiting) = waits.as_mut() {
+        waiting.join(&processes.protocol);
+    } else {
+        *waits = Some(processes.protocol.clone());
+    }
+    env.alive = false;
+    true
 }
 
 fn advance_channel(
@@ -1731,8 +1831,12 @@ fn advance_channel(
         worker.evaluated = evaluate_worker(&id, &worker, env, file, range, functions, result);
     }
     if let Some(effects) = &worker.evaluated {
-        protocol::project_channel(env, effects, channel);
-        worker.projected.insert(channel.into());
+        if protocol::project_channel(env, effects, channel) || effects.complete {
+            worker.projected.insert(channel.into());
+        } else if worker.projected.is_empty() {
+            // A later parent operation can supply evidence for this wait.
+            worker.evaluated = None;
+        }
     }
     env.ownership
         .as_mut()
@@ -1749,15 +1853,26 @@ fn complete_worker(
     range: SourceRange,
     functions: &FunctionMap,
     result: &mut Inspection,
-) {
-    let Some(worker) = env.ownership.as_mut().unwrap().processes.workers.remove(id) else {
-        return;
+) -> bool {
+    let Some(worker) = env
+        .ownership
+        .as_ref()
+        .unwrap()
+        .processes
+        .workers
+        .get(id)
+        .cloned()
+    else {
+        return false;
     };
     let effects = worker
         .evaluated
         .clone()
         .or_else(|| evaluate_worker(id, &worker, env, file, range, functions, result));
-    if let Some(effects) = effects {
-        protocol::complete_worker(env, &effects, id, &worker.projected);
-    }
+    let Some(effects) = effects.filter(|effects| effects.complete) else {
+        return false;
+    };
+    env.ownership.as_mut().unwrap().processes.workers.remove(id);
+    protocol::complete_worker(env, &effects, id, &worker.projected);
+    true
 }

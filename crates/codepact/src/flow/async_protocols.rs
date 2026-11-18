@@ -387,13 +387,32 @@ pub(super) enum HeldLock {
 }
 
 pub(super) fn held_lock(env: &State, name: &str) -> HeldLock {
-    let Some((id, handle)) = recognize(name, env) else {
+    let Some(id) = lock_binding(env, name) else {
         return HeldLock::Unknown;
     };
-    if handle.kind != Kind::Lock || handle.uncertain || !exact(name, id, env) || has_peer(env, id) {
+    held_lock_by_id(env, id)
+}
+
+pub(super) fn lock_binding<'a>(env: &'a State, name: &str) -> Option<&'a str> {
+    let (id, handle) = recognize(name, env)?;
+    (handle.kind == Kind::Lock && exact(name, id, env)).then_some(id)
+}
+
+pub(super) fn held_lock_by_id(env: &State, id: &str) -> HeldLock {
+    let Some(domain) = protocols(env) else {
+        return HeldLock::Unknown;
+    };
+    let Some(handle) = domain.handles.get(id) else {
+        return HeldLock::Unknown;
+    };
+    if handle.kind != Kind::Lock
+        || handle.uncertain
+        || env.escaped.contains(id)
+        || has_peer(env, id)
+    {
         return HeldLock::Unknown;
     }
-    let actor = &protocols(env).expect("lock domain").actor;
+    let actor = &domain.actor;
     match &handle.state {
         Protocol::Permits(permits)
             if permits.available == 0

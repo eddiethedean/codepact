@@ -372,3 +372,39 @@ fn async_guard_applies_when_a_lazy_method_runs() {
         unsafe_access.findings
     );
 }
+
+#[test]
+fn resolved_helpers_check_the_original_guard_at_the_resource_operation() {
+    let project = Project::new();
+    let config = resolve_config(&project.0, &Overrides::default()).unwrap();
+    let mut session = AnalysisSession::default();
+    for (declaration, call) in [
+        ("def", "helper(alias)"),
+        ("async def", "await helper(alias)"),
+    ] {
+        let source = SOURCE
+            .replace(
+                "async def update():",
+                &format!(
+                    "from codepact.rust import Borrowed\n\n{declaration} helper(argument: Borrowed[Counter]):\n    argument.increment()\n\nasync def update():"
+                ),
+            )
+            .replace("alias.increment()", call);
+        let safe = snapshot(&mut session, &config, &source, "first");
+        assert!(safe.findings.is_empty(), "{:#?}", safe.findings);
+        assert!(safe
+            .protocol_contracts
+            .iter()
+            .any(|contract| contract.family == "asyncio.guarded-access"));
+
+        let unguarded = source.replace("async with first:", "async with second:");
+        let unsafe_access = snapshot(&mut session, &config, &unguarded, "first");
+        assert!(
+            unsafe_access
+                .findings
+                .iter()
+                .any(|finding| finding.code == "TP7002"),
+            "{unsafe_access:#?}"
+        );
+    }
+}

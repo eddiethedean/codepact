@@ -78,7 +78,12 @@ fn module_bindings_for_child(
     if parent.scope_module == definition.file.module {
         if parent.module_scope {
             (
-                parent.function_bindings.clone(),
+                parent
+                    .function_bindings
+                    .iter()
+                    .filter(|(name, _)| !parent.shadowed_functions.contains(*name))
+                    .map(|(name, binding)| (name.clone(), binding.clone()))
+                    .collect(),
                 parent.class_bindings.clone(),
             )
         } else {
@@ -1381,6 +1386,7 @@ fn execute_method_body(invocation: MethodInvocation<'_>, context: FlowContext<'_
             );
         }
     }
+    guarded_access::inherit(parent, &mut child);
     let returned = execute(
         &definition.statements,
         &mut child,

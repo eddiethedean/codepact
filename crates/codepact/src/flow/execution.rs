@@ -549,6 +549,11 @@ fn execute_with_outcomes(
                 guarded_access::check_binding(name, env, file, *range, functions, result);
                 let value = assignment_outcome.unwrap_or_else(|| env.outcomes.take_carrier());
                 if matches!(statement, FlowStatement::EscapingAssign { .. }) {
+                    if let (Some(binding), Some(ownership)) =
+                        (env.module_function_bindings.get(name), &mut env.ownership)
+                    {
+                        ownership.invalidate_function_export(binding.clone());
+                    }
                     outcomes::escape(env, &value.ids, file, *range, result);
                 }
                 let previous = env.outcomes.bind_carrier(name, value);
