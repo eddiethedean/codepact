@@ -20,6 +20,12 @@ amd64 `python:3.13.16-slim-bookworm` image via emulation, with manifest digest
 The receipt at `target/phase10-runtime-linux.json` has SHA-256
 `6762949cd84c6b8d9d0ee2f1c5a67f7743d2a7ad3b16110e20025f365e660758`.
 The Quality workflow runs the same registered probes and uploads their receipt.
+When a native module is built into CPython, the receipt identifies the module
+and fingerprints the interpreter and its available shared runtime library.
+The uv-managed CPython 3.13.16 Linux x86_64 replay also passed all 66 probes
+with zero skips. Its receipt at `target/phase10-runtime-uv-linux.json`
+identifies built-in `_multiprocessing` and has SHA-256
+`0942903b07257822dc27be3bde74279b6ed09cc4185e368d0f4aa0a141b11e91`.
 [Runtime registry](../../../../tests/conformance/runtime-models.json)
 
 ```sh

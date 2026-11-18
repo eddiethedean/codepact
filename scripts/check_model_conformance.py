@@ -13,6 +13,7 @@ from pathlib import Path
 import platform
 import re
 import sys
+import sysconfig
 from types import ModuleType
 from typing import cast
 import unittest
@@ -139,6 +140,22 @@ def source_fingerprint(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def fingerprint_builtin_runtime() -> dict[str, str]:
+    executable = Path(sys.executable).resolve(strict=True)
+    binaries = {executable}
+    library = cast(object, sysconfig.get_config_var("LDLIBRARY"))
+    library_dir = cast(object, sysconfig.get_config_var("LIBDIR"))
+    if isinstance(library, str) and library:
+        candidates = [executable.parent.parent / "lib" / library]
+        if isinstance(library_dir, str) and library_dir:
+            candidates.insert(0, Path(library_dir) / library)
+        for candidate in candidates:
+            if candidate.is_file():
+                binaries.add(candidate.resolve(strict=True))
+                break
+    return {str(path): source_fingerprint(path) for path in sorted(binaries)}
+
+
 def qualify(root: Path, manifest_path: Path, python_version: str) -> dict[str, object]:
     actual = environment()
     errors: list[str] = []
@@ -160,6 +177,8 @@ def qualify(root: Path, manifest_path: Path, python_version: str) -> dict[str, o
         "unexpected_successes": [],
         "test_source_sha256": {},
         "upstream_source_sha256": {},
+        "builtin_upstream_modules": [],
+        "builtin_runtime_artifact_sha256": {},
     }
     try:
         suites = load_manifest(manifest_path)
@@ -208,6 +227,8 @@ def qualify(root: Path, manifest_path: Path, python_version: str) -> dict[str, o
     previous_modules: dict[str, ModuleType | None] = {}
     test_sources: dict[str, str] = {}
     upstream_sources: dict[str, str] = {}
+    builtin_modules: set[str] = set()
+    builtin_runtime: dict[str, str] = {}
     discovered: list[unittest.TestCase] = []
     try:
         sys.path.insert(0, str(test_root))
@@ -233,10 +254,18 @@ def qualify(root: Path, manifest_path: Path, python_version: str) -> dict[str, o
             discovered.extend(cases(loaded))
             for name in suite.upstream_modules:
                 upstream = importlib.import_module(name)
-                if upstream.__file__ is None:
-                    errors.append(f"no source path for upstream module {name}")
+                source_path = cast(object, getattr(upstream, "__file__", None))
+                if isinstance(source_path, str):
+                    upstream_sources[name] = source_fingerprint(Path(source_path))
+                elif (
+                    upstream.__spec__ is not None
+                    and upstream.__spec__.origin == "built-in"
+                ):
+                    if not builtin_runtime:
+                        builtin_runtime = fingerprint_builtin_runtime()
+                    builtin_modules.add(name)
                 else:
-                    upstream_sources[name] = source_fingerprint(Path(upstream.__file__))
+                    errors.append(f"no source path for upstream module {name}")
         errors.extend(str(error) for error in loader.errors)
         actual_ids = sorted(case.id() for case in discovered)
         receipt["discovered"] = actual_ids
@@ -288,6 +317,8 @@ def qualify(root: Path, manifest_path: Path, python_version: str) -> dict[str, o
                 sys.modules[name] = previous
         receipt["test_source_sha256"] = test_sources
         receipt["upstream_source_sha256"] = upstream_sources
+        receipt["builtin_upstream_modules"] = sorted(builtin_modules)
+        receipt["builtin_runtime_artifact_sha256"] = builtin_runtime
     return receipt
 
 

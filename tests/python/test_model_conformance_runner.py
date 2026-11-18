@@ -32,6 +32,7 @@ def fixture(
     methods: tuple[str, ...] = ("test_probe",),
     version: str | None = None,
     preamble: str = "",
+    upstream_modules: tuple[str, ...] = ("contextlib",),
 ) -> Iterator[tuple[Path, Path, str]]:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -53,7 +54,7 @@ def fixture(
                             "models": ["fixture-model"],
                             "python_versions": [version or platform.python_version()],
                             "module": module,
-                            "upstream_modules": ["contextlib"],
+                            "upstream_modules": upstream_modules,
                             "tests": [f"{module}.Probe.{method}" for method in methods],
                         }
                     ],
@@ -68,6 +69,21 @@ def fixture(
 
 
 class ModelConformanceRunnerTests(unittest.TestCase):
+    def test_builtin_module_records_the_interpreter_artifact(self) -> None:
+        with fixture(
+            "    def test_probe(self):\n        pass\n",
+            upstream_modules=("_io", "contextlib"),
+        ) as (root, manifest, _):
+            result = qualify(root, manifest, platform.python_version())
+        self.assertEqual(result["status"], "passed", result)
+        self.assertEqual(result["builtin_upstream_modules"], ["_io"])
+        self.assertIn(
+            str(Path(sys.executable).resolve()),
+            result["builtin_runtime_artifact_sha256"],
+        )
+        self.assertNotIn("_io", result["upstream_source_sha256"])
+        self.assertIn("contextlib", result["upstream_source_sha256"])
+
     def test_required_case_executes_and_records_source_fingerprints(self) -> None:
         with fixture("    def test_probe(self):\n        self.assertTrue(True)\n") as (
             root,
