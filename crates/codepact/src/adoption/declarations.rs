@@ -27,35 +27,36 @@ pub(super) fn revision(
     let declarations = result
         .contracts
         .iter()
-        .filter(|contract| {
-            modules
-                .get(contract.source.file.as_str())
-                .is_some_and(|module| {
-                    config.declaration_policy.iter().any(|entry| {
-                        entry.module == *module
-                            && entry.function.as_ref().is_none_or(|function| {
-                                contract
-                                    .display_name
-                                    .strip_prefix(function)
-                                    .is_some_and(|suffix| suffix.starts_with('.'))
-                            })
-                    })
+        .filter_map(|contract| {
+            let module = modules.get(contract.source.file.as_str())?;
+            config
+                .declaration_policy
+                .iter()
+                .any(|entry| {
+                    entry.module == *module
+                        && entry.function.as_ref().is_none_or(|function| {
+                            contract
+                                .display_name
+                                .strip_prefix(function)
+                                .is_some_and(|suffix| suffix.starts_with('.'))
+                        })
                 })
-        })
-        .map(|contract| {
-            (
-                &contract.base_symbol,
-                &contract.display_name,
-                &contract.access,
-                contract
-                    .lifecycle
-                    .as_ref()
-                    .map(|lifecycle| lifecycle.closed_by.as_str()),
-            )
+                .then(|| {
+                    (
+                        *module,
+                        &contract.base_symbol,
+                        &contract.display_name,
+                        &contract.access,
+                        contract
+                            .lifecycle
+                            .as_ref()
+                            .map(|lifecycle| lifecycle.closed_by.as_str()),
+                    )
+                })
         })
         .collect::<BTreeSet<_>>();
     let bytes = serde_json::to_vec(&(
-        1u8,
+        2u8,
         &config.declaration_policy,
         &config.include,
         &config.exclude,
@@ -100,19 +101,18 @@ pub(super) fn apply(result: &mut CheckResult, files: &[SourceFile], config: &Eff
         ) else {
             continue;
         };
-        let mut imports = BTreeMap::new();
-        for declaration in parsed.declarations {
+        for (declaration, (marked, known_decorators)) in
+            final_functions(&parsed.declarations, codepact_shadowed).into_values()
+        {
             if let Declaration::Function {
                 ref name,
                 ref parameters,
-                ref returns,
-                ref decorators,
                 is_async,
                 is_generator,
                 unsupported,
                 range,
                 ..
-            } = declaration
+            } = *declaration
             {
                 let mut requirements = BTreeMap::new();
                 for entry in &selected {
@@ -128,11 +128,6 @@ pub(super) fn apply(result: &mut CheckResult, files: &[SourceFile], config: &Eff
                 if !requirements.is_empty() {
                     let primary = signature_start(file, range);
                     let subject = format!("{}.{name}", file.module);
-                    let (marked, known_decorators) = crate::semantic::declaration_policy_must_use(
-                        decorators,
-                        returns.as_ref(),
-                        &imports,
-                    );
                     if is_async || is_generator || unsupported || !known_decorators {
                         uncovered.push(format!("{}:{}: declaration policy could not resolve a supported synchronous signature for {subject}", file.path, primary.line));
                     } else {
@@ -195,7 +190,6 @@ pub(super) fn apply(result: &mut CheckResult, files: &[SourceFile], config: &Eff
                     }
                 }
             }
-            update_imports(&declaration, &mut imports, codepact_shadowed);
         }
     }
     for entry in &config.declaration_policy {
@@ -224,75 +218,104 @@ fn signature_start(file: &SourceFile, range: crate::frontend::SourceRange) -> Sp
     crate::source_span(&file.path, &file.source, range)
 }
 
-fn update_imports(
-    declaration: &Declaration,
-    imports: &mut BTreeMap<String, String>,
+type FunctionBinding<'a> = (&'a Declaration, (bool, bool));
+
+fn final_functions(
+    declarations: &[Declaration],
     codepact_shadowed: bool,
-) {
-    match declaration {
-        Declaration::Import { names, .. } => {
-            for name in names {
-                let local = name.import_binding();
-                imports.remove(local);
-                if name.name == "typing"
-                    || (!codepact_shadowed
-                        && (name.name == "codepact" || name.name.starts_with("codepact.")))
-                {
-                    let identity = if name.alias.is_some() {
-                        name.name.replace('.', "::")
-                    } else {
-                        local.to_owned()
-                    };
-                    imports.insert(local.to_owned(), identity);
-                }
-            }
-        }
-        Declaration::ImportFrom {
-            module,
-            level,
-            names,
-            ..
-        } => {
-            for name in names {
-                if name.name == "*" {
-                    imports.clear();
-                    continue;
-                }
-                let local = name.member_binding();
-                imports.remove(local);
-                if *level == 0
-                    && (module == "typing"
-                        || (!codepact_shadowed
-                            && matches!(
-                                module.as_str(),
-                                "codepact" | "codepact.contracts" | "codepact.rust"
-                            )))
-                {
-                    imports.insert(
-                        local.to_owned(),
-                        format!("{}::{}", module.replace('.', "::"), name.name),
-                    );
-                }
-            }
-        }
-        Declaration::Function { name, .. }
-        | Declaration::Class { name, .. }
-        | Declaration::Assignment {
-            name: Some(name), ..
-        }
-        | Declaration::TypeAlias {
-            name: Some(name), ..
-        } => {
-            imports.remove(name);
-        }
-        Declaration::Delete { names, .. } => {
-            for name in names.iter().flatten() {
+) -> BTreeMap<&str, FunctionBinding<'_>> {
+    let mut functions = BTreeMap::new();
+    let mut imports = BTreeMap::new();
+    for declaration in declarations {
+        match declaration {
+            Declaration::Function {
+                name,
+                decorators,
+                returns,
+                ..
+            } => {
+                let marker = crate::semantic::declaration_policy_must_use(
+                    decorators,
+                    returns.as_ref(),
+                    &imports,
+                );
+                functions.insert(name.as_str(), (declaration, marker));
                 imports.remove(name);
             }
+            Declaration::Import { names, .. } => {
+                for name in names {
+                    let local = name.import_binding();
+                    functions.remove(local);
+                    imports.remove(local);
+                    if name.name == "typing"
+                        || (!codepact_shadowed
+                            && (name.name == "codepact" || name.name.starts_with("codepact.")))
+                    {
+                        let identity = if name.alias.is_some() {
+                            name.name.replace('.', "::")
+                        } else {
+                            local.to_owned()
+                        };
+                        imports.insert(local.to_owned(), identity);
+                    }
+                }
+            }
+            Declaration::ImportFrom {
+                module,
+                level,
+                names,
+                ..
+            } => {
+                for name in names {
+                    if name.name == "*" {
+                        functions.clear();
+                        imports.clear();
+                        continue;
+                    }
+                    let local = name.member_binding();
+                    functions.remove(local);
+                    imports.remove(local);
+                    if *level == 0
+                        && (module == "typing"
+                            || (!codepact_shadowed
+                                && matches!(
+                                    module.as_str(),
+                                    "codepact" | "codepact.contracts" | "codepact.rust"
+                                )))
+                    {
+                        imports.insert(
+                            local.to_owned(),
+                            format!("{}::{}", module.replace('.', "::"), name.name),
+                        );
+                    }
+                }
+            }
+            Declaration::Class { name, .. }
+            | Declaration::Assignment {
+                name: Some(name),
+                value: Some(_),
+                ..
+            }
+            | Declaration::TypeAlias {
+                name: Some(name), ..
+            } => {
+                functions.remove(name.as_str());
+                imports.remove(name);
+            }
+            Declaration::Delete { names, .. } => {
+                for name in names.iter().flatten() {
+                    functions.remove(name.as_str());
+                    imports.remove(name);
+                }
+            }
+            Declaration::ModuleFlow { .. } | Declaration::Unsupported { .. } => {
+                functions.clear();
+                imports.clear();
+            }
+            _ => {}
         }
-        Declaration::ModuleFlow { .. } | Declaration::Unsupported { .. } => imports.clear(),
-        _ => {}
     }
+    functions
 }
 
 #[allow(clippy::too_many_arguments)]

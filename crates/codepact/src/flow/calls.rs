@@ -1,6 +1,6 @@
 //! Call evaluation at the boundary between syntax and the flow engine.
 use super::{
-    boundary, consume_expr, expr_name, is_unshadowed_builtin_exception, outcomes,
+    boundary, consume_expr, expr_name, is_unshadowed_builtin_exception, library, outcomes,
     ownership::{cap_handles, check_moved, qualified_function_key},
     process, providers, queue_raise, report_possibly_unbound_alias, runtime, span, tasks, weaken,
     AstExpr, AstExprKind, CallKeyword, CallSignature, Contract, FunctionMap, Inspection,
@@ -162,6 +162,7 @@ pub(super) fn evaluate_call_arguments(
                 | AstExprKind::Boolean(_)
                 | AstExprKind::NoneLiteral
                 | AstExprKind::Primitive
+                | AstExprKind::EvaluatedSqlModelSelect { .. }
         ) {
             consume_expr(argument, env, file, contracts, functions, result, depth + 1);
             env.outcomes.remember_argument(argument.range);
@@ -288,9 +289,16 @@ pub(super) fn prepare_call(
                 | AstExprKind::Boolean(_)
                 | AstExprKind::NoneLiteral
                 | AstExprKind::Primitive
+                | AstExprKind::EvaluatedSqlModelSelect { .. }
         ) {
+            let sqlmodel_select = library::sqlmodel_select_is_scalar(argument, env);
             consume_expr(argument, env, file, contracts, functions, result, depth + 1);
             snapshot_result(argument, env, file, &mut prepared.temporaries);
+            if argument.kind == AstExprKind::Primitive {
+                if let Some(scalar) = sqlmodel_select {
+                    argument.kind = AstExprKind::EvaluatedSqlModelSelect { scalar };
+                }
+            }
         }
     }
     cap_handles(env, file, original.range, result);

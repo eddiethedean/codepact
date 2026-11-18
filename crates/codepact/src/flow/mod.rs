@@ -636,6 +636,7 @@ fn expression_may_return_resource(expression: &AstExpr) -> bool {
         AstExprKind::NoneLiteral
         | AstExprKind::String(_)
         | AstExprKind::Boolean(_)
+        | AstExprKind::EvaluatedSqlModelSelect { .. }
         | AstExprKind::Primitive => false,
         AstExprKind::Tuple(items) => items.iter().any(expression_may_return_resource),
         AstExprKind::Name(_)

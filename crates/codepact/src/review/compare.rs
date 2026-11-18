@@ -186,7 +186,8 @@ pub fn compare(
 ) -> Result<ReviewReport, String> {
     let mut reasons = BTreeMap::new();
     let mut changed_sections = BTreeSet::new();
-    let comparable = before.descriptor == after.descriptor
+    let comparable = before.descriptor.comparison_algorithm == super::COMPARISON_ALGORITHM_VERSION
+        && before.descriptor == after.descriptor
         && before
             .foundations
             .as_ref()
@@ -201,7 +202,7 @@ pub fn compare(
             &mut reasons,
             Blocking::Incomplete,
             "semantics",
-            "checker or target semantics differ; recapture both sides with one qualified checker and target",
+            "checker or target semantics are unsupported or differ; recapture both sides with one qualified checker and target",
         );
     }
     let complete_evidence = complete(before) && complete(after);

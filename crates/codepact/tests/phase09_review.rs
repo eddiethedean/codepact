@@ -91,6 +91,15 @@ fn review_retains_inherited_findings_and_proves_same_operation_cleanup() {
     assert_eq!(result.verdict, ReviewVerdict::Inconclusive);
 }
 
+#[test]
+fn review_requires_recapture_of_legacy_contract_keys() {
+    let mut snapshot = analyze(&mut AnalysisSession::default(), CLEANUP_SOURCE);
+    snapshot.descriptor.comparison_algorithm = 1;
+    let report = compare(&snapshot, &snapshot, &BTreeSet::new(), None).unwrap();
+    assert_eq!(report.verdict, ReviewVerdict::Inconclusive);
+    assert!(report.changed_sections.contains("semantics"));
+}
+
 struct Sandbox(PathBuf);
 
 impl Sandbox {
@@ -120,6 +129,65 @@ impl Drop for Sandbox {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+#[test]
+fn cli_review_detects_access_contracts_swapped_between_modules() {
+    let sandbox = Sandbox::new();
+    let write = |path: &str, source| fs::write(sandbox.0.join(path), source).unwrap();
+    let write_api = |path, access| {
+        write(
+            path,
+            format!("from codepact.rust import {access}\nfrom main import C\ndef use(value: {access}[C]): pass\n")
+                .into_bytes(),
+        );
+    };
+    write("main.py", CLEANUP_SOURCE.as_bytes().to_vec());
+    write_api("alpha.py", "Borrowed");
+    write_api("beta.py", "BorrowedMut");
+    let before = sandbox.run(&["review", "capture", "--no-config"]);
+    assert_eq!(before.status.code(), Some(1));
+    let before_snapshot =
+        ReviewSnapshot::read(std::str::from_utf8(&before.stdout).unwrap()).unwrap();
+    write("before.json", before.stdout);
+
+    write("main.py", format!("\n{CLEANUP_SOURCE}{FIX}").into_bytes());
+    let preserved = sandbox.run(&["review", "capture", "--no-config"]);
+    assert_eq!(preserved.status.code(), Some(0));
+    let preserved = ReviewSnapshot::read(std::str::from_utf8(&preserved.stdout).unwrap()).unwrap();
+    assert_eq!(before_snapshot.contracts, preserved.contracts);
+
+    write_api("alpha.py", "BorrowedMut");
+    write_api("beta.py", "Borrowed");
+    let after = sandbox.run(&["review", "capture", "--no-config"]);
+    assert_eq!(after.status.code(), Some(0));
+    write("after.json", after.stdout);
+    let compared = sandbox.run(&["review", "before.json", "after.json", "--json"]);
+    let report: serde_json::Value = serde_json::from_slice(&compared.stdout).unwrap();
+    assert_eq!(compared.status.code(), Some(1), "{report}");
+    assert_eq!(report["verdict"], "review-required", "{report}");
+    assert_eq!(report["added_contracts"].as_array().unwrap().len(), 2);
+    assert_eq!(report["removed_contracts"].as_array().unwrap().len(), 2);
+
+    let compared = sandbox.run(&[
+        "review",
+        "before.json",
+        "after.json",
+        "--json",
+        "--repair",
+        &before_snapshot.findings[0].fingerprint,
+        "--current",
+        ".",
+        "--",
+        "--no-config",
+    ]);
+    let report: serde_json::Value = serde_json::from_slice(&compared.stdout).unwrap();
+    assert_eq!(compared.status.code(), Some(1), "{report}");
+    assert_eq!(report["verdict"], "inconclusive", "{report}");
+    assert_ne!(
+        report["findings"][0]["classification"],
+        "resolved-under-preserved-contracts"
+    );
 }
 
 #[test]

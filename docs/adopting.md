@@ -86,6 +86,8 @@ contains generated or unsupported code.
 The 0.9 preview supports independent declaration policies for synchronous,
 top-level functions. Select one function by name or omit `function` to cover
 the public synchronous functions in the named module.
+Selectors use the final module binding. An exact selector without a statically
+resolved function contributes incomplete coverage.
 
 ```toml
 [[tool.codepact.declaration-policy]]

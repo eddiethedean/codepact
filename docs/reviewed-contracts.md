@@ -177,3 +177,6 @@ for selected artifacts, applied effects and coverage boundaries. An async HTTP
 client can serve two known requests while both tasks hold it open. SQL uses one
 session per concurrent task. Awaiting cleanup and observing a task's result are
 distinct obligations, and a database result has its own consumption behavior.
+The SQLModel profile distinguishes scalar and row results for direct calls to
+`sqlmodel.select`. Operations that require a row result, such as `mappings()`,
+produce incomplete coverage when the result family is unresolved.

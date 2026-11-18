@@ -122,6 +122,15 @@ class SqlProfiles(unittest.IsolatedAsyncioTestCase):
                 session.exec(sqlmodel.select(Item.id, Item.value)).all(),
                 [(1, "committed")],
             )
+            self.assertEqual(
+                session.exec(sqlmodel.select(Item.id, Item.value)).mappings().all(),
+                [{"id": 1, "value": "committed"}],
+            )
+            with self.assertRaises(AttributeError):
+                session.exec(sqlmodel.select(Item.value)).mappings().all()
+            self.assertEqual(
+                session.exec(sqlmodel.select(Item.value)).fetchall(), ["committed"]
+            )
             result = session.exec(sqlmodel.select(Item.value))
             self.assertEqual(result.all(), ["committed"])
             self.assertEqual(result.all(), [])
@@ -190,6 +199,8 @@ class SqlProfiles(unittest.IsolatedAsyncioTestCase):
                 if session_type is async_model.AsyncSession:
                     rows = await session.exec(sqlmodel.select(Item.id, Item.value))
                     values = await session.exec(sqlmodel.select(Item.value))
+                    with self.assertRaises(AttributeError):
+                        values.mappings().all()
                     self.assertEqual(values.all(), ["initial"])
                 else:
                     rows = await session.execute(sa.select(Item.id, Item.value))
@@ -334,6 +345,34 @@ def database():
     finally:
         engine.dispose()
 
+def result_families():
+    engine = create_engine("sqlite:///fixture.sqlite")
+    try:
+        with ModelSession(engine) as session:
+            session.exec(select(1, 2)).mappings().all()  # reviewed row mappings
+            session.exec(select(1)).mappings().all()  # unsupported scalar mappings
+            statement = select(1, 2)
+            session.exec(statement).mappings().all()  # unresolved result mappings
+        with Session(engine) as session:
+            session.scalars(text("select 1")).all()  # reviewed scalar consumption
+            values = session.execute(text("select 1")).scalars()
+            values.fetchall()  # reviewed filtered consumption
+            values = session.execute(text("select 1")).scalars()
+            values.mappings()  # unsupported filter on a filtered view
+    finally:
+        engine.dispose()
+
+async def async_result_families():
+    engine = create_async_engine("sqlite+aiosqlite:///fixture.sqlite")
+    try:
+        async with AsyncModelSession(engine) as session:
+            rows = await session.exec(select(1, 2))
+            rows.mappings().all()  # reviewed async row mappings
+            values = await session.exec(select(1))
+            values.mappings().all()  # unsupported async scalar mappings
+    finally:
+        await engine.dispose()
+
 async def shared_http():
     async with AsyncClient(trust_env=False) as client:
         async with TaskGroup() as group:
@@ -423,6 +462,30 @@ async def direct_while_scheduled():
             raise AssertionError(
                 f"missing applicable reviewed effects: {expected - uses}"
             )
+        lines = (project / "caller.py").read_text(encoding="utf-8").splitlines()
+        model_uses = report["foundations"]["model_uses"]
+        for marker, method, applicable in (
+            ("reviewed row mappings", "mappings", True),
+            ("unsupported scalar mappings", "mappings", False),
+            ("unresolved result mappings", "mappings", False),
+            ("reviewed scalar consumption", "all", True),
+            ("reviewed filtered consumption", "fetchall", True),
+            ("unsupported filter on a filtered view", "mappings", False),
+            ("reviewed async row mappings", "mappings", True),
+            ("unsupported async scalar mappings", "mappings", False),
+        ):
+            line = next(
+                n for n, source in enumerate(lines, 1) if source.endswith(marker)
+            )
+            matching = [
+                use
+                for use in model_uses
+                if use["symbol"].endswith(f".{method}") and use["site"]["line"] == line
+            ]
+            if {item["applicable"] for item in matching} != {applicable}:
+                raise AssertionError(
+                    f"unexpected applicability for {marker}: {matching}"
+                )
         closed_use = [
             item for item in report["diagnostics"] if item["code"] == "TP1001"
         ]

@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const SNAPSHOT_SCHEMA_VERSION: u8 = 1;
 pub const REVIEW_SCHEMA_VERSION: u8 = 1;
 pub const MAX_REVIEW_BYTES: usize = 32 * 1024 * 1024;
+const COMPARISON_ALGORITHM_VERSION: u8 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -102,9 +103,10 @@ pub struct ReviewSnapshot {
     pub check_exit: u8,
 }
 
-fn normalized_contract(contract: &Contract) -> String {
+fn normalized_contract(owner: &str, contract: &Contract) -> String {
     serde_json::to_string(&(
         contract.schema_version,
+        owner,
         &contract.base_symbol,
         &contract.display_name,
         &contract.lifecycle,
@@ -365,7 +367,11 @@ pub fn capture(
     let mut contracts = adoption
         .contracts
         .iter()
-        .map(normalized_contract)
+        .map(|contract| {
+            let path = contract.source.file.as_str();
+            let owner = by_path.get(path).map_or(path, |file| file.module.as_str());
+            normalized_contract(owner, contract)
+        })
         .collect::<BTreeSet<_>>();
     let mut details_truncated = journal.truncated || adoption.details_truncated;
     match source_outcome_agreements(files, &config.python_version) {
@@ -394,7 +400,7 @@ pub fn capture(
             check_schema_version: adoption.check_schema_version,
             rule_semantics: adoption::RULE_SEMANTIC_VERSION,
             finding_identity: adoption::FINGERPRINT_ALGORITHM_VERSION,
-            comparison_algorithm: REVIEW_SCHEMA_VERSION,
+            comparison_algorithm: COMPARISON_ALGORITHM_VERSION,
             python_target: adoption.target_python_version,
             ownership: config.ownership,
             finite_matches: config.finite_matches,

@@ -62,7 +62,7 @@
           "minimum": 0
         },
         "comparison_algorithm": {
-          "const": 1
+          "enum": [1, 2]
         },
         "python_target": {
           "type": "string"

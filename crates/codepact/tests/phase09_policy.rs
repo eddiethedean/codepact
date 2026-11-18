@@ -148,6 +148,66 @@ fn declaration_policy_preview_enforcement_repair_and_strict_baseline() {
 }
 
 #[test]
+fn declaration_policy_checks_the_final_module_binding() {
+    let root = TemporaryProject::new();
+    fs::write(
+        root.path().join("pyproject.toml"),
+        r#"[tool.codepact]
+config-version = 1
+mode = 'strict'
+[[tool.codepact.declaration-policy]]
+module = 'subject'
+function = 'fetch'
+requirement = 'must-use'
+mode = 'enforce'
+"#,
+    )
+    .unwrap();
+    let config = resolve_config(root.path(), &Overrides::default()).unwrap();
+    let check = |body: &str| {
+        let source = format!("from codepact import must_use\n{body}");
+        let files = [SourceFile::new("subject.py", "subject", source)];
+        let result = check_with_ownership(&files, &config.python_version, config.ownership);
+        build_report(result, &files, &config, None, None).unwrap()
+    };
+    let marked = "@must_use\ndef fetch(): return 1\n";
+    let report = check(&format!(
+        "def fetch(): return 0\n{marked}must_use = None\nfetch: object\n"
+    ));
+    assert_eq!(report.exit_code, 0, "{report:#?}");
+    assert_eq!(report.coverage.status, "complete-for-supported-subset");
+
+    for rebind in [
+        "fetch = 2\n",
+        "del fetch\n",
+        "class fetch: pass\n",
+        "from codepact import resource as fetch\n",
+    ] {
+        let report = check(&format!("{marked}{rebind}"));
+        assert_eq!(report.exit_code, 1, "{report:#?}");
+        assert_eq!(report.coverage.status, "incomplete", "{rebind}");
+        assert!(
+            report
+                .coverage
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("declaration policy selector subject.fetch")),
+            "{report:#?}"
+        );
+    }
+
+    let report = check(&format!("{marked}def fetch(): return 0\n"));
+    assert_eq!(report.exit_code, 1);
+    let findings = report
+        .diagnostics
+        .iter()
+        .filter(|finding| finding.diagnostic.code == "TP4103")
+        .collect::<Vec<_>>();
+    assert_eq!(findings.len(), 1, "{report:#?}");
+    assert_eq!(findings[0].diagnostic.primary.line, 4);
+}
+
+#[test]
 fn duplicate_declaration_policy_selector_is_invalid() {
     let root = TemporaryProject::new();
     fs::write(root.path().join("pyproject.toml"), format!("{POLICY}\n[[tool.codepact.declaration-policy]]\nmodule='subject'\nrequirement='resource-access'\nmode='enforce'\n")).unwrap();

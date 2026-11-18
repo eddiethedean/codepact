@@ -14,9 +14,18 @@ enum Resource {
     Connection,
     Session,
     AsyncSession,
-    Result,
+    Result(ResultFamily),
     Transaction,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ResultFamily {
+    Rows,
+    Scalars,
+    Unknown,
+}
+
+const FILTERED_RESULT: &str = "result-filtered";
 
 impl Resource {
     fn name(self) -> &'static str {
@@ -29,7 +38,8 @@ impl Resource {
             Self::Connection => "Connection",
             Self::Session => "Session",
             Self::AsyncSession => "AsyncSession",
-            Self::Result => "Result",
+            Self::Result(ResultFamily::Scalars) => "ScalarResult",
+            Self::Result(_) => "Result",
             Self::Transaction => "SessionTransaction",
         }
     }
@@ -38,6 +48,7 @@ impl Resource {
         match self {
             Self::Body => "body",
             Self::Stream => "stream",
+            Self::Result(ResultFamily::Unknown) => "unknown-result",
             _ => self.name(),
         }
     }
@@ -53,7 +64,9 @@ impl Resource {
             "Connection" => Self::Connection,
             "Session" => Self::Session,
             "AsyncSession" => Self::AsyncSession,
-            "Result" => Self::Result,
+            "Result" => Self::Result(ResultFamily::Rows),
+            "ScalarResult" => Self::Result(ResultFamily::Scalars),
+            "unknown-result" => Self::Result(ResultFamily::Unknown),
             "SessionTransaction" => Self::Transaction,
             _ => return None,
         })
@@ -90,7 +103,7 @@ fn library_resource(contract: &Contract) -> Option<(&str, Resource)> {
 pub(super) fn buffered_value(contract: &Contract) -> bool {
     matches!(
         library_resource(contract),
-        Some((_, Resource::Body | Resource::Result))
+        Some((_, Resource::Body | Resource::Result(_)))
     )
 }
 
@@ -196,7 +209,7 @@ fn canonical_symbol(scope: &str, symbol: &str) -> String {
         ("sqlalchemy", "Session" | "SessionTransaction") => "orm.session",
         ("sqlalchemy", "Engine" | "Connection") => "engine.base",
         ("sqlalchemy", "create_engine") => "engine.create",
-        ("sqlalchemy", "Result") => "engine.result",
+        ("sqlalchemy", "Result" | "ScalarResult") => "engine.result",
         ("sqlalchemy", "AsyncSession") => "ext.asyncio.session",
         ("sqlalchemy", "AsyncEngine" | "create_async_engine") => "ext.asyncio.engine",
         ("sqlmodel", "Session") => "orm.session",
@@ -243,6 +256,12 @@ fn allocate(
     if kind == Resource::Body {
         for object in env.pending_return_targets.iter().flatten() {
             env.duty_origins.remove(object);
+        }
+    }
+    if matches!(kind, Resource::Result(_)) {
+        for object in env.pending_return_targets.iter().flatten() {
+            env.protocol_states
+                .insert(object.clone(), BTreeSet::from(["result-open".into()]));
         }
     }
 }
@@ -319,7 +338,7 @@ enum Operation {
     Request,
     ReadBody,
     Connect,
-    Query,
+    Query(ResultFamily),
     Consume,
     First,
     Filter,
@@ -333,14 +352,18 @@ fn operation(kind: Resource, method: &str) -> Option<Operation> {
         (Resource::Client | Resource::AsyncClient, "get" | "request") => Operation::Request,
         (Resource::Stream | Resource::Body, "read") => Operation::ReadBody,
         (Resource::Engine, "connect") => Operation::Connect,
-        (
-            Resource::Connection | Resource::Session | Resource::AsyncSession,
-            "execute" | "scalars",
-        )
-        | (Resource::Session | Resource::AsyncSession, "exec") => Operation::Query,
-        (Resource::Result, "all" | "fetchall") => Operation::Consume,
-        (Resource::Result, "first") => Operation::First,
-        (Resource::Result, "scalars" | "mappings") => Operation::Filter,
+        (Resource::Connection | Resource::Session | Resource::AsyncSession, "execute") => {
+            Operation::Query(ResultFamily::Rows)
+        }
+        (Resource::Connection | Resource::Session | Resource::AsyncSession, "scalars") => {
+            Operation::Query(ResultFamily::Scalars)
+        }
+        (Resource::Session | Resource::AsyncSession, "exec") => {
+            Operation::Query(ResultFamily::Unknown)
+        }
+        (Resource::Result(_), "all" | "fetchall") => Operation::Consume,
+        (Resource::Result(_), "first") => Operation::First,
+        (Resource::Result(ResultFamily::Rows), "scalars" | "mappings") => Operation::Filter,
         (Resource::Session | Resource::Connection, "begin") => Operation::Begin,
         (
             Resource::Connection
@@ -362,6 +385,36 @@ fn operation(kind: Resource, method: &str) -> Option<Operation> {
     Some(op)
 }
 
+fn sqlmodel_result(args: &[AstExpr], env: &State) -> ResultFamily {
+    let [statement] = args else {
+        return ResultFamily::Unknown;
+    };
+    let scalar = match statement.kind {
+        AstExprKind::EvaluatedSqlModelSelect { scalar } => Some(scalar),
+        _ => sqlmodel_select_is_scalar(statement, env),
+    };
+    match scalar {
+        Some(true) => ResultFamily::Scalars,
+        Some(false) => ResultFamily::Rows,
+        None => ResultFamily::Unknown,
+    }
+}
+
+pub(super) fn sqlmodel_select_is_scalar(statement: &AstExpr, env: &State) -> Option<bool> {
+    env.models.foundations.as_ref()?;
+    let (select, columns, keywords) = call_parts(statement)?;
+    if columns.is_empty()
+        || !keywords.is_empty()
+        || columns
+            .iter()
+            .any(|column| matches!(column.kind, AstExprKind::Starred(_)))
+        || providers::public_name(select, env).as_deref() != Some("sqlmodel.select")
+    {
+        return None;
+    }
+    Some(columns.len() == 1)
+}
+
 fn arguments_supported(
     op: Operation,
     method: &str,
@@ -375,7 +428,7 @@ fn arguments_supported(
             Operation::Request => {
                 matches!(args, [AstExpr { kind: AstExprKind::String(method), .. }, url] if matches!(method.as_str(), "GET" | "HEAD") && literal_url(url))
             }
-            Operation::Query => args.len() == 1,
+            Operation::Query(_) => args.len() == 1,
             _ => args.is_empty(),
         }
 }
@@ -389,6 +442,12 @@ fn set_closed(object: &str, env: &mut State, file: &SourceFile, range: SourceRan
 fn set_transaction(object: &str, state: &str, env: &mut State) {
     env.protocol_states
         .insert(object.to_owned(), BTreeSet::from([state.to_owned()]));
+}
+
+fn set_result_state(object: &str, state: &str, env: &mut State) {
+    let states = env.protocol_states.entry(object.to_owned()).or_default();
+    states.retain(|state| state == FILTERED_RESULT);
+    states.insert(state.to_owned());
 }
 
 fn queue_uncertain_exit(object: &str, range: SourceRange, env: &mut State) {
@@ -416,11 +475,13 @@ fn apply_operation(
             .protocol_states
             .get(object)
             .is_some_and(|states| states.len() == 1 && states.contains("stream-buffered"));
-    let result_exhausted = kind == Resource::Result
-        && env
-            .protocol_states
-            .get(object)
-            .is_some_and(|states| states.len() == 1 && states.contains("result-exhausted"));
+    let result_exhausted = matches!(kind, Resource::Result(_))
+        && env.protocol_states.get(object).is_some_and(|states| {
+            states.contains("result-exhausted")
+                && states
+                    .iter()
+                    .all(|state| state == "result-exhausted" || state == FILTERED_RESULT)
+        });
     if op != Operation::Close
         && !body_buffered
         && !result_exhausted
@@ -466,8 +527,8 @@ fn apply_operation(
             }
             queue_uncertain_exit(object, range, env);
             set_closed(object, env, file, range);
-            if kind == Resource::Result {
-                set_transaction(object, "result-closed", env);
+            if matches!(kind, Resource::Result(_)) {
+                set_result_state(object, "result-closed", env);
             }
             if matches!(
                 kind,
@@ -497,7 +558,7 @@ fn apply_operation(
             queue_raise(env, range, None);
             allocate(scope, Resource::Connection, file, range, env, result);
         }
-        Operation::Query => {
+        Operation::Query(family) => {
             if matches!(kind, Resource::Session | Resource::AsyncSession) && mask & CLOSED != 0 {
                 if env
                     .ownership
@@ -518,19 +579,26 @@ fn apply_operation(
             }
             set_transaction(object, "active", env);
             queue_raise(env, range, None);
-            allocate(scope, Resource::Result, file, range, env, result);
+            allocate(scope, Resource::Result(family), file, range, env, result);
         }
         Operation::Consume => {
             queue_uncertain_exit(object, range, env);
             set_closed(object, env, file, range);
-            set_transaction(object, "result-exhausted", env);
+            set_result_state(object, "result-exhausted", env);
         }
         Operation::First => {
             queue_uncertain_exit(object, range, env);
             set_closed(object, env, file, range);
-            set_transaction(object, "result-closed", env);
+            set_result_state(object, "result-closed", env);
         }
         Operation::Filter => {
+            // Filtered results share the underlying cursor. The resource retains
+            // one cleanup identity, so aliases support only operations common to
+            // the raw result and every view that may have been created.
+            env.protocol_states
+                .entry(object.to_owned())
+                .or_default()
+                .insert(FILTERED_RESULT.into());
             env.pending_return_targets = Some(BTreeSet::from([object.to_owned()]));
         }
         Operation::Begin => {
@@ -628,7 +696,10 @@ pub(super) fn call(
     };
     let object = object.to_owned();
     let scope = scope.to_owned();
-    let op = operation(kind, method);
+    let op = operation(kind, method).map(|op| match op {
+        Operation::Query(ResultFamily::Unknown) => Operation::Query(sqlmodel_result(args, env)),
+        _ => op,
+    });
     let symbol = format!("{scope}.{}.{method}", kind.name());
     let status = ready(&scope, kind.asynchronous(), env).and_then(|()| {
         if expr_name(receiver).is_some_and(|name| {
@@ -639,6 +710,19 @@ pub(super) fn call(
         if method == "exec" && scope != "sqlmodel" {
             return Err("exec requires a selected SQLModel session");
         }
+        if matches!(kind, Resource::Result(ResultFamily::Unknown))
+            && matches!(method.as_str(), "scalars" | "mappings")
+        {
+            return Err("cannot establish which SQL result family the statement returns");
+        }
+        if op == Some(Operation::Filter)
+            && env
+                .protocol_states
+                .get(&object)
+                .is_some_and(|states| states.contains(FILTERED_RESULT))
+        {
+            return Err("operation depends on an unresolved raw or filtered SQL result alias");
+        }
         op.filter(|op| arguments_supported(*op, method, args, kwargs))
             .map(|_| ())
             .ok_or("operation or arguments are outside the reviewed library profile")
@@ -646,7 +730,7 @@ pub(super) fn call(
     let effect = match op {
         Some(Operation::Close) => "receiver-cleanup",
         Some(Operation::Request) => "buffered-response",
-        Some(Operation::Query) => "database-result",
+        Some(Operation::Query(_)) => "database-result",
         Some(Operation::Consume | Operation::First) => "consume-result",
         Some(Operation::Begin) => "transaction-begin",
         Some(Operation::Commit) => "transaction-commit",
@@ -680,7 +764,7 @@ pub(super) fn call(
     if kind == Resource::AsyncSession
         && matches!(
             op,
-            Operation::Query | Operation::Commit | Operation::Rollback
+            Operation::Query(_) | Operation::Commit | Operation::Rollback
         )
         && env
             .ownership
@@ -1083,7 +1167,7 @@ fn request_capture<'a>(
     let (scope, kind) = library_resource(contract)?;
     matches!(
         operation(kind, method),
-        Some(Operation::Request | Operation::Query | Operation::Commit | Operation::Rollback)
+        Some(Operation::Request | Operation::Query(_) | Operation::Commit | Operation::Rollback)
     )
     .then_some((object, scope, kind))
 }

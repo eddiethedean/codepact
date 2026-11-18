@@ -52,6 +52,8 @@ options and writes a versioned JSON capture of the full selected root. Save a
 capture even when its standalone check exits `1`. A capture retains policy,
 source and provider identities, checked contracts, coverage and raw findings.
 The comparison uses the same checker and analyzed Python target for both sides.
+If the captures use an earlier comparison algorithm, recapture both revisions
+with the same checker version before comparing them.
 
 ```sh
 codepact review capture --root src > before.json
