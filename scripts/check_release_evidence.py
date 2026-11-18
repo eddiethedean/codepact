@@ -29,7 +29,7 @@ def table_rows(text: str, title: str) -> dict[str, tuple[str, str, str]]:
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
         if len(cells) < 3 or set(cells[0]) <= {"-", ":"}:
             continue
-        gate = re.match(r"([A-Z]+\d{1,2})\b", cells[0])
+        gate = re.match(r"([A-Z]+\d{1,2}(?:-[A-Z])?)(?![\w-])", cells[0])
         if gate:
             gate_id = gate.group(1)
             rows[gate_id] = (

@@ -104,6 +104,27 @@ class ReleaseEvidenceTest(unittest.TestCase):
             errors = release_evidence_errors(root, VERSION)
             self.assertIn("L04 status is Pending, expected Pass", errors)
 
+    def test_staged_gate_requires_its_own_evidence_row(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_candidate(root)
+            plan = root / "docs/planning/phases/0.2-lifecycle.md"
+            with plan.open("a", encoding="utf-8") as output:
+                output.write("\n- [ ] **E10-A** — Built-wheel check.\n")
+            evidence = root / f"docs/releases/{VERSION}-evidence.md"
+            with evidence.open("a", encoding="utf-8") as output:
+                output.write("| E10 | Pending | Later checkpoints. | |\n")
+            self.assertIn(
+                "E10-A status is Missing, expected Pass",
+                release_evidence_errors(root, VERSION),
+            )
+            with evidence.open("a", encoding="utf-8") as output:
+                output.write(
+                    "| E10-A | Pass | Built wheel verified. | "
+                    "`eddiethedean` / 2026-11-08 |\n"
+                )
+            self.assertEqual(release_evidence_errors(root, VERSION), [])
+
     def test_passed_gate_requires_accountable_maintainer_signoff(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
