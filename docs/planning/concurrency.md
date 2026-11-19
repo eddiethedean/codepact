@@ -1,6 +1,13 @@
 # Concurrent resource safety
 
-Adopted 2026-10-31; post-0.7 sequence updated 2026-11-17. CS01–CS05 are complete for the published 0.3–0.7 scopes. CS06 moves to 0.12 and CS07 to 0.13 without changing their definitions. New AS/MP/BR gates are planned and pending. [0.3.0 release evidence](../releases/0.3.0-evidence.md) · [0.4.0 release evidence](../releases/0.4.0-evidence.md) · [0.5.0 release evidence](../releases/0.5.0-evidence.md) · [0.6.0 release evidence](../releases/0.6.0-evidence.md) · [0.7.0 release evidence](../releases/0.7.0-evidence.md)
+Adopted on 2026-10-31. CS01–CS05 are complete for the published 0.3–0.7 scopes. CS06 is assigned to 0.12 and CS07 to 0.13. [0.3.0 release evidence](../releases/0.3.0-evidence.md) · [0.4.0 release evidence](../releases/0.4.0-evidence.md) · [0.5.0 release evidence](../releases/0.5.0-evidence.md) · [0.6.0 release evidence](../releases/0.6.0-evidence.md) · [0.7.0 release evidence](../releases/0.7.0-evidence.md)
+
+The 0.8.0 release qualified AS01–AS02 and MP01–MP02. The 0.9.0 release
+qualified AS03, AS07, MP03, and BR01. The 0.10.0 release qualified AS04–AS05
+and MP04–MP05. AS06, MP06, and BR02 are planned for 0.11.
+[0.8.0 release evidence](../releases/0.8.0-evidence.md) ·
+[0.9.0 release evidence](../releases/0.9.0-evidence.md) ·
+[0.10.0 release evidence](../releases/0.10.0-evidence.md)
 
 ## Outcome and scope
 

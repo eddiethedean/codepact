@@ -17,7 +17,7 @@ This document is the authoritative release sequence. The original [feature miles
 | 0.7.x | Typed outcomes, helper and CLI install split, and an installed-wheel must-use preview | [0.7 plan](docs/planning/phases/0.7-typed-outcomes.md) | M5 runtime portion |
 | 0.8.x | Reviewed contracts and concurrency foundations | [0.8 plan](docs/planning/phases/0.8-reviewed-concurrency-foundations.md) | M5 integration portion |
 | 0.9.x | Persistent obligations and before-and-after review | [0.9 plan](docs/planning/phases/0.9-obligations-and-change-review.md) · [Validation](docs/planning/phases/0.9/validation.md) | M5 integration portion |
-| 0.10.x | Queues, IPC and synchronization | [0.10 plan](docs/planning/phases/0.10-queues-ipc-and-synchronization.md) | M5 integration portion |
+| 0.10.x | Queues, IPC and synchronization | [0.10.0 published November 18, 2026](docs/releases/0.10.0-evidence.md) · [0.10 plan](docs/planning/phases/0.10-queues-ipc-and-synchronization.md) | M5 integration portion |
 | 0.11.x | Shutdown, async resources and executor bridges | [0.11 plan](docs/planning/phases/0.11-shutdown-and-bridges.md) | M5 integration portion |
 | 0.12.x | Portfolio adoption, broader models and integrations | [0.12 plan](docs/planning/phases/0.12-ecosystem-and-integrations.md) | M5 integration portion |
 | 0.13.x | Stabilization and 1.0 readiness | [0.13 plan](docs/planning/phases/0.13-stabilization.md) | M5 stability portion |
@@ -70,7 +70,8 @@ The [contract and portfolio workstreams](docs/planning/contract-and-portfolio-wo
 - **0.7** makes `codepact` the helper-only install, `codepact[cli]` the helper plus matching CLI, and `codepact-cli` the standalone command. The opt-in `py.codepact` preview checks discarded synchronous results across installed wheels. Finite-match checking covers resolved outcome variants, with resource payload tracking deferred to TypePact TC03. [0.7 scope](docs/planning/phases/0.7-typed-outcomes.md#finite-matches)
 - **0.8** qualifies provider identity, resource/ownership effects, inline/manifest foundations, installed author export/wheel verification and exact-version project models, alongside initial asyncio/process lifecycle checks. [Foundations](docs/planning/phases/0.8-reviewed-concurrency-foundations.md)
 - **0.9** adds [opt-in persistent outcome/work duties](docs/planning/persistent-outcomes.md), [before-and-after review with explicit preservation verdicts](docs/planning/change-review.md), and author contract-artifact comparison. HTTPX and HTTPX2 qualify separately; SQLAlchemy and SQLModel qualify separately. Direct-await async profiles promote independently after their required AS07 sharing controls. [Obligations and review](docs/planning/phases/0.9-obligations-and-change-review.md)
-- **0.10–0.11** extend queues, IPC, guards, shutdown, streams/subprocesses, bridges and bounded shared-memory ownership through explicit semantic gates.
+- **0.10.0** adds opt-in queue accounting and shutdown, multiprocessing IPC, bounded guard checks and direct-script spawn. [Release evidence](docs/releases/0.10.0-evidence.md)
+- **0.11** plans async resource cleanup, worker shutdown, executor bridges and bounded shared-memory ownership. [Phase plan](docs/planning/phases/0.11-shutdown-and-bridges.md)
 - **0.12** completes broader native/framework/first-party adoption, persistent caches and editor/agent parity. [Integrations](docs/planning/phases/0.12-ecosystem-and-integrations.md)
 - **0.13** rehearses upgrades and audits markers, manifests, policies and tooling for 1.0. Further capabilities enter support only after qualification. [Readiness](docs/planning/phases/0.13-stabilization.md)
 

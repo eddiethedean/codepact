@@ -17,7 +17,7 @@ For a permanent link to 0.10.0 instructions, use the
 
 | Version | Status | Package and crate names | Available behavior |
 | --- | --- | --- | --- |
-| CodePact 0.10.0 | [Published](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.10.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | [Queues, IPC, guards, and direct-script spawn](concurrency.md) |
+| CodePact 0.10.0 | Published November 18, 2026. [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.10.0-evidence.md) | [`codepact` on PyPI](https://pypi.org/project/codepact/0.10.0/), [`codepact-cli` on PyPI](https://pypi.org/project/codepact-cli/0.10.0/), [Rust crate `codepact`](https://crates.io/crates/codepact/0.10.0) | [Queues, IPC, guards, and direct-script spawn](concurrency.md) |
 | CodePact 0.9.0 | [Published](https://github.com/eddiethedean/codepact/blob/4bc0d1b14f6be6d8fb80f2151a9cce7e73fac374/docs/releases/0.9.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Persistent outcome and work duties, declaration policy, source and wheel comparison, and reviewed HTTP and SQL profiles |
 | CodePact 0.8.0 | [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.8.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Reviewed installed contracts, wheel manifests, and opt-in file, asyncio, and multiprocessing models |
 | CodePact 0.7.0 | [Release evidence](https://github.com/eddiethedean/codepact/blob/main/docs/releases/0.7.0-evidence.md) | `codepact`, `codepact-cli`, Rust crate `codepact` | Typed outcomes, opt-in finite matches, and marked installed-provider checking |
@@ -61,7 +61,8 @@ The helpers run on Python 3.11 and later. The analyzer accepts source targets
 The reviewed runtime models target CPython 3.13.16 on Linux x86-64. This profile
 describes the analyzed program and can be selected from any supported CLI
 host. [Model profiles and assumptions](reviewed-contracts.md) ·
-[Implementation evidence](https://github.com/eddiethedean/codepact/blob/v0.9.0/docs/planning/phases/0.9/implementation-evidence.md)
+[0.9 runtime qualification](https://github.com/eddiethedean/codepact/blob/v0.9.0/docs/planning/phases/0.9/implementation-evidence.md) ·
+[0.10 runtime qualification](https://github.com/eddiethedean/codepact/blob/v0.10.0/docs/planning/phases/0.10/implementation-evidence.md)
 
 ## Earlier release evidence
 

@@ -14,6 +14,7 @@ discarded must-use result. Run it alongside your type checker and tests.
 [Documentation](https://codepact.readthedocs.io/en/stable/index.html) ·
 [Install options](https://codepact.readthedocs.io/en/stable/install.html) ·
 [Rule catalog](https://codepact.readthedocs.io/en/stable/rules.html) ·
+[Release notes](https://codepact.readthedocs.io/en/stable/release-notes.html) ·
 [Roadmap](https://github.com/eddiethedean/codepact/blob/main/ROADMAP.md)
 
 ## Quick start

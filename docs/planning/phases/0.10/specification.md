@@ -1,6 +1,6 @@
 # 0.10 specification
 
-This is the proposed CodePact 0.10.0 model scope. The
+This is the model scope qualified for CodePact 0.10.0. The
 [phase plan](../0.10-queues-ipc-and-synchronization.md) assigns the release
 gates. The [validation matrix](validation.md) defines the promotion evidence.
 

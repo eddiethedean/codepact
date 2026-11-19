@@ -62,5 +62,5 @@ executor check, a difference of 0.2 µs. The largest peak RSS increase was
 The local receipt at `target/phase10-performance.json` has SHA-256
 `963c9fce09a9a84403e9e4a6a52f17176039ded74fe2ba9a3f3763e9a0dfa44c`.
 
-The signed gates and publication checks belong in the exact-candidate release
-record. [Common release gates](../../release-gates.md)
+The [0.10.0 release record](../../../releases/0.10.0-evidence.md) contains the
+signed gates, tagged revision, and registry verification.

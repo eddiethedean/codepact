@@ -1,8 +1,8 @@
 # 0.10 validation matrix
 
-Use this matrix to qualify the proposed [0.10 models](specification.md) for
-the [phase plan](../0.10-queues-ipc-and-synchronization.md). Compare inherited
-behavior with published [CodePact 0.9.0](../../../releases/0.9.0-evidence.md).
+This matrix defines the acceptance cases for the [0.10 models](specification.md).
+The [0.10.0 release record](../../../releases/0.10.0-evidence.md) contains the
+qualified results against published [CodePact 0.9.0](../../../releases/0.9.0-evidence.md).
 
 ## Required cases
 

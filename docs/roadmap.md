@@ -1,6 +1,6 @@
 # Roadmap
 
-CodePact 0.x grows from declaration inspection toward broader resource lifecycle analysis. The predecessor TypePact published contract inspection in 0.1.0 and bounded lifecycle checking in 0.2.0. CodePact 0.3.0 is the first published release under the new names; later phases have no promised delivery dates.
+CodePact 0.x grows from declaration inspection toward broader resource lifecycle analysis. The predecessor TypePact published contract inspection in 0.1.0 and bounded lifecycle checking in 0.2.0. CodePact 0.3.0 was the first release under the CodePact name. CodePact 0.10.0 was published on November 18, 2026.
 
 | Release line | Status and focus |
 | --- | --- |
@@ -13,7 +13,8 @@ CodePact 0.x grows from declaration inspection toward broader resource lifecycle
 | 0.7.x | Typed outcomes, helper and CLI install split, and an installed-wheel must-use preview |
 | 0.8.x | Reviewed resource contracts across packages, wheel manifests, and bounded standard library models |
 | 0.9.x | Published persistent duties, before-and-after review, and reviewed HTTP and SQL profiles |
-| 0.10–0.11 | Queues, IPC, synchronization, shutdown, and executor bridges |
+| 0.10.x | Published opt-in asyncio queues, multiprocessing IPC, synchronization guards, and direct-script spawn. [Release notes](release-notes.md) |
+| 0.11.x | Planned async resource cleanup, worker shutdown, executor bridges, and bounded shared-memory ownership |
 | 0.12.x | Broader model coverage, persistent caching, and editor and agent integrations |
 | 0.13.x | Stabilization and a 1.0 readiness decision |
 
