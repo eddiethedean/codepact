@@ -244,8 +244,9 @@ pub(super) fn await_call(
     let awaits_generator = call_parts(expression)
         .and_then(|(function, _, _)| resolved_function(function, env, functions))
         .is_some_and(|definition| definition.async_generator.is_some());
-    if !awaits_generator
-        && !(generator::is_operation(expression, env) || io::is_operation(expression, env))
+    if !(awaits_generator
+        || generator::is_operation(expression, env)
+        || io::is_operation(expression, env))
     {
         return false;
     }

@@ -39,6 +39,16 @@ For the installed-provider static replay, build the candidate with
 The runtime probes execute controlled fixtures. The CLI reads caller and
 provider sources as input.
 
+### Local candidate checks
+
+Commit `6fa8f94` passed the 86 registered probes with zero skips on
+CPython 3.13.16 in a Linux x86-64 container. The runtime receipt SHA-256
+was `574723dedef21ee8ae924e598fa8338909da94d1573b3644db731f771fff25ad`.
+Four installed-provider runtime probes and the candidate CLI's static replay
+passed against the pinned provider artifacts. The macOS arm64 CLI wheel,
+pure Python helper wheel and both source archives passed Twine metadata
+checks. The extracted native wheel reported `codepact 0.11.0`.
+
 ## Performance replay
 
 Build the same optimized binaries in both checkouts using
