@@ -782,7 +782,7 @@ fn visit_expression(expression: &AstExpr, visitor: &mut impl FnMut(&AstExpr)) {
         | AstExprKind::OtherCalls(_, _)
         | AstExprKind::Boolean(_)
         | AstExprKind::String(_)
-        | AstExprKind::EvaluatedSqlModelSelect { .. }
+        | AstExprKind::EvaluatedSelect { .. }
         | AstExprKind::Primitive
         | AstExprKind::NoneLiteral
         | AstExprKind::Other

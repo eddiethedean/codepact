@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 mod async_protocols;
+mod async_resources;
 mod asyncio;
 mod calls;
 mod contexts;
@@ -643,7 +644,7 @@ fn expression_may_return_resource(expression: &AstExpr) -> bool {
         AstExprKind::NoneLiteral
         | AstExprKind::String(_)
         | AstExprKind::Boolean(_)
-        | AstExprKind::EvaluatedSqlModelSelect { .. }
+        | AstExprKind::EvaluatedSelect { .. }
         | AstExprKind::Primitive => false,
         AstExprKind::Tuple(items) => items.iter().any(expression_may_return_resource),
         AstExprKind::Name(_)
@@ -992,6 +993,9 @@ fn collect_pattern_names(pattern: &crate::frontend::AstPattern, names: &mut BTre
 
 fn copy_object_metadata(child: &mut State, parent: &State, objects: &BTreeSet<String>) {
     child.protocol_machines = parent.protocol_machines.clone();
+    child
+        .async_resources
+        .copy_from(&parent.async_resources, objects);
     if let (Some(child), Some(parent)) = (child.ownership.as_mut(), parent.ownership.as_ref()) {
         child
             .async_protocols
@@ -1421,6 +1425,9 @@ fn apply_call_object_effects(
     extra_objects: &BTreeSet<String>,
     object: &str,
 ) {
+    parent
+        .async_resources
+        .copy_io_handle(&child.async_resources, object);
     if let (Some(parent), Some(child)) = (parent.ownership.as_mut(), child.ownership.as_ref()) {
         parent.copy_transfers(child, object);
     }
@@ -1595,7 +1602,7 @@ pub(crate) fn check_file_bodies(
             models.foundations.as_deref(),
         )
         .into();
-        for declaration in declarations {
+        for (declaration_index, declaration) in declarations.iter().enumerate() {
             match declaration {
                 Declaration::Function {
                     name,
@@ -1610,9 +1617,23 @@ pub(crate) fn check_file_bodies(
                     unsupported,
                     ..
                 } => {
-                    if (!decorators.is_empty() && !*must_use_decorator)
-                        || *unsupported
-                        || *is_generator
+                    let async_generator = (*is_async
+                        && *is_generator
+                        && ownership.is_enabled()
+                        && models.foundations.is_some())
+                    .then(|| {
+                        async_resources::definition(
+                            body,
+                            decorators,
+                            &declarations[..declaration_index],
+                            &supplied_modules,
+                        )
+                    })
+                    .flatten()
+                    .map(Arc::new);
+                    if *unsupported
+                        || (async_generator.is_none()
+                            && ((!decorators.is_empty() && !*must_use_decorator) || *is_generator))
                     {
                         continue;
                     }
@@ -1642,6 +1663,7 @@ pub(crate) fn check_file_bodies(
                         statements: Arc::from(body.clone()),
                         supported_binding: true,
                         is_async: *is_async,
+                        async_generator,
                         protocol_transition: None,
                         protocol_precondition: None,
                         protocol_precondition_origin: None,
@@ -1705,6 +1727,7 @@ pub(crate) fn check_file_bodies(
                             supported_binding: (!method.decorated || method.must_use_decorator)
                                 && !method.is_generator,
                             is_async: method.is_async,
+                            async_generator: None,
                             protocol_transition: None,
                             protocol_precondition: None,
                             protocol_precondition_origin: None,
@@ -1789,21 +1812,11 @@ pub(crate) fn check_file_bodies(
         let mut final_bindings = BTreeMap::<String, Option<String>>::new();
         for declaration in declarations {
             match declaration {
-                Declaration::Function {
-                    name,
-                    range,
-                    decorators,
-                    must_use_decorator,
-                    unsupported,
-                    ..
-                } => {
+                Declaration::Function { name, range, .. } => {
                     let key = format!("{}::{}:{}", provider.module, name, range.start);
                     final_bindings.insert(
                         name.clone(),
-                        ((decorators.is_empty() || *must_use_decorator)
-                            && !unsupported
-                            && qualified_functions.contains_key(&key))
-                        .then_some(key),
+                        qualified_functions.contains_key(&key).then_some(key),
                     );
                 }
                 Declaration::Class { name, .. } => {
@@ -2313,11 +2326,20 @@ pub(crate) fn check_file_bodies(
                 body,
                 range,
                 is_async,
+                is_generator,
                 ..
             } = declaration
             else {
                 continue;
             };
+            if *is_generator
+                && *is_async
+                && functions
+                    .get(&format!("{}::{}:{}", file.module, name, range.start))
+                    .is_some_and(|body| body.async_generator.is_some())
+            {
+                continue;
+            }
             let mut env = State {
                 ownership: OwnershipState::new(
                     ownership,
@@ -2719,15 +2741,57 @@ pub(crate) fn check_file_bodies(
             }
         }
         if let Some(summary) = summaries.get(&file.path) {
-            let outcomes = execute(
-                &summary.module_body,
-                &mut module,
-                file,
-                &contracts,
-                functions,
-                result,
-                0,
-            );
+            let known_context_headers = if async_resources::applicable(&module).is_ok() {
+                declarations
+                    .iter()
+                    .filter_map(|declaration| {
+                        let Declaration::Function {
+                            name,
+                            range,
+                            parameters,
+                            returns,
+                            signature,
+                            ..
+                        } = declaration
+                        else {
+                            return None;
+                        };
+                        // Retain the existing boundary for eager evaluation of
+                        // annotations or non-literal default expressions.
+                        if returns.is_some()
+                            || parameters
+                                .iter()
+                                .any(|parameter| parameter.annotation.is_some())
+                            || !signature.unknown_defaults.is_empty()
+                        {
+                            return None;
+                        }
+                        functions
+                            .get(&format!("{}::{}:{}", file.module, name, range.start))
+                            .and_then(|function| function.async_generator.as_ref())
+                            .filter(|generator| generator.context)
+                            .map(|_| range.start)
+                    })
+                    .collect::<BTreeSet<_>>()
+            } else {
+                BTreeSet::new()
+            };
+            let modeled_module_body;
+            let body = if known_context_headers.is_empty() {
+                &summary.module_body[..]
+            } else {
+                modeled_module_body = summary
+                    .module_body
+                    .iter()
+                    .filter(|statement| {
+                        !matches!(statement, FlowStatement::Unsupported { range }
+                        if known_context_headers.contains(&range.start))
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                &modeled_module_body
+            };
+            let outcomes = execute(body, &mut module, file, &contracts, functions, result, 0);
             report_module_scope_lifetimes(result, &module, &outcomes);
             report_unawaited_coroutines(&module, file, result);
             if let Some(last) = summary.module_body.last() {

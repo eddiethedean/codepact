@@ -1,6 +1,6 @@
 use super::*;
 
-const MAX_PRIMITIVES: usize = 8;
+pub(super) const MAX_PRIMITIVES: usize = 8;
 const MAX_MESSAGES: usize = 16;
 const MAX_PERMITS: u8 = 16;
 const MAX_MESSAGE_BYTES: usize = 256;
@@ -56,6 +56,8 @@ struct Endpoint {
 #[derive(Clone, PartialEq, Eq)]
 struct Message {
     origin: Span,
+    from_worker: bool,
+    transport: IpcKind,
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -67,6 +69,7 @@ struct Channel {
     capacity: Option<usize>,
     invalid_accounting: bool,
     unknown: bool,
+    interrupted: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -135,11 +138,13 @@ pub(super) struct LocalProtocol {
     bool_results: BTreeMap<String, AcquireTest>,
     plain_values: BTreeSet<String>,
     foreign_fork_guards: BTreeSet<String>,
-    actor: String,
+    pub(super) actor: String,
+    pub(super) memory: shared_memory::LocalMemory,
 }
 
 impl LocalProtocol {
     pub(super) fn rebind(&mut self, name: &str) {
+        self.memory.rebind(name);
         self.aliases.remove(name);
         self.bool_results.remove(name);
         self.plain_values.remove(name);
@@ -153,7 +158,8 @@ impl LocalProtocol {
             .cloned();
         let plain = source.is_some_and(|source| self.plain_values.contains(source));
         let foreign_fork = source.is_some_and(|source| self.foreign_fork_guards.contains(source));
-        self.rebind(name);
+        self.memory.bind_alias(name, source);
+        self.rebind_ipc(name);
         if let Some(id) = object {
             self.aliases.insert(name.to_owned(), id);
         }
@@ -168,15 +174,23 @@ impl LocalProtocol {
         }
     }
 
+    fn rebind_ipc(&mut self, name: &str) {
+        self.aliases.remove(name);
+        self.bool_results.remove(name);
+        self.plain_values.remove(name);
+        self.foreign_fork_guards.remove(name);
+    }
+
     pub(super) fn has_handle(&self, name: &str) -> bool {
-        self.aliases.contains_key(name)
+        self.aliases.contains_key(name) || self.memory.has_handle(name)
     }
 
     pub(super) fn has_aliases(&self) -> bool {
-        !self.aliases.is_empty()
+        !self.aliases.is_empty() || self.memory.has_handles()
     }
 
     pub(super) fn join(&mut self, other: &Self) {
+        self.memory.join(&other.memory);
         self.aliases
             .retain(|name, id| other.aliases.get(name) == Some(id));
         self.bool_results
@@ -208,6 +222,10 @@ impl LocalProtocol {
         }
         for (id, channel) in &mut self.channels {
             channel.unknown |= other.channels.get(id) != Some(channel);
+            channel.interrupted |= other
+                .channels
+                .get(id)
+                .is_some_and(|other| other.interrupted);
         }
         for (id, channel) in &other.channels {
             self.channels.entry(id.clone()).or_insert_with(|| Channel {
@@ -233,6 +251,7 @@ impl LocalProtocol {
         range: SourceRange,
         result: &mut Inspection,
     ) {
+        self.memory.escape(names, file, range, result);
         for name in names {
             let Some(id) = self.aliases.get(name).cloned() else {
                 continue;
@@ -250,6 +269,10 @@ impl LocalProtocol {
                 "multiprocessing primitive escapes its qualified local protocol",
             );
         }
+    }
+
+    pub(super) fn primitive_count(&self) -> usize {
+        self.primitives.len() + self.memory.mapping_count()
     }
 }
 
@@ -324,7 +347,7 @@ fn rejected_payload(expr: &AstExpr, env: &State) -> bool {
     }
 }
 
-fn nonnegative(file: &SourceFile, expr: &AstExpr) -> Option<usize> {
+pub(super) fn nonnegative(file: &SourceFile, expr: &AstExpr) -> Option<usize> {
     if !matches!(expr.kind, AstExprKind::Primitive) {
         return None;
     }
@@ -491,7 +514,7 @@ fn budget(
     result: &mut Inspection,
 ) -> bool {
     let state = protocol(env).expect("modeled process primitive");
-    if state.primitives.len() + ids.len() > MAX_PRIMITIVES
+    if state.primitive_count() + ids.len() > MAX_PRIMITIVES
         || ids.iter().any(|id| state.primitives.contains_key(*id))
     {
         boundary(
@@ -1284,11 +1307,17 @@ fn ipc_call(
                     result,
                 );
             }
-            let channel = protocol_mut(env).channels.get_mut(&ep.channel).unwrap();
+            let state = protocol_mut(env);
+            let message = Message {
+                origin,
+                from_worker: !state.actor.is_empty(),
+                transport: ep.kind,
+            };
+            let channel = state.channels.get_mut(&ep.channel).unwrap();
             if !rejects {
-                channel.buffered[ep.side].push(Message { origin });
+                channel.buffered[ep.side].push(message);
             } else if ep.kind == IpcKind::JoinableQueue {
-                channel.dropped.push(Message { origin });
+                channel.dropped.push(message);
             }
             if ep.kind == IpcKind::JoinableQueue {
                 channel.unfinished += 1;
@@ -2059,6 +2088,7 @@ pub(in crate::flow) fn report_protocol_scope(
     let Some(protocol) = protocol(state) else {
         return;
     };
+    shared_memory::report_scope(&protocol.memory, file, range, result);
     for primitive in protocol.primitives.values() {
         if primitive.unknown {
             continue;
@@ -2109,11 +2139,32 @@ pub(in crate::flow) fn report_protocol_scope(
             PrimitiveKind::Shared { .. } => {}
         }
     }
-    for channel in protocol
-        .channels
-        .values()
-        .filter(|channel| !channel.unknown)
-    {
+    for channel in protocol.channels.values() {
+        if protocol.actor.is_empty() {
+            if let Some(reply) = channel
+                .buffered
+                .iter()
+                .flatten()
+                .find(|item| item.from_worker)
+            {
+                issue(
+                    (IPC_CODE, reply.transport.model()),
+                    "worker reply remains unobserved at scope exit",
+                    &reply.origin,
+                    file,
+                    range,
+                    if channel.unknown {
+                        "possible"
+                    } else {
+                        "definite"
+                    },
+                    result,
+                );
+            }
+        }
+        if channel.unknown && !channel.interrupted {
+            continue;
+        }
         if let Some(item) = channel.received.get(&protocol.actor) {
             issue(
                 (IPC_CODE, QUEUE_MODEL),
@@ -2121,7 +2172,11 @@ pub(in crate::flow) fn report_protocol_scope(
                 &item.origin,
                 file,
                 range,
-                "definite",
+                if channel.unknown {
+                    "possible"
+                } else {
+                    "definite"
+                },
                 result,
             );
         }
@@ -2133,7 +2188,11 @@ pub(in crate::flow) fn report_protocol_scope(
                     &item.origin,
                     file,
                     range,
-                    "definite",
+                    if channel.unknown {
+                        "possible"
+                    } else {
+                        "definite"
+                    },
                     result,
                 );
             }
@@ -2141,7 +2200,7 @@ pub(in crate::flow) fn report_protocol_scope(
     }
 }
 
-fn allocation_origin(file: &SourceFile, range: SourceRange) -> Span {
+pub(super) fn allocation_origin(file: &SourceFile, range: SourceRange) -> Span {
     let start = file.source[..range.start]
         .rfind('\n')
         .map_or(0, |offset| offset + 1);
@@ -2158,6 +2217,7 @@ fn allocation_origin(file: &SourceFile, range: SourceRange) -> Span {
 pub(super) enum SpawnArgument {
     Plain,
     Primitive(String),
+    SharedName(String),
     ForkGuard,
 }
 
@@ -2166,6 +2226,9 @@ pub(super) fn spawn_argument(
     env: &State,
     file: &SourceFile,
 ) -> Option<SpawnArgument> {
+    if let Some(name) = shared_memory::name_argument(expr, env) {
+        return Some(SpawnArgument::SharedName(name));
+    }
     if plain_message(expr, env, file) {
         return Some(SpawnArgument::Plain);
     }
@@ -2188,6 +2251,8 @@ pub(super) struct WorkerBindings {
     aliases: BTreeMap<String, String>,
     plain: BTreeSet<String>,
     channels: BTreeSet<String>,
+    pub(super) shared_names: BTreeMap<String, String>,
+    shared_segments: BTreeMap<String, shared_memory::Segment>,
 }
 
 impl WorkerBindings {
@@ -2209,6 +2274,11 @@ pub(super) fn prepare_spawn(
             SpawnArgument::Primitive(id) => id,
             SpawnArgument::Plain => {
                 bindings.plain.insert(name.clone());
+                continue;
+            }
+            SpawnArgument::SharedName(id) => {
+                bindings.plain.insert(name.clone());
+                bindings.shared_names.insert(name.clone(), id.clone());
                 continue;
             }
             SpawnArgument::ForkGuard => return None,
@@ -2239,9 +2309,10 @@ pub(super) fn prepare_spawn(
         };
         bindings.aliases.insert(name.clone(), binding);
     }
-    if protocol.primitives.len() + copies.len() > MAX_PRIMITIVES {
+    if protocol.primitive_count() + copies.len() > MAX_PRIMITIVES {
         return None;
     }
+    bindings.shared_segments = protocol.memory.capture_names(&bindings.shared_names);
     protocol_mut(env).primitives.extend(copies);
     Some(bindings)
 }
@@ -2258,6 +2329,9 @@ pub(super) fn child_protocol(
         plain_values: bindings.plain.clone(),
         primitives: source.primitives.clone(),
         channels: source.channels.clone(),
+        memory: source
+            .memory
+            .for_worker(&bindings.shared_names, &bindings.shared_segments),
         ..LocalProtocol::default()
     };
     for primitive in child.primitives.values_mut() {
@@ -2310,19 +2384,27 @@ fn project_worker_guards_and_close_copies(parent: &mut State, child: &LocalProto
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct WorkerEffects {
     before: BTreeMap<String, Channel>,
+    before_memory: shared_memory::LocalMemory,
     after: LocalProtocol,
     pub(super) complete: bool,
+    pub(super) raises: bool,
+    pub(super) returns: bool,
 }
 
 pub(super) fn worker_effects(
     parent: &State,
+    before_memory: shared_memory::LocalMemory,
     after: LocalProtocol,
     complete: bool,
+    (raises, returns): (bool, bool),
 ) -> WorkerEffects {
     WorkerEffects {
         before: protocol(parent).unwrap().channels.clone(),
+        before_memory,
         after,
         complete,
+        raises,
+        returns,
     }
 }
 
@@ -2379,4 +2461,30 @@ pub(super) fn complete_worker(
         project_channel(parent, effects, &channel);
     }
     project_worker_guards_and_close_copies(parent, &effects.after, actor);
+    protocol_mut(parent)
+        .memory
+        .apply_worker(&effects.before_memory, &effects.after.memory);
+}
+
+pub(super) fn interrupt_worker(parent: &mut State, bindings: &WorkerBindings) {
+    let protocol = protocol_mut(parent);
+    for id in &bindings.channels {
+        if let Some(channel) = protocol.channels.get_mut(id) {
+            channel.unknown = true;
+            channel.interrupted = true;
+        }
+    }
+    protocol.memory.interrupt_worker(&bindings.shared_names);
+}
+
+pub(super) fn retire_worker_endpoints(parent: &mut State, actor: &str) {
+    for primitive in protocol_mut(parent)
+        .primitives
+        .values_mut()
+        .filter(|primitive| primitive.owner == actor)
+    {
+        if let PrimitiveKind::Endpoint(endpoint) = &mut primitive.kind {
+            endpoint.closed = true;
+        }
+    }
 }

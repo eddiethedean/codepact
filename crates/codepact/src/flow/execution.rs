@@ -605,7 +605,7 @@ fn pattern_is_irrefutable(pattern: &crate::frontend::AstPattern) -> bool {
     }
 }
 
-const MAX_LOOP_ITERATIONS: usize = 16;
+pub(super) const MAX_LOOP_ITERATIONS: usize = 16;
 
 pub(super) fn push_exit(outcomes: &mut FlowResult, exit: FlowExit) {
     match &exit.kind {
@@ -1391,6 +1391,11 @@ fn execute_async_for(
     result: &mut Inspection,
     depth: usize,
 ) -> FlowResult {
+    if let Some(outcomes) = library::execute_iteration(
+        iterator, target, body, alternate, range, env, file, contracts, functions, result, depth,
+    ) {
+        return outcomes;
+    }
     fn orders(names: &[String]) -> Vec<Vec<String>> {
         if names.is_empty() {
             return vec![Vec::new()];
@@ -1411,6 +1416,11 @@ fn execute_async_for(
         permutations
     }
 
+    if let Some(outcomes) = async_resources::execute_for(
+        iterator, target, body, alternate, range, env, file, contracts, functions, result, depth,
+    ) {
+        return outcomes;
+    }
     let mut outcomes = FlowResult::default();
     let applicable = iterator.zip(target).and_then(|(iterator, target)| {
         let members = asyncio::as_completed_members(iterator, env)?;
@@ -2400,7 +2410,24 @@ pub(super) fn execute_non_if_statement(
             range,
             ..
         } if env.ownership.is_some() => {
+            if target
+                .as_ref()
+                .is_some_and(|target| process::shared_view_store(target, value, env, file, result))
+            {
+                return None;
+            }
             if process::initialize_pipe(value, target.as_ref(), env, file, result) {
+                return None;
+            }
+            if async_resources::unpack(
+                value,
+                target.as_ref(),
+                env,
+                file,
+                contracts,
+                functions,
+                result,
+            ) {
                 return None;
             }
             if asyncio::is_gather(value, env) {

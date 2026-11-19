@@ -181,6 +181,9 @@ pub(super) fn consume_expr_impl(
     result: &mut Inspection,
     depth: usize,
 ) {
+    if process::shared_view_access(expr, env, file, result) {
+        return;
+    }
     if let AstExprKind::Yield(value) = &expr.kind {
         if let Some(value) = value {
             consume_expr(value, env, file, contracts, functions, result, depth + 1);
@@ -255,6 +258,14 @@ pub(super) fn consume_expr_impl(
             return;
         }
         tasks::allow_tasks_to_start(env);
+        if async_resources::await_call(awaited, env, file, contracts, functions, result, depth) {
+            return;
+        }
+        if executor::await_bridge(
+            awaited, expr.range, env, file, contracts, functions, result, depth,
+        ) {
+            return;
+        }
         if asyncio::await_combination(
             awaited, expr.range, None, env, file, contracts, functions, result,
         ) {
@@ -354,6 +365,12 @@ pub(super) fn consume_expr_impl(
             }
         }
         let before = env.clone();
+        let library_tracks_cancellation = library::tracks_stream_cancellation(
+            coroutine
+                .as_ref()
+                .map_or(awaited, |record| &record.invocation),
+            &before,
+        );
         if env.ownership.is_some() {
             if let Some(record) = coroutine_id
                 .as_ref()
@@ -410,6 +427,7 @@ pub(super) fn consume_expr_impl(
             !record.ambiguous && matches!(&record.invocation.kind, AstExprKind::Call { function, .. } if expr_name(function).is_some())
         });
         if !exact_source_coroutine
+            && !library_tracks_cancellation
             && before.alive
             && (!has_modeled_cancellation || modeled_cancelled.is_some())
         {

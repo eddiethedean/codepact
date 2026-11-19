@@ -593,6 +593,7 @@ pub(super) fn external_module_bindings(
                             | "asyncio"
                             | "builtins"
                             | "multiprocessing"
+                            | "multiprocessing.shared_memory"
                             | "signal"
                             | "typing"
                             | "typing_extensions"
@@ -711,15 +712,16 @@ pub(super) fn resolve_imported_function(
                 decorators,
                 must_use_decorator,
                 unsupported,
+                range,
                 ..
             } if bound == name => {
-                return if (decorators.is_empty() || *must_use_decorator) && !unsupported {
-                    functions
-                        .get(&(module.to_owned(), name.to_owned()))
-                        .cloned()
-                } else {
-                    None
-                };
+                let definition = functions.get(&(module.to_owned(), name.to_owned()))?;
+                let known_generator = definition.async_generator.is_some()
+                    && definition.binding_key.as_deref()
+                        == Some(format!("{module}::{name}:{}", range.start).as_str());
+                return (!unsupported
+                    && (decorators.is_empty() || *must_use_decorator || known_generator))
+                    .then(|| definition.clone());
             }
             Declaration::Class { name: bound, .. }
             | Declaration::TypeAlias {
