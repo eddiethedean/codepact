@@ -9,12 +9,14 @@ enum Resource {
     AsyncClient,
     Body,
     Stream,
+    AsyncStream,
     Engine,
     AsyncEngine,
     Connection,
     Session,
     AsyncSession,
     Result(ResultFamily),
+    AsyncResult(ResultFamily),
     Transaction,
 }
 
@@ -26,13 +28,15 @@ enum ResultFamily {
 }
 
 const FILTERED_RESULT: &str = "result-filtered";
+const STREAM_RELEASE_UNKNOWN: &str = "stream-close-started";
+const STREAM_ITER_STARTED: &str = "stream-iteration-started";
 
 impl Resource {
     fn name(self) -> &'static str {
         match self {
             Self::Client => "Client",
             Self::AsyncClient => "AsyncClient",
-            Self::Body | Self::Stream => "Response",
+            Self::Body | Self::Stream | Self::AsyncStream => "Response",
             Self::Engine => "Engine",
             Self::AsyncEngine => "AsyncEngine",
             Self::Connection => "Connection",
@@ -40,6 +44,8 @@ impl Resource {
             Self::AsyncSession => "AsyncSession",
             Self::Result(ResultFamily::Scalars) => "ScalarResult",
             Self::Result(_) => "Result",
+            Self::AsyncResult(ResultFamily::Scalars) => "AsyncScalarResult",
+            Self::AsyncResult(_) => "AsyncResult",
             Self::Transaction => "SessionTransaction",
         }
     }
@@ -48,6 +54,7 @@ impl Resource {
         match self {
             Self::Body => "body",
             Self::Stream => "stream",
+            Self::AsyncStream => "async-stream",
             Self::Result(ResultFamily::Unknown) => "unknown-result",
             _ => self.name(),
         }
@@ -59,6 +66,7 @@ impl Resource {
             "AsyncClient" => Self::AsyncClient,
             "body" => Self::Body,
             "stream" => Self::Stream,
+            "async-stream" => Self::AsyncStream,
             "Engine" => Self::Engine,
             "AsyncEngine" => Self::AsyncEngine,
             "Connection" => Self::Connection,
@@ -67,6 +75,8 @@ impl Resource {
             "Result" => Self::Result(ResultFamily::Rows),
             "ScalarResult" => Self::Result(ResultFamily::Scalars),
             "unknown-result" => Self::Result(ResultFamily::Unknown),
+            "AsyncResult" => Self::AsyncResult(ResultFamily::Rows),
+            "AsyncScalarResult" => Self::AsyncResult(ResultFamily::Scalars),
             "SessionTransaction" => Self::Transaction,
             _ => return None,
         })
@@ -74,7 +84,7 @@ impl Resource {
 
     fn cleanup(self) -> &'static str {
         match self {
-            Self::AsyncClient => "aclose",
+            Self::AsyncClient | Self::AsyncStream => "aclose",
             Self::Engine | Self::AsyncEngine => "dispose",
             Self::Transaction => "rollback",
             _ => "close",
@@ -84,7 +94,11 @@ impl Resource {
     fn asynchronous(self) -> bool {
         matches!(
             self,
-            Self::AsyncClient | Self::AsyncEngine | Self::AsyncSession
+            Self::AsyncClient
+                | Self::AsyncEngine
+                | Self::AsyncSession
+                | Self::AsyncStream
+                | Self::AsyncResult(_)
         )
     }
 }
@@ -168,6 +182,21 @@ fn use_effect(
             location: None,
             replaced_origin: None,
         });
+    if status.is_ok() {
+        let family = match effect {
+            "async-stream-entry" => Some("reviewed-http-async-stream"),
+            "database-streaming-result" => Some("reviewed-sql-async-stream"),
+            "iterate-stream" => Some("reviewed-library-async-iteration"),
+            _ => None,
+        };
+        if let Some(family) = family {
+            let mut contract = vec![symbol.into(), canonical_symbol(scope, symbol)];
+            if let Some(provider) = &origin {
+                contract.extend([provider.version.clone(), provider.artifact_sha256.clone()]);
+            }
+            crate::review::operations::record_protocol(family, span(file, range), contract);
+        }
+    }
     foundation::record_use(
         symbol,
         effect,
@@ -189,6 +218,17 @@ fn canonical_symbol(scope: &str, symbol: &str) -> String {
         .unwrap_or(symbol);
     if scope == "sqlmodel" && tail == "create_engine" {
         return "sqlalchemy.engine.create.create_engine".into();
+    }
+    if matches!(scope, "sqlalchemy" | "sqlmodel") {
+        if matches!(
+            tail.split('.').next(),
+            Some("AsyncResult" | "AsyncScalarResult")
+        ) {
+            return format!("sqlalchemy.ext.asyncio.result.{tail}");
+        }
+        if matches!(tail, "AsyncSession.stream" | "AsyncSession.stream_scalars") {
+            return format!("sqlalchemy.ext.asyncio.session.{tail}");
+        }
     }
     if scope == "sqlalchemy" {
         match tail {
@@ -258,7 +298,13 @@ fn allocate(
             env.duty_origins.remove(object);
         }
     }
-    if matches!(kind, Resource::Result(_)) {
+    if kind == Resource::AsyncStream {
+        for object in env.pending_return_targets.iter().flatten() {
+            env.protocol_states
+                .insert(object.clone(), BTreeSet::from(["stream-open".into()]));
+        }
+    }
+    if matches!(kind, Resource::Result(_) | Resource::AsyncResult(_)) {
         for object in env.pending_return_targets.iter().flatten() {
             env.protocol_states
                 .insert(object.clone(), BTreeSet::from(["result-open".into()]));
@@ -339,6 +385,7 @@ enum Operation {
     ReadBody,
     Connect,
     Query(ResultFamily),
+    StreamQuery(ResultFamily),
     Consume,
     First,
     Filter,
@@ -351,6 +398,7 @@ fn operation(kind: Resource, method: &str) -> Option<Operation> {
     let op = match (kind, method) {
         (Resource::Client | Resource::AsyncClient, "get" | "request") => Operation::Request,
         (Resource::Stream | Resource::Body, "read") => Operation::ReadBody,
+        (Resource::AsyncStream, "aread") => Operation::ReadBody,
         (Resource::Engine, "connect") => Operation::Connect,
         (Resource::Connection | Resource::Session | Resource::AsyncSession, "execute") => {
             Operation::Query(ResultFamily::Rows)
@@ -361,6 +409,8 @@ fn operation(kind: Resource, method: &str) -> Option<Operation> {
         (Resource::Session | Resource::AsyncSession, "exec") => {
             Operation::Query(ResultFamily::Unknown)
         }
+        (Resource::AsyncSession, "stream") => Operation::StreamQuery(ResultFamily::Rows),
+        (Resource::AsyncSession, "stream_scalars") => Operation::StreamQuery(ResultFamily::Scalars),
         (Resource::Result(_), "all" | "fetchall") => Operation::Consume,
         (Resource::Result(_), "first") => Operation::First,
         (Resource::Result(ResultFamily::Rows), "scalars" | "mappings") => Operation::Filter,
@@ -390,8 +440,11 @@ fn sqlmodel_result(args: &[AstExpr], env: &State) -> ResultFamily {
         return ResultFamily::Unknown;
     };
     let scalar = match statement.kind {
-        AstExprKind::EvaluatedSqlModelSelect { scalar } => Some(scalar),
-        _ => sqlmodel_select_is_scalar(statement, env),
+        AstExprKind::EvaluatedSelect { sqlmodel_scalar } => sqlmodel_scalar,
+        _ => match reviewed_select(statement, env) {
+            Some(AstExprKind::EvaluatedSelect { sqlmodel_scalar }) => sqlmodel_scalar,
+            _ => None,
+        },
     };
     match scalar {
         Some(true) => ResultFamily::Scalars,
@@ -400,7 +453,7 @@ fn sqlmodel_result(args: &[AstExpr], env: &State) -> ResultFamily {
     }
 }
 
-pub(super) fn sqlmodel_select_is_scalar(statement: &AstExpr, env: &State) -> Option<bool> {
+pub(super) fn reviewed_select(statement: &AstExpr, env: &State) -> Option<AstExprKind> {
     env.models.foundations.as_ref()?;
     let (select, columns, keywords) = call_parts(statement)?;
     if columns.is_empty()
@@ -408,11 +461,22 @@ pub(super) fn sqlmodel_select_is_scalar(statement: &AstExpr, env: &State) -> Opt
         || columns
             .iter()
             .any(|column| matches!(column.kind, AstExprKind::Starred(_)))
-        || providers::public_name(select, env).as_deref() != Some("sqlmodel.select")
     {
         return None;
     }
-    Some(columns.len() == 1)
+    let sqlmodel_scalar = match providers::public_name(select, env)?.as_str() {
+        "sqlmodel.select" => Some(columns.len() == 1),
+        "sqlalchemy.select" => None,
+        "sqlalchemy.text"
+            if matches!(columns, [AstExpr { kind: AstExprKind::String(sql), .. }]
+                if !sql.trim_end().trim_end_matches(';').contains(';')
+                    && sql.split_whitespace().next().is_some_and(|verb| verb.eq_ignore_ascii_case("select"))) =>
+        {
+            None
+        }
+        _ => return None,
+    };
+    Some(AstExprKind::EvaluatedSelect { sqlmodel_scalar })
 }
 
 fn arguments_supported(
@@ -429,8 +493,30 @@ fn arguments_supported(
                 matches!(args, [AstExpr { kind: AstExprKind::String(method), .. }, url] if matches!(method.as_str(), "GET" | "HEAD") && literal_url(url))
             }
             Operation::Query(_) => args.len() == 1,
+            Operation::StreamQuery(_) => matches!(
+                args,
+                [AstExpr {
+                    kind: AstExprKind::EvaluatedSelect { .. },
+                    ..
+                }]
+            ),
             _ => args.is_empty(),
         }
+}
+
+fn loopback_http_url(url: &str) -> bool {
+    let Some(authority) = url
+        .strip_prefix("http://")
+        .and_then(|tail| tail.split(['/', '?', '#']).next())
+    else {
+        return false;
+    };
+    let host = match authority.split_once(':') {
+        Some((host, port)) if port.parse::<u16>().is_ok_and(|port| port != 0) => host,
+        Some(_) => return false,
+        None => authority,
+    };
+    matches!(host, "127.0.0.1" | "localhost")
 }
 
 fn set_closed(object: &str, env: &mut State, file: &SourceFile, range: SourceRange) {
@@ -446,8 +532,17 @@ fn set_transaction(object: &str, state: &str, env: &mut State) {
 
 fn set_result_state(object: &str, state: &str, env: &mut State) {
     let states = env.protocol_states.entry(object.to_owned()).or_default();
-    states.retain(|state| state == FILTERED_RESULT);
+    states.retain(|state| state == FILTERED_RESULT || state.starts_with("subject:"));
     states.insert(state.to_owned());
+}
+
+fn only_stream_state(object: &str, expected: &str, env: &State) -> bool {
+    env.protocol_states.get(object).is_some_and(|states| {
+        states.contains(expected)
+            && states.iter().all(|state| {
+                state == expected || state == FILTERED_RESULT || state.starts_with("subject:")
+            })
+    })
 }
 
 fn queue_uncertain_exit(object: &str, range: SourceRange, env: &mut State) {
@@ -456,6 +551,105 @@ fn queue_uncertain_exit(object: &str, range: SourceRange, env: &mut State) {
         *exit.state.objects.entry(object.to_owned()).or_default() |= UNKNOWN;
         exit.state.protocol_unknown.insert(object.to_owned());
     }
+}
+
+fn parent_stream_has_lease(kind: Resource) -> bool {
+    matches!(kind, Resource::AsyncClient | Resource::AsyncSession)
+}
+
+fn check_stream_leases(
+    parent: &str,
+    env: &State,
+    file: &SourceFile,
+    range: SourceRange,
+    result: &mut Inspection,
+) {
+    let subject = format!("subject:{parent}");
+    let mut active = Vec::new();
+    let mut unresolved = false;
+    for (stream, states) in &env.protocol_states {
+        if !states.contains(&subject) {
+            continue;
+        }
+        let state = env.objects.get(stream).copied().unwrap_or(UNKNOWN);
+        if state & OPEN != 0 && state & UNKNOWN == 0 {
+            active.extend(env.duty_origins.get(stream).cloned());
+        }
+        unresolved |= state & UNKNOWN != 0;
+    }
+    if !active.is_empty() {
+        report(
+            result,
+            "TP2006",
+            "reviewed resource operation conflicts with a live async stream",
+            span(file, range),
+            active,
+            "possible",
+            contract_identity(env.resources.get(parent)),
+        );
+    }
+    if unresolved {
+        boundary(
+            result,
+            file,
+            range,
+            "release of a related async stream is unresolved",
+        );
+    }
+}
+
+fn record_stream_parent(parent: &str, env: &mut State) {
+    for stream in env.pending_return_targets.iter().flatten() {
+        env.protocol_states
+            .entry(stream.clone())
+            .or_default()
+            .insert(format!("subject:{parent}"));
+    }
+}
+
+fn mark_interrupted_http_close(object: &str, env: &mut State) {
+    *env.objects.entry(object.to_owned()).or_default() |= UNKNOWN;
+    env.protocol_states
+        .entry(object.to_owned())
+        .or_default()
+        .insert(STREAM_RELEASE_UNKNOWN.into());
+    env.protocol_unknown.insert(object.to_owned());
+}
+
+fn http_close_started(object: &str, env: &State) -> bool {
+    env.protocol_states
+        .get(object)
+        .is_some_and(|states| states.contains(STREAM_RELEASE_UNKNOWN))
+}
+
+enum StreamInterruption {
+    Retain,
+    HttpClose,
+    SqlEffect,
+}
+
+fn queue_stream_cancellation(
+    object: &str,
+    range: SourceRange,
+    env: &mut State,
+    effect: StreamInterruption,
+) {
+    let mut cancelled = env.clone();
+    cancelled.pending_raises.clear();
+    match effect {
+        StreamInterruption::Retain => {}
+        StreamInterruption::HttpClose => mark_interrupted_http_close(object, &mut cancelled),
+        StreamInterruption::SqlEffect => {
+            *cancelled.objects.entry(object.to_owned()).or_default() |= UNKNOWN;
+            cancelled.protocol_unknown.insert(object.to_owned());
+        }
+    }
+    asyncio::queue_deadline_cancellations(env, range, &cancelled, false);
+    env.pending_raises.push(FlowExit {
+        state: cancelled,
+        range,
+        kind: CompletionKind::Cancelled(None),
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -470,22 +664,15 @@ fn apply_operation(
     result: &mut Inspection,
 ) {
     let mask = env.objects.get(object).copied().unwrap_or(UNKNOWN);
-    let body_buffered = op == Operation::ReadBody
-        && env
-            .protocol_states
-            .get(object)
-            .is_some_and(|states| states.len() == 1 && states.contains("stream-buffered"));
-    let result_exhausted = matches!(kind, Resource::Result(_))
-        && env.protocol_states.get(object).is_some_and(|states| {
-            states.contains("result-exhausted")
-                && states
-                    .iter()
-                    .all(|state| state == "result-exhausted" || state == FILTERED_RESULT)
-        });
+    let body_buffered =
+        op == Operation::ReadBody && only_stream_state(object, "stream-buffered", env);
+    let result_exhausted = matches!(kind, Resource::Result(_) | Resource::AsyncResult(_))
+        && only_stream_state(object, "result-exhausted", env);
     if op != Operation::Close
         && !body_buffered
         && !result_exhausted
-        && mask & CLOSED != 0
+        && (mask & CLOSED != 0
+            || (kind == Resource::AsyncStream && http_close_started(object, env)))
         && !matches!(
             kind,
             Resource::Engine | Resource::Session | Resource::AsyncSession
@@ -509,9 +696,21 @@ fn apply_operation(
             env.alive = false;
             return;
         }
+        if kind == Resource::AsyncStream && http_close_started(object, env) {
+            boundary(
+                result,
+                file,
+                range,
+                "response operation follows an unresolved transport close",
+            );
+            return;
+        }
     }
     match op {
         Operation::Close => {
+            if parent_stream_has_lease(kind) {
+                check_stream_leases(object, env, file, range, result);
+            }
             ownership::check_close(env, object, file, range, result, mask != OPEN);
             if env.borrowed.contains(object) || env.forbidden_borrowed_closes.contains(object) {
                 report(
@@ -525,9 +724,32 @@ fn apply_operation(
                 );
                 return;
             }
-            queue_uncertain_exit(object, range, env);
+            if kind == Resource::AsyncStream {
+                if mask == CLOSED {
+                    return;
+                }
+                if http_close_started(object, env) {
+                    boundary(
+                        result,
+                        file,
+                        range,
+                        "response close already started and transport release remains unresolved",
+                    );
+                    return;
+                }
+                queue_stream_cancellation(object, range, env, StreamInterruption::HttpClose);
+                queue_raise(env, range, None);
+                if let Some(exit) = env.pending_raises.last_mut() {
+                    mark_interrupted_http_close(object, &mut exit.state);
+                }
+            } else if !matches!(kind, Resource::AsyncResult(_)) || mask != CLOSED {
+                if matches!(kind, Resource::AsyncResult(_)) {
+                    queue_stream_cancellation(object, range, env, StreamInterruption::SqlEffect);
+                }
+                queue_uncertain_exit(object, range, env);
+            }
             set_closed(object, env, file, range);
-            if matches!(kind, Resource::Result(_)) {
+            if matches!(kind, Resource::Result(_) | Resource::AsyncResult(_)) {
                 set_result_state(object, "result-closed", env);
             }
             if matches!(
@@ -547,6 +769,32 @@ fn apply_operation(
                 queue_raise(env, range, None);
                 set_transaction(object, "stream-buffered", env);
             }
+            if kind == Resource::AsyncStream && !body_buffered {
+                if http_iteration_started(object, env) {
+                    boundary(
+                        result,
+                        file,
+                        range,
+                        "the streaming response may already be consumed",
+                    );
+                    queue_raise(env, range, None);
+                    return;
+                }
+                mark_http_iteration_started(object, env);
+                queue_stream_cancellation(object, range, env, StreamInterruption::Retain);
+                queue_raise(env, range, None);
+                apply_operation(
+                    Operation::Close,
+                    scope,
+                    kind,
+                    object,
+                    env,
+                    file,
+                    range,
+                    result,
+                );
+                set_result_state(object, "stream-buffered", env);
+            }
         }
         Operation::Connect => {
             if mask & CLOSED != 0 {
@@ -558,7 +806,7 @@ fn apply_operation(
             queue_raise(env, range, None);
             allocate(scope, Resource::Connection, file, range, env, result);
         }
-        Operation::Query(family) => {
+        Operation::Query(family) | Operation::StreamQuery(family) => {
             if matches!(kind, Resource::Session | Resource::AsyncSession) && mask & CLOSED != 0 {
                 if env
                     .ownership
@@ -579,7 +827,20 @@ fn apply_operation(
             }
             set_transaction(object, "active", env);
             queue_raise(env, range, None);
-            allocate(scope, Resource::Result(family), file, range, env, result);
+            if matches!(op, Operation::StreamQuery(_)) {
+                queue_stream_cancellation(object, range, env, StreamInterruption::SqlEffect);
+                allocate(
+                    scope,
+                    Resource::AsyncResult(family),
+                    file,
+                    range,
+                    env,
+                    result,
+                );
+                record_stream_parent(object, env);
+            } else {
+                allocate(scope, Resource::Result(family), file, range, env, result);
+            }
         }
         Operation::Consume => {
             queue_uncertain_exit(object, range, env);
@@ -636,6 +897,214 @@ fn apply_operation(
             }
         }
     }
+}
+
+fn http_iteration_started(object: &str, env: &State) -> bool {
+    env.protocol_states
+        .get(object)
+        .is_some_and(|states| states.contains(STREAM_ITER_STARTED))
+}
+
+fn mark_http_iteration_started(object: &str, env: &mut State) {
+    env.protocol_states
+        .entry(object.to_owned())
+        .or_default()
+        .insert(STREAM_ITER_STARTED.into());
+}
+
+fn iteration_subject<'a>(
+    iterator: &AstExpr,
+    env: &'a State,
+) -> Option<(&'a str, &'a str, Resource, bool)> {
+    if let Some((object, scope, kind @ Resource::AsyncResult(_))) = object_for(iterator, env) {
+        return Some((object, scope, kind, true));
+    }
+    let (method, args, kwargs) = call_parts(iterator)?;
+    let AstExprKind::Attribute(receiver, member) = &method.kind else {
+        return None;
+    };
+    let (object, scope, kind @ Resource::AsyncStream) = object_for(receiver, env)? else {
+        return None;
+    };
+    (member == "aiter_bytes").then_some((object, scope, kind, args.is_empty() && kwargs.is_empty()))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn execute_iteration(
+    iterator: Option<&AstExpr>,
+    target: Option<&str>,
+    body: &[FlowStatement],
+    alternate: &[FlowStatement],
+    range: SourceRange,
+    env: &mut State,
+    file: &SourceFile,
+    contracts: &[Contract],
+    functions: &FunctionMap,
+    result: &mut Inspection,
+    depth: usize,
+) -> Option<FlowResult> {
+    let iterator = iterator?;
+    let (object, scope, kind, arguments_valid) = iteration_subject(iterator, env)?;
+    let object = object.to_owned();
+    let scope = scope.to_owned();
+    let is_http = kind == Resource::AsyncStream;
+    let symbol = format!(
+        "{scope}.{}.{}",
+        kind.name(),
+        if is_http { "aiter_bytes" } else { "__anext__" }
+    );
+    let status = ready(&scope, true, env).and_then(|()| {
+        if target.is_none() || !arguments_valid {
+            return Err(
+                "reviewed async iteration requires a single local target and default arguments",
+            );
+        }
+        if depth >= MAX_CONTROL_FLOW_DEPTH || env.control_depth >= MAX_CONTROL_FLOW_DEPTH {
+            return Err("reviewed async iteration exceeds the loop nesting budget");
+        }
+        if !env.exclusive.is_empty() {
+            return Err("exclusive borrow remains active across async iteration");
+        }
+        Ok(())
+    });
+    let mut outcomes = FlowResult::default();
+    if !use_effect(
+        &scope,
+        &symbol,
+        "iterate-stream",
+        status,
+        file,
+        range,
+        env,
+        result,
+    ) {
+        queue_raise(env, range, None);
+        outcomes.raises.extend(take_pending_raises(env));
+        return Some(outcomes);
+    }
+    let target = target.expect("reviewed async iteration target");
+    let mask = env.objects.get(&object).copied().unwrap_or(UNKNOWN);
+    let exhausted = only_stream_state(
+        &object,
+        if is_http {
+            "stream-buffered"
+        } else {
+            "result-exhausted"
+        },
+        env,
+    );
+    if mask != OPEN && !exhausted || is_http && http_iteration_started(&object, env) {
+        boundary(
+            result,
+            file,
+            range,
+            "async iterator may be closed or already consumed",
+        );
+        queue_raise(env, range, None);
+        outcomes.raises.extend(take_pending_raises(env));
+        return Some(outcomes);
+    }
+    let mut entry = env.clone();
+    if is_http && !exhausted {
+        mark_http_iteration_started(&object, &mut entry);
+    }
+    let mut head = entry.clone();
+    let mut breaks = Vec::new();
+    let mut converged = !is_http && exhausted;
+    for _ in 0..execution::MAX_LOOP_ITERATIONS {
+        if converged {
+            break;
+        }
+        let mut iteration = head.clone();
+        if !exhausted {
+            queue_stream_cancellation(&object, range, &mut iteration, StreamInterruption::Retain);
+            queue_raise(&mut iteration, range, None);
+            outcomes.raises.extend(take_pending_raises(&mut iteration));
+        }
+        iteration.bind_runtime_handle(target);
+        let replaced = iteration.outcomes.bind(target, outcomes::Values::new());
+        outcomes::lose(&mut iteration, replaced, file, range, result);
+        iteration.control_depth += 1;
+        iteration.loop_depth += 1;
+        let mut exits = execute(
+            body,
+            &mut iteration,
+            file,
+            contracts,
+            functions,
+            result,
+            depth + 1,
+        );
+        let reset_depth = |mut state: State| {
+            state.control_depth = env.control_depth;
+            state.loop_depth = env.loop_depth;
+            state
+        };
+        breaks.extend(exits.breaks.drain(..).map(|exit| reset_depth(exit.state)));
+        let continued = exits
+            .continues
+            .drain(..)
+            .map(|exit| reset_depth(exit.state));
+        let back = join_states(
+            continued
+                .chain(iteration.alive.then(|| reset_depth(iteration)))
+                .collect(),
+        );
+        outcomes.append(exits);
+        let Some(back) = back else {
+            converged = true;
+            break;
+        };
+        let next = merge(&entry, &back).0;
+        converged = next == head;
+        head = next;
+    }
+    if !converged {
+        boundary(
+            result,
+            file,
+            range,
+            "reviewed async iteration did not converge within the loop budget",
+        );
+        weaken(&mut head, std::iter::once(object.clone()));
+    }
+    if is_http && !exhausted {
+        apply_operation(
+            Operation::Close,
+            &scope,
+            kind,
+            &object,
+            &mut head,
+            file,
+            range,
+            result,
+        );
+    } else if !exhausted {
+        set_closed(&object, &mut head, file, range);
+        set_result_state(&object, "result-exhausted", &mut head);
+    }
+    outcomes.raises.extend(take_pending_raises(&mut head));
+    if head.alive {
+        outcomes.append(execute(
+            alternate,
+            &mut head,
+            file,
+            contracts,
+            functions,
+            result,
+            depth + 1,
+        ));
+        if head.alive {
+            breaks.push(head);
+        }
+    }
+    if let Some(mut joined) = join_states(breaks) {
+        joined.alive = true;
+        *env = joined;
+    } else {
+        env.alive = false;
+    }
+    Some(outcomes)
 }
 
 pub(super) fn call(
@@ -731,6 +1200,7 @@ pub(super) fn call(
         Some(Operation::Close) => "receiver-cleanup",
         Some(Operation::Request) => "buffered-response",
         Some(Operation::Query(_)) => "database-result",
+        Some(Operation::StreamQuery(_)) => "database-streaming-result",
         Some(Operation::Consume | Operation::First) => "consume-result",
         Some(Operation::Begin) => "transaction-begin",
         Some(Operation::Commit) => "transaction-commit",
@@ -764,7 +1234,10 @@ pub(super) fn call(
     if kind == Resource::AsyncSession
         && matches!(
             op,
-            Operation::Query(_) | Operation::Commit | Operation::Rollback
+            Operation::Query(_)
+                | Operation::StreamQuery(_)
+                | Operation::Commit
+                | Operation::Rollback
         )
         && env
             .ownership
@@ -781,6 +1254,7 @@ pub(super) fn call(
             expression.range,
             result,
         );
+        check_stream_leases(&object, env, file, expression.range, result);
     }
     apply_operation(
         op,
@@ -807,11 +1281,38 @@ pub(super) fn direct_await(expression: &AstExpr, env: &State) -> bool {
     })
 }
 
+pub(super) fn tracks_stream_cancellation(expression: &AstExpr, env: &State) -> bool {
+    let Some((callee, args, kwargs)) = call_parts(expression) else {
+        return false;
+    };
+    let AstExprKind::Attribute(receiver, method) = &callee.kind else {
+        return false;
+    };
+    object_for(receiver, env).is_some_and(|(_, scope, kind)| {
+        let operation_supported = match (kind, method.as_str(), args) {
+            (Resource::AsyncStream, "aread" | "aclose", [])
+            | (Resource::AsyncResult(_), "close", []) => true,
+            (Resource::AsyncSession, "stream" | "stream_scalars", [query]) => {
+                matches!(query.kind, AstExprKind::EvaluatedSelect { .. })
+                    || reviewed_select(query, env).is_some()
+            }
+            _ => false,
+        };
+        operation_supported
+            && kwargs.is_empty()
+            && ready(scope, true, env).is_ok()
+            && expr_name(receiver).is_none_or(|name| {
+                !env.unknown_places.contains(name) && !env.possibly_unbound_places.contains(name)
+            })
+    })
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum Context {
     Standard,
     Transaction,
     Stream,
+    AsyncStream,
     Etl,
 }
 
@@ -831,17 +1332,15 @@ pub(super) fn context(expression: &AstExpr, asynchronous: bool, env: &State) -> 
         return (resource.asynchronous() == asynchronous && resource_has_context(resource))
             .then_some(Context::Standard);
     }
-    if asynchronous {
-        return None;
-    }
     let AstExprKind::Attribute(receiver, method) = &callee.kind else {
         return None;
     };
     let (_, _, resource) = object_for(receiver, env)?;
-    match (resource, method.as_str()) {
-        (Resource::Client, "stream") => Some(Context::Stream),
-        (Resource::Session | Resource::Connection, "begin") => Some(Context::Transaction),
-        (Resource::Engine, "connect") => Some(Context::Standard),
+    match (resource, method.as_str(), asynchronous) {
+        (Resource::Client, "stream", false) => Some(Context::Stream),
+        (Resource::AsyncClient, "stream", true) => Some(Context::AsyncStream),
+        (Resource::Session | Resource::Connection, "begin", false) => Some(Context::Transaction),
+        (Resource::Engine, "connect", false) => Some(Context::Standard),
         _ => None,
     }
 }
@@ -859,7 +1358,7 @@ fn resource_has_context(resource: Resource) -> bool {
 
 impl Context {
     pub(super) fn special(self) -> bool {
-        matches!(self, Self::Stream | Self::Etl)
+        matches!(self, Self::Stream | Self::AsyncStream | Self::Etl)
     }
 
     pub(super) fn enter(
@@ -923,26 +1422,39 @@ impl Context {
         let (callee, args, kwargs) = call_parts(expression).expect("recognized context call");
         queue_raise(env, expression.range, None);
         let (scope, symbol, resource, status, client) = match self {
-            Self::Stream => {
+            Self::Stream | Self::AsyncStream => {
                 let AstExprKind::Attribute(receiver, _) = &callee.kind else {
                     unreachable!("stream method")
                 };
-                let (object, scope, _) =
+                let (object, scope, client_kind) =
                     object_for(receiver, env).expect("recognized stream receiver");
-                let status = ready(scope, false, env).and_then(|()| {
+                let asynchronous = matches!(self, Self::AsyncStream);
+                let status = ready(scope, asynchronous, env).and_then(|()| {
                     if env.objects.get(object) != Some(&OPEN)
                         || expr_name(receiver).is_some_and(|name| env.unknown_places.contains(name))
                     {
                         return Err("stream context requires a known open reviewed client");
                     }
-                    arguments_supported(Operation::Request, "request", args, kwargs)
-                        .then_some(())
-                        .ok_or("stream context requires a literal HTTP request")
+                    (if asynchronous {
+                        matches!(args,
+                            [AstExpr { kind: AstExprKind::String(method), .. },
+                             AstExpr { kind: AstExprKind::String(url), .. }]
+                            if method == "GET" && loopback_http_url(url))
+                            && kwargs.is_empty()
+                    } else {
+                        arguments_supported(Operation::Request, "request", args, kwargs)
+                    })
+                    .then_some(())
+                    .ok_or("stream context requires a literal HTTP request")
                 });
                 (
                     scope,
-                    format!("{scope}.Client.stream"),
-                    Resource::Stream,
+                    format!("{scope}.{}.stream", client_kind.name()),
+                    if asynchronous {
+                        Resource::AsyncStream
+                    } else {
+                        Resource::Stream
+                    },
                     status,
                     Some(object.to_owned()),
                 )
@@ -966,7 +1478,11 @@ impl Context {
         if use_effect(
             scope,
             &symbol,
-            "context-entry",
+            if matches!(self, Self::AsyncStream) {
+                "async-stream-entry"
+            } else {
+                "context-entry"
+            },
             status,
             file,
             expression.range,
@@ -979,17 +1495,33 @@ impl Context {
                 scope
             }
             .to_owned();
-            if let Some(client) = client {
+            if let Some(client) = client.as_deref() {
                 let already_started = env
                     .protocol_states
-                    .get(&client)
+                    .get(client)
                     .is_some_and(|states| states.len() == 1 && states.contains("client-started"));
                 if !already_started {
-                    set_transaction(&client, "client-started", env);
+                    set_transaction(client, "client-started", env);
                     queue_raise(env, expression.range, None);
                 }
             }
+            if matches!(self, Self::AsyncStream) {
+                let client = client.as_deref().expect("async stream client");
+                check_stream_leases(client, env, file, expression.range, result);
+                queue_stream_cancellation(
+                    client,
+                    expression.range,
+                    env,
+                    StreamInterruption::Retain,
+                );
+            }
             allocate(&result_scope, resource, file, expression.range, env, result);
+            if let Some(client) = client
+                .as_deref()
+                .filter(|_| matches!(self, Self::AsyncStream))
+            {
+                record_stream_parent(client, env);
+            }
         }
     }
 
@@ -1017,7 +1549,12 @@ impl Context {
         };
         let object = object.to_owned();
         let scope = scope.to_owned();
-        let symbol = format!("{scope}.{}.__exit__", kind.name());
+        let exit_method = if kind.asynchronous() {
+            "__aexit__"
+        } else {
+            "__exit__"
+        };
+        let symbol = format!("{scope}.{}.{exit_method}", kind.name());
         use_effect(
             &scope,
             &symbol,
@@ -1151,6 +1688,16 @@ impl Context {
                     });
                 }
             }
+            Self::AsyncStream => apply_operation(
+                Operation::Close,
+                &scope,
+                kind,
+                &object,
+                env,
+                file,
+                range,
+                result,
+            ),
         }
     }
 }

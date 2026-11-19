@@ -21,7 +21,7 @@ Planning baseline: 2026-10-31; release mapping updated 2026-11-17. These documen
 | [0.8 foundations](phases/0.8-reviewed-concurrency-foundations.md) | Reviewed providers and first asyncio/multiprocessing lifecycle models. [Specification](phases/0.8/specification.md) · [V08 matrix](phases/0.8/validation.md) · [Implementation evidence](phases/0.8/implementation-evidence.md) |
 | [0.9 obligations and review](phases/0.9-obligations-and-change-review.md) | Persistent responsibilities, before/after comparison and separate HTTP/SQL profiles. [Specification](phases/0.9/specification.md) · [V09 matrix](phases/0.9/validation.md) |
 | [0.10 queues and IPC](phases/0.10-queues-ipc-and-synchronization.md) | Published opt-in queue accounting, process communication and bounded synchronization. [Release evidence](../releases/0.10.0-evidence.md) · [Specification](phases/0.10/specification.md) · [V10 matrix](phases/0.10/validation.md) |
-| [0.11 shutdown and bridges](phases/0.11-shutdown-and-bridges.md) | Async resources, worker shutdown, executor bridges and bounded shared memory |
+| [0.11 shutdown and bridges](phases/0.11-shutdown-and-bridges.md) | Planned async resources, worker shutdown, executor bridges and bounded shared memory. [Specification](phases/0.11/specification.md) · [V11 matrix](phases/0.11/validation.md) |
 | [0.12 integrations](phases/0.12-ecosystem-and-integrations.md) | Portfolio/native/framework adoption, caching, editors and MCP |
 | [0.13 stabilization](phases/0.13-stabilization.md) | Compatibility/adoption rehearsals and recorded 1.0 readiness |
 | [Carried-forward gates](phases/carry-forward-gates.md) | Unchanged E01–E12 and S01–S09 definitions and completion ownership |

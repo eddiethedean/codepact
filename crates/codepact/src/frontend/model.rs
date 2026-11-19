@@ -35,8 +35,8 @@ pub(crate) enum AstExprKind {
     String(String),
     Primitive,
     /// A reviewed SQLModel statement already evaluated during call preparation.
-    EvaluatedSqlModelSelect {
-        scalar: bool,
+    EvaluatedSelect {
+        sqlmodel_scalar: Option<bool>,
     },
     NoneLiteral,
     Other,

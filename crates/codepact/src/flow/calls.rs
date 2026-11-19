@@ -162,7 +162,7 @@ pub(super) fn evaluate_call_arguments(
                 | AstExprKind::Boolean(_)
                 | AstExprKind::NoneLiteral
                 | AstExprKind::Primitive
-                | AstExprKind::EvaluatedSqlModelSelect { .. }
+                | AstExprKind::EvaluatedSelect { .. }
         ) {
             consume_expr(argument, env, file, contracts, functions, result, depth + 1);
             env.outcomes.remember_argument(argument.range);
@@ -289,14 +289,14 @@ pub(super) fn prepare_call(
                 | AstExprKind::Boolean(_)
                 | AstExprKind::NoneLiteral
                 | AstExprKind::Primitive
-                | AstExprKind::EvaluatedSqlModelSelect { .. }
+                | AstExprKind::EvaluatedSelect { .. }
         ) {
-            let sqlmodel_select = library::sqlmodel_select_is_scalar(argument, env);
+            let select = library::reviewed_select(argument, env);
             consume_expr(argument, env, file, contracts, functions, result, depth + 1);
             snapshot_result(argument, env, file, &mut prepared.temporaries);
             if argument.kind == AstExprKind::Primitive {
-                if let Some(scalar) = sqlmodel_select {
-                    argument.kind = AstExprKind::EvaluatedSqlModelSelect { scalar };
+                if let Some(select) = select {
+                    argument.kind = select;
                 }
             }
         }
@@ -445,7 +445,9 @@ pub(super) fn dispatch_runtime_call(
     // call evaluation continues.
     runtime::open_resource(expr, env, file, result).claimed()
         || super::library::call(expr, env, file, result)
+        || super::executor::scheduling_call(expr, env, file, result)
         || super::asyncio::call(expr, env, file, result).claimed()
+        || super::async_resources::call(expr, env, file, functions, result)
         || super::async_protocols::call(expr, env, file, result)
         || super::work::call(expr, env, file, result)
         || builtin_exception_call(expr, env, file, result)

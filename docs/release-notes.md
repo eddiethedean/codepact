@@ -3,6 +3,23 @@
 See the site header for the docs channel and [release availability](availability.md)
 for package and source links.
 
+## 0.11.0 candidate — shutdown and executor bridges
+
+The source candidate extends opt-in analysis on the CPython 3.13.16 Linux
+x86-64 runtime profile. Review the operation and artifact boundaries before
+applying its findings to a project. Release qualification is pending.
+
+- Async cleanup checks distinguish generator suspension, stream and server
+  closure, and subprocess exit. Reviewed HTTPX, HTTPX2, SQLAlchemy, and
+  SQLModel profiles track selected async streams and their cleanup.
+- Executor bridges distinguish dispatch, wrapper cancellation, underlying
+  completion, result observation, and outcome acknowledgment.
+- Explicit-spawn worker shutdown retains outstanding IPC and cleanup duties.
+  The shared-memory profile tracks local mappings, exported views, and
+  the creator's responsibility to remove the name.
+
+[Candidate scope and examples](concurrency.md#011-source-candidate)
+
 ## 0.10.0 — queues, IPC and synchronization
 
 Published on November 18, 2026. The helper, standalone CLI, and Rust crate

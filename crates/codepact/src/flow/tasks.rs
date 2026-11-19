@@ -1023,6 +1023,7 @@ pub(super) fn apply_worker_protocol_state(
 
 pub(super) fn allow_tasks_to_start(env: &mut State) {
     if let Some(ownership) = env.ownership.as_mut() {
+        ownership.work.allow_bridges_to_start();
         for task in ownership
             .groups
             .values_mut()

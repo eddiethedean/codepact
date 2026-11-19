@@ -158,6 +158,7 @@ impl OwnershipState {
             if let Some(existing) = joined.executors.get_mut(id) {
                 existing.states |= executor.states;
                 existing.has_submissions |= executor.has_submissions;
+                existing.manager_detached |= executor.manager_detached;
             } else {
                 let mut executor = executor.clone();
                 executor.states |= EXECUTOR_UNKNOWN;
@@ -398,6 +399,9 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
         ("concurrent.futures", "ThreadPoolExecutor") => {
             Some("external:concurrent.futures.ThreadPoolExecutor")
         }
+        ("concurrent.futures", "ProcessPoolExecutor") => {
+            Some("external:concurrent.futures.ProcessPoolExecutor")
+        }
         ("asyncio", "TaskGroup") => Some(TASK_GROUP),
         ("asyncio" | "asyncio.queues", "Queue") => Some("external:asyncio.Queue"),
         ("asyncio" | "asyncio.queues", "QueueEmpty") => Some("external:asyncio.QueueEmpty"),
@@ -413,6 +417,20 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
         ("asyncio" | "asyncio.locks", "Condition") => Some("external:asyncio.Condition"),
         ("asyncio" | "asyncio.locks", "Event") => Some("external:asyncio.Event"),
         ("builtins", "open") => Some("external:builtins.open"),
+        ("builtins", "anext") => Some("external:builtins.anext"),
+        ("contextlib", "asynccontextmanager") => Some("external:contextlib.asynccontextmanager"),
+        ("asyncio" | "asyncio.streams", "open_connection") => {
+            Some("external:asyncio.open_connection")
+        }
+        ("asyncio" | "asyncio.streams", "start_server") => Some("external:asyncio.start_server"),
+        ("asyncio" | "asyncio.subprocess", "create_subprocess_exec") => {
+            Some("external:asyncio.create_subprocess_exec")
+        }
+        ("asyncio" | "asyncio.subprocess", "create_subprocess_shell") => {
+            Some("external:asyncio.create_subprocess_shell")
+        }
+        ("asyncio" | "asyncio.subprocess", "PIPE") => Some("external:asyncio.PIPE"),
+        ("asyncio" | "asyncio.subprocess", "DEVNULL") => Some("external:asyncio.DEVNULL"),
         ("asyncio", "create_task") => Some("external:asyncio.create_task"),
         ("asyncio", "gather") => Some("external:asyncio.gather"),
         ("asyncio", "wait") => Some("external:asyncio.wait"),
@@ -421,6 +439,11 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
         ("asyncio", "timeout") => Some("external:asyncio.timeout"),
         ("asyncio", "sleep") => Some("external:asyncio.sleep"),
         ("asyncio", "get_running_loop") => Some("external:asyncio.get_running_loop"),
+        ("asyncio", "to_thread") => Some("external:asyncio.to_thread"),
+        ("asyncio", "wrap_future") => Some("external:asyncio.wrap_future"),
+        ("asyncio", "run_coroutine_threadsafe") => {
+            Some("external:asyncio.run_coroutine_threadsafe")
+        }
         ("asyncio", "get_event_loop") => Some("external:asyncio.get_event_loop"),
         ("asyncio", "set_event_loop") => Some("external:asyncio.set_event_loop"),
         ("asyncio", "CancelledError") => Some("external:asyncio.CancelledError"),
@@ -429,6 +452,9 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
             Some("external:concurrent.futures.CancelledError")
         }
         ("concurrent.futures", "TimeoutError") => Some("external:concurrent.futures.TimeoutError"),
+        ("concurrent.futures.process", "BrokenProcessPool") => {
+            Some("external:concurrent.futures.process.BrokenProcessPool")
+        }
         ("multiprocessing" | "multiprocessing.context", "TimeoutError") => {
             Some("external:multiprocessing.TimeoutError")
         }
@@ -448,6 +474,10 @@ pub(super) fn external_member(module: &str, member: &str) -> Option<&'static str
         }
         ("multiprocessing", "Value") => Some("external:multiprocessing.Value"),
         ("multiprocessing", "Array") => Some("external:multiprocessing.Array"),
+        ("multiprocessing", "shared_memory") => Some("external:multiprocessing.shared_memory"),
+        ("multiprocessing.shared_memory", "SharedMemory") => {
+            Some("external:multiprocessing.shared_memory.SharedMemory")
+        }
         ("signal", "signal") => Some("external:signal.signal"),
         _ => None,
     }
@@ -691,6 +721,18 @@ fn live_capture_sites(env: &State, object: &str) -> Vec<CaptureSite> {
         .and_then(|ownership| ownership.inherited_captures.get(object))
         .cloned()
         .unwrap_or_default();
+    if let Some(ownership) = &env.ownership {
+        sites.extend(
+            ownership
+                .work
+                .capture_sites(object)
+                .map(|(origin, possible)| CaptureSite {
+                    origin,
+                    possible,
+                    scheduled: false,
+                }),
+        );
+    }
     for (id, coroutine) in &env.coroutines {
         if coroutine.consumed
             || !coroutine
@@ -712,6 +754,15 @@ fn live_capture_sites(env: &State, object: &str) -> Vec<CaptureSite> {
             scheduled: task.is_some(),
         });
     }
+    sites.extend(
+        env.async_resources
+            .generator_captures(object)
+            .map(|(origin, possible)| CaptureSite {
+                origin,
+                possible,
+                scheduled: false,
+            }),
+    );
     sites
 }
 
@@ -738,6 +789,18 @@ pub(super) fn check_close(
         return;
     }
     let mut identity = contract_identity(env.resources.get(object));
+    let generator = env
+        .async_resources
+        .generator_captures(object)
+        .next()
+        .is_some();
+    if generator {
+        identity.push(format!(
+            "{}@{}",
+            async_resources::GENERATOR_MODEL,
+            crate::foundation::CATALOG_REVISION
+        ));
+    }
     if sites.iter().any(|site| site.scheduled) {
         if let Some(revision) = crate::model::task_group_revision(&env.target_python_version) {
             identity.push(format!("TPM-TASK-001@{revision}"));
@@ -746,7 +809,11 @@ pub(super) fn check_close(
     report(
         result,
         "TP2006",
-        "resource closes while a coroutine or task borrow remains outstanding",
+        if generator {
+            "resource closes while an async generator still holds a borrow"
+        } else {
+            "resource closes while a coroutine or task borrow remains outstanding"
+        },
         span(file, range),
         sites.iter().map(|site| site.origin.clone()).collect(),
         if possible_receiver || sites.iter().all(|site| site.possible) {

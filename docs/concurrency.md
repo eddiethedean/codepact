@@ -111,3 +111,30 @@ Read `coverage.reasons` alongside each `foundations.model_uses` entry.
 An applicable model identifies the semantics the checker used. A scope
 can still be incomplete, for example if independently checking the
 worker declaration leaves a parameter unresolved. [Protocol diagnostics](rules.md#queue-ipc-and-synchronization-rules)
+
+## 0.11 source candidate
+
+These checks use the same opt-in runtime setup as the published concurrency
+checks. Select the CPython 3.13.16 Linux x86-64 runtime with source target
+3.13. Process checks also require explicit spawn and the applicable launch
+evidence. Installed HTTP and SQL streams require their exact reviewed
+provider artifacts. [Runtime configuration](runtime-models.md)
+
+- An early `async for` break can leave an async generator suspended. In the
+  reviewed source subset, use lexical `contextlib.aclosing` or an awaited
+  `aclose()` to run the generator's finalizer. Verify cleanup on exceptional
+  and cancelled exits too.
+- A stream writer's `close()` requests shutdown. A qualified
+  `await writer.wait_closed()` establishes local closure. A subprocess
+  stop request similarly leaves exit to be observed with the applicable
+  `wait()` or `communicate()` path.
+- If you wrap a concurrent future, keep the original when you need to
+  observe completion after a wrapper is cancelled. Release borrowed
+  resources after the worker can no longer access them.
+- With explicit-spawn shared memory, each process closes its own mapping.
+  Release exported views first. The creator removes the name after the
+  required attachments have taken place.
+
+The candidate reports incomplete coverage when it cannot establish those
+effects. The [phase specification](https://github.com/eddiethedean/codepact/blob/main/docs/planning/phases/0.11/specification.md)
+lists the reviewed operation families, argument shapes, and runtime assumptions.

@@ -1,13 +1,18 @@
-//! ThreadPoolExecutor protocol transitions and worker admission.
+//! Executor protocol transitions and worker admission.
+mod bridges;
+pub(super) use bridges::{await_bridge, scheduling_call};
+
 use super::ownership::external_identity;
-use super::work;
 use super::{
     bind_arguments, boundary, called_method, expr_name, queue_raise, report, span, AstExpr,
     AstExprKind, CallKeyword, CompletionKind, FlowExit, FunctionMap, Inspection, SourceFile, Span,
     State,
 };
+use super::{process, runtime, work};
+use std::collections::BTreeSet;
 
 const THREAD_POOL_EXECUTOR: &str = "external:concurrent.futures.ThreadPoolExecutor";
+const PROCESS_POOL_EXECUTOR: &str = "external:concurrent.futures.ProcessPoolExecutor";
 const THREAD_POOL_MODEL: &str = "TPM-EXECUTOR-001@v3.13.16";
 const MAX_EXECUTORS: usize = 32;
 
@@ -65,6 +70,34 @@ pub(super) struct ExecutorState {
     pub(super) states: u8,
     pub(super) origin: Span,
     pub(super) has_submissions: bool,
+    pub(super) manager_detached: bool,
+    process: bool,
+}
+
+impl ExecutorState {
+    fn kind(&self, id: String) -> work::Kind {
+        if self.process {
+            work::Kind::ProcessExecutor(id)
+        } else {
+            work::Kind::Thread(id)
+        }
+    }
+
+    fn symbol(&self) -> &'static str {
+        if self.process {
+            "ProcessPoolExecutor"
+        } else {
+            "ThreadPoolExecutor"
+        }
+    }
+
+    fn model(&self) -> &'static str {
+        if self.process {
+            work::BRIDGE_MODEL
+        } else {
+            THREAD_POOL_MODEL
+        }
+    }
 }
 
 pub(super) fn initialize_handle(
@@ -82,15 +115,26 @@ pub(super) fn initialize_handle(
     else {
         return false;
     };
-    if external_identity(function, env).as_deref() != Some(THREAD_POOL_EXECUTOR)
-        || !env
-            .ownership
-            .as_ref()
-            .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
+    if !env
+        .ownership
+        .as_ref()
+        .is_some_and(|ownership| ownership.mode.includes_advanced_contracts())
     {
         return false;
     }
-    if !arguments.is_empty() || !keywords.is_empty() {
+    let process = match external_identity(function, env).as_deref() {
+        Some(THREAD_POOL_EXECUTOR) => false,
+        Some(PROCESS_POOL_EXECUTOR) if env.models.foundations.is_some() => true,
+        _ => return false,
+    };
+    let constructor_supported = if process {
+        process_executor_constructor(arguments, keywords, env, file)
+    } else if bridges::profile(env).is_ok() {
+        thread_executor_constructor(arguments, keywords, file)
+    } else {
+        arguments.is_empty() && keywords.is_empty()
+    };
+    if !process && !constructor_supported {
         return false;
     }
     if env
@@ -120,16 +164,34 @@ pub(super) fn initialize_handle(
         expression.range.start,
         env.allocation_context.join("/")
     );
-    let supported_pin = env.target_python_version.starts_with("3.13");
+    let supported_pin = if process {
+        runtime::use_model(
+            "concurrent.futures.ProcessPoolExecutor",
+            "construct-explicit-spawn-executor",
+            work::BRIDGE_MODEL,
+            if constructor_supported {
+                Ok(())
+            } else {
+                Err("process executor requires a bounded worker count and the declared explicit spawn profile")
+            },
+            file,
+            expression.range,
+            result,
+        )
+    } else {
+        env.target_python_version.starts_with("3.13")
+    };
     let initial = if supported_pin {
         EXECUTOR_ACCEPTING
     } else {
-        boundary(
-            result,
-            file,
-            expression.range,
-            "ThreadPoolExecutor model is qualified only for CPython 3.13.16",
-        );
+        if !process {
+            boundary(
+                result,
+                file,
+                expression.range,
+                "ThreadPoolExecutor model is qualified only for CPython 3.13.16",
+            );
+        }
         EXECUTOR_UNKNOWN
     };
     let origin = span(file, expression.range);
@@ -155,6 +217,8 @@ pub(super) fn initialize_handle(
             states: initial,
             origin,
             has_submissions: false,
+            manager_detached: false,
+            process,
         },
     );
     ownership.executor_names.insert(name.to_owned(), id);
@@ -168,6 +232,9 @@ pub(super) fn call(
     functions: &FunctionMap,
     result: &mut Inspection,
 ) -> bool {
+    if bridges::call(expression, env, file, functions, result) {
+        return true;
+    }
     let Some((receiver, method, arguments, keywords)) = called_method(expression) else {
         return false;
     };
@@ -223,7 +290,7 @@ pub(super) fn call(
                 report(
                     result,
                     "TP2102",
-                    "ThreadPoolExecutor.submit requires the Accepting state",
+                    &format!("{}.submit requires the Accepting state", snapshot.symbol()),
                     span(file, expression.range),
                     vec![snapshot.origin.clone()],
                     if has_accepting || has_unknown {
@@ -231,23 +298,41 @@ pub(super) fn call(
                     } else {
                         "definite"
                     },
-                    vec![THREAD_POOL_MODEL.into()],
+                    vec![snapshot.model().into()],
                 );
             }
-            let supported = if has_accepting {
-                supported_submit(arguments, keywords, env, functions)
-            } else {
-                false
-            };
+            let captures = has_accepting
+                .then(|| {
+                    if snapshot.process {
+                        process::spawn_executor_worker(arguments, keywords, env, functions)
+                            .then(BTreeSet::new)
+                    } else {
+                        thread_worker(
+                            arguments,
+                            keywords,
+                            env,
+                            functions,
+                            bridges::profile(env).is_ok(),
+                        )
+                    }
+                })
+                .flatten();
+            let supported = captures.is_some();
             if has_unknown || has_accepting && !supported {
                 boundary(
                     result,
                     file,
                     expression.range,
                     if has_unknown {
-                        "ThreadPoolExecutor state is unknown at submit"
+                        if snapshot.process {
+                            "ProcessPoolExecutor state is unknown at submit"
+                        } else {
+                            "ThreadPoolExecutor state is unknown at submit"
+                        }
+                    } else if snapshot.process {
+                        "process executor submission requires a resolved spawn worker and bounded plain arguments"
                     } else {
-                        "ThreadPoolExecutor submit requires a resolved worker without tracked captures or resources"
+                        "thread executor submission requires a resolved worker and bounded captures"
                     },
                 );
             }
@@ -282,29 +367,38 @@ pub(super) fn call(
                 let mut exceptional = env.clone();
                 exceptional.alive = true;
                 exceptional.pending_raises.clear();
-                if let Some(executor) = exceptional
-                    .ownership
-                    .as_mut()
-                    .and_then(|ownership| ownership.executors.get_mut(&id))
-                {
-                    executor.states |= EXECUTOR_UNKNOWN;
+                if snapshot.process || bridges::profile(env).is_err() {
+                    if let Some(executor) = exceptional
+                        .ownership
+                        .as_mut()
+                        .and_then(|ownership| ownership.executors.get_mut(&id))
+                    {
+                        executor.states |= EXECUTOR_UNKNOWN;
+                    }
                 }
                 env.pending_raises.push(FlowExit {
                     state: exceptional,
                     range: expression.range,
                     kind: CompletionKind::Raise(None),
                 });
-                let outcome = work::for_worker(env, &arguments[0], functions);
+                let outcome = if snapshot.process {
+                    work::for_worker(env, &arguments[0], functions)
+                } else {
+                    bridges::worker_outcome(arguments, keywords, env, functions, result)
+                };
                 work::register(
                     env,
                     None,
-                    work::Kind::Thread(id.clone()),
+                    snapshot.kind(id.clone()),
                     file,
                     expression.range,
                     outcome,
                     result,
                 );
-                work::bind_worker_contract(env, &arguments[0], functions);
+                if !snapshot.process {
+                    work::bind_worker_contract(env, &arguments[0], functions);
+                    work::capture_pending_bridge(env, captures.unwrap_or_default(), false);
+                }
             } else {
                 queue_raise(env, expression.range, None);
             }
@@ -344,7 +438,11 @@ pub(super) fn call(
                     "ThreadPoolExecutor shutdown outcome includes an unknown entry state",
                 );
             }
-            if snapshot.has_submissions && !wait {
+            if snapshot.has_submissions
+                && !wait
+                && !snapshot.process
+                && bridges::profile(env).is_err()
+            {
                 boundary(
                     result,
                     file,
@@ -358,6 +456,9 @@ pub(super) fn call(
                 .and_then(|ownership| ownership.executors.get_mut(&id))
             {
                 executor.states = next_states;
+                if executor.process && !wait {
+                    executor.manager_detached = true;
+                }
             }
             let mut exceptional = env.clone();
             exceptional.alive = true;
@@ -367,12 +468,30 @@ pub(super) fn call(
                 range: expression.range,
                 kind: CompletionKind::Raise(None),
             });
-            let owner = work::Kind::Thread(id);
+            let owner = snapshot.kind(id);
             if cancel_queued {
                 work::owner_may_cancel_waiting(env, &owner);
             }
-            if wait && next_states == EXECUTOR_SHUTDOWN {
+            let joined = wait && next_states == EXECUTOR_SHUTDOWN && !snapshot.manager_detached;
+            if joined {
                 work::owner_finished(env, &owner);
+            }
+            if snapshot.process {
+                runtime::use_model(
+                    "concurrent.futures.ProcessPoolExecutor.shutdown",
+                    if joined {
+                        "join-manager"
+                    } else if snapshot.manager_detached {
+                        "manager-already-detached"
+                    } else {
+                        "shutdown-request"
+                    },
+                    work::BRIDGE_MODEL,
+                    Ok(()),
+                    file,
+                    expression.range,
+                    result,
+                );
             }
             true
         }
@@ -396,41 +515,95 @@ pub(super) fn call(
     }
 }
 
-fn supported_submit(
+fn thread_worker(
     arguments: &[AstExpr],
     keywords: &[CallKeyword],
     env: &State,
     functions: &FunctionMap,
-) -> bool {
-    let Some(callee) = arguments.first().and_then(expr_name) else {
-        return false;
-    };
+    allow_captures: bool,
+) -> Option<BTreeSet<String>> {
+    let callee = arguments.first().and_then(expr_name)?;
     if env.shadowed_functions.contains(callee) {
-        return false;
+        return None;
     }
-    let Some(definition) = env
+    let definition = env
         .function_bindings
         .get(callee)
-        .and_then(|binding| functions.get(binding))
-    else {
-        return false;
-    };
-    if env.ownership.as_ref().is_some_and(|ownership| {
-        ownership
-            .closure_captures(callee)
-            .any(|capture| env.places.contains_key(capture) || env.unknown_places.contains(capture))
-    }) {
-        return false;
+        .and_then(|binding| functions.get(binding))?;
+    if definition.is_async || !definition.supported_binding {
+        return None;
     }
     let worker_arguments = &arguments[1..];
     let Ok(bindings) = bind_arguments(&definition.signature, worker_arguments, keywords, false)
     else {
-        return false;
+        return None;
     };
-    bindings.values().all(|argument| {
-        expr_name(argument)
-            .is_none_or(|name| !env.places.contains_key(name) && !env.unknown_places.contains(name))
-    })
+    let mut captures = BTreeSet::new();
+    for name in bindings
+        .values()
+        .filter_map(|argument| expr_name(argument))
+        .chain(
+            env.ownership
+                .as_ref()?
+                .closure_captures(callee)
+                .map(String::as_str),
+        )
+    {
+        if env.unknown_places.contains(name) || env.possibly_unbound_places.contains(name) {
+            return None;
+        }
+        if let Some(objects) = env.places.get(name) {
+            if !allow_captures || objects.len() != 1 {
+                return None;
+            }
+            captures.extend(objects.iter().cloned());
+        }
+    }
+    (captures.len() <= 8).then_some(captures)
+}
+
+fn bounded_workers(argument: &AstExpr, file: &SourceFile) -> bool {
+    matches!(argument.kind, AstExprKind::Primitive)
+        && file
+            .source
+            .get(argument.range.start..argument.range.end)
+            .and_then(|literal| literal.parse::<usize>().ok())
+            .is_some_and(|count| (1..=3).contains(&count))
+}
+
+fn thread_executor_constructor(
+    arguments: &[AstExpr],
+    keywords: &[CallKeyword],
+    file: &SourceFile,
+) -> bool {
+    match (arguments, keywords) {
+        ([], []) => true,
+        ([count], []) => bounded_workers(count, file),
+        ([], [(Some(name), count)]) => name == "max_workers" && bounded_workers(count, file),
+        _ => false,
+    }
+}
+
+fn process_executor_constructor(
+    arguments: &[AstExpr],
+    keywords: &[CallKeyword],
+    env: &State,
+    file: &SourceFile,
+) -> bool {
+    if arguments.len() > 1 {
+        return false;
+    }
+    let mut count = arguments.first();
+    let mut context = None;
+    for (name, value) in keywords {
+        match name.as_deref() {
+            Some("max_workers") if count.is_none() => count = Some(value),
+            Some("mp_context") if context.is_none() => context = Some(value),
+            _ => return false,
+        }
+    }
+    count.is_some_and(|count| bounded_workers(count, file))
+        && context.is_some_and(|context| process::spawn_executor_context(context, env))
 }
 
 fn shutdown_options(arguments: &[AstExpr], keywords: &[CallKeyword]) -> Option<(bool, bool)> {
@@ -449,7 +622,7 @@ fn shutdown_options(arguments: &[AstExpr], keywords: &[CallKeyword]) -> Option<(
         };
         wait = value;
     }
-    let mut saw_wait = false;
+    let mut saw_wait = !arguments.is_empty();
     let mut saw_cancel = false;
     for (name, value) in keywords {
         match name.as_deref()? {

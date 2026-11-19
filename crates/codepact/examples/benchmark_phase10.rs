@@ -68,7 +68,39 @@ fn workload(name: &str) -> Workload {
             operation_symbol: "multiprocessing.Value",
             operation_effect: "guarded-compound-update",
         },
-        _ => panic!("workload must be queue, ipc or guard"),
+        "async-stream" => Workload {
+            imports: "from asyncio import open_connection\n",
+            declaration: "async def",
+            original: "    reader, writer = await open_connection('127.0.0.1', 9000)\n    writer.close()\n",
+            repaired: "    reader, writer = await open_connection('127.0.0.1', 9000)\n    writer.close()\n    await writer.wait_closed()\n",
+            operation_symbol: "asyncio.StreamWriter",
+            operation_effect: "observe-closure",
+        },
+        "async-subprocess" => Workload {
+            imports: "from asyncio import create_subprocess_exec\n",
+            declaration: "async def",
+            original: "    child = await create_subprocess_exec('/usr/bin/true')\n    child.terminate()\n",
+            repaired: "    child = await create_subprocess_exec('/usr/bin/true')\n    child.terminate()\n    await child.wait()\n",
+            operation_symbol: "asyncio.subprocess.Process",
+            operation_effect: "observe-process-exit",
+        },
+        "executor-bridge" => Workload {
+            imports: "from asyncio import get_running_loop\ndef worker(value):\n    return value\n",
+            declaration: "async def",
+            original: "    loop = get_running_loop()\n    job = loop.run_in_executor(None, worker, 1)\n",
+            repaired: "    loop = get_running_loop()\n    job = loop.run_in_executor(None, worker, 1)\n    await job\n",
+            operation_symbol: "asyncio.AbstractEventLoop.run_in_executor",
+            operation_effect: "dispatch",
+        },
+        "shared-memory" => Workload {
+            imports: "from multiprocessing import get_context\nfrom multiprocessing.shared_memory import SharedMemory\n",
+            declaration: "def",
+            original: "    ctx = get_context('spawn')\n    memory = SharedMemory(create=True, size=8)\n    memory.close()\n",
+            repaired: "    ctx = get_context('spawn')\n    memory = SharedMemory(create=True, size=8)\n    memory.close()\n    memory.unlink()\n",
+            operation_symbol: "multiprocessing.shared_memory.SharedMemory",
+            operation_effect: "close-local-mapping",
+        },
+        _ => panic!("unknown protocol workload: {name}"),
     }
 }
 

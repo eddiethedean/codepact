@@ -14,6 +14,7 @@ pub(super) struct FunctionBody {
     pub(super) statements: Arc<[FlowStatement]>,
     pub(super) supported_binding: bool,
     pub(super) is_async: bool,
+    pub(super) async_generator: Option<Arc<async_resources::GeneratorDefinition>>,
     pub(super) protocol_transition: Option<ProtocolTransition>,
     pub(super) protocol_precondition: Option<BTreeSet<String>>,
     pub(super) protocol_precondition_origin: Option<Span>,
@@ -67,6 +68,7 @@ pub(super) type ProjectFunctionMap = BTreeMap<(String, String), FunctionBody>;
 #[derive(Clone, Default, PartialEq, Eq)]
 pub(super) struct State {
     pub(super) ownership: Option<Box<OwnershipState>>,
+    pub(super) async_resources: async_resources::Resources,
     pub(super) outcomes: outcomes::OutcomeState,
     pub(super) places: BTreeMap<String, BTreeSet<String>>,
     pub(super) unknown_places: BTreeSet<String>,
@@ -220,6 +222,7 @@ pub(super) struct JoinEffects {
 
 pub(super) fn merge(left: &State, right: &State) -> (State, JoinEffects) {
     let mut joined = left.clone();
+    joined.async_resources.join(&right.async_resources);
     joined.outcomes = left.outcomes.join(&right.outcomes);
     if let (Some(left), Some(right)) = (left.ownership.as_deref(), right.ownership.as_deref()) {
         joined.ownership = Some(Box::new(OwnershipState::join(left, right)));

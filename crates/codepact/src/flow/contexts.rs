@@ -1,6 +1,6 @@
 //! Entry, exit partitions, and cleanup for context managers.
 use super::{
-    async_protocols, asyncio, boundary, call_parts, consume_expr, execute,
+    async_protocols, async_resources, asyncio, boundary, call_parts, consume_expr, execute,
     execution::{execute_non_if_statement, push_exit},
     expr_name, join_states, library, merge, ownership, process, queue_raise, runtime,
     synthetic_name, take_flow_step, take_pending_raises, tasks, weaken, AstExpr, AstExprKind,
@@ -65,6 +65,7 @@ enum ContextCleanup {
     Executor(String),
     Timeout(String),
     AsyncProtocol(String),
+    AsyncGenerator(String),
     ProcessGuard(String),
     Library {
         receiver: String,
@@ -124,6 +125,9 @@ impl ModeledCleanup {
             ContextCleanup::Timeout(id) => asyncio::leave_timeout(id, env, range, incoming),
             ContextCleanup::AsyncProtocol(id) => {
                 async_protocols::leave(id, env, file, range, result)
+            }
+            ContextCleanup::AsyncGenerator(id) => {
+                async_resources::context_exit(id, incoming, env, file, range, functions, result)
             }
             ContextCleanup::ProcessGuard(receiver) => {
                 process::leave_guard(receiver, env, file, range, result)
@@ -474,6 +478,22 @@ pub(super) fn execute_with(
             }
         }
         if asynchronous {
+            if let Some(generator) =
+                async_resources::context_enter(item, env, file, contracts, functions, result)
+            {
+                entry_raises.extend(
+                    take_pending_raises(env)
+                        .into_iter()
+                        .map(|exit| (exit, cleanups.len())),
+                );
+                if let Some(id) = generator {
+                    cleanups.push(ContextCleanupFrame::modeled(
+                        ContextCleanup::AsyncGenerator(id),
+                        item.range,
+                    ));
+                }
+                continue;
+            }
             let inline = async_protocols::is_constructor(&item.context, env).then(|| {
                 let receiver = synthetic_name(env, "async-guard", item.range, index);
                 execute_non_if_statement(

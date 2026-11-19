@@ -228,12 +228,17 @@ jobs:
               --with-requirements tests/conformance/phase09-provider-requirements.txt \
               python tests/conformance/phase09_provider_probe.py 2>&1 | \
               tee target/test-evidence/phase09-provider-conformance.log
+          CODEPACT_PHASE11_CHECKER="$PWD/target/debug/codepact" \
+            uv run --no-project --python 3.13.16 --no-build \
+              --with-requirements tests/conformance/phase09-provider-requirements.txt \
+              python tests/conformance/phase11_provider_probe.py 2>&1 | \
+              tee target/test-evidence/phase11-provider-conformance.log
       - name: Retain installed provider checks
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: phase09-provider-conformance
-          path: target/test-evidence/phase09-provider-conformance.log
+          name: reviewed-provider-conformance
+          path: target/test-evidence/phase*-provider-conformance.log
           if-no-files-found: error
 
   quality-gate:

@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const CATALOG_REVISION: &str = "cpython-3.13.16-linux-x86_64-v2";
+pub const CATALOG_REVISION: &str = "cpython-3.13.16-linux-x86_64-v3";
 
 /// The runtime of the analyzed program. The Python grammar target is a
 /// separate input and the checker never derives these values from its host.
@@ -100,6 +100,24 @@ pub(crate) fn stdlib_catalog(
                 "Lib/asyncio/locks.py",
                 "Local guards, semaphore permits, condition waits and event signals.",
             ),
+            (
+                "TPM-BRIDGE-001",
+                "asyncio.to_thread",
+                "Lib/asyncio/threads.py",
+                "Dispatch, wrapper cancellation, and result delivery across executor and event-loop bridges.",
+            ),
+            (
+                "TPM-ASYNCGEN-001",
+                "contextlib.aclosing",
+                "Lib/contextlib.py",
+                "Source-resolved async generator acquisition, suspension, exhaustion and cleanup.",
+            ),
+            (
+                "TPM-ASYNCIO-IO-001",
+                "asyncio.open_connection",
+                "Lib/asyncio/streams.py",
+                "Local stream, server and subprocess shutdown and closure evidence.",
+            ),
         ]);
     }
     if ownership.includes_advanced_contracts() && profile.spawn(target, "spawn").is_ok() {
@@ -134,6 +152,12 @@ pub(crate) fn stdlib_catalog(
                 "Lib/multiprocessing/synchronize.py",
                 "Process locks, semaphore permits and guards for shared values and arrays.",
             ),
+            (
+                "TPM-SHM-001",
+                "multiprocessing.shared_memory.SharedMemory",
+                "Lib/multiprocessing/shared_memory.py",
+                "Local mappings and exported views, name removal and the designated unlink duty.",
+            ),
         ]);
         if profile.spawn_main_script.is_some() {
             catalog.push((
@@ -151,6 +175,10 @@ pub(crate) fn stdlib_catalog(
             "TPM-IPC-002" => &["Lib/multiprocessing/queues.py", "Lib/multiprocessing/reduction.py"],
             "TPM-SYNC-002" => &["Lib/multiprocessing/sharedctypes.py", "Modules/_multiprocessing/semaphore.c"],
             "TPM-SPAWN-001" => &["Lib/multiprocessing/popen_spawn_posix.py", "Lib/multiprocessing/process.py"],
+            "TPM-SHM-001" => &["Lib/multiprocessing/resource_tracker.py", "Modules/_multiprocessing/posixshmem.c"],
+            "TPM-BRIDGE-001" => &["Lib/asyncio/base_events.py", "Lib/asyncio/tasks.py", "Lib/asyncio/futures.py", "Lib/concurrent/futures/thread.py", "Lib/concurrent/futures/process.py"],
+            "TPM-ASYNCGEN-001" => &["Objects/genobject.c", "Lib/asyncio/base_events.py"],
+            "TPM-ASYNCIO-IO-001" => &["Lib/asyncio/base_events.py", "Lib/asyncio/subprocess.py", "Lib/asyncio/base_subprocess.py", "Lib/asyncio/unix_events.py"],
             _ => &[],
         };
         crate::CheckModelMetadata {

@@ -490,6 +490,7 @@ pub(crate) fn scope_entry(
                     | "contextlib"
                     | "asyncio"
                     | "multiprocessing"
+                    | "multiprocessing.shared_memory"
                     | "signal"
                     | "concurrent.futures"
             )

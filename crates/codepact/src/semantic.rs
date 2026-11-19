@@ -564,10 +564,21 @@ fn inspect_inner(
                             }
                         }
                     }
-                    let only_known_decorators = decorators.iter().all(|decorator| {
-                        canonical(decorator, &state.imports).as_deref()
-                            == Some("codepact::must_use")
-                    });
+                    let is_async_context = *is_async
+                        && *is_generator
+                        && decorators.len() == 1
+                        && matches!(
+                            canonical(&decorators[0], &state.imports).as_deref(),
+                            Some(
+                                "external:contextlib.asynccontextmanager"
+                                    | "external:contextlib::asynccontextmanager"
+                            )
+                        );
+                    let only_known_decorators = is_async_context
+                        || decorators.iter().all(|decorator| {
+                            canonical(decorator, &state.imports).as_deref()
+                                == Some("codepact::must_use")
+                        });
                     if run_must_use && marked && (*is_async || *is_generator) {
                         unsupported(
                             &mut result,
@@ -1514,7 +1525,7 @@ fn register_supplied_module_import(
     if module == "contextlib"
         && !supplied_modules.contains(module)
         && !ambiguous_modules.contains(module)
-        && matches!(original, "closing" | "aclosing")
+        && matches!(original, "closing" | "aclosing" | "asynccontextmanager")
     {
         state
             .imports

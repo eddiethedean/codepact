@@ -3,9 +3,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 mod protocol;
+mod shared_memory;
 pub(super) use protocol::{
     compound_store, enter_guard, initialize_pipe, leave_guard, protocol_test, refine_protocol_test,
-    report_protocol_scope,
 };
 
 const PROCESS_MODEL: &str = "TPM-PROCESS-001";
@@ -61,6 +61,7 @@ struct LocalHandle {
     origin: Span,
     admitted_work: bool,
     prelaunch_failure: bool,
+    stop_requested: bool,
     worker: Option<WorkerCandidate>,
 }
 
@@ -133,6 +134,7 @@ impl LocalProcesses {
                 handle.states |= other.states;
                 handle.admitted_work |= other.admitted_work;
                 handle.prelaunch_failure &= other.prelaunch_failure;
+                handle.stop_requested |= other.stop_requested;
                 if handle.worker != other.worker {
                     handle.worker = Some(WorkerCandidate::Unknown);
                 }
@@ -291,6 +293,49 @@ fn plain_values(expression: &AstExpr) -> bool {
     }
 }
 
+pub(super) fn spawn_executor_context(expression: &AstExpr, env: &State) -> bool {
+    let method = match context_expression(expression, env) {
+        Some(method) => method,
+        None => expr_name(expression)
+            .and_then(|name| env.ownership.as_ref()?.processes.contexts.get(name))
+            .map(String::as_str),
+    };
+    method.is_some_and(|method| {
+        runtime::runtime_profile(env).is_ok_and(|profile| {
+            profile.spawn_main_script.is_some()
+                && profile.spawn(&env.target_python_version, method).is_ok()
+        })
+    })
+}
+
+pub(super) fn spawn_executor_worker(
+    arguments: &[AstExpr],
+    keywords: &[CallKeyword],
+    env: &State,
+    functions: &FunctionMap,
+) -> bool {
+    let Some((worker, arguments)) = arguments.split_first() else {
+        return false;
+    };
+    let Some(target) = expr_name(worker).and_then(|name| env.function_bindings.get(name)) else {
+        return false;
+    };
+    let Some(definition) = functions.get(target) else {
+        return false;
+    };
+    let Some(ownership) = env.ownership.as_ref() else {
+        return false;
+    };
+    (ownership.processes.entry_path == EntryPath::Protected
+        || ownership.processes.entry_path == EntryPath::Unknown
+            && !env.module_scope
+            && env.call_depth == 0)
+        && worker_is_local(worker, env, functions)
+        && validate_worker_target(target, env, functions).is_ok()
+        && bind_arguments(&definition.signature, arguments, keywords, false)
+            .is_ok_and(|bindings| bindings.values().all(|argument| plain_values(argument)))
+}
+
 fn prelaunch_failure(expression: &AstExpr) -> bool {
     matches!(expression.kind, AstExprKind::Tuple(ref items)
         if items.iter().any(|value| matches!(value.kind, AstExprKind::Closure(_)))
@@ -400,9 +445,12 @@ fn pure_constructor_arguments(
             AstExprKind::Tuple(items) | AstExprKind::Collection(items) => {
                 items.iter().all(|item| supported(item, env))
             }
-            AstExprKind::Attribute(receiver, _) => expr_name(receiver)
-                .and_then(|name| env.function_bindings.get(name))
-                .is_some_and(|binding| binding.starts_with("module:")),
+            AstExprKind::Attribute(receiver, _) => {
+                shared_memory::name_argument(value, env).is_some()
+                    || expr_name(receiver)
+                        .and_then(|name| env.function_bindings.get(name))
+                        .is_some_and(|binding| binding.starts_with("module:"))
+            }
             _ => false,
         }
     }
@@ -633,7 +681,9 @@ pub(super) fn initialize(
             .insert(name.into(), method);
         return true;
     }
-    if protocol::initialize(name, expression, env, file, functions, result) {
+    if shared_memory::initialize(name, expression, env, file, result)
+        || protocol::initialize(name, expression, env, file, functions, result)
+    {
         return true;
     }
     let Some((kind, method, arguments, keywords)) = constructor(expression, env) else {
@@ -700,6 +750,7 @@ pub(super) fn initialize(
             origin: span(file, expression.range),
             admitted_work: false,
             prelaunch_failure: fails_before_launch,
+            stop_requested: false,
             worker,
         },
     );
@@ -829,8 +880,14 @@ fn permit(
 enum ProcessOperation {
     Start,
     Join(JoinTimeout),
+    Stop(StopSignal),
     Close,
     IsAlive,
+}
+
+enum StopSignal {
+    Terminate,
+    Kill,
 }
 
 enum JoinTimeout {
@@ -863,6 +920,7 @@ impl Operation<'_> {
         match self {
             Self::Process(ProcessOperation::Start) => (NEW, "AssertionError"),
             Self::Process(ProcessOperation::Join(_)) => (STARTED | ENDED, "AssertionError"),
+            Self::Process(ProcessOperation::Stop(_)) => (STARTED | ENDED, "AttributeError"),
             Self::Process(ProcessOperation::Close) => {
                 (NEW | STARTED | ENDED | CLOSED, "ValueError")
             }
@@ -891,6 +949,12 @@ fn prepare_operation<'a>(
         (HandleKind::Process, "close") if no_args => Operation::Process(ProcessOperation::Close),
         (HandleKind::Process, "is_alive") if no_args => {
             Operation::Process(ProcessOperation::IsAlive)
+        }
+        (HandleKind::Process, "terminate") if no_args => {
+            Operation::Process(ProcessOperation::Stop(StopSignal::Terminate))
+        }
+        (HandleKind::Process, "kill") if no_args => {
+            Operation::Process(ProcessOperation::Stop(StopSignal::Kill))
         }
         (HandleKind::Process, "join") => {
             // Join accepts computed timeout values at binding time. They can
@@ -970,6 +1034,10 @@ pub(super) fn call(
     if !modeled_mode(env) {
         return calls::ModelCall::Unrecognized;
     }
+    let memory = shared_memory::call(expression, env, file, result);
+    if !matches!(memory, calls::ModelCall::Unrecognized) {
+        return memory;
+    }
     let primitive = protocol::call(expression, env, file, functions, result);
     if !matches!(primitive, calls::ModelCall::Unrecognized) {
         return primitive;
@@ -997,7 +1065,12 @@ pub(super) fn call(
         Ok(operation) => operation,
         Err(rejected) => return call.apply_rejection(rejected, method, env, result),
     };
-    let (allowed, exception) = operation.compatible_states();
+    let (allowed, mut exception) = operation.compatible_states();
+    if matches!(operation, Operation::Process(ProcessOperation::Stop(_)))
+        && handle.states & (NEW | CLOSED) == CLOSED
+    {
+        exception = "ValueError";
+    }
     if !permit(
         env,
         call.id,
@@ -1147,12 +1220,15 @@ impl HandleCall<'_> {
                 if let Some(WorkerCandidate::Ready { target, .. }) = &handle.worker {
                     if let Err(reason) = validate_worker_target(target, env, functions) {
                         record_spawn(file, range, "worker-entry", Err(reason), result);
-                        queue_raise(env, range, None);
                         states(env, id, handle_state | STARTED | UNCERTAIN);
+                        queue_raise(env, range, None);
                         return OperationEffect::declined("start", reason);
                     }
                 }
-                states(env, id, handle_state | UNCERTAIN);
+                // Process.start() can fail after effects such as partially
+                // launching a child. Keep the exceptional state local to
+                // this handle, including its possible reaping duty.
+                states(env, id, handle_state | STARTED | UNCERTAIN);
                 queue_raise(env, range, None);
                 states(env, id, STARTED | (handle_state & UNCERTAIN));
                 if let Some(worker) = &handle.worker {
@@ -1160,11 +1236,34 @@ impl HandleCall<'_> {
                 }
                 OperationEffect::applied("start")
             }
+            ProcessOperation::Stop(signal) => {
+                queue_raise(env, range, None);
+                if handle_state & STARTED != 0 {
+                    let processes = &mut env.ownership.as_mut().unwrap().processes;
+                    processes.handles.get_mut(id).unwrap().stop_requested = true;
+                    if let Some(worker) = processes.workers.remove(id) {
+                        protocol::interrupt_worker(env, &worker.bindings);
+                        record_spawn(
+                            file,
+                            range,
+                            "worker-effects-after-stop-request",
+                            Err("forced stop can interrupt worker IPC or cleanup"),
+                            result,
+                        );
+                    }
+                }
+                OperationEffect::applied(match signal {
+                    StopSignal::Terminate => "terminate-requested",
+                    StopSignal::Kill => "kill-requested",
+                })
+            }
             ProcessOperation::Join(timeout) => {
                 queue_raise(env, range, None);
                 match timeout {
                     JoinTimeout::Untimed if qualified_child_wait(env) => {
-                        if handle_state & STARTED != 0
+                        if handle.stop_requested {
+                            protocol::retire_worker_endpoints(env, id);
+                        } else if handle_state & STARTED != 0
                             && matches!(handle.worker, Some(WorkerCandidate::Ready { .. }))
                             && env.ownership.as_ref().unwrap().processes.entry_path
                                 == EntryPath::Protected
@@ -1177,7 +1276,11 @@ impl HandleCall<'_> {
                             );
                         }
                         states(env, id, ENDED | (handle_state & UNCERTAIN));
-                        OperationEffect::applied("join")
+                        OperationEffect::applied(if handle.stop_requested {
+                            "stop-request-reaped"
+                        } else {
+                            "join"
+                        })
                     }
                     JoinTimeout::Untimed => OperationEffect::declined(
                         "join",
@@ -1274,9 +1377,9 @@ impl HandleCall<'_> {
                     OperationEffect::applied(effect)
                 } else {
                     OperationEffect::declined(
-                    "apply_async",
-                    "Pool.apply_async requires a resolved local worker, plain arguments and no callbacks",
-                )
+                        "apply_async",
+                        "Pool.apply_async requires a resolved local worker, plain arguments and no callbacks",
+                    )
                 }
             }
             PoolOperation::Close => {
@@ -1359,7 +1462,9 @@ pub(super) fn finish_pool(
         states(env, &id, FORCED_JOINED | (handle.states & UNCERTAIN));
         Ok(())
     } else {
-        Err("Pool context exit requires qualified child reaping and signal handling to establish a join")
+        Err(
+            "Pool context exit requires qualified child reaping and signal handling to establish a join",
+        )
     };
     runtime::use_model(
         handle.kind.symbol(),
@@ -1397,6 +1502,27 @@ pub(super) fn returns_status(expression: &AstExpr, env: &State) -> bool {
     called_method(expression).is_some_and(|(receiver, _, _, _)| {
         expr_name(receiver).is_some_and(|name| handle(env, name).is_some())
     })
+}
+
+pub(super) fn shared_view_access(
+    expression: &AstExpr,
+    env: &mut State,
+    file: &SourceFile,
+    result: &mut Inspection,
+) -> bool {
+    modeled_mode(env) && shared_memory::indexed_view(expression, env, file, result)
+}
+
+pub(super) fn shared_view_store(
+    target: &AstExpr,
+    value: &AstExpr,
+    env: &mut State,
+    file: &SourceFile,
+    result: &mut Inspection,
+) -> bool {
+    modeled_mode(env)
+        && protocol::nonnegative(file, value).is_some_and(|value| u8::try_from(value).is_ok())
+        && shared_memory::indexed_view(target, env, file, result)
 }
 
 pub(super) struct TerminationTest {
@@ -1522,6 +1648,36 @@ pub(super) fn refine_test(env: &mut State, test: &TerminationTest, truth: bool) 
     };
     env.alive &= updated != 0;
     handle.states = updated;
+    if updated == ENDED && handle.stop_requested {
+        protocol::retire_worker_endpoints(env, &test.id);
+    }
+}
+
+pub(super) fn report_protocol_scope(
+    env: &State,
+    file: &SourceFile,
+    range: SourceRange,
+    result: &mut Inspection,
+) {
+    protocol::report_protocol_scope(env, file, range, result);
+    if let Some(ownership) = env.ownership.as_ref() {
+        for handle in ownership.processes.handles.values() {
+            if handle.stop_requested && handle.states & STARTED != 0 {
+                report(
+                    result,
+                    "TP2102",
+                    "Process exit remains unestablished after a stop request",
+                    span(file, range),
+                    vec![handle.origin.clone()],
+                    "possible",
+                    vec![format!(
+                        "{PROCESS_MODEL}@{}",
+                        crate::foundation::CATALOG_REVISION
+                    )],
+                );
+            }
+        }
+    }
 }
 
 fn record_spawn(
@@ -1599,7 +1755,13 @@ fn prepare_worker(
         if (env.module_scope && launch_matches(env, file))
             || process.entry_path == EntryPath::ImportTime
         {
-            report_spawn_issue(file, range, origin, "spawn startup runs during import or outside the declared direct script's main guard", result);
+            report_spawn_issue(
+                file,
+                range,
+                origin,
+                "spawn startup runs during import or outside the declared direct script's main guard",
+                result,
+            );
         }
         record_spawn(
             file,
@@ -1700,6 +1862,7 @@ fn evaluate_worker(
     let waits = Rc::new(RefCell::new(None));
     ownership.processes.worker_waits = Some(Rc::clone(&waits));
     ownership.processes.protocol = protocol::child_protocol(parent, id, &worker.bindings);
+    let before_memory = ownership.processes.protocol.memory.clone();
     ownership.processes.entry_path = EntryPath::Unknown;
     let (function_bindings, class_bindings) = module_bindings_for_child(parent, definition);
     let mut child = State {
@@ -1746,6 +1909,10 @@ fn evaluate_worker(
         .last()
         .map(statement_range)
         .unwrap_or(range);
+    let completion = (
+        !exits.raises.is_empty(),
+        child.alive || !exits.returns.is_empty(),
+    );
     let mut final_paths = exits
         .raises
         .into_iter()
@@ -1787,7 +1954,13 @@ fn evaluate_worker(
         (Some(waiting), None) => waiting,
         (None, completed) => completed?,
     };
-    Some(protocol::worker_effects(parent, after, complete))
+    Some(protocol::worker_effects(
+        parent,
+        before_memory,
+        after,
+        complete,
+        completion,
+    ))
 }
 
 fn stop_at_worker_wait(env: &mut State) -> bool {
@@ -1872,6 +2045,19 @@ fn complete_worker(
     let Some(effects) = effects.filter(|effects| effects.complete) else {
         return false;
     };
+    if effects.raises {
+        record_spawn(
+            file,
+            range,
+            if effects.returns {
+                "worker-may-exit-by-exception"
+            } else {
+                "worker-exception-exit-unobserved"
+            },
+            Ok(()),
+            result,
+        );
+    }
     env.ownership.as_mut().unwrap().processes.workers.remove(id);
     protocol::complete_worker(env, &effects, id, &worker.projected);
     true

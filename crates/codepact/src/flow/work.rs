@@ -8,7 +8,9 @@ const ABSENT: u8 = 8;
 const WAITING: u8 = 1;
 const READY: u8 = 2;
 const CANCELLED: u8 = 4;
+const DEFERRED: u8 = 8;
 const MAX_WORK: usize = 64;
+pub(super) const BRIDGE_MODEL: &str = "TPM-BRIDGE-001";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
@@ -16,6 +18,8 @@ pub(super) enum Kind {
     AsyncFuture,
     Pool(String),
     Thread(String),
+    ProcessExecutor(String),
+    CrossThread,
 }
 
 impl Kind {
@@ -25,7 +29,14 @@ impl Kind {
             Self::AsyncFuture => ("asyncio.Future", "TPM-ASYNCIO-001"),
             Self::Pool(_) => ("multiprocessing.pool.AsyncResult", "TPM-POOL-001"),
             Self::Thread(_) => ("concurrent.futures.Future", "TPM-EXECUTOR-001"),
+            Self::ProcessExecutor(_) | Self::CrossThread => {
+                ("concurrent.futures.Future", BRIDGE_MODEL)
+            }
         }
+    }
+
+    fn executor_future(&self) -> bool {
+        matches!(self, Self::Thread(_) | Self::ProcessExecutor(_))
     }
 }
 
@@ -57,6 +68,7 @@ struct Entry {
     delivered_buffered: bool,
     stored_outcomes: outcomes::Carrier,
     unclear_outcomes: bool,
+    captures: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,6 +80,8 @@ struct BufferedValue {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Value {
     Handle(String),
+    Wrapper { work: String, wrapper: String },
+    Deferred(String),
     RunningLoop,
 }
 
@@ -75,6 +89,9 @@ enum Value {
 pub(super) struct WorkState {
     entries: BTreeMap<String, Entry>,
     names: BTreeMap<String, Value>,
+    wrappers: BTreeMap<String, u8>,
+    not_started: BTreeSet<String>,
+    worker_thread: bool,
     pending: Option<Value>,
 }
 
@@ -85,6 +102,11 @@ impl WorkState {
         if self.pending != other.pending {
             self.pending = None;
         }
+        for (id, mask) in &other.wrappers {
+            *self.wrappers.entry(id.clone()).or_default() |= mask;
+        }
+        self.not_started.retain(|id| other.not_started.contains(id));
+        self.worker_thread &= other.worker_thread;
         for (id, entry) in &mut self.entries {
             if let Some(other) = other.entries.get(id) {
                 entry.duty |= other.duty;
@@ -102,6 +124,7 @@ impl WorkState {
                 entry.unclear_outcomes |=
                     other.unclear_outcomes || entry.stored_outcomes != other.stored_outcomes;
                 entry.stored_outcomes.merge(&other.stored_outcomes);
+                entry.captures.extend(other.captures.iter().cloned());
             } else {
                 entry.duty |= ABSENT;
             }
@@ -165,10 +188,50 @@ impl WorkState {
     }
 
     fn handle(&self, name: &str) -> Option<(&str, &Entry)> {
-        let Value::Handle(id) = self.names.get(name)? else {
-            return None;
+        let id = match self.names.get(name)? {
+            Value::Handle(id) | Value::Deferred(id) | Value::Wrapper { work: id, .. } => id,
+            Value::RunningLoop => return None,
         };
         Some((id, self.entries.get(id)?))
+    }
+
+    pub(super) fn running_loop(&self, name: &str) -> bool {
+        self.names.get(name) == Some(&Value::RunningLoop)
+    }
+
+    pub(super) fn mark_worker_thread(&mut self, loops: impl IntoIterator<Item = String>) {
+        self.worker_thread = true;
+        for name in loops {
+            self.names.insert(name, Value::RunningLoop);
+        }
+    }
+
+    pub(super) fn is_worker_thread(&self) -> bool {
+        self.worker_thread
+    }
+
+    pub(super) fn allow_bridges_to_start(&mut self) {
+        for wrapper in std::mem::take(&mut self.not_started) {
+            *self.wrappers.entry(wrapper).or_default() |= READY;
+        }
+    }
+
+    pub(super) fn capture_sites<'a>(
+        &'a self,
+        object: &'a str,
+    ) -> impl Iterator<Item = (Span, bool)> + 'a {
+        self.entries
+            .values()
+            .filter(move |entry| {
+                entry.readiness & (WAITING | DEFERRED) != 0 && entry.captures.contains(object)
+            })
+            .map(|entry| {
+                (
+                    entry.origin.clone(),
+                    entry.duty & (ABSENT | ESCAPED) != 0
+                        || entry.readiness & (READY | CANCELLED) != 0,
+                )
+            })
     }
 
     pub(super) fn future_id(&self, name: &str) -> Option<&str> {
@@ -236,7 +299,7 @@ pub(super) fn register(
         );
         return;
     }
-    let readiness = if matches!(kind, Kind::Thread(_) | Kind::Pool(_)) {
+    let readiness = if kind.executor_future() || matches!(kind, Kind::Pool(_) | Kind::CrossThread) {
         WAITING | READY
     } else {
         WAITING
@@ -255,6 +318,7 @@ pub(super) fn register(
             delivered_buffered: false,
             stored_outcomes: outcomes::Carrier::default(),
             unclear_outcomes: false,
+            captures: BTreeSet::new(),
         },
     );
     work.pending = Some(Value::Handle(id));
@@ -375,9 +439,8 @@ pub(super) fn owner_finished(env: &mut State, owner: &Kind) {
             .values_mut()
             .filter(|entry| &entry.kind == owner)
         {
-            entry.readiness &= !WAITING;
-            if entry.readiness == 0 {
-                entry.readiness = READY;
+            if entry.readiness & WAITING != 0 {
+                entry.readiness = (entry.readiness & !WAITING) | READY;
             }
         }
     }
@@ -442,7 +505,8 @@ pub(super) fn escape_pending(
     let Some(ownership) = &mut env.ownership else {
         return;
     };
-    if let Some(Value::Handle(id)) = ownership.work.pending.take() {
+    if let Some(Value::Handle(id) | Value::Wrapper { work: id, .. }) = ownership.work.pending.take()
+    {
         if ownership.work.escape(&id) {
             boundary(
                 result,
@@ -461,7 +525,7 @@ pub(super) fn report_scope(
     range: SourceRange,
     result: &mut Inspection,
 ) {
-    let mut work: BTreeMap<&str, (&Entry, u8, Vec<Span>)> = BTreeMap::new();
+    let mut work: BTreeMap<&str, (&Entry, u8, u8, Vec<Span>)> = BTreeMap::new();
     for (state, range) in outcomes
         .all_abrupt()
         .map(|exit| (&exit.state, exit.range))
@@ -469,8 +533,10 @@ pub(super) fn report_scope(
     {
         if let Some(ownership) = &state.ownership {
             for (id, entry) in &ownership.work.entries {
-                let (_, duties, pending_sites) = work.entry(id).or_insert((entry, 0, Vec::new()));
+                let (_, duties, readiness, pending_sites) =
+                    work.entry(id).or_insert((entry, 0, 0, Vec::new()));
                 *duties |= entry.duty;
+                *readiness |= entry.readiness;
                 if entry.duty & PENDING != 0 {
                     let site = span(file, range);
                     if !pending_sites.contains(&site) {
@@ -480,7 +546,14 @@ pub(super) fn report_scope(
             }
         }
     }
-    for (_, (entry, duties, pending_sites)) in work {
+    for (_, (entry, duties, readiness, pending_sites)) in work {
+        if readiness & DEFERRED != 0 {
+            boundary_at_span(
+                result,
+                entry.origin.clone(),
+                "created to_thread coroutine may leave scope without execution or explicit close",
+            );
+        }
         if duties & PENDING == 0 {
             continue;
         }
@@ -585,6 +658,242 @@ pub(super) fn bind_worker_contract(env: &mut State, worker: &AstExpr, functions:
             entry.contract = contract;
         }
     }
+}
+
+pub(super) fn capture_pending_bridge(env: &mut State, captures: BTreeSet<String>, deferred: bool) {
+    let Some(work) = env.ownership.as_mut().map(|ownership| &mut ownership.work) else {
+        return;
+    };
+    let Some(Value::Handle(id)) = &work.pending else {
+        return;
+    };
+    let entry = work.entries.get_mut(id).expect("pending bridge work");
+    entry.captures = captures;
+    if deferred {
+        entry.duty = OBSERVED;
+        entry.readiness = DEFERRED;
+        work.pending = Some(Value::Deferred(id.clone()));
+    }
+}
+
+fn work_site(file: &SourceFile, range: SourceRange, env: &State) -> String {
+    format!(
+        "{}:{}:{}",
+        file.path,
+        range.start,
+        env.allocation_context.join("/")
+    )
+}
+
+pub(super) fn wrap_executor(
+    env: &mut State,
+    source: Option<&str>,
+    file: &SourceFile,
+    range: SourceRange,
+) -> bool {
+    link_wrapper(env, source, file, range, false)
+}
+
+pub(super) fn cross_thread_wrapper(env: &mut State, file: &SourceFile, range: SourceRange) -> bool {
+    link_wrapper(env, None, file, range, true)
+}
+
+fn link_wrapper(
+    env: &mut State,
+    source: Option<&str>,
+    file: &SourceFile,
+    range: SourceRange,
+    cross_thread: bool,
+) -> bool {
+    let wrapper = work_site(file, range, env);
+    let work = &mut env.ownership.as_mut().expect("executor bridge").work;
+    let Some(Value::Handle(id)) = source
+        .map_or_else(|| work.pending.as_ref(), |name| work.names.get(name))
+        .cloned()
+    else {
+        return false;
+    };
+    if !work.entries.get(&id).is_some_and(|entry| {
+        if cross_thread {
+            entry.kind == Kind::CrossThread
+        } else {
+            entry.kind.executor_future()
+        }
+    }) || work.wrappers.contains_key(&wrapper)
+        || work.wrappers.len() >= MAX_WORK
+    {
+        return false;
+    }
+    if source.is_some() {
+        let entry = &work.entries[&id];
+        let (symbol, model) = entry.kind.model();
+        crate::review::operations::record_protocol(
+            "asyncio.wrap_future",
+            span(file, range),
+            vec![
+                BRIDGE_MODEL.into(),
+                symbol.into(),
+                model.into(),
+                protocol_guard_identity(file, &entry.origin),
+            ],
+        );
+    }
+    let source_readiness = work.entries[&id].readiness;
+    let delivery = if cross_thread {
+        WAITING
+    } else if matches!(source_readiness, READY | CANCELLED) {
+        // Adding the callback to an already terminal concurrent future
+        // invokes it immediately in the calling event-loop thread.
+        source_readiness
+    } else {
+        // Work can finish before the callback is attached or queue delivery
+        // from its worker thread for a later event-loop turn.
+        WAITING | READY | (source_readiness & CANCELLED)
+    };
+    work.wrappers.insert(wrapper.clone(), delivery);
+    work.pending = Some(Value::Wrapper { work: id, wrapper });
+    true
+}
+
+pub(super) fn schedule_bridge(
+    env: &mut State,
+    name: &str,
+    file: &SourceFile,
+    range: SourceRange,
+) -> bool {
+    let wrapper = work_site(file, range, env);
+    let work = &mut env.ownership.as_mut().expect("bridge task").work;
+    let Some(Value::Deferred(id)) = work.names.get(name) else {
+        return false;
+    };
+    let Some(entry) = work.entries.get_mut(id) else {
+        return false;
+    };
+    if entry.readiness != DEFERRED
+        || work.wrappers.contains_key(&wrapper)
+        || work.wrappers.len() >= MAX_WORK
+    {
+        return false;
+    }
+    entry.readiness = WAITING;
+    entry.duty = PENDING;
+    work.not_started.insert(wrapper.clone());
+    work.wrappers.insert(wrapper.clone(), WAITING);
+    work.pending = Some(Value::Wrapper {
+        work: id.clone(),
+        wrapper,
+    });
+    true
+}
+
+pub(super) fn is_deferred(env: &State, name: &str) -> bool {
+    env.ownership
+        .as_ref()
+        .is_some_and(|ownership| matches!(ownership.work.names.get(name), Some(Value::Deferred(_))))
+}
+
+pub(super) fn await_bridge(
+    env: &mut State,
+    source: Option<&str>,
+    file: &SourceFile,
+    range: SourceRange,
+    result: &mut Inspection,
+) -> bool {
+    let Some(ownership) = env.ownership.as_ref() else {
+        return false;
+    };
+    let work = &ownership.work;
+    let Some(value) = source.map_or_else(|| work.pending.as_ref(), |name| work.names.get(name))
+    else {
+        return false;
+    };
+    let (id, wrapper, deferred) = match value {
+        Value::Wrapper { work, wrapper } => (work.clone(), Some(wrapper.clone()), false),
+        Value::Deferred(id) => (id.clone(), None, true),
+        _ => return false,
+    };
+    let Some(mut entry) = work.entries.get(&id).cloned() else {
+        return false;
+    };
+    if entry.kind == Kind::CrossThread {
+        return false;
+    }
+    env.ownership.as_mut().unwrap().work.pending = None;
+    if deferred {
+        if entry.readiness != DEFERRED {
+            named_raise(env, range, "RuntimeError");
+            env.alive = false;
+            return true;
+        }
+        entry.readiness = WAITING | READY;
+        entry.duty = PENDING;
+        env.ownership
+            .as_mut()
+            .unwrap()
+            .work
+            .entries
+            .insert(id.clone(), entry.clone());
+    }
+    let mask = wrapper
+        .as_ref()
+        .and_then(|wrapper| env.ownership.as_ref()?.work.wrappers.get(wrapper))
+        .copied()
+        .unwrap_or(WAITING);
+    let mut interrupted = env.clone();
+    interrupted.pending_raises.clear();
+    if let Some(wrapper) = &wrapper {
+        interrupted
+            .ownership
+            .as_mut()
+            .unwrap()
+            .work
+            .wrappers
+            .insert(wrapper.clone(), CANCELLED);
+    }
+    if entry.readiness & WAITING != 0 || mask & CANCELLED != 0 {
+        // Interruption is evidence about this wait only. A cancel request may
+        // reach the source future too late to stop the underlying worker.
+        asyncio::queue_deadline_cancellations(env, range, &interrupted, false);
+        env.pending_raises.push(FlowExit {
+            state: interrupted.clone(),
+            range,
+            kind: CompletionKind::Cancelled(None),
+        });
+    }
+    if entry.readiness & CANCELLED != 0 && mask != CANCELLED {
+        cancel(&mut interrupted, &id);
+        env.pending_raises.push(FlowExit {
+            state: interrupted,
+            range,
+            kind: CompletionKind::Cancelled(None),
+        });
+        entry.readiness &= !CANCELLED;
+    }
+    if mask == CANCELLED || entry.readiness == 0 {
+        env.alive = false;
+    } else {
+        if let Some(wrapper) = wrapper {
+            env.ownership
+                .as_mut()
+                .unwrap()
+                .work
+                .wrappers
+                .insert(wrapper, READY);
+        }
+        deliver(env, &id, &entry, false, range);
+        if env.alive {
+            if let Some(contract) = entry.contract {
+                outcomes::deliver_work(env, &id, contract, file, range, result);
+            }
+        }
+    }
+    let (symbol, effect) = if deferred {
+        ("asyncio.to_thread", "dispatch-and-await")
+    } else {
+        ("asyncio.Future", "await-bridge-result")
+    };
+    runtime::use_model(symbol, effect, BRIDGE_MODEL, Ok(()), file, range, result);
+    true
 }
 
 fn named_raise(env: &mut State, range: SourceRange, name: &str) {
@@ -725,7 +1034,7 @@ fn carry_future_result(
 
 fn deliver(env: &mut State, id: &str, entry: &Entry, check_exception: bool, range: SourceRange) {
     if entry.readiness & CANCELLED != 0 {
-        let error = if matches!(entry.kind, Kind::Thread(_)) {
+        let error = if entry.kind.executor_future() || entry.kind == Kind::CrossThread {
             "concurrent.futures.CancelledError"
         } else {
             "CancelledError"
@@ -739,6 +1048,30 @@ fn deliver(env: &mut State, id: &str, entry: &Entry, check_exception: bool, rang
         if entry.readiness & (READY | WAITING) == 0 {
             env.alive = false;
             return;
+        }
+    }
+    let mut pool_failure = None;
+    if matches!(entry.kind, Kind::ProcessExecutor(_)) {
+        // The manager can set BrokenProcessPool on the future before it stops
+        // and joins its workers. Delivery observes the failure only.
+        let mut failure = env.clone();
+        failure.pending_raises.clear();
+        if let Some(entry) = failure
+            .ownership
+            .as_mut()
+            .and_then(|ownership| ownership.work.entries.get_mut(id))
+        {
+            entry.duty = (entry.duty & !(PENDING | ESCAPED)) | OBSERVED;
+        }
+        if check_exception {
+            pool_failure = Some(failure);
+        } else {
+            named_raise(
+                &mut failure,
+                range,
+                "concurrent.futures.process.BrokenProcessPool",
+            );
+            env.pending_raises.extend(take_pending_raises(&mut failure));
         }
     }
     if !check_exception {
@@ -766,6 +1099,9 @@ fn deliver(env: &mut State, id: &str, entry: &Entry, check_exception: bool, rang
         }
     } else {
         ready(env, id);
+    }
+    if let Some(failure) = pool_failure {
+        *env = merge(env, &failure).0;
     }
 }
 
@@ -888,6 +1224,124 @@ pub(super) fn call(
     }
     let range = expression.range;
     let no_args = arguments.is_empty() && keywords.is_empty();
+    if let Some(Value::Wrapper { wrapper, .. }) = work.names.get(name) {
+        let wrapper = wrapper.clone();
+        let mask = work.wrappers.get(&wrapper).copied().unwrap_or(WAITING);
+        let concurrent = entry.kind == Kind::CrossThread;
+        let symbol = if concurrent {
+            "concurrent.futures.Future"
+        } else {
+            "asyncio.Future"
+        };
+        let effect = match method {
+            "cancel" if no_args => {
+                if mask & WAITING != 0 {
+                    let work = &mut env.ownership.as_mut().unwrap().work;
+                    if work.not_started.remove(&wrapper) {
+                        work.wrappers.insert(wrapper, CANCELLED);
+                        cancel(env, &id);
+                    } else {
+                        *work.wrappers.entry(wrapper).or_default() |= CANCELLED;
+                    }
+                }
+                "request-bridge-cancel"
+            }
+            "done" | "cancelled" if no_args => "wrapper-status",
+            "result" | "exception"
+                if (!concurrent && no_args)
+                    || concurrent && timeout(arguments, keywords, file).is_some() =>
+            {
+                if concurrent && !work.is_worker_thread() {
+                    runtime::use_model(
+                        symbol,
+                        method,
+                        BRIDGE_MODEL,
+                        Err("blocking result retrieval requires a known non-loop thread"),
+                        file,
+                        range,
+                        result,
+                    );
+                    queue_raise(env, range, None);
+                    return true;
+                }
+                if mask & CANCELLED != 0 {
+                    named_raise(
+                        env,
+                        range,
+                        if concurrent {
+                            "concurrent.futures.CancelledError"
+                        } else {
+                            "CancelledError"
+                        },
+                    );
+                }
+                if !concurrent && mask & WAITING != 0 {
+                    named_raise(env, range, "asyncio.InvalidStateError");
+                } else if concurrent
+                    && mask & WAITING != 0
+                    && entry.readiness & WAITING != 0
+                    && timeout(arguments, keywords, file) == Some(true)
+                {
+                    named_raise(env, range, "TimeoutError");
+                }
+                if mask == CANCELLED || !concurrent && mask & READY == 0 {
+                    env.alive = false;
+                } else {
+                    env.ownership
+                        .as_mut()
+                        .unwrap()
+                        .work
+                        .wrappers
+                        .insert(wrapper, READY);
+                    deliver(env, &id, &entry, method == "exception", range);
+                    if method == "result" && env.alive {
+                        if let Some(contract) = entry.contract {
+                            outcomes::deliver_work(env, &id, contract, file, range, result);
+                        }
+                    }
+                }
+                "retrieve-bridge-result"
+            }
+            _ => {
+                runtime::use_model(
+                    symbol,
+                    method,
+                    BRIDGE_MODEL,
+                    Err("wrapper operation is outside the qualified bridge profile"),
+                    file,
+                    range,
+                    result,
+                );
+                queue_raise(env, range, None);
+                return true;
+            }
+        };
+        runtime::use_model(symbol, effect, BRIDGE_MODEL, Ok(()), file, range, result);
+        return true;
+    }
+    if matches!(work.names.get(name), Some(Value::Deferred(_))) {
+        if method == "close" && no_args && entry.readiness == DEFERRED {
+            cancel(env, &id);
+            runtime::use_model(
+                "asyncio.to_thread",
+                "close-before-dispatch",
+                BRIDGE_MODEL,
+                Ok(()),
+                file,
+                range,
+                result,
+            );
+        } else {
+            boundary(
+                result,
+                file,
+                range,
+                "operation on a to_thread coroutine is outside the qualified bridge profile",
+            );
+            queue_raise(env, range, None);
+        }
+        return true;
+    }
     let (symbol, model) = entry.kind.model();
     let matched = match (&entry.kind, method) {
         (Kind::Pool(_), "wait") => timeout(arguments, keywords, file)
@@ -898,7 +1352,7 @@ pub(super) fn call(
             })
             .is_some(),
         (Kind::Pool(_), "ready")
-        | (Kind::Thread(_), "done" | "running")
+        | (Kind::Thread(_) | Kind::ProcessExecutor(_), "done" | "running")
         | (Kind::AsyncFuture, "done")
             if no_args =>
         {
@@ -913,7 +1367,7 @@ pub(super) fn call(
             }
             true
         }
-        (Kind::Thread(_), "cancel") if no_args => {
+        (Kind::Thread(_) | Kind::ProcessExecutor(_), "cancel") if no_args => {
             if entry.readiness & WAITING != 0 && !entry.dispatched {
                 let mut cancelled = env.clone();
                 cancel(&mut cancelled, &id);
@@ -936,7 +1390,8 @@ pub(super) fn call(
         {
             set_future(env, &id, &entry, method, &arguments[0], file, range)
         }
-        (Kind::Pool(_), "get") | (Kind::Thread(_), "result" | "exception") => {
+        (Kind::Pool(_), "get")
+        | (Kind::Thread(_) | Kind::ProcessExecutor(_), "result" | "exception") => {
             timeout(arguments, keywords, file)
                 .map(|timed| {
                     if timed && entry.readiness & WAITING != 0 {
@@ -1011,13 +1466,23 @@ pub(super) fn test(
     let (receiver, method, [], []) = called_method(expr)? else {
         return None;
     };
-    let (id, entry) = env.ownership.as_ref()?.work.handle(expr_name(receiver)?)?;
+    let work = &env.ownership.as_ref()?.work;
+    let name = expr_name(receiver)?;
+    // A wrapper's terminal state can precede underlying completion.
+    if matches!(
+        work.names.get(name)?,
+        Value::Wrapper { .. } | Value::Deferred(_)
+    ) {
+        return None;
+    }
+    let (id, entry) = work.handle(name)?;
     let predicate = match (&entry.kind, method) {
-        (Kind::AsyncFuture | Kind::Task | Kind::Thread(_), "done") | (Kind::Pool(_), "ready") => {
-            Predicate::Ready
+        (Kind::AsyncFuture | Kind::Task | Kind::Thread(_) | Kind::ProcessExecutor(_), "done")
+        | (Kind::Pool(_), "ready") => Predicate::Ready,
+        (Kind::Thread(_) | Kind::ProcessExecutor(_), "running") => Predicate::Running,
+        (Kind::Thread(_) | Kind::ProcessExecutor(_) | Kind::AsyncFuture, "cancel") => {
+            Predicate::Cancel
         }
-        (Kind::Thread(_), "running") => Predicate::Running,
-        (Kind::Thread(_) | Kind::AsyncFuture, "cancel") => Predicate::Cancel,
         _ => return None,
     };
     let (symbol, model) = entry.kind.model();
@@ -1052,7 +1517,7 @@ pub(super) fn refine(env: &mut State, test: &WorkTest, truth: bool) {
         (Predicate::Running, false) => {}
         (Predicate::Cancel, true) => {
             env.alive &= (entry.readiness & WAITING != 0 && !entry.dispatched)
-                || (matches!(entry.kind, Kind::Thread(_)) && entry.readiness & CANCELLED != 0);
+                || (entry.kind.executor_future() && entry.readiness & CANCELLED != 0);
             cancel(env, &test.id);
         }
         (Predicate::Cancel, false) if entry.kind == Kind::AsyncFuture => {

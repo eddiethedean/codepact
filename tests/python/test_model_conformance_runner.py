@@ -355,6 +355,18 @@ class ModelConformanceRunnerTests(unittest.TestCase):
                     ),
                     ("3.13.16",),
                 ),
+                "phase11-bridges": (
+                    ("TPM-BRIDGE-001",),
+                    ("3.13.16",),
+                ),
+                "phase11-process": (
+                    ("TPM-SHM-001", "TPM-PROCESS-001", "TPM-POOL-001", "TPM-IPC-001"),
+                    ("3.13.16",),
+                ),
+                "phase11-async-resources": (
+                    ("TPM-ASYNCGEN-001", "TPM-ASYNCIO-IO-001"),
+                    ("3.13.16",),
+                ),
             },
         )
 

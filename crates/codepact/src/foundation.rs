@@ -29,7 +29,7 @@ pub(crate) use runtime::stdlib_catalog;
 pub use runtime::{RuntimeProfile, CATALOG_REVISION};
 
 pub const CHECK_SCHEMA_VERSION: u8 = 2;
-pub const MODEL_CATALOG_VERSION: u8 = 6;
+pub const MODEL_CATALOG_VERSION: u8 = 7;
 
 /// Absolute imports available to the bounded source analysis.
 pub fn static_imports(file: &crate::SourceFile, target: &str) -> Vec<String> {
