@@ -47,12 +47,20 @@ struct Endpoint {
     port: u16,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CloseWaiter {
+    Available,
+    Cancelled,
+    MaybeCancelled,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct Handle {
     kind: Kind,
     endpoint: Option<Endpoint>,
     clients: BTreeSet<String>,
     close_requested: bool,
+    close_waiter: CloseWaiter,
     client_close_requested: bool,
     listening: bool,
     pub(super) uncertain: bool,
@@ -68,6 +76,9 @@ impl Handle {
             || self.listening != other.listening
             || self.clients != other.clients;
         self.close_requested &= other.close_requested;
+        if self.close_waiter != other.close_waiter {
+            self.close_waiter = CloseWaiter::MaybeCancelled;
+        }
         self.client_close_requested &= other.client_close_requested;
         self.listening &= other.listening;
         self.clients.extend(other.clients.iter().cloned());
@@ -213,6 +224,7 @@ fn insert(
                 endpoint,
                 clients: BTreeSet::new(),
                 close_requested: false,
+                close_waiter: CloseWaiter::Available,
                 client_close_requested: false,
                 listening: false,
                 uncertain: false,
@@ -423,6 +435,12 @@ fn method_call(
             Ok(())
         }
     });
+    let writer_wait = handle.kind == Kind::Writer && method == "wait_closed";
+    let effect = if writer_wait && handle.close_waiter == CloseWaiter::Cancelled {
+        "cancelled-close-waiter"
+    } else {
+        effect
+    };
     let symbol = format!("{}.{method}", handle.kind.symbol());
     if !runtime::use_model(&symbol, effect, IO_MODEL, model, file, range, result) {
         if !asynchronous || is_awaited {
@@ -476,6 +494,26 @@ fn method_call(
             }
         }
         "wait_closed" | "wait" | "communicate" => {
+            if writer_wait && handle.close_waiter != CloseWaiter::Available {
+                let mut interrupted = env.clone();
+                interrupted.pending_raises.clear();
+                interrupted
+                    .async_resources
+                    .io
+                    .get_mut(&id)
+                    .unwrap()
+                    .close_waiter = CloseWaiter::Cancelled;
+                env.pending_raises.push(FlowExit {
+                    state: interrupted,
+                    kind: CompletionKind::Cancelled(None),
+                    range,
+                });
+                if handle.close_waiter == CloseWaiter::Cancelled {
+                    env.alive = false;
+                    return true;
+                }
+                env.async_resources.io.get_mut(&id).unwrap().close_waiter = CloseWaiter::Available;
+            }
             if !already_closed {
                 if handle.kind == Kind::Server
                     && !handle.clients.is_empty()
@@ -485,7 +523,18 @@ fn method_call(
                     cancellation(env, range);
                     return true;
                 }
-                cancellation(env, range);
+                if writer_wait {
+                    cancellation_with(env, range, |interrupted| {
+                        interrupted
+                            .async_resources
+                            .io
+                            .get_mut(&id)
+                            .unwrap()
+                            .close_waiter = CloseWaiter::Cancelled;
+                    });
+                } else {
+                    cancellation(env, range);
+                }
                 finish(env, &id, file, range);
                 if handle.kind == Kind::Writer {
                     // The protocol's connection_lost error reaches the

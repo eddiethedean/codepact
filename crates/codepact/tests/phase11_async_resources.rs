@@ -382,3 +382,68 @@ async def launch():
         "{report:#?}"
     );
 }
+
+#[test]
+fn stream_writer_retries_reuse_the_cancelled_close_waiter() {
+    let report = check(
+        r#"from asyncio import CancelledError, open_connection
+
+async def run():
+    reader, writer = await open_connection("127.0.0.1", 9000)
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except CancelledError:
+        await writer.wait_closed()
+"#,
+    );
+    assert!(
+        has_effect(
+            &report,
+            "asyncio.StreamWriter.wait_closed",
+            "cancelled-close-waiter"
+        ),
+        "{report:#?}"
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP1002" && finding.primary.line == 9),
+        "{report:#?}"
+    );
+}
+
+#[test]
+fn resolved_asynccontextmanager_decorators_have_complete_coverage() {
+    for (import, decorator) in [
+        (
+            "from contextlib import asynccontextmanager",
+            "asynccontextmanager",
+        ),
+        (
+            "from contextlib import asynccontextmanager as manager",
+            "manager",
+        ),
+        (
+            "import contextlib as contexts",
+            "contexts.asynccontextmanager",
+        ),
+    ] {
+        let report = check(&format!(
+            "{import}\n@{decorator}\nasync def resource():\n    yield 1\n\nasync def run():\n    async with resource():\n        pass\n"
+        ));
+        assert!(
+            has_effect(
+                &report,
+                "contextlib.asynccontextmanager",
+                "construct-lazy-frame"
+            ),
+            "{report:#?}"
+        );
+        assert_eq!(
+            report.coverage.status, "complete-for-supported-subset",
+            "{report:#?}"
+        );
+    }
+}

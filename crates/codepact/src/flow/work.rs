@@ -211,7 +211,9 @@ impl WorkState {
     }
 
     pub(super) fn allow_bridges_to_start(&mut self) {
-        self.not_started.clear();
+        for wrapper in std::mem::take(&mut self.not_started) {
+            *self.wrappers.entry(wrapper).or_default() |= READY;
+        }
     }
 
     pub(super) fn capture_sites<'a>(
@@ -736,7 +738,19 @@ fn link_wrapper(
             ],
         );
     }
-    work.wrappers.insert(wrapper.clone(), WAITING);
+    let source_readiness = work.entries[&id].readiness;
+    let delivery = if cross_thread {
+        WAITING
+    } else if matches!(source_readiness, READY | CANCELLED) {
+        // Adding the callback to an already terminal concurrent future
+        // invokes it immediately in the calling event-loop thread.
+        source_readiness
+    } else {
+        // Work can finish before the callback is attached or queue delivery
+        // from its worker thread for a later event-loop turn.
+        WAITING | READY | (source_readiness & CANCELLED)
+    };
+    work.wrappers.insert(wrapper.clone(), delivery);
     work.pending = Some(Value::Wrapper { work: id, wrapper });
     true
 }
@@ -1261,14 +1275,16 @@ pub(super) fn call(
                         },
                     );
                 }
-                if mask & WAITING != 0 && entry.readiness & WAITING != 0 {
-                    if !concurrent {
-                        named_raise(env, range, "asyncio.InvalidStateError");
-                    } else if timeout(arguments, keywords, file) == Some(true) {
-                        named_raise(env, range, "TimeoutError");
-                    }
+                if !concurrent && mask & WAITING != 0 {
+                    named_raise(env, range, "asyncio.InvalidStateError");
+                } else if concurrent
+                    && mask & WAITING != 0
+                    && entry.readiness & WAITING != 0
+                    && timeout(arguments, keywords, file) == Some(true)
+                {
+                    named_raise(env, range, "TimeoutError");
                 }
-                if mask == CANCELLED || !concurrent && entry.readiness & READY == 0 {
+                if mask == CANCELLED || !concurrent && mask & READY == 0 {
                     env.alive = false;
                 } else {
                     env.ownership

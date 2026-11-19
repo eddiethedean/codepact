@@ -223,6 +223,7 @@
         "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_cross_thread_cancel_starts_finalizer_before_completion",
         "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_cross_thread_result_and_exception_delivery",
         "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_run_in_executor_submits_immediately_without_copying_context",
+        "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_source_shutdown_can_precede_wrapper_delivery",
         "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_to_thread_is_lazy_and_copies_context_at_execution",
         "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_wrapper_cancel_keeps_running_work_and_can_cancel_queued_work",
         "test_phase11_bridge_model_conformance.Phase11ShutdownConformance.test_process_pool_repeated_shutdown_cannot_join_detached_manager",
@@ -289,7 +290,8 @@
         "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_generator_lazy_entry_break_and_exhaustion",
         "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_interrupted_finalizer_and_repeat_close",
         "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_server_transport_and_handler_completion_are_distinct",
-        "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_subprocess_output_wait_and_stop_are_distinct"
+        "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_subprocess_output_wait_and_stop_are_distinct",
+        "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_writer_retry_reuses_cancelled_close_waiter"
       ]
     }
   ]

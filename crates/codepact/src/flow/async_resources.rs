@@ -179,10 +179,15 @@ fn finish(env: &mut State, id: &str, file: &SourceFile, range: SourceRange) {
 }
 
 fn cancellation(env: &mut State, range: SourceRange) {
+    cancellation_with(env, range, |_| {});
+}
+
+fn cancellation_with(env: &mut State, range: SourceRange, on_interrupt: impl FnOnce(&mut State)) {
     tasks::allow_tasks_to_start(env);
     let mut interrupted = env.clone();
     interrupted.alive = true;
     interrupted.pending_raises.clear();
+    on_interrupt(&mut interrupted);
     asyncio::queue_deadline_cancellations(env, range, &interrupted, false);
     env.pending_raises.push(FlowExit {
         state: interrupted,

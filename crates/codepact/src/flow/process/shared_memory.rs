@@ -21,9 +21,16 @@ enum Alias {
 pub(super) struct Segment {
     name: u8,
     tracker: u8,
+    size: usize,
     origin: Span,
     removal: Option<Span>,
     owns_unlink: bool,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct Export {
+    state: u8,
+    len: Option<usize>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -33,7 +40,7 @@ struct Mapping {
     buffer_property: u8,
     base: u8,
     unknown_exports: bool,
-    exports: BTreeMap<String, u8>,
+    exports: BTreeMap<String, Export>,
     origin: Span,
 }
 
@@ -102,11 +109,21 @@ impl LocalMemory {
                 left.buffer_property |= right.buffer_property;
                 left.base |= right.base;
                 left.unknown_exports |= right.unknown_exports;
-                for (export, state) in &mut left.exports {
-                    *state |= right.exports.get(export).copied().unwrap_or(CLOSED);
+                for (id, export) in &mut left.exports {
+                    if let Some(other) = right.exports.get(id) {
+                        export.state |= other.state;
+                        if export.len != other.len {
+                            export.len = None;
+                        }
+                    } else {
+                        export.state |= CLOSED;
+                    }
                 }
-                for (export, state) in &right.exports {
-                    left.exports.entry(export.clone()).or_insert(CLOSED | state);
+                for (id, export) in &right.exports {
+                    left.exports.entry(id.clone()).or_insert_with(|| Export {
+                        state: CLOSED | export.state,
+                        len: export.len,
+                    });
                 }
             } else {
                 left.state |= UNRESOLVED;
@@ -150,7 +167,11 @@ impl LocalMemory {
                     mapping.unknown_exports = true;
                     match export {
                         Some(export) => {
-                            *mapping.exports.get_mut(export).expect("tracked export") |= UNRESOLVED
+                            mapping
+                                .exports
+                                .get_mut(export)
+                                .expect("tracked export")
+                                .state |= UNRESOLVED
                         }
                         None => mapping.base |= UNRESOLVED,
                     }
@@ -357,7 +378,7 @@ fn positional_fields<'a>(
 }
 
 enum Construction {
-    Create,
+    Create(usize),
     Attach(String),
 }
 
@@ -392,12 +413,14 @@ fn construction(
         Some(AstExprKind::Boolean(true))
             if bound
                 .get("name")
-                .is_none_or(|value| matches!(value.kind, AstExprKind::NoneLiteral))
-                && bound.get("size").is_some_and(|value| {
-                    protocol::nonnegative(file, value).is_some_and(|size| size > 0)
-                }) =>
+                .is_none_or(|value| matches!(value.kind, AstExprKind::NoneLiteral)) =>
         {
-            Ok(Construction::Create)
+            bound
+                .get("size")
+                .and_then(|value| protocol::nonnegative(file, value))
+                .filter(|&size| size > 0 && isize::try_from(size).is_ok())
+                .map(Construction::Create)
+                .ok_or(UNSUPPORTED)
         }
         None | Some(AstExprKind::Boolean(false))
             if bound
@@ -509,7 +532,7 @@ fn create_or_attach(
         .protocol;
     if protocol.primitive_count() >= protocol::MAX_PRIMITIVES
         || protocol.memory.mappings.contains_key(&id)
-        || matches!(model, Construction::Create)
+        || matches!(model, Construction::Create(_))
             && protocol
                 .memory
                 .segments
@@ -526,13 +549,14 @@ fn create_or_attach(
         return false;
     }
     let segment = match model {
-        Construction::Create => {
+        Construction::Create(size) => {
             raise_named(env, range, "OSError");
             memory_mut(env).segments.insert(
                 id.clone(),
                 Segment {
                     name: OPEN,
                     tracker: OPEN,
+                    size,
                     origin: protocol::allocation_origin(file, range),
                     removal: None,
                     owns_unlink: true,
@@ -609,29 +633,67 @@ fn view_of(expression: &AstExpr, env: &State) -> Option<(String, Option<String>)
     }
 }
 
-fn valid_slice(file: &SourceFile, index: &AstExpr) -> bool {
-    let Some(source) = file.source.get(index.range.start..index.range.end) else {
-        return false;
-    };
-    let bounds = source.split(':').collect::<Vec<_>>();
-    (2..=3).contains(&bounds.len())
-        && bounds.iter().all(|part| {
+struct Slice {
+    start: Option<isize>,
+    stop: Option<isize>,
+    step: isize,
+}
+
+impl Slice {
+    fn parse(file: &SourceFile, index: &AstExpr) -> Option<Self> {
+        let source = file.source.get(index.range.start..index.range.end)?;
+        let mut parts = source.split(':');
+        let bound = |part: &str| {
             let text = part.trim();
-            text.is_empty() || text.replace('_', "").parse::<isize>().is_ok()
-        })
-        && bounds.get(2).is_none_or(|step| {
-            step.trim().is_empty()
-                || step
-                    .trim()
-                    .replace('_', "")
-                    .parse::<isize>()
-                    .ok()
-                    .is_some_and(|step| step != 0)
-        })
+            if text.is_empty() {
+                Some(None)
+            } else {
+                text.replace('_', "").parse::<isize>().ok().map(Some)
+            }
+        };
+        let start = bound(parts.next()?)?;
+        let stop = bound(parts.next()?)?;
+        let step = bound(parts.next().unwrap_or_default())?.unwrap_or(1);
+        (step != 0 && parts.next().is_none()).then_some(Self { start, stop, step })
+    }
+
+    fn len(&self, len: usize) -> usize {
+        let len = len as i128;
+        let step = self.step as i128;
+        let (lower, upper, default_start, default_stop) = if step > 0 {
+            (0, len, 0, len)
+        } else {
+            (-1, len - 1, len - 1, -1)
+        };
+        let normalize = |bound: Option<isize>, default| {
+            bound.map_or(default, |bound| {
+                let bound = bound as i128;
+                let adjusted = if bound < 0 { bound + len } else { bound };
+                adjusted.clamp(lower, upper)
+            })
+        };
+        let start = normalize(self.start, default_start);
+        let stop = normalize(self.stop, default_stop);
+        let distance = if step > 0 { stop - start } else { start - stop };
+        if distance <= 0 {
+            0
+        } else {
+            usize::try_from((distance - 1) / step.abs() + 1).expect("bounded slice length")
+        }
+    }
 }
 
 fn view_flags(mapping: &Mapping, export: Option<&str>) -> u8 {
-    export.map_or(mapping.base, |id| mapping.exports[id])
+    export.map_or(mapping.base, |id| mapping.exports[id].state)
+}
+
+fn view_len(env: &State, view: &(String, Option<String>)) -> Option<usize> {
+    let memory = memory(env).expect("shared-memory state");
+    let mapping = &memory.mappings[&view.0];
+    match &view.1 {
+        Some(id) => mapping.exports[id].len,
+        None => Some(memory.segments[&mapping.segment].size),
+    }
 }
 
 fn access_view(
@@ -781,9 +843,9 @@ pub(super) fn initialize(
         );
         return false;
     };
-    if !valid_slice(file, index) {
+    let Some(slice) = Slice::parse(file, index) else {
         return false;
-    }
+    };
     if !access_view(
         &view,
         (base, "TypeError"),
@@ -795,6 +857,7 @@ pub(super) fn initialize(
         return true;
     }
     let id = identity(file, expression.range, env);
+    let len = view_len(env, &view).map(|len| slice.len(len));
     let mapping = memory_mut(env)
         .mappings
         .get_mut(&view.0)
@@ -810,7 +873,9 @@ pub(super) fn initialize(
         );
         return false;
     }
-    mapping.exports.insert(id.clone(), OPEN);
+    mapping
+        .exports
+        .insert(id.clone(), Export { state: OPEN, len });
     alias_binding(
         env,
         name,
@@ -835,7 +900,11 @@ pub(super) fn indexed_view(
     let Some(view) = view_of(base, env) else {
         return false;
     };
-    if !matches!(indexes.as_slice(), [index] if protocol::nonnegative(file, index).is_some()) {
+    let Some(index) = indexes
+        .first()
+        .filter(|_| indexes.len() == 1)
+        .and_then(|index| protocol::nonnegative(file, index))
+    else {
         memory_mut(env)
             .mappings
             .get_mut(&view.0)
@@ -849,7 +918,7 @@ pub(super) fn indexed_view(
             result,
         );
         return false;
-    }
+    };
     if access_view(
         &view,
         (base, "TypeError"),
@@ -858,7 +927,32 @@ pub(super) fn indexed_view(
         expression.range,
         result,
     ) {
-        record("access-buffer-view", Ok(()), file, expression.range, result);
+        match view_len(env, &view) {
+            Some(len) if index >= len => {
+                raise_named(env, expression.range, "IndexError");
+                env.alive = false;
+                record(
+                    "reject-out-of-range-buffer-index",
+                    Ok(()),
+                    file,
+                    expression.range,
+                    result,
+                );
+            }
+            Some(_) => {
+                record("access-buffer-view", Ok(()), file, expression.range, result);
+            }
+            None => {
+                raise_named(env, expression.range, "IndexError");
+                record(
+                    "access-buffer-view",
+                    Err("the shared-memory view length is unresolved"),
+                    file,
+                    expression.range,
+                    result,
+                );
+            }
+        }
     }
     true
 }
@@ -881,7 +975,7 @@ fn close_mapping(
         || mapping
             .exports
             .values()
-            .any(|flags| flags & UNRESOLVED != 0)
+            .any(|export| export.state & UNRESOLVED != 0)
     {
         record(
             "close-local-mapping",
@@ -898,8 +992,12 @@ fn close_mapping(
         .expect("tracked mapping");
     partial.base = CLOSED;
     partial.buffer_property = CLOSED;
-    if mapping.exports.values().any(|flags| flags & OPEN != 0) {
-        let definite = mapping.exports.values().any(|flags| *flags == OPEN);
+    if mapping
+        .exports
+        .values()
+        .any(|export| export.state & OPEN != 0)
+    {
+        let definite = mapping.exports.values().any(|export| export.state == OPEN);
         finding(
             "SharedMemory.close cannot close the mapping while an exported view is live",
             vec![mapping.origin],
@@ -929,7 +1027,7 @@ fn close_mapping(
     mapping
         .exports
         .values_mut()
-        .for_each(|state| *state = CLOSED);
+        .for_each(|export| export.state = CLOSED);
     record("close-local-mapping", Ok(()), file, range, result);
 }
 
@@ -1071,7 +1169,13 @@ pub(super) fn call(
                 .get_mut(&mapping)
                 .expect("tracked mapping");
             match export {
-                Some(export) => *mapping.exports.get_mut(&export).expect("tracked export") = CLOSED,
+                Some(export) => {
+                    mapping
+                        .exports
+                        .get_mut(&export)
+                        .expect("tracked export")
+                        .state = CLOSED
+                }
                 None => mapping.base = CLOSED,
             }
             record("release-buffer-view", Ok(()), file, range, result);

@@ -36,6 +36,25 @@ def ready(path: Path) -> None:
 
 
 class Phase11BridgeConformance(unittest.IsolatedAsyncioTestCase):
+    async def test_source_shutdown_can_precede_wrapper_delivery(self) -> None:
+        release = Event()
+
+        def work() -> int:
+            if not release.wait(TIMEOUT):
+                raise TimeoutError("thread work was not released")
+            return 42
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            try:
+                source = pool.submit(work)
+                wrapper = asyncio.wrap_future(source)
+            finally:
+                release.set()
+        self.assertTrue(source.done())
+        with self.assertRaises(asyncio.InvalidStateError):
+            wrapper.result()
+        self.assertEqual(await asyncio.wait_for(wrapper, TIMEOUT), 42)
+
     async def test_to_thread_is_lazy_and_copies_context_at_execution(self) -> None:
         label = ContextVar("label", default="default")
         calls: list[str] = []

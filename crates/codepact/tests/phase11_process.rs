@@ -313,3 +313,59 @@ if __name__ == "__main__":
         "worker reply remains unobserved"
     ));
 }
+
+#[test]
+fn shared_view_bounds_preserve_exceptional_cleanup_duties() {
+    let source = r#"from multiprocessing import get_context
+from multiprocessing.shared_memory import SharedMemory
+
+def run():
+    ctx = get_context("spawn")
+    memory = SharedMemory(create=True, size=8)
+    try:
+        mark = memory.buf[1024]
+    except IndexError:
+        return
+    memory.close()
+    memory.unlink()
+"#;
+    let report = inspect(source, None);
+    assert!(
+        model(&report, "reject-out-of-range-buffer-index", true),
+        "{report:#?}"
+    );
+    assert!(
+        has_finding(&report, "TP7003", "mapping remains locally open"),
+        "{report:#?}"
+    );
+
+    let report = inspect(
+        r#"from multiprocessing import get_context
+from multiprocessing.shared_memory import SharedMemory
+
+def run():
+    ctx = get_context("spawn")
+    memory = SharedMemory(create=True, size=8)
+    view = memory.buf[1:7:2]
+    reverse = view[::-1]
+    reverse[2] = 42
+    try:
+        reverse[3] = 7
+    except IndexError:
+        reverse.release()
+        view.release()
+        memory.close()
+        memory.unlink()
+"#,
+        None,
+    );
+    assert!(model(&report, "access-buffer-view", true), "{report:#?}");
+    assert!(
+        model(&report, "reject-out-of-range-buffer-index", true),
+        "{report:#?}"
+    );
+    assert!(
+        !has_finding(&report, "TP7003", "mapping remains locally open"),
+        "{report:#?}"
+    );
+}

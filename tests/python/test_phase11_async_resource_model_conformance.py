@@ -11,6 +11,31 @@ from unittest.mock import patch
 
 
 class AsyncResourceConformance(unittest.IsolatedAsyncioTestCase):
+    async def test_writer_retry_reuses_cancelled_close_waiter(self) -> None:
+        class DeferredClose(asyncio.Transport):
+            closing = False
+
+            def close(self) -> None:
+                self.closing = True
+
+            def is_closing(self) -> bool:
+                return self.closing
+
+        reader = asyncio.StreamReader()
+        protocol = asyncio.StreamReaderProtocol(reader)
+        writer = asyncio.StreamWriter(
+            DeferredClose(), protocol, reader, asyncio.get_running_loop()
+        )
+        writer.close()
+        try:
+            with self.assertRaises(TimeoutError):
+                async with asyncio.timeout(0):
+                    await writer.wait_closed()
+            with self.assertRaises(asyncio.CancelledError):
+                await writer.wait_closed()
+        finally:
+            protocol.connection_lost(None)
+
     async def test_generator_lazy_entry_break_and_exhaustion(self) -> None:
         events: list[str] = []
 

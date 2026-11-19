@@ -230,3 +230,58 @@ async def main():
         "{report:#?}"
     );
 }
+
+#[test]
+fn executor_shutdown_does_not_deliver_pending_asyncio_wrapper_callback() {
+    let report = check(
+        r#"from asyncio import InvalidStateError, wrap_future
+from concurrent.futures import ThreadPoolExecutor
+
+def work(): return 12
+
+async def run():
+    with ThreadPoolExecutor(1) as pool:
+        original = pool.submit(work)
+        wrapped = wrap_future(original)
+    try:
+        wrapped.result()
+    except InvalidStateError:
+        leaked = open("example.txt")
+        return
+"#,
+    );
+    assert!(
+        applied(&report, "asyncio.Future", "retrieve-bridge-result"),
+        "{report:#?}"
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|finding| finding.code == "TP1002"
+                && finding.related.iter().any(|site| site.line == 13)),
+        "{report:#?}"
+    );
+
+    let report = check(
+        r#"from asyncio import wrap_future
+from concurrent.futures import ThreadPoolExecutor
+
+def work(): return 12
+
+async def run():
+    with ThreadPoolExecutor(1) as pool:
+        original = pool.submit(work)
+    wrapped = wrap_future(original)
+    wrapped.result()
+"#,
+    );
+    assert!(
+        applied(&report, "asyncio.Future", "retrieve-bridge-result"),
+        "{report:#?}"
+    );
+    assert_eq!(
+        report.coverage.status, "complete-for-supported-subset",
+        "{report:#?}"
+    );
+}
