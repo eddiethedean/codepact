@@ -791,6 +791,7 @@ fn capture_coroutine_place(
                 | AstExprKind::Boolean(_)
                 | AstExprKind::NoneLiteral
                 | AstExprKind::Primitive
+                | AstExprKind::EvaluatedSelect { .. }
         ) {
             return false;
         }

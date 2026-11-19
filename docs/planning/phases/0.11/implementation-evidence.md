@@ -65,6 +65,22 @@ costs, and the new stream, subprocess, bridge and shared-memory workloads.
 Record cold, unchanged and edited snapshots, profile invalidation,
 comparison and peak RSS.
 
+The local capture for `6fa8f94` used Rust 1.96 on macOS arm64. It alternated
+the published and candidate binaries across ten process pairs at 64 callers.
+The largest inherited median slowdown was 2.12% for an affected source
+review edit (0.253 ms). The largest inherited peak RSS increase was 0.47 MiB
+for the queue workload.
+
+| New workload | Cold median | Unchanged median | Peak RSS |
+| --- | ---: | ---: | ---: |
+| Async stream | 16.33 ms | 9.02 ms | 16.84 MiB |
+| Async subprocess | 22.73 ms | 13.23 ms | 18.44 MiB |
+| Executor bridge | 11.62 ms | 6.92 ms | 15.86 MiB |
+| Shared memory | 13.37 ms | 6.81 ms | 15.17 MiB |
+
+The raw local receipt at `target/phase11-performance.json` has SHA-256
+`91856191a4c0a6b25d1af222327b7107b1aa5f90aab8f05d989b069b0f946506`.
+
 ## Release decision
 
 Use the [common release gates](../../release-gates.md) and

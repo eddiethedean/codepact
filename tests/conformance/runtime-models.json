@@ -209,7 +209,7 @@
       ],
       "platform": "linux",
       "machine": "x86_64",
-      "module": "test_phase11_bridges",
+      "module": "test_phase11_bridge_model_conformance",
       "upstream_modules": [
         "asyncio.threads",
         "asyncio.base_events",
@@ -220,13 +220,13 @@
         "concurrent.futures.process"
       ],
       "tests": [
-        "test_phase11_bridges.Phase11BridgeConformance.test_cross_thread_cancel_starts_finalizer_before_completion",
-        "test_phase11_bridges.Phase11BridgeConformance.test_cross_thread_result_and_exception_delivery",
-        "test_phase11_bridges.Phase11BridgeConformance.test_run_in_executor_submits_immediately_without_copying_context",
-        "test_phase11_bridges.Phase11BridgeConformance.test_to_thread_is_lazy_and_copies_context_at_execution",
-        "test_phase11_bridges.Phase11BridgeConformance.test_wrapper_cancel_keeps_running_work_and_can_cancel_queued_work",
-        "test_phase11_bridges.Phase11ShutdownConformance.test_process_pool_repeated_shutdown_cannot_join_detached_manager",
-        "test_phase11_bridges.Phase11ShutdownConformance.test_thread_pool_waiting_shutdown_can_follow_nonwaiting_shutdown"
+        "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_cross_thread_cancel_starts_finalizer_before_completion",
+        "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_cross_thread_result_and_exception_delivery",
+        "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_run_in_executor_submits_immediately_without_copying_context",
+        "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_to_thread_is_lazy_and_copies_context_at_execution",
+        "test_phase11_bridge_model_conformance.Phase11BridgeConformance.test_wrapper_cancel_keeps_running_work_and_can_cancel_queued_work",
+        "test_phase11_bridge_model_conformance.Phase11ShutdownConformance.test_process_pool_repeated_shutdown_cannot_join_detached_manager",
+        "test_phase11_bridge_model_conformance.Phase11ShutdownConformance.test_thread_pool_waiting_shutdown_can_follow_nonwaiting_shutdown"
       ]
     },
     {
@@ -242,7 +242,7 @@
       ],
       "platform": "linux",
       "machine": "x86_64",
-      "module": "test_phase11_process_conformance",
+      "module": "test_phase11_process_model_conformance",
       "upstream_modules": [
         "multiprocessing.process",
         "multiprocessing.pool",
@@ -254,14 +254,14 @@
         "multiprocessing.spawn"
       ],
       "tests": [
-        "test_phase11_process_conformance.Phase11ProcessConformance.test_forced_worker_exit_does_not_acknowledge_ipc",
-        "test_phase11_process_conformance.Phase11ProcessConformance.test_open_rejection_and_post_open_failure_have_different_name_effects",
-        "test_phase11_process_conformance.Phase11ProcessConformance.test_partial_close_releases_base_and_can_be_retried",
-        "test_phase11_process_conformance.Phase11ProcessConformance.test_partial_start_preserves_first_worker_and_reply",
-        "test_phase11_process_conformance.Phase11ProcessConformance.test_pool_drain_and_result_observation_are_distinct",
-        "test_phase11_process_conformance.Phase11ProcessConformance.test_start_return_and_crashed_worker_exit_are_distinct",
-        "test_phase11_process_conformance.Phase11ProcessConformance.test_terminate_request_and_reaped_exit_are_distinct",
-        "test_phase11_process_conformance.Phase11ProcessConformance.test_unlink_rejects_later_attach_and_preserves_existing_spawn_mapping"
+        "test_phase11_process_model_conformance.Phase11ProcessConformance.test_forced_worker_exit_does_not_acknowledge_ipc",
+        "test_phase11_process_model_conformance.Phase11ProcessConformance.test_open_rejection_and_post_open_failure_have_different_name_effects",
+        "test_phase11_process_model_conformance.Phase11ProcessConformance.test_partial_close_releases_base_and_can_be_retried",
+        "test_phase11_process_model_conformance.Phase11ProcessConformance.test_partial_start_preserves_first_worker_and_reply",
+        "test_phase11_process_model_conformance.Phase11ProcessConformance.test_pool_drain_and_result_observation_are_distinct",
+        "test_phase11_process_model_conformance.Phase11ProcessConformance.test_start_return_and_crashed_worker_exit_are_distinct",
+        "test_phase11_process_model_conformance.Phase11ProcessConformance.test_terminate_request_and_reaped_exit_are_distinct",
+        "test_phase11_process_model_conformance.Phase11ProcessConformance.test_unlink_rejects_later_attach_and_preserves_existing_spawn_mapping"
       ]
     },
     {
@@ -275,7 +275,7 @@
       ],
       "platform": "linux",
       "machine": "x86_64",
-      "module": "test_phase11_async_resource_conformance",
+      "module": "test_phase11_async_resource_model_conformance",
       "upstream_modules": [
         "contextlib",
         "asyncio.streams",
@@ -285,11 +285,11 @@
         "asyncio.unix_events"
       ],
       "tests": [
-        "test_phase11_async_resource_conformance.AsyncResourceConformance.test_async_context_entry_failure_and_body_exception",
-        "test_phase11_async_resource_conformance.AsyncResourceConformance.test_generator_lazy_entry_break_and_exhaustion",
-        "test_phase11_async_resource_conformance.AsyncResourceConformance.test_interrupted_finalizer_and_repeat_close",
-        "test_phase11_async_resource_conformance.AsyncResourceConformance.test_server_transport_and_handler_completion_are_distinct",
-        "test_phase11_async_resource_conformance.AsyncResourceConformance.test_subprocess_output_wait_and_stop_are_distinct"
+        "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_async_context_entry_failure_and_body_exception",
+        "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_generator_lazy_entry_break_and_exhaustion",
+        "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_interrupted_finalizer_and_repeat_close",
+        "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_server_transport_and_handler_completion_are_distinct",
+        "test_phase11_async_resource_model_conformance.AsyncResourceConformance.test_subprocess_output_wait_and_stop_are_distinct"
       ]
     }
   ]

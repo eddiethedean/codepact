@@ -202,7 +202,8 @@ class Phase11ProcessConformance(unittest.TestCase):
             [
                 sys.executable,
                 "-c",
-                "from test_phase11_process_conformance import _pool_drain_result; "
+                "from test_phase11_process_model_conformance "
+                "import _pool_drain_result\n"
                 "print(_pool_drain_result())",
             ],
             cwd=Path(__file__).resolve().parent,
